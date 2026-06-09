@@ -19,4 +19,4 @@
     { "src": "/reports/dazzle-dry", "dest": "/reports/dazzle-dry/index.html" },
     { "src": "/", "dest": "/index.html" }
   ]
-}
+} 
