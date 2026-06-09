@@ -176,6 +176,7 @@ async function paginateOrders(start, end) {
           CreatedAfter:      start,
           CreatedBefore:     end,
           MaxResultsPerPage: '100',
+          OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
         };
 
     const response = await spRequest('GET', '/orders/v0/orders', query);
@@ -184,7 +185,7 @@ async function paginateOrders(start, end) {
     if (nextToken) await sleep(2000);
   } while (nextToken);
 
-  return orders.filter(o => o.OrderStatus !== 'Canceled');
+  return orders; // all statuses explicitly requested above — no client-side filter needed
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
