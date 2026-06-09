@@ -39,14 +39,16 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const mode    = req.query.mode || 'yesterday';
+  const mode  = req.query.mode || 'yesterday';
+  const year  = req.query.year  ? parseInt(req.query.year)  : null;
+  const month = req.query.month ? parseInt(req.query.month) : null;
   const results = [];
 
   for (const brand of brands.filter(b => b.active)) {
     try {
       console.log(`[sync-orders] ${brand.id} mode=${mode}`);
 
-      const dateRanges = getDateRanges(mode);
+      const dateRanges = getDateRanges(mode, year, month);
       const rows       = await fetchOrderRows(brand, dateRanges);
       const token      = await ensureTab(sheets.orders, brand.tabName, HEADERS);
 
@@ -71,7 +73,7 @@ module.exports = async (req, res) => {
 
 // ── Date range builder ────────────────────────────────────────────────────────
 
-function getDateRanges(mode) {
+function getDateRanges(mode, yearParam, monthParam) {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
 
@@ -85,10 +87,15 @@ function getDateRanges(mode) {
   }
 
   if (mode === 'month') {
-    const y       = now.getFullYear();
-    const m       = now.getMonth() + 1;
+    const y       = yearParam  || now.getFullYear();
+    const m       = monthParam || now.getMonth() + 1;
     const lastDay = new Date(y, m, 0).getDate();
-    return [{ start: `${y}-${pad(m)}-01T00:00:00Z`, end: `${y}-${pad(m)}-${pad(lastDay)}T23:59:59Z` }];
+    // For past months use end of month; for current month use 5 min ago
+    const isCurrentMonth = (y === now.getFullYear() && m === now.getMonth() + 1);
+    const endStr  = isCurrentMonth
+      ? new Date(now.getTime() - 5 * 60 * 1000).toISOString().slice(0, 19) + 'Z'
+      : `${y}-${pad(m)}-${pad(lastDay)}T23:59:59Z`;
+    return [{ start: `${y}-${pad(m)}-01T00:00:00Z`, end: endStr }];
   }
 
   // backfill — rolling 13 months
