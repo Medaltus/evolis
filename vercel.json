@@ -1,4 +1,5 @@
 {
+  "outputDirectory": "reports",
   "functions": {
     "api/*.js": {
       "maxDuration": 30
