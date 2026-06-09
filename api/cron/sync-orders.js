@@ -94,12 +94,23 @@ function getDateRanges(mode, yearParam, monthParam) {
     const y       = yearParam  || now.getFullYear();
     const m       = monthParam || now.getMonth() + 1;
     const lastDay = new Date(y, m, 0).getDate();
-    // For past months use end of month; for current month use 5 min ago
     const isCurrentMonth = (y === now.getFullYear() && m === now.getMonth() + 1);
-    const endStr  = isCurrentMonth
-      ? new Date(now.getTime() - 5 * 60 * 1000).toISOString().slice(0, 19) + 'Z'
-      : `${y}-${pad(m)}-${pad(lastDay)}T23:59:59Z`;
-    return [{ start: `${y}-${pad(m)}-01T00:00:00Z`, end: endStr }];
+
+    // Split month into weekly chunks to avoid timeout on high-volume accounts
+    const weeks = [];
+    let dayStart = 1;
+    while (dayStart <= lastDay) {
+      const dayEnd = Math.min(dayStart + 6, lastDay);
+      const endIsNow = isCurrentMonth && dayEnd === lastDay;
+      weeks.push({
+        start: `${y}-${pad(m)}-${pad(dayStart)}T00:00:00Z`,
+        end:   endIsNow
+          ? new Date(now.getTime() - 5 * 60 * 1000).toISOString().slice(0, 19) + 'Z'
+          : `${y}-${pad(m)}-${pad(dayEnd)}T23:59:59Z`,
+      });
+      dayStart += 7;
+    }
+    return weeks;
   }
 
   // backfill — rolling 13 months
