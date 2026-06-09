@@ -28,10 +28,11 @@ module.exports = async (req, res) => {
       MarketplaceIds:    process.env.SP_MARKETPLACE_ID,
       CreatedAfter:      start,
       CreatedBefore:     end,
-      MaxResultsPerPage: '10',  // just 10 orders to inspect
+      MaxResultsPerPage: '10',
+      OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
     });
 
-    const orders = (response.payload?.Orders || []).filter(o => o.OrderStatus !== 'Canceled');
+    const orders = response.payload?.Orders || [];
 
     // Fetch line items for each order
     const results = [];
