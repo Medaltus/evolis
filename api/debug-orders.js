@@ -65,7 +65,9 @@ module.exports = async (req, res) => {
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 7);
       const start = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}T00:00:00Z`;
-      const end   = now.toISOString().slice(0,10) + 'T23:59:59Z';
+      // Set CreatedBefore to 5 minutes ago — SP-API requires at least 2 min buffer
+      const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      const end   = fiveMinAgo.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
       const query = new URLSearchParams({
         MarketplaceIds:    process.env.SP_MARKETPLACE_ID,
