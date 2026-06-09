@@ -12,7 +12,7 @@
  */
 
 const { spRequest }                                        = require('../_spauth');
-const { ensureTab, appendRows, replaceRows, getSheetsToken } = require('../config/_sheets_client');
+const { ensureTab, appendRows, replaceRows, readRows, getSheetsToken } = require('../config/_sheets_client');
 const brands                                               = require('../config/brands');
 const sheets                                               = require('../config/sheets');
 
@@ -53,10 +53,14 @@ module.exports = async (req, res) => {
       const token      = await ensureTab(sheets.orders, brand.tabName, HEADERS);
 
       if (mode === 'yesterday') {
-        // Append only — preserve existing history
+        // Append only — never wipe existing data
         await appendRows(sheets.orders, brand.tabName, rows, token);
+      } else if (mode === 'month') {
+        // Delete only rows for this specific month, then append fresh data
+        // This preserves all other months' data
+        await replaceMonth(sheets.orders, brand.tabName, rows, token, year || new Date().getFullYear(), month || new Date().getMonth() + 1);
       } else {
-        // Full replace for month/backfill
+        // backfill — full replace
         await replaceRows(sheets.orders, brand.tabName, HEADERS, rows, token);
       }
 
@@ -196,6 +200,33 @@ async function paginateOrders(start, end) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Replace only the rows for a specific year/month in the sheet.
+ * All other months' rows are preserved.
+ */
+async function replaceMonth(sheetId, tabName, newRows, token, year, month) {
+  const { getSheetsToken, readRows } = require('../config/_sheets_client');
+
+  // Read all existing rows
+  const existing = await readRows(sheetId, tabName);
+
+  // Keep rows that are NOT in the target month
+  const keepRows = existing.filter(row => {
+    const d = row.date || '';
+    const rowYear  = parseInt(d.slice(0, 4));
+    const rowMonth = parseInt(d.slice(5, 7));
+    return !(rowYear === year && rowMonth === month);
+  });
+
+  // Convert kept rows back to arrays (in header order)
+  const keptArrays = keepRows.map(row => HEADERS.map(h => row[h] ?? ''));
+
+  // Write kept rows + new rows back
+  const allRows = [...keptArrays, ...newRows];
+  await replaceRows(sheetId, tabName, HEADERS, allRows, token);
+  console.log(`[sync-orders] replaceMonth: kept ${keptArrays.length} rows from other months, wrote ${newRows.length} new rows for ${year}-${month}`);
+}
 
 function rollingMonths(n) {
   const months = [];
