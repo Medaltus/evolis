@@ -1,5 +1,7 @@
 {
-  "outputDirectory": "reports",
+  "rewrites": [
+    { "source": "/", "destination": "/reports/index.html" }
+  ],
   "functions": {
     "api/*.js": {
       "maxDuration": 30
