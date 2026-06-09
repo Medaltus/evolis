@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
     try {
       console.log(`[sync-orders] ${brand.id} mode=${mode}`);
 
-      const dateRanges = getDateRanges(mode, year, month);
+      const dateRanges = getDateRanges(mode, year, month, req);
       const rows       = await fetchOrderRows(brand, dateRanges);
       const token      = await ensureTab(sheets.orders, brand.tabName, HEADERS);
 
@@ -77,7 +77,7 @@ module.exports = async (req, res) => {
 
 // ── Date range builder ────────────────────────────────────────────────────────
 
-function getDateRanges(mode, yearParam, monthParam) {
+function getDateRanges(mode, yearParam, monthParam, req) {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
 
@@ -88,6 +88,14 @@ function getDateRanges(mode, yearParam, monthParam) {
     const m   = pad(d.getMonth() + 1);
     const day = pad(d.getDate());
     return [{ start: `${y}-${m}-${day}T00:00:00Z`, end: `${y}-${m}-${day}T23:59:59Z` }];
+  }
+
+  if (mode === 'week') {
+    // Explicit date range — pass start and end as YYYY-MM-DD
+    const startDate = req ? req.query.start : null;
+    const endDate   = req ? req.query.end   : null;
+    if (!startDate || !endDate) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
+    return [{ start: `${startDate}T00:00:00Z`, end: `${endDate}T23:59:59Z` }];
   }
 
   if (mode === 'month') {
