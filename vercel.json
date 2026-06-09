@@ -1,20 +1,22 @@
 {
-  "rewrites": [
-    { "source": "/", "destination": "/reports/index.html" }
-  ],
+  "version": 2,
   "functions": {
-    "api/*.js": {
-      "maxDuration": 30
-    }
+    "api/sales.js":         { "maxDuration": 30 },
+    "api/products.js":      { "maxDuration": 30 },
+    "api/advertising.js":   { "maxDuration": 30 },
+    "api/subscriptions.js": { "maxDuration": 30 }
   },
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
-      ]
-    }
+      "src": "/(.+)",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      },
+      "continue": true
+    },
+    { "src": "/reports/dazzle-dry", "dest": "/reports/dazzle-dry/index.html" },
+    { "src": "/", "dest": "/index.html" }
   ]
 }
