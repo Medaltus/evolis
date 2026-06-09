@@ -1,7 +1,7 @@
 /**
- * api/debug-orders.js
- * Verbose debug endpoint — logs every step so we can see exactly where auth fails.
- * DELETE after debugging is complete.
+ * api/debug-orders.js — SKU audit version
+ * Shows all SKUs found across all orders in the date range.
+ * DELETE after debugging.
  */
 
 const https  = require('https');
@@ -13,212 +13,151 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const log = [];
-  const step = (msg, data) => {
-    console.log(msg, data || '');
-    log.push({ step: msg, ...(data || {}) });
-  };
-
   try {
-    // ── Step 1: Check env vars are present ──────────────────────────────────
-    step('1. Checking env vars', {
-      SP_CLIENT_ID:       present(process.env.SP_CLIENT_ID),
-      SP_CLIENT_SECRET:   present(process.env.SP_CLIENT_SECRET),
-      SP_REFRESH_TOKEN:   present(process.env.SP_REFRESH_TOKEN),
-      SP_AWS_ACCESS_KEY:  present(process.env.SP_AWS_ACCESS_KEY),
-      SP_AWS_SECRET_KEY:  present(process.env.SP_AWS_SECRET_KEY),
-      SP_AWS_ROLE_ARN:    present(process.env.SP_AWS_ROLE_ARN),
-      SP_MARKETPLACE_ID:  process.env.SP_MARKETPLACE_ID || 'MISSING',
-      SP_SELLER_ID:       process.env.SP_SELLER_ID      || 'MISSING',
-    });
+    const days = parseInt(req.query.days || 30);
+    const now  = new Date();
+    const past = new Date(now);
+    past.setDate(past.getDate() - days);
 
-    // ── Step 2: Get LWA access token ─────────────────────────────────────────
-    step('2. Requesting LWA token...');
-    let lwaToken;
-    try {
-      const lwaResp = await httpPost('api.amazon.com', '/auth/o2/token',
-        new URLSearchParams({
-          grant_type:    'refresh_token',
-          client_id:     process.env.SP_CLIENT_ID,
-          client_secret: process.env.SP_CLIENT_SECRET,
-          refresh_token: process.env.SP_REFRESH_TOKEN,
-        }).toString(),
-        { 'Content-Type': 'application/x-www-form-urlencoded' }
-      );
-      if (lwaResp.error) {
-        step('2. LWA FAILED', { error: lwaResp.error, description: lwaResp.error_description });
-        return res.status(200).json({ success: false, log });
-      }
-      lwaToken = lwaResp.access_token;
-      step('2. LWA token OK', { expires_in: lwaResp.expires_in });
-    } catch (e) {
-      step('2. LWA EXCEPTION', { error: e.message });
-      return res.status(200).json({ success: false, log });
-    }
+    const start      = past.toISOString().slice(0, 10) + 'T00:00:00Z';
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const end        = fiveMinAgo.toISOString().slice(0, 19) + 'Z';
 
-    // ── Step 3: Try WITHOUT STS (direct IAM signing like coworker's script) ──
-    step('3. Trying direct IAM signing (no STS role assumption)...');
-    let ordersResp;
-    try {
-      const now      = new Date();
-      const pad      = n => String(n).padStart(2, '0');
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 7);
-      const start = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}T00:00:00Z`;
-      // Set CreatedBefore to 5 minutes ago — SP-API requires at least 2 min buffer
-      const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
-      const end   = fiveMinAgo.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    // Get LWA token
+    const lwaToken = await getLWAToken();
 
-      const query = new URLSearchParams({
-        MarketplaceIds:    process.env.SP_MARKETPLACE_ID,
-        CreatedAfter:      start,
-        CreatedBefore:     end,
-        MaxResultsPerPage: '5',
-        OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
-      });
+    // Fetch all orders
+    const orders = await paginateOrders(start, end, lwaToken);
 
-      const path     = `/orders/v0/orders?${query.toString()}`;
-      const headers  = signDirect(
-        'GET',
-        'sellingpartnerapi-na.amazon.com',
-        path,
-        '',
-        process.env.SP_AWS_ACCESS_KEY,
-        process.env.SP_AWS_SECRET_KEY,
-        lwaToken
-      );
+    // Fetch items for ALL orders and build SKU summary
+    const skuMap     = {};  // sku -> { brand prefix, count, sample title }
+    const prefixMap  = {};  // 3-letter prefix -> count
+    let   itemErrors = 0;
 
-      ordersResp = await httpGetRaw('sellingpartnerapi-na.amazon.com', path, headers);
-      const parsed = JSON.parse(ordersResp);
-
-      if (parsed.errors) {
-        step('3. Orders API returned errors', { errors: parsed.errors });
-      } else {
-        const orders = parsed.payload?.Orders || [];
-        step('3. Orders API SUCCESS (direct IAM)', {
-          ordersFound: orders.length,
-          sampleOrderIds: orders.slice(0,3).map(o => o.AmazonOrderId),
-          sampleSKUs: [],
-        });
-
-        // Fetch items for first order to check SKUs
-        if (orders.length > 0) {
-          const firstOrder = orders[0];
-          const itemsPath  = `/orders/v0/orders/${firstOrder.AmazonOrderId}/orderItems`;
-          const itemHeaders = signDirect(
-            'GET', 'sellingpartnerapi-na.amazon.com', itemsPath, '',
-            process.env.SP_AWS_ACCESS_KEY, process.env.SP_AWS_SECRET_KEY, lwaToken
-          );
-          const itemsRaw  = await httpGetRaw('sellingpartnerapi-na.amazon.com', itemsPath, itemHeaders);
-          const itemsParsed = JSON.parse(itemsRaw);
-          const items = itemsParsed.payload?.OrderItems || [];
-          step('3b. First order items', {
-            orderId: firstOrder.AmazonOrderId,
-            date:    firstOrder.PurchaseDate?.slice(0,10),
-            status:  firstOrder.OrderStatus,
-            items:   items.map(i => ({ sku: i.SellerSKU, asin: i.ASIN, qty: i.QuantityOrdered, title: i.Title?.slice(0,50) })),
-          });
-        }
-      }
-    } catch (e) {
-      step('3. Direct IAM EXCEPTION', { error: e.message });
-    }
-
-    // ── Step 4: Try WITH STS role assumption (our current approach) ──────────
-    if (process.env.SP_AWS_ROLE_ARN) {
-      step('4. Trying STS AssumeRole...');
+    for (const order of orders) {
       try {
-        const stsResp = await httpGetRaw(
-          'sts.amazonaws.com',
-          `/?Action=AssumeRole&RoleArn=${encodeURIComponent(process.env.SP_AWS_ROLE_ARN)}&RoleSessionName=DebugSession&DurationSeconds=3600&Version=2011-06-15`,
-          signDirect('GET', 'sts.amazonaws.com',
-            `/?Action=AssumeRole&RoleArn=${encodeURIComponent(process.env.SP_AWS_ROLE_ARN)}&RoleSessionName=DebugSession&DurationSeconds=3600&Version=2011-06-15`,
-            '', process.env.SP_AWS_ACCESS_KEY, process.env.SP_AWS_SECRET_KEY, null, 'sts', 'us-east-1'
-          )
-        );
-        if (stsResp.includes('AssumeRoleResult')) {
-          step('4. STS AssumeRole SUCCESS');
-        } else if (stsResp.includes('Error')) {
-          const code = stsResp.match(/<Code>(.*?)<\/Code>/)?.[1] || 'unknown';
-          const msg  = stsResp.match(/<Message>(.*?)<\/Message>/)?.[1] || stsResp.slice(0,200);
-          step('4. STS AssumeRole FAILED', { code, message: msg });
-        }
-      } catch (e) {
-        step('4. STS EXCEPTION', { error: e.message });
+        const items = await fetchItems(order.AmazonOrderId, lwaToken);
+        items.forEach(item => {
+          const sku    = item.SellerSKU || 'UNKNOWN';
+          const prefix = sku.slice(0, 3).toUpperCase();
+
+          if (!skuMap[sku]) skuMap[sku] = { prefix, count: 0, title: item.Title?.slice(0, 50), asin: item.ASIN };
+          skuMap[sku].count += item.QuantityOrdered || 1;
+
+          prefixMap[prefix] = (prefixMap[prefix] || 0) + 1;
+        });
+      } catch {
+        itemErrors++;
       }
-    } else {
-      step('4. Skipping STS — SP_AWS_ROLE_ARN not set');
+      await sleep(200);
     }
 
-    res.status(200).json({ success: true, log });
+    // Sort prefixes by count
+    const prefixSummary = Object.entries(prefixMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([prefix, count]) => ({ prefix, count }));
+
+    // Show all EVO SKUs specifically
+    const evoSkus = Object.entries(skuMap)
+      .filter(([sku]) => sku.toUpperCase().startsWith('EVO'))
+      .map(([sku, data]) => ({ sku, ...data }));
+
+    res.status(200).json({
+      dateRange:     { start, end },
+      totalOrders:   orders.length,
+      itemErrors,
+      prefixSummary,      // all SKU prefixes found — tells us what brands have orders
+      evoSkus,            // EVO-specific SKUs
+      allSkus: Object.entries(skuMap)
+        .sort((a,b) => b[1].count - a[1].count)
+        .slice(0, 30)     // top 30 SKUs by volume
+        .map(([sku, data]) => ({ sku, ...data })),
+    });
 
   } catch (err) {
     console.error('[debug-orders]', err);
-    res.status(500).json({ error: err.message, log });
+    res.status(500).json({ error: err.message });
   }
 };
 
-// ── Direct IAM SigV4 (no STS) ────────────────────────────────────────────────
-function signDirect(method, host, fullPath, body, accessKey, secretKey, lwaToken, service = 'execute-api', region = 'us-east-1') {
-  const now    = new Date();
-  const amzDate  = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 15) + 'Z';
-  const dateStamp = amzDate.slice(0, 8);
-  const [pathOnly, queryStr = ''] = fullPath.split('?');
+async function paginateOrders(start, end, lwaToken) {
+  const orders  = [];
+  let nextToken = null;
+  do {
+    const query = nextToken
+      ? { NextToken: nextToken }
+      : {
+          MarketplaceIds:    process.env.SP_MARKETPLACE_ID,
+          CreatedAfter:      start,
+          CreatedBefore:     end,
+          MaxResultsPerPage: '100',
+          OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
+        };
+    const qs   = '?' + new URLSearchParams(query).toString();
+    const hdrs = sign('GET', 'sellingpartnerapi-na.amazon.com', '/orders/v0/orders' + qs, '', lwaToken);
+    const resp = await httpGetJSON('sellingpartnerapi-na.amazon.com', '/orders/v0/orders' + qs, hdrs);
+    orders.push(...(resp.payload?.Orders || []));
+    nextToken = resp.payload?.NextToken || null;
+    if (nextToken) await sleep(2000);
+  } while (nextToken);
+  return orders;
+}
 
-  const canonicalQS = queryStr.split('&').filter(Boolean).sort().join('&');
-  const payloadHash = crypto.createHash('sha256').update(body || '').digest('hex');
+async function fetchItems(orderId, lwaToken) {
+  const path = `/orders/v0/orders/${orderId}/orderItems`;
+  const hdrs = sign('GET', 'sellingpartnerapi-na.amazon.com', path, '', lwaToken);
+  const resp = await httpGetJSON('sellingpartnerapi-na.amazon.com', path, hdrs);
+  return resp.payload?.OrderItems || [];
+}
 
-  const headers = { 'host': host, 'x-amz-date': amzDate };
-  if (lwaToken) headers['x-amz-access-token'] = lwaToken;
+async function getLWAToken() {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token', client_id: process.env.SP_CLIENT_ID,
+    client_secret: process.env.SP_CLIENT_SECRET, refresh_token: process.env.SP_REFRESH_TOKEN,
+  }).toString();
+  const data = await httpPostJSON('api.amazon.com', '/auth/o2/token', body, { 'Content-Type': 'application/x-www-form-urlencoded' });
+  if (data.error) throw new Error(`LWA: ${data.error}`);
+  return data.access_token;
+}
 
-  const sortedKeys      = Object.keys(headers).sort();
-  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+function sign(method, host, fullPath, body, lwaToken) {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0,15) + 'Z';
+  const dateStamp = amzDate.slice(0,8);
+  const [pathOnly, qs = ''] = fullPath.split('?');
+  const canonicalQS = qs.split('&').filter(Boolean).sort().join('&');
+  const payloadHash = crypto.createHash('sha256').update(body||'').digest('hex');
+  const headers = { host, 'x-amz-access-token': lwaToken, 'x-amz-date': amzDate };
+  const sortedKeys = Object.keys(headers).sort();
+  const canonicalHeaders = sortedKeys.map(k=>`${k}:${headers[k]}`).join('\n')+'\n';
   const signedHeadersStr = sortedKeys.join(';');
-
-  const canonicalRequest = [method, pathOnly, canonicalQS, canonicalHeaders, signedHeadersStr, payloadHash].join('\n');
-  const credScope        = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign     = ['AWS4-HMAC-SHA256', amzDate, credScope,
-    crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
-
-  const signingKey = hmac(hmac(hmac(hmac('AWS4' + secretKey, dateStamp), region), service), 'aws4_request');
-  const signature  = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
-
-  return {
-    ...headers,
-    'Authorization': `AWS4-HMAC-SHA256 Credential=${accessKey}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`,
-    'Content-Type':  'application/json',
-  };
+  const canonicalRequest = [method,pathOnly,canonicalQS,canonicalHeaders,signedHeadersStr,payloadHash].join('\n');
+  const credScope = `${dateStamp}/us-east-1/execute-api/aws4_request`;
+  const stringToSign = ['AWS4-HMAC-SHA256',amzDate,credScope,crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+  const signingKey = hmac(hmac(hmac(hmac('AWS4'+process.env.SP_AWS_SECRET_KEY,dateStamp),'us-east-1'),'execute-api'),'aws4_request');
+  const signature = crypto.createHmac('sha256',signingKey).update(stringToSign).digest('hex');
+  return { ...headers, Authorization: `AWS4-HMAC-SHA256 Credential=${process.env.SP_AWS_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`, 'Content-Type': 'application/json' };
 }
 
-function hmac(key, data) {
-  return crypto.createHmac('sha256', key).update(data).digest();
-}
+function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
-function httpPost(host, path, body, headers) {
-  return new Promise((resolve, reject) => {
-    const opts = { hostname: host, path, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } };
-    const req  = https.request(opts, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error(d.slice(0,200))); } });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-function httpGetRaw(host, path, headers) {
+function httpGetJSON(host, path, headers) {
   return new Promise((resolve, reject) => {
     const req = https.request({ hostname: host, path, method: 'GET', headers }, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
+      let d = ''; res.on('data', c => d+=c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error(d.slice(0,200))); } });
     });
-    req.on('error', reject);
-    req.end();
+    req.on('error', reject); req.end();
   });
 }
 
-const present = v => v ? `SET (${v.slice(0,8)}...)` : 'MISSING';
+function httpPostJSON(host, path, body, headers) {
+  return new Promise((resolve, reject) => {
+    const opts = { hostname: host, path, method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } };
+    const req = https.request(opts, res => {
+      let d = ''; res.on('data', c => d+=c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error(d.slice(0,200))); } });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
