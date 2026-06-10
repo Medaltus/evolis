@@ -8,7 +8,6 @@
  * tabName:   slug used as the Google Sheet tab name
  * active:    set false to pause syncing without deleting config
  */
-
 module.exports = [
   {
     id:          'evolis',
@@ -39,10 +38,73 @@ module.exports = [
     active:      true,
   },
   {
-    id:          'clc',
-    tabName:     'clc',
+    id:          'cloud-cafe',
+    tabName:     'cloud-cafe',
     skuPrefix:   'CLC',
-    displayName: 'Clöud Café',
+    displayName: 'Cloud Cafe',
+    active:      true,
+  },
+  {
+    id:          'miguard',
+    tabName:     'miguard',
+    skuPrefix:   'MIG',
+    displayName: 'MiGuard',
+    active:      true,
+  },
+  {
+    id:          'cimeosil',
+    tabName:     'cimeosil',
+    skuPrefix:   'CIM',
+    displayName: 'Cimeosil',
+    active:      true,
+  },
+  {
+    id:          'just-bjorn',
+    tabName:     'just-bjorn',
+    skuPrefix:   'JBJ',
+    displayName: 'Just Bjorn',
+    active:      true,
+  },
+  {
+    id:          'amala',
+    tabName:     'amala',
+    skuPrefix:   'ALA',
+    displayName: 'Amala',
+    active:      true,
+  },
+  {
+    id:          'collagelee',
+    tabName:     'collagelee',
+    skuPrefix:   'COL',
+    displayName: 'Collagelee',
+    active:      true,
+  },
+  {
+    id:          'hillside',
+    tabName:     'hillside',
+    skuPrefix:   'HIL',
+    displayName: 'Hillside',
+    active:      true,
+  },
+  {
+    id:          'prohibition',
+    tabName:     'prohibition',
+    skuPrefix:   'PRB',
+    displayName: 'Prohibition',
+    active:      true,
+  },
+  {
+    id:          'eraclea',
+    tabName:     'eraclea',
+    skuPrefix:   'ERA',
+    displayName: 'Eraclea',
+    active:      true,
+  },
+  {
+    id:          'skinside-seoul',
+    tabName:     'skinside-seoul',
+    skuPrefix:   'SSS',
+    displayName: 'skinside SEOUL',
     active:      true,
   },
   {
