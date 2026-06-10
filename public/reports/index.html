@@ -941,9 +941,15 @@ function initSns() {
     return { year, month }; // month is 1-indexed
   }
 
-  // Sheet CSV URL (Google Sheets public CSV export)
-  function sheetCsvUrl(sheetId, sheetName) {
-    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  // Sheet CSV URL using gid (more reliable than sheet name)
+  function sheetCsvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  }
+
+  // Validate that response looks like CSV (not an HTML error page)
+  function isCsv(text) {
+    const t = text.trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
   }
 
   // ── Row filtering ─────────────────────────────────────────────────────────
@@ -1119,13 +1125,17 @@ function initSns() {
       // Determine which sheet(s) hold each period:
       // sync-orders sheet has the most recent MOM data
       // historical sheet has everything else
+      // gid for 'evolis' tab — historical: 1249281379, sync: update once confirmed
+      const SYNC_GID = '1163928587';
+      const HIST_GID = '1249281379';
+
       const [syncCsv, histCsv] = await Promise.all([
-        fetch(sheetCsvUrl(SYNC_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
-      const syncRows = filterRows(parseCsv(syncCsv));
-      const histRows = filterRows(parseCsv(histCsv));
+      const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
+      const histRows = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
 
       // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
       const allRows = [...syncRows, ...histRows];
