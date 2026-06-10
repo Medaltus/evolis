@@ -8,6 +8,7 @@
  *
  * Writes to: amazon-orders-historical (SHEET_ORDERS_HISTORICAL)
  * Keeps up to 18 months of data per brand tab.
+ * Also writes/updates a "Summary" tab with one row per brand per month.
  *
  * Auto-trigger: 5th of month at 4:00 AM UTC (pulls prior month)
  * Manual:  ?year=2026&month=5
@@ -23,21 +24,46 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'skus', 'brand', 'last_updated',
+  'unit_count', 'skus', 'asin', 'brand', 'last_updated',
 ];
+
+const SUMMARY_HEADERS = [
+  'brand', 'brand_name', 'month', 'year',
+  'total_orders', 'total_units_sold', 'total_canceled_units', 'total_revenue',
+  'last_updated',
+];
+
+// Brand display name lookup
+const BRAND_NAMES = {
+  EVO: 'Évolis',
+  SVA: 'Skinuva',
+  DEC: 'dearcloud',
+  CRE: 'The Crème Shop',
+  CLC: 'Cloud Cafe',
+  MIG: 'MiGuard',
+  CIM: 'Cimeosil',
+  JBJ: 'Just Bjorn',
+  ALA: 'Amala',
+  COL: 'Collagelee',
+  HIL: 'Hillside',
+  PRB: 'Prohibition',
+  ERA: 'Eraclea',
+  SSS: 'skinside SEOUL',
+  PBJ: 'PBJ',
+};
 
 // Flat file TSV column names
 const COL = {
   orderId:         'amazon-order-id',
   date:            'purchase-date',
   status:          'order-status',
-  orderTotal:      'order-total',
   promotionIds:    'promotion-ids',
   promoDiscount:   'item-promotion-discount',
   itemPrice:       'item-price',
-  qtyOrdered:      'quantity-purchased',
+  qtyOrdered:      'quantity',         // flat file uses 'quantity', not 'quantity-purchased'
   qtyShipped:      'quantity-shipped',
   sku:             'sku',
+  asin:            'asin',
 };
 
 module.exports = async (req, res) => {
@@ -98,14 +124,18 @@ module.exports = async (req, res) => {
   const tsvHeaders = lines[0].split('\t').map(h => h.trim().toLowerCase());
   const allRows    = lines.slice(1).map(line => line.split('\t'));
 
+  // Log headers once for debugging
+  console.log(`[backfill] TSV headers: ${tsvHeaders.join(' | ')}`);
+
   const get = (row, colName) => {
     const idx = tsvHeaders.indexOf(colName.toLowerCase());
     return idx >= 0 ? (row[idx] || '').trim() : '';
   };
 
   // ── Write per brand ────────────────────────────────────────────────────────
-  const results = [];
-  const syncTime = new Date().toISOString();
+  const results    = [];
+  const summaryRows = [];
+  const syncTime   = new Date().toISOString();
 
   for (const brand of brands.filter(b => b.active)) {
     try {
@@ -124,7 +154,7 @@ module.exports = async (req, res) => {
             order_id:           orderId,
             date:               get(row, COL.date).slice(0, 10),
             status:             get(row, COL.status),
-            order_total:        round2(parseFloat(get(row, COL.orderTotal) || 0)),
+            order_total:        0,  // summed from item_price below
             promotion_ids:      '',
             is_premium_order:   'FALSE', // not in flat file
             promotion_discount: 0,
@@ -132,15 +162,21 @@ module.exports = async (req, res) => {
             quantity_ordered:   0,
             quantity_shipped:   0,
             skus:               new Set(),
+            asins:              new Set(),
           };
         }
 
         const o = orderMap[orderId];
+        const linePrice = parseFloat(get(row, COL.itemPrice) || 0);
         o.promotion_discount = round2(o.promotion_discount + parseFloat(get(row, COL.promoDiscount) || 0));
-        o.item_price         = round2(o.item_price + parseFloat(get(row, COL.itemPrice) || 0));
+        o.item_price         = round2(o.item_price + linePrice);
+        o.order_total        = o.item_price; // order_total = sum of item_price across brand SKUs
         o.quantity_ordered  += parseInt(get(row, COL.qtyOrdered)  || 0);
         o.quantity_shipped  += parseInt(get(row, COL.qtyShipped)  || 0);
         o.skus.add(sku);
+
+        const asin = get(row, COL.asin);
+        if (asin) o.asins.add(asin);
 
         // Merge promotion IDs across line items
         const linePromos = get(row, COL.promotionIds);
@@ -153,11 +189,15 @@ module.exports = async (req, res) => {
         }
       }
 
-      const sheetRows = Object.values(orderMap).map(o => [
+      const orders = Object.values(orderMap);
+
+      const sheetRows = orders.map(o => [
         o.order_id, o.date, o.status, o.order_total,
         o.promotion_ids, o.is_premium_order, o.promotion_discount,
         o.item_price, o.quantity_ordered, o.quantity_shipped,
-        o.quantity_ordered, [...o.skus].join(', '),
+        o.quantity_ordered,             // unit_count = quantity_ordered
+        [...o.skus].join(', '),
+        [...o.asins].join(', '),        // asin column
         brand.id, syncTime,
       ]);
 
@@ -169,6 +209,28 @@ module.exports = async (req, res) => {
         await pruneOldMonths(sheets.ordersHistorical, brand.tabName, token, 18);
       }
 
+      // ── Build summary stats for this brand/month ─────────────────────────
+      const nonCanceled  = orders.filter(o => (o.status || '').toLowerCase() !== 'cancelled');
+      const canceled     = orders.filter(o => (o.status || '').toLowerCase() === 'cancelled');
+
+      const totalOrders        = nonCanceled.length;
+      const totalUnitsSold     = nonCanceled.reduce((s, o) => s + o.quantity_ordered, 0);
+      const totalCanceledUnits = canceled.reduce((s, o) => s + o.quantity_ordered, 0);
+      const totalRevenue       = round2(nonCanceled.reduce((s, o) => s + o.order_total, 0));
+      const brandName          = BRAND_NAMES[brand.skuPrefix.toUpperCase()] || brand.id;
+
+      summaryRows.push({
+        brand:                brand.id,
+        brand_name:           brandName,
+        month,
+        year,
+        total_orders:         totalOrders,
+        total_units_sold:     totalUnitsSold,
+        total_canceled_units: totalCanceledUnits,
+        total_revenue:        totalRevenue,
+        last_updated:         syncTime,
+      });
+
       results.push({ brand: brand.id, status: 'ok', rows: sheetRows.length, year, month });
     } catch (err) {
       console.error(`[backfill] ${brand.id} failed:`, err.message);
@@ -176,10 +238,50 @@ module.exports = async (req, res) => {
     }
   }
 
+  // ── Upsert Summary tab ────────────────────────────────────────────────────
+  try {
+    await upsertSummary(sheets.ordersHistorical, summaryRows, year, month, syncTime);
+    console.log(`[backfill] Summary tab updated — ${summaryRows.length} brand rows for ${year}-${month}`);
+  } catch (err) {
+    console.error(`[backfill] Summary tab failed:`, err.message);
+    // Non-fatal — don't fail the whole job over summary
+  }
+
   res.status(200).json({ synced: results, reportId, year, month, timestamp: syncTime });
 };
 
-// ── replaceMonth — only replaces rows for target year/month ───────────────────
+// ── Upsert Summary tab — one row per brand per month ─────────────────────────
+// Finds existing rows for this brand+month+year and replaces them,
+// or appends if not found. Never wipes other months' data.
+async function upsertSummary(sheetId, newSummaryRows, year, month, syncTime) {
+  const token    = await ensureTab(sheetId, 'Summary', SUMMARY_HEADERS);
+  const existing = await readRows(sheetId, 'Summary');
+
+  // Remove any existing rows for this exact year+month (all brands being refreshed)
+  const brandIds = new Set(newSummaryRows.map(r => r.brand));
+  const keep     = existing.filter(row => {
+    const sameMonth = parseInt(row.month) === month && parseInt(row.year) === year;
+    const thisBrand = brandIds.has(row.brand);
+    return !(sameMonth && thisBrand);
+  });
+
+  const keepArrays = keep.map(row => SUMMARY_HEADERS.map(h => row[h] ?? ''));
+  const newArrays  = newSummaryRows.map(r => SUMMARY_HEADERS.map(h => r[h] ?? ''));
+
+  // Sort combined rows by year desc, month desc, brand asc for readability
+  const allArrays = [...keepArrays, ...newArrays];
+  allArrays.sort((a, b) => {
+    const yearDiff  = parseInt(b[3]) - parseInt(a[3]); // year col index 3
+    if (yearDiff !== 0) return yearDiff;
+    const monthDiff = parseInt(b[2]) - parseInt(a[2]); // month col index 2
+    if (monthDiff !== 0) return monthDiff;
+    return (a[0] || '').localeCompare(b[0] || '');     // brand col index 0
+  });
+
+  await replaceRows(sheetId, 'Summary', SUMMARY_HEADERS, allArrays, token);
+}
+
+// ── replaceMonth — only replaces rows for target year/month ──────────────────
 async function replaceMonth(sheetId, tabName, newRows, token, year, month) {
   const existing   = await readRows(sheetId, tabName);
   const keepRows   = existing.filter(row => {
@@ -193,7 +295,7 @@ async function replaceMonth(sheetId, tabName, newRows, token, year, month) {
   console.log(`[backfill] kept ${keptArrays.length} existing rows, added ${newRows.length} for ${year}-${month}`);
 }
 
-// ── Prune rows older than maxMonths ────────────────────────────────────────────
+// ── Prune rows older than maxMonths ───────────────────────────────────────────
 async function pruneOldMonths(sheetId, tabName, token, maxMonths) {
   const now      = new Date();
   const cutoff   = new Date(now.getFullYear(), now.getMonth() - maxMonths, 1);
@@ -211,7 +313,7 @@ async function pruneOldMonths(sheetId, tabName, token, maxMonths) {
   }
 }
 
-// ── Report polling ─────────────────────────────────────────────────────────────
+// ── Report polling ────────────────────────────────────────────────────────────
 async function pollReport(reportId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -225,7 +327,6 @@ async function pollReport(reportId, timeoutMs) {
   }
   throw new Error('Report timed out');
 }
-
 
 function downloadText(url) {
   return new Promise((resolve, reject) => {
