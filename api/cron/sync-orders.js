@@ -1,36 +1,27 @@
 /**
  * api/cron/sync-orders.js
- * Nightly cron — syncs Amazon orders to Google Sheets.
- * Runs at 2:00 AM UTC.
+ * Runs every 2 hours — pulls orders from the last 2.5 hours for ALL brands.
+ * Writes to the rolling current-month sheet (amazon-orders).
+ * Small batches, never times out.
  *
- * ?mode=yesterday   — only yesterday (default, used by nightly cron)
- * ?mode=month       — current month to date
- * ?mode=backfill    — rolling 13 months (one-time seed)
+ * Modes (via ?mode=):
+ *   rolling   — last 2.5 hours (default, used by cron)
+ *   yesterday — full yesterday
+ *   week      — explicit ?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
- * Sheet: amazon-orders  |  Tab: {brand}
- * One row per order, line item fields aggregated across all brand SKUs in the order.
+ * Sheet: amazon-orders  |  One tab per brand, auto-created on first run.
  */
 
-const { spRequest }                                        = require('../_spauth');
-const { ensureTab, appendRows, replaceRows, readRows, getSheetsToken } = require('../config/_sheets_client');
-const brands                                               = require('../config/brands');
-const sheets                                               = require('../config/sheets');
+const { spRequest }                                              = require('../_spauth');
+const { ensureTab, appendRows, replaceRows, readRows }          = require('../config/_sheets_client');
+const brands                                                     = require('../config/brands');
+const sheets                                                     = require('../config/sheets');
 
 const HEADERS = [
-  'order_id',
-  'date',
-  'status',
-  'order_total',         // what the customer actually paid (basis for AOV)
-  'promotion_ids',       // comma-separated — SS- prefix = Subscribe & Save, Vine = Vine program
-  'is_premium_order',    // TRUE/FALSE — Prime order
-  'promotion_discount',  // total discount applied across all brand line items
-  'item_price',          // sum of item_price across all brand line items
-  'quantity_ordered',    // total units ordered across all brand line items
-  'quantity_shipped',    // total units shipped across all brand line items
-  'unit_count',          // alias of quantity_ordered for backwards compat
-  'skus',                // distinct SKUs in this order for this brand
-  'brand',
-  'last_updated',
+  'order_id', 'date', 'status', 'order_total',
+  'promotion_ids', 'is_premium_order', 'promotion_discount',
+  'item_price', 'quantity_ordered', 'quantity_shipped',
+  'unit_count', 'skus', 'brand', 'last_updated',
 ];
 
 module.exports = async (req, res) => {
@@ -39,157 +30,127 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const mode  = req.query.mode || 'yesterday';
-  const year  = req.query.year  ? parseInt(req.query.year)  : null;
-  const month = req.query.month ? parseInt(req.query.month) : null;
+  const mode    = req.query.mode || 'rolling';
   const results = [];
+
+  // Fetch all orders in the time window once — then split by brand
+  // This is more efficient than fetching per brand
+  const dateRanges  = getDateRanges(mode, req);
+  const allOrders   = [];
+
+  for (const range of dateRanges) {
+    const batch = await paginateOrders(range.start, range.end);
+    allOrders.push(...batch);
+    await sleep(500);
+  }
+
+  console.log(`[sync-orders] ${allOrders.length} total orders across all brands`);
+
+  // Fetch items for all orders in batches of 5
+  const orderItems = {};
+  for (let i = 0; i < allOrders.length; i += 5) {
+    const batch = allOrders.slice(i, i + 5);
+    await Promise.all(batch.map(async order => {
+      try {
+        const resp = await spRequest('GET', `/orders/v0/orders/${order.AmazonOrderId}/orderItems`);
+        orderItems[order.AmazonOrderId] = resp.payload?.OrderItems || [];
+      } catch (e) {
+        console.warn(`[sync-orders] items failed for ${order.AmazonOrderId}`);
+        orderItems[order.AmazonOrderId] = [];
+      }
+    }));
+    if (i + 5 < allOrders.length) await sleep(500);
+  }
+
+  // Now split by brand and write to sheet
+  const now = new Date().toISOString();
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      console.log(`[sync-orders] ${brand.id} mode=${mode}`);
+      const rows = [];
 
-      const dateRanges = getDateRanges(mode, year, month, req);
-      const rows       = await fetchOrderRows(brand, dateRanges);
-      const token      = await ensureTab(sheets.orders, brand.tabName, HEADERS);
+      for (const order of allOrders) {
+        const items      = orderItems[order.AmazonOrderId] || [];
+        const brandItems = items.filter(item =>
+          (item.SellerSKU || '').toUpperCase().startsWith(brand.skuPrefix.toUpperCase())
+        );
+        if (brandItems.length === 0) continue;
 
-      if (mode === 'yesterday') {
-        // Append only — never wipe existing data
+        const quantityOrdered   = brandItems.reduce((s, i) => s + (i.QuantityOrdered  || 0), 0);
+        const quantityShipped   = brandItems.reduce((s, i) => s + (i.QuantityShipped  || 0), 0);
+        const itemPrice         = round2(brandItems.reduce((s, i) =>
+          s + parseFloat(i.ItemPrice?.Amount || 0) * (i.QuantityOrdered || 1), 0));
+        const promotionDiscount = round2(brandItems.reduce((s, i) =>
+          s + parseFloat(i.PromotionDiscount?.Amount || 0), 0));
+        const skus              = [...new Set(brandItems.map(i => i.SellerSKU))].join(', ');
+        const orderTotal        = round2(parseFloat(order.OrderTotal?.Amount || 0));
+        const promotionIds      = (order.PromotionIds || []).join(', ');
+        const isPremium         = order.IsPremiumOrder === true || order.IsPremiumOrder === 'true'
+          ? 'TRUE' : 'FALSE';
+
+        rows.push([
+          order.AmazonOrderId,
+          order.PurchaseDate?.slice(0, 10) || '',
+          order.OrderStatus || '',
+          orderTotal,
+          promotionIds,
+          isPremium,
+          promotionDiscount,
+          itemPrice,
+          quantityOrdered,
+          quantityShipped,
+          quantityOrdered,
+          skus,
+          brand.id,
+          now,
+        ]);
+      }
+
+      if (rows.length > 0) {
+        const token = await ensureTab(sheets.orders, brand.tabName, HEADERS);
         await appendRows(sheets.orders, brand.tabName, rows, token);
-      } else if (mode === 'month') {
-        // Delete only rows for this specific month, then append fresh data
-        // This preserves all other months' data
-        await replaceMonth(sheets.orders, brand.tabName, rows, token, year || new Date().getFullYear(), month || new Date().getMonth() + 1);
+        console.log(`[sync-orders] ${brand.id} — ${rows.length} rows written`);
       } else {
-        // backfill — full replace
-        await replaceRows(sheets.orders, brand.tabName, HEADERS, rows, token);
+        console.log(`[sync-orders] ${brand.id} — 0 rows (no orders in window)`);
       }
 
       results.push({ brand: brand.id, status: 'ok', rows: rows.length, mode });
-      console.log(`[sync-orders] ${brand.id} — ${rows.length} rows written`);
     } catch (err) {
       console.error(`[sync-orders] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
   }
 
-  res.status(200).json({ synced: results, timestamp: new Date().toISOString() });
+  res.status(200).json({ synced: results, totalOrders: allOrders.length, timestamp: new Date().toISOString() });
 };
 
-// ── Date range builder ────────────────────────────────────────────────────────
+// ── Date ranges ───────────────────────────────────────────────────────────────
 
-function getDateRanges(mode, yearParam, monthParam, req) {
+function getDateRanges(mode, req) {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
 
+  if (mode === 'rolling') {
+    const hours = parseFloat(req?.query?.hours || 2.5);
+    const start = new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
+    const end   = new Date(now.getTime() - 5 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
+    return [{ start, end }];
+  }
+
   if (mode === 'yesterday') {
-    const d   = new Date(now);
-    d.setDate(d.getDate() - 1);
-    const y   = d.getFullYear();
-    const m   = pad(d.getMonth() + 1);
-    const day = pad(d.getDate());
+    const d   = new Date(now); d.setDate(d.getDate() - 1);
+    const y   = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
     return [{ start: `${y}-${m}-${day}T00:00:00Z`, end: `${y}-${m}-${day}T23:59:59Z` }];
   }
 
   if (mode === 'week') {
-    // Explicit date range — pass start and end as YYYY-MM-DD
-    const startDate = req ? req.query.start : null;
-    const endDate   = req ? req.query.end   : null;
-    if (!startDate || !endDate) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
-    return [{ start: `${startDate}T00:00:00Z`, end: `${endDate}T23:59:59Z` }];
+    const start = req?.query?.start;
+    const end   = req?.query?.end;
+    if (!start || !end) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
+    return [{ start: `${start}T00:00:00Z`, end: `${end}T23:59:59Z` }];
   }
 
-  if (mode === 'month') {
-    const y       = yearParam  || now.getFullYear();
-    const m       = monthParam || now.getMonth() + 1;
-    const lastDay = new Date(y, m, 0).getDate();
-    const isCurrentMonth = (y === now.getFullYear() && m === now.getMonth() + 1);
-
-    // Split month into weekly chunks to avoid timeout on high-volume accounts
-    const weeks = [];
-    let dayStart = 1;
-    while (dayStart <= lastDay) {
-      const dayEnd = Math.min(dayStart + 6, lastDay);
-      const endIsNow = isCurrentMonth && dayEnd === lastDay;
-      weeks.push({
-        start: `${y}-${pad(m)}-${pad(dayStart)}T00:00:00Z`,
-        end:   endIsNow
-          ? new Date(now.getTime() - 5 * 60 * 1000).toISOString().slice(0, 19) + 'Z'
-          : `${y}-${pad(m)}-${pad(dayEnd)}T23:59:59Z`,
-      });
-      dayStart += 7;
-    }
-    return weeks;
-  }
-
-  // backfill — rolling 13 months
-  return rollingMonths(13);
-}
-
-// ── Main fetch + transform ────────────────────────────────────────────────────
-
-async function fetchOrderRows(brand, dateRanges) {
-  const rows = [];
-  const now  = new Date().toISOString();
-
-  for (const { start, end } of dateRanges) {
-    const orders = await paginateOrders(start, end);
-    console.log(`[sync-orders] ${brand.id} — ${orders.length} orders found between ${start.slice(0,10)} and ${end.slice(0,10)}`);
-
-    for (const order of orders) {
-      // Fetch line items
-      let items = [];
-      try {
-        const resp = await spRequest('GET', `/orders/v0/orders/${order.AmazonOrderId}/orderItems`);
-        items = resp.payload?.OrderItems || [];
-      } catch (e) {
-        console.warn(`[sync-orders] items failed for ${order.AmazonOrderId}: ${e.message}`);
-      }
-
-      // Filter to this brand's SKUs only
-      const brandItems = items.filter(item =>
-        (item.SellerSKU || '').toUpperCase().startsWith(brand.skuPrefix.toUpperCase())
-      );
-      if (brandItems.length === 0) continue;
-
-      // ── Aggregate line item fields across all brand SKUs in this order ──
-      const quantityOrdered  = brandItems.reduce((s, i) => s + (i.QuantityOrdered  || 0), 0);
-      const quantityShipped  = brandItems.reduce((s, i) => s + (i.QuantityShipped  || 0), 0);
-      const itemPrice        = round2(brandItems.reduce((s, i) =>
-        s + parseFloat(i.ItemPrice?.Amount || 0) * (i.QuantityOrdered || 1), 0));
-      const promotionDiscount = round2(brandItems.reduce((s, i) =>
-        s + parseFloat(i.PromotionDiscount?.Amount || 0), 0));
-      const skus             = [...new Set(brandItems.map(i => i.SellerSKU))].join(', ');
-
-      // ── Order-level fields ──
-      const orderTotal   = round2(parseFloat(order.OrderTotal?.Amount || 0));
-      const promotionIds = (order.PromotionIds || []).join(', ');
-      const isPremium    = order.IsPremiumOrder === true || order.IsPremiumOrder === 'true'
-        ? 'TRUE' : 'FALSE';
-
-      rows.push([
-        order.AmazonOrderId,
-        order.PurchaseDate?.slice(0, 10) || '',
-        order.OrderStatus  || '',
-        orderTotal,
-        promotionIds,
-        isPremium,
-        promotionDiscount,
-        itemPrice,
-        quantityOrdered,
-        quantityShipped,
-        quantityOrdered,   // unit_count mirrors quantity_ordered
-        skus,
-        brand.id,
-        now,
-      ]);
-
-      await sleep(200); // respect order items rate limit
-    }
-
-    await sleep(1000); // pause between date ranges
-  }
-
-  return rows;
+  return [];
 }
 
 // ── SP-API pagination ─────────────────────────────────────────────────────────
@@ -197,7 +158,6 @@ async function fetchOrderRows(brand, dateRanges) {
 async function paginateOrders(start, end) {
   const orders  = [];
   let nextToken = null;
-
   do {
     const query = nextToken
       ? { NextToken: nextToken }
@@ -208,60 +168,12 @@ async function paginateOrders(start, end) {
           MaxResultsPerPage: '100',
           OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
         };
-
     const response = await spRequest('GET', '/orders/v0/orders', query);
     orders.push(...(response.payload?.Orders || []));
     nextToken = response.payload?.NextToken || null;
     if (nextToken) await sleep(2000);
   } while (nextToken);
-
-  return orders; // all statuses explicitly requested above — no client-side filter needed
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Replace only the rows for a specific year/month in the sheet.
- * All other months' rows are preserved.
- */
-async function replaceMonth(sheetId, tabName, newRows, token, year, month) {
-  const { getSheetsToken, readRows } = require('../config/_sheets_client');
-
-  // Read all existing rows
-  const existing = await readRows(sheetId, tabName);
-
-  // Keep rows that are NOT in the target month
-  const keepRows = existing.filter(row => {
-    const d = row.date || '';
-    const rowYear  = parseInt(d.slice(0, 4));
-    const rowMonth = parseInt(d.slice(5, 7));
-    return !(rowYear === year && rowMonth === month);
-  });
-
-  // Convert kept rows back to arrays (in header order)
-  const keptArrays = keepRows.map(row => HEADERS.map(h => row[h] ?? ''));
-
-  // Write kept rows + new rows back
-  const allRows = [...keptArrays, ...newRows];
-  await replaceRows(sheetId, tabName, HEADERS, allRows, token);
-  console.log(`[sync-orders] replaceMonth: kept ${keptArrays.length} rows from other months, wrote ${newRows.length} new rows for ${year}-${month}`);
-}
-
-function rollingMonths(n) {
-  const months = [];
-  const now    = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    const d       = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year    = d.getFullYear();
-    const month   = d.getMonth() + 1;
-    const pad     = x => String(x).padStart(2, '0');
-    const lastDay = new Date(year, month, 0).getDate();
-    months.push({
-      start: `${year}-${pad(month)}-01T00:00:00Z`,
-      end:   `${year}-${pad(month)}-${pad(lastDay)}T23:59:59Z`,
-    });
-  }
-  return months;
+  return orders;
 }
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
