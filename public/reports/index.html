@@ -1120,8 +1120,8 @@ function initSns() {
       // sync-orders sheet has the most recent MOM data
       // historical sheet has everything else
       const [syncCsv, histCsv] = await Promise.all([
-        fetch(sheetCsvUrl(SYNC_SHEET_ID, 'amazon-orders')).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, 'Sheet1')).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const syncRows = filterRows(parseCsv(syncCsv));
@@ -1135,7 +1135,11 @@ function initSns() {
       const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
 
       if (!curr) {
-        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. Check sheet tabs and brand filter.`);
+        const syncSample = syncRows.slice(0,2).map(r => `${r.date}|${r.brand}|${r.status}`).join(', ');
+        const histSample = histRows.slice(0,2).map(r => `${r.date}|${r.brand}|${r.status}`).join(', ');
+        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. `
+          + `syncRows:${syncRows.length} histRows:${histRows.length} allRows:${allRows.length}. `
+          + `Sync sample: [${syncSample || 'none'}] Hist sample: [${histSample || 'none'}]`);
         return;
       }
 
