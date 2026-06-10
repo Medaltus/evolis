@@ -5,166 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Évolis — Brand Performance Report | May 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
-// ══════════════════════════════════════════════════════════════════════════════
-// SP-API LIVE DATA — Amazon Sales Page
-// Calls Vercel serverless functions: /api/sales /api/products /api/advertising
-// Falls back gracefully if endpoints are not yet connected.
-// ══════════════════════════════════════════════════════════════════════════════
-
-(function () {
-  'use strict';
-
-  const NOW   = new Date();
-  const YEAR  = NOW.getFullYear();
-  const MONTH = NOW.getMonth() + 1;
-
-  const ENDPOINTS = {
-    sales:    `/api/sales?year=${YEAR}&month=${MONTH}`,
-    products: `/api/products?year=${YEAR}&month=${MONTH}&limit=10`,
-    ads:      `/api/advertising?year=${YEAR}&month=${MONTH}`,
-  };
-
-  window.initAmazonLive = async function () {
-    if (window._amazonLiveInit) return;
-    window._amazonLiveInit = true;
-
-    showSkeleton();
-
-    try {
-      const [salesData, productsData, adsData] = await Promise.all([
-        apiFetch(ENDPOINTS.sales).catch(e => null),
-        apiFetch(ENDPOINTS.products).catch(e => null),
-        apiFetch(ENDPOINTS.ads).catch(e => null),
-      ]);
-
-      if (salesData)    { renderKPIs(salesData, adsData); renderRevenueChart(salesData); }
-      if (productsData) { renderTopSellers(productsData); }
-      hideSkeleton();
-    } catch (err) {
-      showError(err.message);
-    }
-  };
-
-  // ── Skeleton ─────────────────────────────────────────────────────────────
-  function showSkeleton() {
-    ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-ads','kpi-units-organic'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const val = el.querySelector('.kpi-value');
-      const mom = el.querySelector('.kpi-mom');
-      if (val) { val.dataset.orig = val.textContent; val.textContent = '…'; }
-      if (mom) { mom.dataset.orig = mom.textContent; mom.className = 'kpi-mom flat'; mom.textContent = ''; }
-    });
-  }
-
-  function hideSkeleton() {
-    ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-ads','kpi-units-organic'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const val = el.querySelector('.kpi-value');
-      const mom = el.querySelector('.kpi-mom');
-      if (val && val.textContent === '…') val.textContent = val.dataset.orig || '—';
-      if (mom && !mom.textContent) { mom.className = 'kpi-mom flat'; mom.textContent = mom.dataset.orig || ''; }
-    });
-  }
-
-  function showError(msg) {
-    const banner = document.createElement('div');
-    banner.style.cssText = 'background:#fff0f0;border-left:3px solid #e05252;padding:14px 18px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;margin-bottom:20px;';
-    banner.innerHTML = `<strong>Live data unavailable:</strong> ${msg}<br><span style="color:#888;font-size:11px;">Showing last cached values. Check Vercel function logs for details.</span>`;
-    const page = document.getElementById('page-amazon');
-    if (page) page.prepend(banner);
-    hideSkeleton();
-  }
-
-  // ── KPI rendering ─────────────────────────────────────────────────────────
-  function renderKPIs(sales, ads) {
-    const c = sales.current;
-    const m = sales.mom;
-    const adM = ads && ads.mom;
-
-    setKPI('kpi-total-units',   fmt(c.totalUnits),       m && m.units,        false);
-    setKPI('kpi-total-orders',  fmt(c.totalOrders),      m && m.orders,       false);
-    setKPI('kpi-avg-order',     '$' + fmt2(c.avgOrder),  m && m.avgOrder,     false);
-    setKPI('kpi-units-ads',     fmt(c.adUnits),          adM && adM.clicks,   false);
-    setKPI('kpi-units-organic', fmt(c.organicUnits),     m && m.organicUnits, false);
-  }
-
-  function setKPI(id, value, momPct, invertColors) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const valEl = el.querySelector('.kpi-value');
-    const momEl = el.querySelector('.kpi-mom');
-    if (valEl) valEl.textContent = value;
-    if (!momEl || momPct == null) return;
-    const isGood = invertColors ? momPct < 0 : momPct > 0;
-    const cls    = momPct === 0 ? 'flat' : isGood ? 'up' : 'dn';
-    momEl.className = `kpi-mom ${cls}`;
-    momEl.textContent = Math.abs(momPct) + '% MOM';
-  }
-
-  // ── Revenue chart ─────────────────────────────────────────────────────────
-  function renderRevenueChart(sales) {
-    const canvas = document.getElementById('chart-amazon');
-    if (!canvas) return;
-    if (window._amazonChartInstance) { window._amazonChartInstance.destroy(); }
-
-    const monthly = (sales.monthly || []);
-    const labels  = monthly.map(d => d.label);
-    const data26  = monthly.map(d => d.year === YEAR      ? d.revenue : null);
-    const data25  = monthly.map(d => d.year === YEAR - 1  ? d.revenue : null);
-
-    window._amazonChartInstance = new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          { label: String(YEAR),     data: data26, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.08)', fill:true, borderWidth:2.5, pointRadius:3, tension:0.3 },
-          { label: String(YEAR - 1), data: data25, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3 },
-        ],
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:20, padding:12 } },
-                  tooltip:{ callbacks:{ label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}` } } },
-        scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v => '$'+(v/1000).toFixed(0)+'K' } } },
-      },
-    });
-  }
-
-  // ── Top sellers table ─────────────────────────────────────────────────────
-  function renderTopSellers(data) {
-    const tbody = document.querySelector('#amazon-top-sellers tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    (data.products || []).forEach(p => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${p.rank}.</td>
-        <td>${escHtml(p.name || p.asin || '—')}${p.asin ? `<span style="display:block;font-size:10px;color:var(--slate);margin-top:2px;">${p.asin}</span>` : ''}</td>
-        <td>${fmt(p.unitsSold)}</td>
-        <td>$${fmt2(p.revenue)}</td>
-        <td>${p.conversionRate != null ? p.conversionRate.toFixed(1)+'%' : '—'}</td>`;
-      tbody.appendChild(tr);
-    });
-    const srcEl = document.getElementById('amazon-products-source');
-    if (srcEl) srcEl.textContent = `${data.source === 'report' ? 'Sales & Traffic report' : 'Order aggregation'} · ${data.reportDate || 'Live'}`;
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  async function apiFetch(url) {
-    const r = await fetch(url);
-    if (!r.ok) { const b = await r.text(); throw new Error(`${url} → ${r.status}: ${b.slice(0,100)}`); }
-    return r.json();
-  }
-  const fmt  = n => (n ?? 0).toLocaleString();
-  const fmt2 = n => (+(n ?? 0)).toFixed(2);
-  const escHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-})();
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
     --navy: #001f60;
@@ -358,8 +199,9 @@
   .kpi-value { font-size: 28px; font-weight: 700; color: var(--navy); line-height: 1; margin-bottom: 6px; }
   .kpi-value.sm { font-size: 22px; }
   .kpi-mom { font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 3px; }
-  .up { color: #1db87a; } .up::before { content: '▲'; font-size: 9px; }
-  .dn { color: #e05252; } .dn::before { content: '▼'; font-size: 9px; }
+  .kpi-yoy { font-size: 10px; font-weight: 600; display: flex; align-items: center; gap: 3px; margin-top: 3px; opacity: 0.85; }
+  .up { color: #24e9a3; } .up::before { content: '▲'; font-size: 9px; }
+  .dn { color: #db372d; } .dn::before { content: '▼'; font-size: 9px; }
   .flat { color: var(--slate); }
 
   /* CHART */
@@ -672,11 +514,11 @@
         <span class="channel-hdr-date">📅 May 1, 2026 – May 31, 2026</span>
       </div>
       <div class="kpi-row kpi-5">
-        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">157</div><div class="kpi-mom up">3% MOM</div></div>
-        <div class="kpi-card" id="kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">112</div><div class="kpi-mom dn">8% MOM</div></div>
-        <div class="kpi-card" id="kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">$35.38</div><div class="kpi-mom dn">3% MOM</div></div>
-        <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">37</div><div class="kpi-mom dn">12% MOM</div></div>
-        <div class="kpi-card" id="kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">120</div><div class="kpi-mom up">8% MOM</div></div>
+        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card" id="kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card" id="kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">0</div><div class="kpi-mom flat">Ads not yet connected</div></div>
+        <div class="kpi-card" id="kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
@@ -1076,160 +918,234 @@ function initSns() {
 // Amazon page initialises via initAmazonLive() on first nav click
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SP-API LIVE DATA — Amazon Sales Page
-// Calls Vercel serverless functions: /api/sales /api/products /api/advertising
-// Falls back gracefully if endpoints are not yet connected.
+// GOOGLE SHEETS DATA — Amazon Sales Page (Évolis)
+// Reads from sync-orders sheet (MOM data) + historical cache sheet (YOY)
+// Filters: brand=evolis (EVO* SKUs), status!=Cancelled/Pending, no vine promo
 // ══════════════════════════════════════════════════════════════════════════════
 
 (function () {
   'use strict';
 
-  const NOW   = new Date();
-  const YEAR  = NOW.getFullYear();
-  const MONTH = NOW.getMonth() + 1;
+  // ── Sheet IDs ─────────────────────────────────────────────────────────────
+  const SYNC_SHEET_ID      = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (MOM)
+  const HISTORICAL_SHEET_ID = '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU'; // historical cache (YOY)
+  const BRAND = 'evolis';
 
-  const ENDPOINTS = {
-    sales:    `/api/sales?year=${YEAR}&month=${MONTH}`,
-    products: `/api/products?year=${YEAR}&month=${MONTH}&limit=10`,
-    ads:      `/api/advertising?year=${YEAR}&month=${MONTH}`,
-  };
+  // Derive the last FULL month from today
+  function getLastFullMonth() {
+    const now = new Date();
+    // Last full month = month before current
+    let year = now.getFullYear();
+    let month = now.getMonth(); // 0-indexed, so this is last month's index
+    if (month === 0) { month = 12; year--; }
+    return { year, month }; // month is 1-indexed
+  }
 
+  // Sheet CSV URL (Google Sheets public CSV export)
+  function sheetCsvUrl(sheetId, sheetName) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  }
+
+  // ── Row filtering ─────────────────────────────────────────────────────────
+  function isEvolisRow(row) {
+    const brand = (row.brand || '').toLowerCase().trim();
+    const skus  = (row.skus  || '').toUpperCase();
+    return brand === BRAND || skus.split(',').some(s => s.trim().startsWith('EVO'));
+  }
+
+  function isValidOrder(row) {
+    const status = (row.status || '').toLowerCase().trim();
+    if (status === 'cancelled' || status === 'pending') return false;
+    const promos = (row.promotion_ids || '').toLowerCase();
+    if (promos.includes('vine')) return false;
+    return true;
+  }
+
+  function filterRows(rows) {
+    return rows.filter(r => isEvolisRow(r) && isValidOrder(r));
+  }
+
+  // ── CSV parser ────────────────────────────────────────────────────────────
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = parseCsvLine(lines[i]);
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  function parseCsvLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; cur += c; }
+      else if (c === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  // ── Aggregate rows for a given year-month ─────────────────────────────────
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = rows.filter(r => {
+      const d = (r.date || '').substring(0, 7); // "YYYY-MM"
+      return d === prefix;
+    });
+    if (filtered.length === 0) return null;
+
+    // Unique order IDs
+    const orderIds = new Set(filtered.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+
+    // Sum units
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+
+    // Avg order total (per unique order) — sum order_total per unique order_id
+    const orderTotals = {};
+    filtered.forEach(r => {
+      if (r.order_id && !orderTotals[r.order_id]) {
+        orderTotals[r.order_id] = parseFloat(r.order_total) || 0;
+      }
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    return { totalUnits, totalOrders, avgOrder };
+  }
+
+  // ── Pct change helper ─────────────────────────────────────────────────────
+  function pct(current, previous) {
+    if (!previous || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  // ── KPI rendering ─────────────────────────────────────────────────────────
+  function setKpiValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const valEl = el.querySelector('.kpi-value');
+    if (valEl) valEl.textContent = value;
+  }
+
+  function setBadge(id, selector, pctVal, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector(selector);
+    if (!badge) return;
+    if (pctVal == null) { badge.className = selector.replace('.','') + ' flat'; badge.textContent = ''; return; }
+    const isGood = pctVal > 0;
+    const cls = pctVal === 0 ? 'flat' : isGood ? 'up' : 'dn';
+    badge.className = selector.replace('.','') + ' ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
+  }
+
+  function renderKPIs(curr, prev, prevYear) {
+    const fmt  = n => (n ?? 0).toLocaleString();
+    const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+    // Total Units
+    setKpiValue('kpi-total-units', fmt(curr.totalUnits));
+    setBadge('kpi-total-units', '.kpi-mom', prev   ? pct(curr.totalUnits, prev.totalUnits)       : null, 'MOM');
+    setBadge('kpi-total-units', '.kpi-yoy', prevYear ? pct(curr.totalUnits, prevYear.totalUnits) : null, 'YOY');
+
+    // Total Orders
+    setKpiValue('kpi-total-orders', fmt(curr.totalOrders));
+    setBadge('kpi-total-orders', '.kpi-mom', prev   ? pct(curr.totalOrders, prev.totalOrders)       : null, 'MOM');
+    setBadge('kpi-total-orders', '.kpi-yoy', prevYear ? pct(curr.totalOrders, prevYear.totalOrders) : null, 'YOY');
+
+    // Average Order
+    setKpiValue('kpi-avg-order', '$' + fmt2(curr.avgOrder));
+    setBadge('kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+    // Units Ads (placeholder = 0)
+    const adUnits = 0;
+    setKpiValue('kpi-units-ads', '0');
+
+    // Units Organic = Total Units - Units Ads
+    const organicUnits = curr.totalUnits - adUnits;
+    setKpiValue('kpi-units-organic', fmt(organicUnits));
+    const prevOrganic = prev ? prev.totalUnits - 0 : null;
+    setBadge('kpi-units-organic', '.kpi-mom', prevOrganic != null ? pct(organicUnits, prevOrganic) : null, 'MOM');
+  }
+
+  // ── Data source label ─────────────────────────────────────────────────────
+  function setSourceLabel(year, month) {
+    const el = document.getElementById('amazon-products-source');
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if (el) el.textContent = `Google Sheets cache · Évolis · ${monthNames[month-1]} ${year}`;
+  }
+
+  // ── Error display ─────────────────────────────────────────────────────────
+  function showError(msg) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#fff0f0;border-left:3px solid #db372d;padding:14px 18px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;margin-bottom:20px;';
+    banner.innerHTML = `<strong>Data load error:</strong> ${msg}<br><span style="color:#888;font-size:11px;">Check that the Google Sheet is publicly accessible.</span>`;
+    const page = document.getElementById('page-amazon');
+    if (page) page.prepend(banner);
+    ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-organic'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const momEl = el.querySelector('.kpi-mom');
+      if (momEl) { momEl.className = 'kpi-mom flat'; momEl.textContent = 'Error'; }
+    });
+  }
+
+  // ── Main init ─────────────────────────────────────────────────────────────
   window.initAmazonLive = async function () {
     if (window._amazonLiveInit) return;
     window._amazonLiveInit = true;
 
-    showSkeleton();
+    const { year, month } = getLastFullMonth();
+
+    // Previous month
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // Same month last year
+    const yoyYear  = year - 1;
+    const yoyMonth = month;
 
     try {
-      const [salesData, productsData, adsData] = await Promise.all([
-        apiFetch(ENDPOINTS.sales).catch(e => null),
-        apiFetch(ENDPOINTS.products).catch(e => null),
-        apiFetch(ENDPOINTS.ads).catch(e => null),
+      // Determine which sheet(s) hold each period:
+      // sync-orders sheet has the most recent MOM data
+      // historical sheet has everything else
+      const [syncCsv, histCsv] = await Promise.all([
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, 'amazon-orders')).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, 'Sheet1')).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
-      if (salesData)    { renderKPIs(salesData, adsData); renderRevenueChart(salesData); }
-      if (productsData) { renderTopSellers(productsData); }
-      hideSkeleton();
+      const syncRows = filterRows(parseCsv(syncCsv));
+      const histRows = filterRows(parseCsv(histCsv));
+
+      // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
+      const allRows = [...syncRows, ...histRows];
+
+      const curr     = aggregateMonth(allRows, year, month);
+      const prev     = aggregateMonth(allRows, prevYear, prevMonth);
+      const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
+
+      if (!curr) {
+        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. Check sheet tabs and brand filter.`);
+        return;
+      }
+
+      renderKPIs(curr, prev, prevYoy);
+      setSourceLabel(year, month);
+
     } catch (err) {
       showError(err.message);
     }
   };
-
-  // ── Skeleton ─────────────────────────────────────────────────────────────
-  function showSkeleton() {
-    ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-ads','kpi-units-organic'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const val = el.querySelector('.kpi-value');
-      const mom = el.querySelector('.kpi-mom');
-      if (val) { val.dataset.orig = val.textContent; val.textContent = '…'; }
-      if (mom) { mom.dataset.orig = mom.textContent; mom.className = 'kpi-mom flat'; mom.textContent = ''; }
-    });
-  }
-
-  function hideSkeleton() {
-    ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-ads','kpi-units-organic'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const val = el.querySelector('.kpi-value');
-      const mom = el.querySelector('.kpi-mom');
-      if (val && val.textContent === '…') val.textContent = val.dataset.orig || '—';
-      if (mom && !mom.textContent) { mom.className = 'kpi-mom flat'; mom.textContent = mom.dataset.orig || ''; }
-    });
-  }
-
-  function showError(msg) {
-    const banner = document.createElement('div');
-    banner.style.cssText = 'background:#fff0f0;border-left:3px solid #e05252;padding:14px 18px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;margin-bottom:20px;';
-    banner.innerHTML = `<strong>Live data unavailable:</strong> ${msg}<br><span style="color:#888;font-size:11px;">Showing last cached values. Check Vercel function logs for details.</span>`;
-    const page = document.getElementById('page-amazon');
-    if (page) page.prepend(banner);
-    hideSkeleton();
-  }
-
-  // ── KPI rendering ─────────────────────────────────────────────────────────
-  function renderKPIs(sales, ads) {
-    const c = sales.current;
-    const m = sales.mom;
-    const adM = ads && ads.mom;
-
-    setKPI('kpi-total-units',   fmt(c.totalUnits),       m && m.units,        false);
-    setKPI('kpi-total-orders',  fmt(c.totalOrders),      m && m.orders,       false);
-    setKPI('kpi-avg-order',     '$' + fmt2(c.avgOrder),  m && m.avgOrder,     false);
-    setKPI('kpi-units-ads',     fmt(c.adUnits),          adM && adM.clicks,   false);
-    setKPI('kpi-units-organic', fmt(c.organicUnits),     m && m.organicUnits, false);
-  }
-
-  function setKPI(id, value, momPct, invertColors) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const valEl = el.querySelector('.kpi-value');
-    const momEl = el.querySelector('.kpi-mom');
-    if (valEl) valEl.textContent = value;
-    if (!momEl || momPct == null) return;
-    const isGood = invertColors ? momPct < 0 : momPct > 0;
-    const cls    = momPct === 0 ? 'flat' : isGood ? 'up' : 'dn';
-    momEl.className = `kpi-mom ${cls}`;
-    momEl.textContent = Math.abs(momPct) + '% MOM';
-  }
-
-  // ── Revenue chart ─────────────────────────────────────────────────────────
-  function renderRevenueChart(sales) {
-    const canvas = document.getElementById('chart-amazon');
-    if (!canvas) return;
-    if (window._amazonChartInstance) { window._amazonChartInstance.destroy(); }
-
-    const monthly = (sales.monthly || []);
-    const labels  = monthly.map(d => d.label);
-    const data26  = monthly.map(d => d.year === YEAR      ? d.revenue : null);
-    const data25  = monthly.map(d => d.year === YEAR - 1  ? d.revenue : null);
-
-    window._amazonChartInstance = new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          { label: String(YEAR),     data: data26, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.08)', fill:true, borderWidth:2.5, pointRadius:3, tension:0.3 },
-          { label: String(YEAR - 1), data: data25, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3 },
-        ],
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:20, padding:12 } },
-                  tooltip:{ callbacks:{ label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}` } } },
-        scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v => '$'+(v/1000).toFixed(0)+'K' } } },
-      },
-    });
-  }
-
-  // ── Top sellers table ─────────────────────────────────────────────────────
-  function renderTopSellers(data) {
-    const tbody = document.querySelector('#amazon-top-sellers tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    (data.products || []).forEach(p => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${p.rank}.</td>
-        <td>${escHtml(p.name || p.asin || '—')}${p.asin ? `<span style="display:block;font-size:10px;color:var(--slate);margin-top:2px;">${p.asin}</span>` : ''}</td>
-        <td>${fmt(p.unitsSold)}</td>
-        <td>$${fmt2(p.revenue)}</td>
-        <td>${p.conversionRate != null ? p.conversionRate.toFixed(1)+'%' : '—'}</td>`;
-      tbody.appendChild(tr);
-    });
-    const srcEl = document.getElementById('amazon-products-source');
-    if (srcEl) srcEl.textContent = `${data.source === 'report' ? 'Sales & Traffic report' : 'Order aggregation'} · ${data.reportDate || 'Live'}`;
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  async function apiFetch(url) {
-    const r = await fetch(url);
-    if (!r.ok) { const b = await r.text(); throw new Error(`${url} → ${r.status}: ${b.slice(0,100)}`); }
-    return r.json();
-  }
-  const fmt  = n => (n ?? 0).toLocaleString();
-  const fmt2 = n => (+(n ?? 0)).toFixed(2);
-  const escHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 })();
 
