@@ -1,16 +1,27 @@
 /**
  * api/sales.js
- * GET /api/sales?brand=evolis&year=2026&month=5
- * Reads from Google Sheets (amazon-orders-historical) — no live SP-API calls.
+ * GET /api/sales?brand=evolis&year=2026&month=6
  *
- * Column names written by sync-orders-backfill.js:
+ * Data sources:
+ *   sheets.orders           — rolling 90 days  → current month + MOM
+ *   sheets.ordersHistorical — 18 months        → YOY (same month last year)
+ *
+ * Response shape:
+ * {
+ *   current:  { year, month, totalOrders, totalUnits, totalRevenue, avgOrder, organicOrders, adOrders, organicUnits, adUnits }
+ *   previous: { ...same, year/month = prior month }
+ *   yoy:      { ...same, year/month = same month last year } | null
+ *   mom:      { units, orders, revenue, avgOrder } | null   (% change current vs previous)
+ *   yoyChange:{ units, orders, revenue, avgOrder } | null   (% change current vs yoy)
+ *   monthly:  [ { label, year, month, revenue, orders, units } ]  (last 12 months)
+ * }
+ *
+ * Column names written by sync-orders.js:
  *   order_id, date, status, order_total, promotion_ids, is_premium_order,
  *   promotion_discount, item_price, quantity_ordered, quantity_shipped,
- *   unit_count, skus, asin, brand, last_updated
- *
- * NOTE: The flat file has no ad/organic split. We approximate ad orders as
- * orders containing a promotion_id (Subscribe & Save, etc.).
+ *   unit_count, skus, brand, last_updated
  */
+
 const { readRows } = require('./config/_sheets_client');
 const sheets       = require('./config/sheets');
 
@@ -21,20 +32,39 @@ module.exports = async (req, res) => {
     const year  = parseInt(req.query.year  || new Date().getFullYear());
     const month = parseInt(req.query.month || new Date().getMonth() + 1);
 
-    const allRows = await readRows(sheets.ordersHistorical, brand);
+    // Read both sheets in parallel
+    const [rollingRows, historicalRows] = await Promise.all([
+      readRows(sheets.orders, brand),
+      readRows(sheets.ordersHistorical, brand).catch(() => []), // graceful fallback if sheet missing
+    ]);
 
-    const current  = aggregateMonth(allRows, year, month);
+    // Current month — from rolling sheet
+    const current = aggregateMonth(rollingRows, year, month);
+
+    // Prior month — from rolling sheet (within 90-day window)
     const [py, pm] = prevMonth(year, month);
-    const previous = aggregateMonth(allRows, py, pm);
-    const mom      = computeMOM(current, previous);
-    const monthly  = buildMonthlyTrend(allRows, year, month);
+    const previous = aggregateMonth(rollingRows, py, pm);
 
-    res.status(200).json({ current, previous, mom, monthly });
+    // Same month last year — from historical sheet
+    const yoy = aggregateMonth(historicalRows, year - 1, month);
+
+    // MOM % change (current vs previous)
+    const mom = computeChange(current, previous);
+
+    // YOY % change (current vs same month last year)
+    const yoyChange = yoy && yoy.totalOrders > 0 ? computeChange(current, yoy) : null;
+
+    // 12-month revenue trend — blend rolling + historical
+    const monthly = buildMonthlyTrend(rollingRows, historicalRows, year, month);
+
+    res.status(200).json({ current, previous, yoy, mom, yoyChange, monthly });
   } catch (err) {
     console.error('[api/sales]', err);
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Aggregation ───────────────────────────────────────────────────────────────
 
 function aggregateMonth(rows, year, month) {
   const filtered = rows.filter(r => {
@@ -49,17 +79,12 @@ function aggregateMonth(rows, year, month) {
   if (filtered.length === 0) return emptyMetrics(year, month);
 
   const totalOrders  = filtered.length;
+  const totalUnits   = filtered.reduce((s, r) => s + (parseInt(r.quantity_ordered)  || 0), 0);
+  const totalRevenue = filtered.reduce((s, r) => s + (parseFloat(r.order_total)     || 0), 0);
+  const avgOrder     = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-  // quantity_ordered is the correct column name from backfill
-  const totalUnits   = filtered.reduce((s, r) => s + (parseInt(r.quantity_ordered) || 0), 0);
-
-  // order_total = sum of item_price across brand SKUs in that order
-  const totalRevenue = filtered.reduce((s, r) => s + (parseFloat(r.order_total) || 0), 0);
-
-  const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-  // Approximate: orders with any promotion_ids are likely ad/SNS orders
-  const adOrders     = filtered.filter(r => r.promotion_ids && r.promotion_ids.trim() !== '').length;
+  // Ad proxy: orders with any promotion_ids (Subscribe & Save, coupons, etc.)
+  const adOrders      = filtered.filter(r => (r.promotion_ids || '').trim() !== '').length;
   const organicOrders = totalOrders - adOrders;
 
   // Apportion units proportionally
@@ -67,53 +92,78 @@ function aggregateMonth(rows, year, month) {
   const organicUnits = totalUnits - adUnits;
 
   return {
-    year, month,
-    totalUnits,
+    year,
+    month,
     totalOrders,
-    totalRevenue: round2(totalRevenue),
-    avgOrder:     round2(avgOrder),
-    organicUnits,
-    adUnits,
+    totalUnits,
+    totalRevenue:   round2(totalRevenue),
+    avgOrder:       round2(avgOrder),
     adOrders,
     organicOrders,
+    adUnits,
+    organicUnits,
   };
 }
 
-function buildMonthlyTrend(rows, currentYear, currentMonth) {
-  const months = [];
+// ── Monthly trend (last 12 months) ───────────────────────────────────────────
+// Blends rolling sheet (recent months) with historical sheet (older months).
+// Rolling sheet takes precedence when both have data for the same month.
+
+function buildMonthlyTrend(rollingRows, historicalRows, currentYear, currentMonth) {
+  const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const trend  = [];
+
   for (let i = 11; i >= 0; i--) {
     const [y, m] = prevMonthN(currentYear, currentMonth, i);
-    months.push({ year: y, month: m });
+
+    const fromRolling    = aggregateMonth(rollingRows,    y, m);
+    const fromHistorical = aggregateMonth(historicalRows, y, m);
+
+    // Rolling takes precedence; fall back to historical for older months
+    const agg = fromRolling.totalOrders > 0 ? fromRolling : fromHistorical;
+
+    trend.push({
+      label:   labels[m - 1],
+      year:    y,
+      month:   m,
+      revenue: agg.totalRevenue,
+      orders:  agg.totalOrders,
+      units:   agg.totalUnits,
+    });
   }
-  const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return months.map(({ year, month }) => {
-    const agg = aggregateMonth(rows, year, month);
-    return { label: labels[month - 1], year, month, revenue: agg.totalRevenue };
-  });
+
+  return trend;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function prevMonth(year, month) {
   return month === 1 ? [year - 1, 12] : [year, month - 1];
 }
+
 function prevMonthN(year, month, n) {
   let y = year, m = month;
   for (let i = 0; i < n; i++) [y, m] = prevMonth(y, m);
   return [y, m];
 }
-function computeMOM(cur, prev) {
+
+function computeChange(cur, prev) {
   if (!prev || prev.totalOrders === 0) return null;
   const pct = (a, b) => b === 0 ? null : round2(((a - b) / b) * 100);
   return {
-    units:        pct(cur.totalUnits,    prev.totalUnits),
-    orders:       pct(cur.totalOrders,   prev.totalOrders),
-    revenue:      pct(cur.totalRevenue,  prev.totalRevenue),
-    avgOrder:     pct(cur.avgOrder,      prev.avgOrder),
-    organicUnits: pct(cur.organicUnits,  prev.organicUnits),
-    adUnits:      pct(cur.adUnits,       prev.adUnits),
+    units:    pct(cur.totalUnits,    prev.totalUnits),
+    orders:   pct(cur.totalOrders,   prev.totalOrders),
+    revenue:  pct(cur.totalRevenue,  prev.totalRevenue),
+    avgOrder: pct(cur.avgOrder,      prev.avgOrder),
   };
 }
+
 function emptyMetrics(year, month) {
-  return { year, month, totalUnits: 0, totalOrders: 0, totalRevenue: 0, avgOrder: 0, organicUnits: 0, adUnits: 0, adOrders: 0, organicOrders: 0 };
+  return {
+    year, month,
+    totalOrders: 0, totalUnits: 0, totalRevenue: 0, avgOrder: 0,
+    adOrders: 0, organicOrders: 0, adUnits: 0, organicUnits: 0,
+  };
 }
+
 const round2 = n => Math.round(n * 100) / 100;
