@@ -1,12 +1,12 @@
 {
   "version": 2,
   "crons": [
-    { "path": "/api/cron/sync-orders",        "schedule": "0 */2 * * *"  },
+    { "path": "/api/cron/sync-orders",          "schedule": "0 */2 * * *" },
     { "path": "/api/cron/sync-orders-backfill", "schedule": "0 4 5 * *"  },
-    { "path": "/api/cron/sync-products",      "schedule": "30 2 * * *"   },
-    { "path": "/api/cron/sync-advertising",   "schedule": "0 3 * * *"    },
-    { "path": "/api/cron/sync-subscriptions", "schedule": "30 3 * * *"   }
-    { "path": "/api/cron/trim-orders", "schedule": "0 3 * * *" }
+    { "path": "/api/cron/sync-products",        "schedule": "30 2 * * *"  },
+    { "path": "/api/cron/sync-advertising",     "schedule": "0 3 * * *"   },
+    { "path": "/api/cron/sync-subscriptions",   "schedule": "30 3 * * *"  },
+    { "path": "/api/cron/trim-orders",          "schedule": "0 3 * * *"   }
   ],
   "functions": {
     "api/sales.js":                        { "maxDuration": 30  },
@@ -17,7 +17,8 @@
     "api/cron/sync-orders-backfill.js":    { "maxDuration": 300 },
     "api/cron/sync-products.js":           { "maxDuration": 300 },
     "api/cron/sync-advertising.js":        { "maxDuration": 300 },
-    "api/cron/sync-subscriptions.js":      { "maxDuration": 300 }
+    "api/cron/sync-subscriptions.js":      { "maxDuration": 300 },
+    "api/cron/trim-orders.js":             { "maxDuration": 300 }
   },
   "routes": [
     {
