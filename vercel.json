@@ -33,6 +33,7 @@
       "continue": true
     },
     { "src": "/reports/dazzle-dry", "dest": "/reports/dazzle-dry/index.html" },
-    { "src": "/",                   "dest": "/index.html" }
+    { "src": "/reports",            "dest": "/reports/index.html" },
+    { "src": "/",                   "dest": "/reports/index.html" }
   ]
 }
