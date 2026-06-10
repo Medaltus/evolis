@@ -6,6 +6,7 @@
     { "path": "/api/cron/sync-products",      "schedule": "30 2 * * *"   },
     { "path": "/api/cron/sync-advertising",   "schedule": "0 3 * * *"    },
     { "path": "/api/cron/sync-subscriptions", "schedule": "30 3 * * *"   }
+    { "path": "/api/cron/trim-orders", "schedule": "0 3 * * *" }
   ],
   "functions": {
     "api/sales.js":                        { "maxDuration": 30  },
