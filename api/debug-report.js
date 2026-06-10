@@ -75,10 +75,24 @@ module.exports = async (req, res) => {
   }
 };
 
+
 function downloadText(url) {
   return new Promise((resolve, reject) => {
     https.get(url, res => {
-      let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(d));
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        // Check for gzip magic bytes
+        if (buf[0] === 0x1f && buf[1] === 0x8b) {
+          require('zlib').gunzip(buf, (err, decoded) => {
+            if (err) return reject(err);
+            resolve(decoded.toString('utf8'));
+          });
+        } else {
+          resolve(buf.toString('utf8'));
+        }
+      });
     }).on('error', reject);
   });
 }
