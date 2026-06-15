@@ -1,17 +1,15 @@
 /**
  * api/cron/reconcile-orders.js
  * Runs daily — finds Pending orders in the rolling sheet and updates
- * their status, order_total, and last_updated from SP-API.
+ * their status, item_price, and last_updated from the flat file report.
  *
- * Why: the 2-hour rolling sync captures orders when first placed (often
- * Pending). This cron goes back and resolves them to Shipped/Cancelled/etc.
+ * Uses GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL (same as
+ * sync-orders) so FBA + FBM orders are both covered.
  *
  * Schedule: daily at 8AM UTC ("0 8 * * *")
- *
- * GET /api/cron/reconcile-orders
- * Authorization: Bearer <CRON_SECRET>
  */
 
+const zlib                                 = require('zlib');
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
@@ -24,9 +22,9 @@ const HEADERS = [
   'unit_count', 'skus', 'brand', 'last_updated',
 ];
 
-// Only reconcile orders placed within the last N days — Pending orders
-// older than this are likely stuck/edge cases and not worth API calls
-const MAX_PENDING_AGE_DAYS = 14;
+const MAX_PENDING_AGE_DAYS    = 14;
+const REPORT_POLL_TIMEOUT_MS  = 25_000;
+const REPORT_POLL_INTERVAL_MS = 3_000;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -38,7 +36,115 @@ module.exports = async (req, res) => {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - MAX_PENDING_AGE_DAYS);
   const cutoffStr  = cutoffDate.toISOString().slice(0, 10);
+  const safeBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
+  const start      = cutoffDate.toISOString().slice(0, 19) + 'Z';
 
+  // ── 1. Request flat file for last 14 days ──────────────────────────────────
+  let reportId;
+  try {
+    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
+      reportType:     'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+      marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+      dataStartTime:  start,
+      dataEndTime:    safeBefore,
+    });
+    reportId = createResp.reportId;
+    console.log(`[reconcile] report requested: ${reportId}`);
+  } catch (err) {
+    console.error('[reconcile] failed to request report:', err.message);
+    return res.status(500).json({ error: 'Failed to request report', detail: err.message });
+  }
+
+  // ── 2. Poll until DONE ─────────────────────────────────────────────────────
+  let documentId = null;
+  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(REPORT_POLL_INTERVAL_MS);
+    try {
+      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      const status     = statusResp.processingStatus;
+      console.log(`[reconcile] report ${reportId} status: ${status}`);
+
+      if (status === 'DONE') {
+        documentId = statusResp.reportDocumentId;
+        break;
+      }
+      if (status === 'FATAL' || status === 'CANCELLED') {
+        return res.status(500).json({ error: `Report ${status}`, reportId });
+      }
+    } catch (err) {
+      console.warn(`[reconcile] poll error (will retry): ${err.message}`);
+    }
+  }
+
+  if (!documentId) {
+    return res.status(202).json({
+      message: 'Report not ready within timeout — will retry next run',
+      reportId,
+    });
+  }
+
+  // ── 3. Download and decompress ─────────────────────────────────────────────
+  let rawTsv;
+  try {
+    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const fileResp = await fetch(docResp.url);
+    if (!fileResp.ok) throw new Error(`Download failed: ${fileResp.status}`);
+
+    const buffer = Buffer.from(await fileResp.arrayBuffer());
+    rawTsv = await new Promise((resolve) => {
+      zlib.gunzip(buffer, (err, result) => {
+        if (err) {
+          console.log('[reconcile] not gzipped, reading as plain text');
+          resolve(buffer.toString('utf8'));
+        } else {
+          resolve(result.toString('utf8'));
+        }
+      });
+    });
+  } catch (err) {
+    console.error('[reconcile] failed to download report:', err.message);
+    return res.status(500).json({ error: 'Failed to download report', detail: err.message });
+  }
+
+  // ── 4. Parse TSV into a map keyed by order_id ──────────────────────────────
+  const lines      = rawTsv.split('\n').filter(l => l.trim());
+  const tsvHeaders = lines[0].split('\t').map(h => h.trim());
+  const flatRows   = lines.slice(1).map(line => {
+    const vals = line.split('\t');
+    return Object.fromEntries(tsvHeaders.map((h, i) => [h, (vals[i] || '').trim()]));
+  });
+
+  // Aggregate flat file by order_id (one row per line item)
+  const flatMap = {};
+  for (const row of flatRows) {
+    const orderId = row['amazon-order-id'] || row['order-id'] || '';
+    if (!orderId) continue;
+
+    const qty   = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+    const price = parseFloat(row['item-price'] || '0');
+    const disc  = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
+
+    if (!flatMap[orderId]) {
+      flatMap[orderId] = {
+        status:             row['order-status'] || '',
+        item_price:         0,
+        promotion_discount: 0,
+        quantity_ordered:   0,
+        quantity_shipped:   0,
+      };
+    }
+
+    flatMap[orderId].item_price         = round2(flatMap[orderId].item_price + price);
+    flatMap[orderId].promotion_discount = round2(flatMap[orderId].promotion_discount + disc);
+    flatMap[orderId].quantity_ordered   += qty;
+    flatMap[orderId].quantity_shipped   += parseInt(row['quantity-shipped'] || '0', 10);
+  }
+
+  console.log(`[reconcile] flat file order count: ${Object.keys(flatMap).length}`);
+
+  // ── 5. Per-brand reconciliation ────────────────────────────────────────────
   const results = [];
 
   for (const brand of brands.filter(b => b.active)) {
@@ -46,7 +152,6 @@ module.exports = async (req, res) => {
       const token   = await ensureTab(sheets.orders, brand.tabName, HEADERS);
       const allRows = await readRows(sheets.orders, brand.tabName);
 
-      // Find Pending rows within the reconciliation window
       const pendingRows = allRows.filter(r =>
         (r.status || '').toLowerCase() === 'pending' &&
         (r.date   || '') >= cutoffStr
@@ -60,45 +165,25 @@ module.exports = async (req, res) => {
 
       console.log(`[reconcile] ${brand.id} — ${pendingRows.length} pending orders to check`);
 
-      // Fetch current status from SP-API in batches of 50
-      // (SP-API supports up to 50 order IDs per request)
-      const orderIds    = pendingRows.map(r => r.order_id).filter(Boolean);
-      const fetchedMap  = {};
-
-      for (let i = 0; i < orderIds.length; i += 50) {
-        const batch = orderIds.slice(i, i + 50);
-        try {
-          const resp = await spRequest('GET', '/orders/v0/orders', {
-            MarketplaceIds: process.env.SP_MARKETPLACE_ID,
-            OrderIds:       batch.join(','),
-          });
-          for (const order of (resp.payload?.Orders || [])) {
-            fetchedMap[order.AmazonOrderId] = order;
-          }
-        } catch (e) {
-          console.warn(`[reconcile] ${brand.id} batch fetch failed:`, e.message);
-        }
-        if (i + 50 < orderIds.length) await sleep(500);
-      }
-
-      // Patch rows in memory
       let updatedCount = 0;
       const patched = allRows.map(row => {
         if ((row.status || '').toLowerCase() !== 'pending') return row;
-        const fetched = fetchedMap[row.order_id];
-        if (!fetched) return row; // not found — leave as-is
+        const fetched = flatMap[row.order_id];
+        if (!fetched) return row;
 
-        const newStatus = fetched.OrderStatus || row.status;
-        if (newStatus === row.status) return row; // no change
+        const newStatus = fetched.status || row.status;
+        if (newStatus === row.status) return row;
 
         updatedCount++;
         return {
           ...row,
-          status:        newStatus,
-          order_total:   fetched.OrderTotal?.Amount
-                           ? round2(parseFloat(fetched.OrderTotal.Amount))
-                           : row.order_total,
-          last_updated:  now,
+          status:             newStatus,
+          item_price:         fetched.item_price,
+          order_total:        fetched.item_price,
+          promotion_discount: fetched.promotion_discount,
+          quantity_ordered:   fetched.quantity_ordered,
+          quantity_shipped:   fetched.quantity_shipped,
+          last_updated:       now,
         };
       });
 
@@ -122,6 +207,7 @@ module.exports = async (req, res) => {
   res.status(200).json({
     results,
     totalUpdated,
+    reportId,
     timestamp: now,
   });
 };
