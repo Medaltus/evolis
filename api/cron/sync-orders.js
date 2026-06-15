@@ -49,7 +49,7 @@ module.exports = async (req, res) => {
   // ── 1. Request the flat file report ────────────────────────────────────────
   let reportId;
   try {
-    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', null, {
+    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
       reportType:      'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
       marketplaceIds:  [process.env.SP_MARKETPLACE_ID],
       dataStartTime:   start,
