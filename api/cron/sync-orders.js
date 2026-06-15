@@ -1,19 +1,24 @@
 /**
  * api/cron/sync-orders.js
- * Runs every 2 hours — pulls orders from the last 2.5 hours for ALL brands.
+ * Runs every 2 hours — pulls orders from the flat file report for ALL brands.
+ * Uses GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL (GZIP TSV).
  * Writes to the rolling current-month sheet (amazon-orders).
  * Deduplicates on order_id before writing — safe to re-run.
  *
+ * Why flat file instead of Orders API:
+ *   The Orders API only returns FBA orders reliably. The flat file report
+ *   covers FBA + FBM and is Amazon's source of truth for reconciliation.
+ *
  * Modes (via ?mode=):
  *   rolling   — last 2.5 hours (default, used by cron)
- *   day       — today from midnight UTC to now-10min (safe CreatedBefore)
+ *   day       — today from midnight UTC to now-10min
  *   yesterday — full yesterday
  *   week      — explicit ?start=YYYY-MM-DD&end=YYYY-MM-DD
- *               end date is capped to now-10min if it would be in the future
  *
  * Sheet: amazon-orders  |  One tab per brand, auto-created on first run.
  */
 
+const zlib                                                       = require('zlib');
 const { spRequest }                                              = require('../_spauth');
 const { ensureTab, appendRows, readRows }                        = require('../config/_sheets_client');
 const brands                                                     = require('../config/brands');
@@ -26,101 +31,185 @@ const HEADERS = [
   'unit_count', 'skus', 'brand', 'last_updated',
 ];
 
+// How long to poll for a report to be ready (ms)
+const REPORT_POLL_TIMEOUT_MS  = 25_000;
+const REPORT_POLL_INTERVAL_MS = 3_000;
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const mode    = req.query.mode || 'rolling';
-  const results = [];
+  const mode = req.query.mode || 'rolling';
+  const { start, end } = getDateRange(mode, req);
 
-  const dateRanges = getDateRanges(mode, req);
-  const allOrders  = [];
+  console.log(`[sync-orders] mode=${mode} start=${start} end=${end}`);
 
-  for (const range of dateRanges) {
-    const batch = await paginateOrders(range.start, range.end);
-    allOrders.push(...batch);
-    await sleep(500);
+  // ── 1. Request the flat file report ────────────────────────────────────────
+  let reportId;
+  try {
+    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', null, {
+      reportType:      'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+      marketplaceIds:  [process.env.SP_MARKETPLACE_ID],
+      dataStartTime:   start,
+      dataEndTime:     end,
+    });
+    reportId = createResp.reportId;
+    console.log(`[sync-orders] report requested: ${reportId}`);
+  } catch (err) {
+    console.error('[sync-orders] failed to request report:', err.message);
+    return res.status(500).json({ error: 'Failed to request report', detail: err.message });
   }
 
-  console.log(`[sync-orders] ${allOrders.length} total orders across all brands`);
+  // ── 2. Poll until DONE ─────────────────────────────────────────────────────
+  let documentId = null;
+  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
 
-  if (allOrders.length === 0) {
-    return res.status(200).json({
-      synced: brands.filter(b => b.active).map(b => ({ brand: b.id, status: 'ok', rows: 0, mode })),
-      totalOrders: 0,
-      timestamp: new Date().toISOString(),
+  while (Date.now() < deadline) {
+    await sleep(REPORT_POLL_INTERVAL_MS);
+    try {
+      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      const status     = statusResp.processingStatus;
+      console.log(`[sync-orders] report ${reportId} status: ${status}`);
+
+      if (status === 'DONE') {
+        documentId = statusResp.reportDocumentId;
+        break;
+      }
+      if (status === 'FATAL' || status === 'CANCELLED') {
+        return res.status(500).json({ error: `Report ${status}`, reportId });
+      }
+    } catch (err) {
+      console.warn(`[sync-orders] poll error (will retry): ${err.message}`);
+    }
+  }
+
+  if (!documentId) {
+    return res.status(202).json({
+      message: 'Report not ready within timeout — will be picked up next run',
+      reportId,
     });
   }
 
-  // Fetch items for all orders in batches of 5
-  const orderItems = {};
-  for (let i = 0; i < allOrders.length; i += 5) {
-    const batch = allOrders.slice(i, i + 5);
-    await Promise.all(batch.map(async order => {
-      try {
-        const resp = await spRequest('GET', `/orders/v0/orders/${order.AmazonOrderId}/orderItems`);
-        orderItems[order.AmazonOrderId] = resp.payload?.OrderItems || [];
-      } catch (e) {
-        console.warn(`[sync-orders] items failed for ${order.AmazonOrderId}`);
-        orderItems[order.AmazonOrderId] = [];
-      }
-    }));
-    if (i + 5 < allOrders.length) await sleep(500);
+  // ── 3. Download the report document ───────────────────────────────────────
+  let rawTsv;
+  try {
+    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const url     = docResp.url;
+
+    const fileResp = await fetch(url);
+    if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
+
+    const buffer = Buffer.from(await fileResp.arrayBuffer());
+
+    // Report is GZIP compressed
+    rawTsv = await new Promise((resolve, reject) => {
+      zlib.gunzip(buffer, (err, result) => {
+        if (err) reject(err);
+        else resolve(result.toString('utf8'));
+      });
+    });
+  } catch (err) {
+    console.error('[sync-orders] failed to download/decompress report:', err.message);
+    return res.status(500).json({ error: 'Failed to download report', detail: err.message });
   }
 
-  const now = new Date().toISOString();
+  // ── 4. Parse TSV ───────────────────────────────────────────────────────────
+  const lines   = rawTsv.split('\n').filter(l => l.trim());
+  const headers = lines[0].split('\t').map(h => h.trim());
+  const rows    = lines.slice(1).map(line => {
+    const vals = line.split('\t');
+    return Object.fromEntries(headers.map((h, i) => [h, (vals[i] || '').trim()]));
+  });
+
+  console.log(`[sync-orders] flat file rows: ${rows.length}`);
+
+  // ── 5. Per-brand processing ────────────────────────────────────────────────
+  const now     = new Date().toISOString();
+  const results = [];
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      // Build new rows for this brand
-      const newRows = [];
+      // Filter rows for this brand
+      const brandRows = rows.filter(row => {
+        const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
+        const status = (row['order-status'] || '').toLowerCase();
+        const promo  = (row['promotion-ids'] || '').toLowerCase();
 
-      for (const order of allOrders) {
-        const items      = orderItems[order.AmazonOrderId] || [];
-        const brandItems = items.filter(item =>
-          (item.SellerSKU || '').toUpperCase().startsWith(brand.skuPrefix.toUpperCase())
-        );
-        if (brandItems.length === 0) continue;
+        const isThisBrand = sku.startsWith(brand.skuPrefix.toUpperCase());
+        const isValidStatus = status !== 'cancelled' && status !== 'pending';
+        const isNotVine    = !promo.includes('vine');
 
-        const quantityOrdered   = brandItems.reduce((s, i) => s + (i.QuantityOrdered  || 0), 0);
-        const quantityShipped   = brandItems.reduce((s, i) => s + (i.QuantityShipped  || 0), 0);
-        const itemPrice         = round2(brandItems.reduce((s, i) =>
-          s + parseFloat(i.ItemPrice?.Amount || 0) * (i.QuantityOrdered || 1), 0));
-        const promotionDiscount = round2(brandItems.reduce((s, i) =>
-          s + parseFloat(i.PromotionDiscount?.Amount || 0), 0));
-        const skus              = [...new Set(brandItems.map(i => i.SellerSKU))].join(', ');
-        const orderTotal        = round2(parseFloat(order.OrderTotal?.Amount || 0));
-        const promotionIds      = (order.PromotionIds || []).join(', ');
-        const isPremium         = order.IsPremiumOrder === true || order.IsPremiumOrder === 'true'
-          ? 'TRUE' : 'FALSE';
+        return isThisBrand && isValidStatus && isNotVine;
+      });
 
-        newRows.push([
-          order.AmazonOrderId,
-          order.PurchaseDate?.slice(0, 10) || '',
-          order.OrderStatus || '',
-          orderTotal,
-          promotionIds,
-          isPremium,
-          promotionDiscount,
-          itemPrice,
-          quantityOrdered,
-          quantityShipped,
-          quantityOrdered,
-          skus,
-          brand.id,
-          now,
-        ]);
-      }
-
-      if (newRows.length === 0) {
-        console.log(`[sync-orders] ${brand.id} — 0 rows (no orders in window)`);
+      if (brandRows.length === 0) {
+        console.log(`[sync-orders] ${brand.id} — 0 rows after filtering`);
         results.push({ brand: brand.id, status: 'ok', rows: 0, mode });
         continue;
       }
 
-      // Dedup — read existing order_ids and skip any already present
+      // Aggregate by order_id (flat file has one row per line item)
+      const orderMap = {};
+      for (const row of brandRows) {
+        const orderId = row['amazon-order-id'] || row['order-id'] || '';
+        if (!orderId) continue;
+
+        if (!orderMap[orderId]) {
+          orderMap[orderId] = {
+            order_id:           orderId,
+            date:               (row['purchase-date'] || '').slice(0, 10),
+            status:             row['order-status'] || '',
+            // order-total is not in the flat file — derive from item-price sum
+            order_total:        0,
+            promotion_ids:      row['promotion-ids'] || '',
+            is_premium_order:   'FALSE',
+            promotion_discount: 0,
+            item_price:         0,
+            quantity_ordered:   0,
+            quantity_shipped:   0,
+            skus:               new Set(),
+            brand:              brand.id,
+            last_updated:       now,
+          };
+        }
+
+        const entry = orderMap[orderId];
+
+        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+        const qtyShip = parseInt(row['quantity-shipped'] || '0', 10);
+        const price   = parseFloat(row['item-price'] || '0');
+        const disc    = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
+        const sku     = row['sku'] || row['seller-sku'] || '';
+
+        entry.quantity_ordered   += qty;
+        entry.quantity_shipped   += qtyShip;
+        entry.item_price         = round2(entry.item_price + price);
+        entry.promotion_discount = round2(entry.promotion_discount + disc);
+        entry.order_total        = round2(entry.item_price); // best proxy without order-total column
+        if (sku) entry.skus.add(sku);
+      }
+
+      // Build sheet rows
+      const newRows = Object.values(orderMap).map(o => [
+        o.order_id,
+        o.date,
+        o.status,
+        o.order_total,
+        o.promotion_ids,
+        o.is_premium_order,
+        o.promotion_discount,
+        o.item_price,
+        o.quantity_ordered,
+        o.quantity_shipped,
+        o.quantity_ordered,        // unit_count = quantity_ordered
+        [...o.skus].join(', '),
+        o.brand,
+        o.last_updated,
+      ]);
+
+      // Dedup — skip order_ids already in the sheet
       const token        = await ensureTab(sheets.orders, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.orders, brand.tabName);
       const existingIds  = new Set(existingRows.map(r => r.order_id).filter(Boolean));
@@ -147,73 +236,51 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({
-    synced: results,
-    totalOrders: allOrders.length,
-    timestamp: new Date().toISOString(),
+    synced:    results,
+    reportId,
+    timestamp: now,
   });
 };
 
-// ── Date ranges ───────────────────────────────────────────────────────────────
+// ── Date range ────────────────────────────────────────────────────────────────
 
-function getDateRanges(mode, req) {
-  const now    = new Date();
-  const pad    = n => String(n).padStart(2, '0');
-  // Safe CreatedBefore — always at least 10 minutes in the past
+function getDateRange(mode, req) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
   const safeBefore = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
 
   if (mode === 'rolling') {
     const hours = parseFloat(req?.query?.hours || 2.5);
-    const start = new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
-    return [{ start, end: safeBefore }];
+    return {
+      start: new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString().slice(0, 19) + 'Z',
+      end:   safeBefore,
+    };
   }
 
   if (mode === 'day') {
-    // Today from midnight UTC to now-10min — safe for backfilling today
     const y = now.getUTCFullYear(), m = pad(now.getUTCMonth() + 1), d = pad(now.getUTCDate());
-    return [{ start: `${y}-${m}-${d}T00:00:00Z`, end: safeBefore }];
+    return { start: `${y}-${m}-${d}T00:00:00Z`, end: safeBefore };
   }
 
   if (mode === 'yesterday') {
-    const d   = new Date(now); d.setDate(d.getDate() - 1);
-    const y   = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
-    return [{ start: `${y}-${m}-${day}T00:00:00Z`, end: `${y}-${m}-${day}T23:59:59Z` }];
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    const y = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
+    return { start: `${y}-${m}-${day}T00:00:00Z`, end: `${y}-${m}-${day}T23:59:59Z` };
   }
 
   if (mode === 'week') {
     const start = req?.query?.start;
     const end   = req?.query?.end;
     if (!start || !end) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
-    // Cap end to safeBefore if it would be today or in the future
     const endTs  = new Date(`${end}T23:59:59Z`);
     const endStr = endTs > now ? safeBefore : `${end}T23:59:59Z`;
-    return [{ start: `${start}T00:00:00Z`, end: endStr }];
+    return { start: `${start}T00:00:00Z`, end: endStr };
   }
 
-  return [];
+  throw new Error(`Unknown mode: ${mode}`);
 }
 
-// ── SP-API pagination ─────────────────────────────────────────────────────────
-
-async function paginateOrders(start, end) {
-  const orders  = [];
-  let nextToken = null;
-  do {
-    const query = nextToken
-      ? { NextToken: nextToken }
-      : {
-          MarketplaceIds:    process.env.SP_MARKETPLACE_ID,
-          CreatedAfter:      start,
-          CreatedBefore:     end,
-          MaxResultsPerPage: '100',
-          OrderStatuses:     'Pending,Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable',
-        };
-    const response = await spRequest('GET', '/orders/v0/orders', query);
-    orders.push(...(response.payload?.Orders || []));
-    nextToken = response.payload?.NextToken || null;
-    if (nextToken) await sleep(2000);
-  } while (nextToken);
-  return orders;
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
