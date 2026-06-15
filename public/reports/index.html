@@ -1174,10 +1174,119 @@ function initSns() {
       renderKPIs(curr, prev, prevYoy);
       setSourceLabel(year, month);
 
+      // ── Revenue by Month chart ───────────────────────────────────────────
+      // Fetches from the revenue history sheet (evolis tab, sheet name lookup)
+      initAmazonRevenueChart();
+
     } catch (err) {
       showError(err.message);
     }
   };
+
+  async function initAmazonRevenueChart() {
+    if (window._amazonChart) return;
+
+    const REVENUE_SHEET_ID = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank';
+
+    try {
+      // Fetch evolis tab by name (gviz returns JSON keyed by sheet name)
+      const url = `https://docs.google.com/spreadsheets/d/${REVENUE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=evolis`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Revenue sheet fetch failed');
+      const csv = await resp.text();
+
+      if (!csv || csv.trim().startsWith('<')) throw new Error('Revenue sheet not accessible');
+
+      // Parse CSV — columns: MONTH, YEAR, REVENUE, ORDERS, UNITS SOLD, FBA UNITS, FBM UNITS
+      const lines = csv.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+      const rows = lines.slice(1).map(line => {
+        // Handle quoted values like "$10,856.00"
+        const cols = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') { inQ = !inQ; }
+          else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
+          else { cur += c; }
+        }
+        cols.push(cur);
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = (cols[i] || '').replace(/"/g, '').trim(); });
+        return obj;
+      }).filter(r => r['MONTH'] && r['YEAR']);
+
+      // Group by year → array of 12 monthly revenue values
+      const yearData = {};
+      for (const row of rows) {
+        const y = parseInt(row['YEAR'], 10);
+        const m = parseInt(row['MONTH'], 10);
+        if (!y || !m || m < 1 || m > 12) continue;
+        if (!yearData[y]) yearData[y] = new Array(12).fill(null);
+        // Strip $ and commas from revenue
+        const rev = parseFloat((row['REVENUE'] || '0').replace(/[$,]/g, '')) || 0;
+        yearData[y][m - 1] = rev;
+      }
+
+      // Only render years that have data
+      const datasets = [];
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth(); // 0-indexed
+
+      const yearStyles = {
+        2023: { borderColor: '#ccd3d5', backgroundColor: 'transparent' },
+        2024: { borderColor: '#001f60', backgroundColor: 'transparent' },
+        2025: { borderColor: '#f4dfd0', backgroundColor: 'transparent' },
+        2026: { borderColor: '#24e9a3', backgroundColor: 'rgba(36,233,163,0.08)', fill: true },
+      };
+
+      // Render in order: 2023, 2024, 2025, 2026
+      for (const y of [2023, 2024, 2025, 2026]) {
+        if (!yearData[y]) continue;
+        const style = yearStyles[y] || { borderColor: '#ccd3d5', backgroundColor: 'transparent' };
+        // For current year: null out future months
+        const data = yearData[y].map((v, idx) => {
+          if (y === currentYear && idx > currentMonth) return null;
+          return v;
+        });
+        datasets.push({
+          label: String(y),
+          data,
+          borderColor: style.borderColor,
+          backgroundColor: style.backgroundColor,
+          fill: style.fill || false,
+          borderWidth: y === currentYear ? 2 : 1.5,
+          pointRadius: 2,
+          tension: 0.3,
+        });
+      }
+
+      window._amazonChart = new Chart(document.getElementById('chart-amazon'), {
+        type: 'line',
+        data: { labels: months12, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12 },
+            },
+          },
+          scales: {
+            x: { grid: { color: 'rgba(0,0,0,0.04)' } },
+            y: {
+              grid: { color: 'rgba(0,0,0,0.04)' },
+              ticks: { callback: v => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v) },
+            },
+          },
+        },
+      });
+
+    } catch (err) {
+      console.warn('[revenue chart] failed to load:', err.message);
+    }
+  }
 
 })();
 
