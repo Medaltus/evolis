@@ -103,11 +103,15 @@ module.exports = async (req, res) => {
 
     const buffer = Buffer.from(await fileResp.arrayBuffer());
 
-    // Report is GZIP compressed
-    rawTsv = await new Promise((resolve, reject) => {
+    // Try GZIP first, fall back to plain text
+    rawTsv = await new Promise((resolve) => {
       zlib.gunzip(buffer, (err, result) => {
-        if (err) reject(err);
-        else resolve(result.toString('utf8'));
+        if (err) {
+          console.log('[sync-orders] not gzipped, reading as plain text');
+          resolve(buffer.toString('utf8'));
+        } else {
+          resolve(result.toString('utf8'));
+        }
       });
     });
   } catch (err) {
@@ -137,9 +141,9 @@ module.exports = async (req, res) => {
         const status = (row['order-status'] || '').toLowerCase();
         const promo  = (row['promotion-ids'] || '').toLowerCase();
 
-        const isThisBrand = sku.startsWith(brand.skuPrefix.toUpperCase());
+        const isThisBrand   = sku.startsWith(brand.skuPrefix.toUpperCase());
         const isValidStatus = status !== 'cancelled' && status !== 'pending';
-        const isNotVine    = !promo.includes('vine');
+        const isNotVine     = !promo.includes('vine');
 
         return isThisBrand && isValidStatus && isNotVine;
       });
@@ -161,7 +165,6 @@ module.exports = async (req, res) => {
             order_id:           orderId,
             date:               (row['purchase-date'] || '').slice(0, 10),
             status:             row['order-status'] || '',
-            // order-total is not in the flat file — derive from item-price sum
             order_total:        0,
             promotion_ids:      row['promotion-ids'] || '',
             is_premium_order:   'FALSE',
@@ -187,7 +190,7 @@ module.exports = async (req, res) => {
         entry.quantity_shipped   += qtyShip;
         entry.item_price         = round2(entry.item_price + price);
         entry.promotion_discount = round2(entry.promotion_discount + disc);
-        entry.order_total        = round2(entry.item_price); // best proxy without order-total column
+        entry.order_total        = round2(entry.item_price);
         if (sku) entry.skus.add(sku);
       }
 
@@ -203,7 +206,7 @@ module.exports = async (req, res) => {
         o.item_price,
         o.quantity_ordered,
         o.quantity_shipped,
-        o.quantity_ordered,        // unit_count = quantity_ordered
+        o.quantity_ordered,
         [...o.skus].join(', '),
         o.brand,
         o.last_updated,
