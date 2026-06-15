@@ -1,16 +1,14 @@
 /**
  * api/cron/sync-revenue-process.js
- * Step 2 of 2 — reads the reportId stored by sync-revenue-request.js,
- * polls Amazon until DONE, downloads the flat file, aggregates revenue
- * per brand per month, and writes to the revenue history sheet.
+ * Step 2 of 2 — reads the reportIds stored by sync-revenue-request.js,
+ * polls each until DONE, downloads, aggregates, and writes to the revenue sheet.
  *
  * Runs at 5:15 UTC daily (15 min after sync-revenue-request).
- * Safe to re-run manually if the first attempt timed out.
+ * Safe to re-run manually if the first attempt failed.
  *
- * Also callable manually for backfill:
+ * Backfill a single month:
  *   GET /api/cron/sync-revenue-process?month=YYYY-MM
  *   Authorization: Bearer <CRON_SECRET>
- *   (backfill mode requests its own report, doesn't use _meta)
  */
 
 const zlib                                 = require('zlib');
@@ -23,7 +21,7 @@ const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA U
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
-// Short poll — report should already be ready after 15 min
+// Report should be ready after 15 min — short poll per report
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
 
@@ -37,19 +35,19 @@ module.exports = async (req, res) => {
   const pad = n => String(n).padStart(2, '0');
   const ts  = now.toISOString();
 
-  let reportId, targetMonths, start, end;
+  // ── Build the list of { month, reportId, start, end } to process ──────────
+  let jobs = [];
   let backfillMode = false;
 
-  // ── Backfill mode: ?month=YYYY-MM ─────────────────────────────────────────
   if (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) {
+    // ── Backfill mode — request its own report for a single month ────────────
     backfillMode = true;
-    targetMonths = [req.query.month];
-    const [y, m] = req.query.month.split('-');
+    const [y, m]  = req.query.month.split('-');
     const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-    start = `${req.query.month}-01T00:00:00Z`;
-    end   = `${req.query.month}-${pad(lastDay)}T23:59:59Z`;
+    const start   = `${req.query.month}-01T00:00:00Z`;
+    const end     = `${req.query.month}-${pad(lastDay)}T23:59:59Z`;
 
-    console.log(`[sync-revenue-process] backfill mode — requesting own report for ${req.query.month}`);
+    console.log(`[sync-revenue-process] backfill mode — requesting report for ${req.query.month}`);
 
     try {
       const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
@@ -58,15 +56,15 @@ module.exports = async (req, res) => {
         dataStartTime:  start,
         dataEndTime:    end,
       });
-      reportId = createResp.reportId;
-      console.log(`[sync-revenue-process] backfill report requested: ${reportId}`);
+      jobs = [{ month: req.query.month, reportId: createResp.reportId, start, end }];
+      console.log(`[sync-revenue-process] backfill report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to request backfill report:', err.message);
       return res.status(500).json({ error: 'Failed to request report', detail: err.message });
     }
 
-  // ── Normal mode: read reportId from _meta tab ──────────────────────────────
   } else {
+    // ── Normal mode — read reportIds from _meta ───────────────────────────────
     try {
       const rawMeta = await readRows(sheets.revenue, META_TAB);
       const metaMap = {};
@@ -74,138 +72,150 @@ module.exports = async (req, res) => {
         if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
       }
 
-      reportId     = metaMap['report_id'];
-      targetMonths = (metaMap['target_months'] || '').split(',').filter(Boolean);
-      start        = metaMap['start'];
-      end          = metaMap['end'];
-
-      if (!reportId) {
-        return res.status(400).json({ error: 'No reportId found in _meta — did sync-revenue-request run?' });
-      }
-
       if (metaMap['report_status'] === 'PROCESSED') {
-        return res.status(200).json({ message: 'Already processed today', reportId });
+        return res.status(200).json({ message: 'Already processed today', meta: metaMap });
       }
 
-      console.log(`[sync-revenue-process] resuming reportId=${reportId} targets=${targetMonths.join(', ')}`);
+      const targetMonths = (metaMap['target_months'] || '').split(',').filter(Boolean);
+      if (!targetMonths.length) {
+        return res.status(400).json({ error: 'No target_months in _meta — did sync-revenue-request run?' });
+      }
+
+      for (const month of targetMonths) {
+        const reportId = metaMap[`report_id_${month}`];
+        if (!reportId) {
+          return res.status(400).json({ error: `No reportId for ${month} in _meta — did sync-revenue-request run?` });
+        }
+        const [y, m]  = month.split('-');
+        const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+        jobs.push({
+          month,
+          reportId,
+          start: `${month}-01T00:00:00Z`,
+          end:   `${month}-${pad(lastDay)}T23:59:59Z`,
+        });
+      }
+
+      console.log(`[sync-revenue-process] processing ${jobs.length} reports: ${jobs.map(j => j.month).join(', ')}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to read _meta:', err.message);
-      return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
+      return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
     }
   }
 
-  // ── Poll until DONE ────────────────────────────────────────────────────────
-  let documentId = null;
-  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
+  // ── Process each month's report ────────────────────────────────────────────
+  // monthRows: { "YYYY-MM": [ flat file row objects ] }
+  const monthRows = {};
 
-  while (Date.now() < deadline) {
-    await sleep(REPORT_POLL_INTERVAL_MS);
-    try {
-      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
-      const status     = statusResp.processingStatus;
-      console.log(`[sync-revenue-process] report ${reportId} status: ${status}`);
+  for (const job of jobs) {
+    // Poll until DONE
+    let documentId = null;
+    const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
 
-      if (status === 'DONE') {
-        documentId = statusResp.reportDocumentId;
-        break;
-      }
-      if (status === 'FATAL' || status === 'CANCELLED') {
-        return res.status(500).json({ error: `Report ${status}`, reportId });
-      }
-    } catch (err) {
-      console.warn(`[sync-revenue-process] poll error (will retry): ${err.message}`);
-    }
-  }
+    while (Date.now() < deadline) {
+      await sleep(REPORT_POLL_INTERVAL_MS);
+      try {
+        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`);
+        const status     = statusResp.processingStatus;
+        console.log(`[sync-revenue-process] ${job.month} report ${job.reportId} status: ${status}`);
 
-  if (!documentId) {
-    return res.status(202).json({
-      message: 'Report not ready yet — try again in a few minutes',
-      reportId,
-    });
-  }
-
-  // ── Download & decompress ──────────────────────────────────────────────────
-  let rawTsv;
-  try {
-    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
-    const fileResp = await fetch(docResp.url);
-    if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
-
-    const buffer = Buffer.from(await fileResp.arrayBuffer());
-    rawTsv = await new Promise((resolve) => {
-      zlib.gunzip(buffer, (err, result) => {
-        if (err) {
-          console.log('[sync-revenue-process] not gzipped, reading as plain text');
-          resolve(buffer.toString('utf8'));
-        } else {
-          resolve(result.toString('utf8'));
+        if (status === 'DONE') {
+          documentId = statusResp.reportDocumentId;
+          break;
         }
+        if (status === 'FATAL' || status === 'CANCELLED') {
+          console.error(`[sync-revenue-process] ${job.month} report ${status}`);
+          break;
+        }
+      } catch (err) {
+        console.warn(`[sync-revenue-process] poll error (will retry): ${err.message}`);
+      }
+    }
+
+    if (!documentId) {
+      console.warn(`[sync-revenue-process] ${job.month} report not ready — skipping`);
+      monthRows[job.month] = [];
+      continue;
+    }
+
+    // Download & decompress
+    try {
+      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+      const fileResp = await fetch(docResp.url);
+      if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
+
+      const buffer = Buffer.from(await fileResp.arrayBuffer());
+      const rawTsv = await new Promise((resolve) => {
+        zlib.gunzip(buffer, (err, result) => {
+          if (err) resolve(buffer.toString('utf8'));
+          else resolve(result.toString('utf8'));
+        });
       });
-    });
-  } catch (err) {
-    console.error('[sync-revenue-process] failed to download/decompress:', err.message);
-    return res.status(500).json({ error: 'Failed to download report', detail: err.message });
+
+      const lines      = rawTsv.split('\n').filter(l => l.trim());
+      const tsvHeaders = lines[0].split('\t').map(h => h.trim());
+      const rows       = lines.slice(1).map(line => {
+        const vals = line.split('\t');
+        return Object.fromEntries(tsvHeaders.map((h, i) => [h, (vals[i] || '').trim()]));
+      });
+
+      console.log(`[sync-revenue-process] ${job.month} headers: ${tsvHeaders.slice(0, 8).join(' | ')}`);
+      console.log(`[sync-revenue-process] ${job.month} rows: ${rows.length}`);
+      monthRows[job.month] = rows;
+    } catch (err) {
+      console.error(`[sync-revenue-process] failed to download ${job.month}:`, err.message);
+      monthRows[job.month] = [];
+    }
   }
-
-  // ── Parse TSV ──────────────────────────────────────────────────────────────
-  const lines      = rawTsv.split('\n').filter(l => l.trim());
-  const tsvHeaders = lines[0].split('\t').map(h => h.trim());
-  const rows       = lines.slice(1).map(line => {
-    const vals = line.split('\t');
-    return Object.fromEntries(tsvHeaders.map((h, i) => [h, (vals[i] || '').trim()]));
-  });
-
-  console.log(`[sync-revenue-process] flat file headers: ${tsvHeaders.slice(0, 10).join(' | ')}`);
-  console.log(`[sync-revenue-process] flat file rows: ${rows.length}`);
 
   // ── Per-brand aggregation & sheet write ────────────────────────────────────
-  const results = [];
+  const targetMonths = jobs.map(j => j.month);
+  const results      = [];
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      // Filter to this brand, valid status, no vine
-      const brandRows = rows.filter(row => {
-        const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
-        const status = (row['order-status'] || '').toLowerCase();
-        const promo  = (row['promotion-ids'] || '').toLowerCase();
-
-        return (
-          sku.startsWith(brand.skuPrefix.toUpperCase()) &&
-          status !== 'cancelled' &&
-          status !== 'pending'   &&
-          !promo.includes('vine')
-        );
-      });
-
-      console.log(`[sync-revenue-process] ${brand.id} — ${brandRows.length} matching rows`);
-
-      // Aggregate by order_id per month
+      // Aggregate across all months for this brand
       const monthMap = {};
 
-      for (const row of brandRows) {
-        const orderId = row['amazon-order-id'] || row['order-id'] || '';
-        const dateRaw = (row['purchase-date'] || '').slice(0, 7); // "YYYY-MM"
-        if (!orderId || !dateRaw) continue;
-        if (!targetMonths.includes(dateRaw)) continue;
+      for (const [month, rows] of Object.entries(monthRows)) {
+        const brandRows = rows.filter(row => {
+          const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
+          const status = (row['order-status'] || '').toLowerCase();
+          const promo  = (row['promotion-ids'] || '').toLowerCase();
 
-        if (!monthMap[dateRaw])          monthMap[dateRaw]          = {};
-        if (!monthMap[dateRaw][orderId]) monthMap[dateRaw][orderId] = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
+          return (
+            sku.startsWith(brand.skuPrefix.toUpperCase()) &&
+            status !== 'cancelled' &&
+            status !== 'pending'   &&
+            !promo.includes('vine')
+          );
+        });
 
-        const entry = monthMap[dateRaw][orderId];
-        const qty   = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
-        const price = parseFloat(row['item-price'] || '0');
-        const isFba = (row['fulfillment-channel'] || '').toUpperCase() === 'AFN';
+        console.log(`[sync-revenue-process] ${brand.id} ${month} — ${brandRows.length} matching rows`);
 
-        entry.revenue  = round2(entry.revenue + price);
-        entry.units   += qty;
-        if (isFba) { entry.fbaUnits += qty; } else { entry.fbmUnits += qty; }
+        monthMap[month] = {};
+        for (const row of brandRows) {
+          const orderId = row['amazon-order-id'] || row['order-id'] || '';
+          const dateRaw = (row['purchase-date'] || '').slice(0, 7);
+          if (!orderId || dateRaw !== month) continue;
+
+          if (!monthMap[month][orderId]) monthMap[month][orderId] = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
+
+          const entry = monthMap[month][orderId];
+          const qty   = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+          const price = parseFloat(row['item-price'] || '0');
+          const isFba = (row['fulfillment-channel'] || '').toUpperCase() === 'AFN';
+
+          entry.revenue  = round2(entry.revenue + price);
+          entry.units   += qty;
+          if (isFba) { entry.fbaUnits += qty; } else { entry.fbmUnits += qty; }
+        }
       }
 
-      // Read existing rows, preserve all historical data
+      // Read existing sheet rows
       const token       = await ensureTab(sheets.revenue, brand.tabName, HEADERS);
       const rawExisting = await readRows(sheets.revenue, brand.tabName);
 
-      // Normalize to plain arrays, preserving raw string values for historical rows
       const existingArrays = (rawExisting || []).map(r =>
         Array.isArray(r)
           ? r
@@ -220,8 +230,7 @@ module.exports = async (req, res) => {
             ]
       );
 
-      let workingRows = [...existingArrays];
-
+      let workingRows    = [...existingArrays];
       const brandResults = [];
 
       for (const targetMonth of targetMonths) {
@@ -256,7 +265,6 @@ module.exports = async (req, res) => {
         brandResults.push({ month: targetMonth, orders, revenue, units: unitsSold });
       }
 
-      // Sort by YEAR then MONTH — blank MONTH rows (historical) sort to top as 0
       workingRows.sort((a, b) => {
         const ay = parseInt(a[1], 10) || 0;
         const by = parseInt(b[1], 10) || 0;
@@ -283,7 +291,7 @@ module.exports = async (req, res) => {
       for (const r of (rawMeta || [])) {
         if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
       }
-      metaMap['report_status']    = 'PROCESSED';
+      metaMap['report_status']     = 'PROCESSED';
       metaMap['last_processed_at'] = ts;
       const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
       await replaceRows(sheets.revenue, META_TAB, META_HEADERS, metaRows, token);
@@ -292,7 +300,7 @@ module.exports = async (req, res) => {
     }
   }
 
-  res.status(200).json({ synced: results, reportId });
+  res.status(200).json({ synced: results });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
