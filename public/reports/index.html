@@ -1005,11 +1005,28 @@ function initSns() {
     return result;
   }
 
+  // ── Normalize date to YYYY-MM-DD regardless of how Sheets formatted it ───
+  // Google Sheets auto-formats YYYY-MM-DD values as M/D/YY in CSV exports.
+  function normalizeDate(val) {
+    if (!val) return '';
+    // Already ISO: YYYY-MM-DD or YYYY-MM-DDThh...
+    if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+    // Google Sheets M/D/YY or MM/DD/YY format
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const m = parts[0].padStart(2, '0');
+      const d = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+    return val;
+  }
+
   // ── Aggregate rows for a given year-month ─────────────────────────────────
   function aggregateMonth(rows, year, month) {
     const prefix = `${year}-${String(month).padStart(2,'0')}`;
     const filtered = rows.filter(r => {
-      const d = (r.date || '').substring(0, 7); // "YYYY-MM"
+      const d = normalizeDate(r.date).substring(0, 7); // "YYYY-MM"
       return d === prefix;
     });
     if (filtered.length === 0) return null;
