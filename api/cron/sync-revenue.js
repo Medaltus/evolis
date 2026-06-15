@@ -1,23 +1,26 @@
 /**
  * api/cron/sync-revenue.js
- * Runs daily — pulls the prior full month's orders from the flat file report
- * for ALL active brands and writes/overwrites a single monthly summary row
- * per brand to the revenue history sheet.
+ * Runs daily — pulls orders for the prior full month AND current month
+ * in a single flat file request, then writes/overwrites one summary row
+ * per brand per month to the revenue history sheet.
+ *
+ * Why both months:
+ *   - Prior month: pending → shipped transitions can trickle in until ~15th
+ *   - Current month: live running total as orders ship throughout the month
  *
  * Why flat file: covers FBA + FBM, Amazon's source of truth for reconciliation.
- * Why prior month only: current month is incomplete; sync-orders handles rolling.
  *
  * Sheet: amazon-revenue  |  One tab per brand (matches brand.tabName).
  * Columns: MONTH | YEAR | REVENUE | ORDERS | UNITS SOLD | FBA UNITS | FBM UNITS
  *
- * Safe to re-run — overwrites the row for the target month if it already exists.
+ * Safe to re-run — overwrites the row for each target month if it already exists.
  *
  * Trigger manually for backfill:
  *   GET /api/cron/sync-revenue?month=YYYY-MM
  *   Authorization: Bearer <CRON_SECRET>
  */
 
-const zlib       = require('zlib');
+const zlib                                 = require('zlib');
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
@@ -34,28 +37,36 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // ── Determine target month ─────────────────────────────────────────────────
-  // Default: prior full calendar month.
-  // Override: ?month=YYYY-MM for backfill.
-  let targetMonth; // "YYYY-MM"
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+
+  // ── Determine target months ────────────────────────────────────────────────
+  // Manual override: ?month=YYYY-MM runs only that one month (for backfill)
+  // Default: prior month + current month in one report request
+  let targetMonths; // array of "YYYY-MM" strings
+  let start, end;
+
   if (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) {
-    targetMonth = req.query.month;
+    // Backfill mode — single month
+    targetMonths = [req.query.month];
+    const [y, m] = req.query.month.split('-');
+    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+    start = `${req.query.month}-01T00:00:00Z`;
+    end   = `${req.query.month}-${pad(lastDay)}T23:59:59Z`;
   } else {
-    const now = new Date();
-    // Prior month
-    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    targetMonth = `${y}-${m}`;
+    // Default mode — prior month through now
+    const prior = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const pYear  = prior.getFullYear();
+    const pMonth = pad(prior.getMonth() + 1);
+    const cYear  = now.getFullYear();
+    const cMonth = pad(now.getMonth() + 1);
+
+    targetMonths = [`${pYear}-${pMonth}`, `${cYear}-${cMonth}`];
+    start = `${pYear}-${pMonth}-01T00:00:00Z`;
+    end   = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
   }
 
-  const [tYear, tMonth] = targetMonth.split('-');
-  const start = `${targetMonth}-01T00:00:00Z`;
-  // Last day of the month
-  const lastDay = new Date(parseInt(tYear), parseInt(tMonth), 0).getDate();
-  const end     = `${targetMonth}-${String(lastDay).padStart(2, '0')}T23:59:59Z`;
-
-  console.log(`[sync-revenue] target=${targetMonth} start=${start} end=${end}`);
+  console.log(`[sync-revenue] targets=${targetMonths.join(', ')} start=${start} end=${end}`);
 
   // ── 1. Request flat file report ────────────────────────────────────────────
   let reportId;
@@ -127,11 +138,11 @@ module.exports = async (req, res) => {
   }
 
   // ── 4. Parse TSV ───────────────────────────────────────────────────────────
-  const lines   = rawTsv.split('\n').filter(l => l.trim());
-  const headers = lines[0].split('\t').map(h => h.trim());
-  const rows    = lines.slice(1).map(line => {
+  const lines      = rawTsv.split('\n').filter(l => l.trim());
+  const tsvHeaders = lines[0].split('\t').map(h => h.trim());
+  const rows       = lines.slice(1).map(line => {
     const vals = line.split('\t');
-    return Object.fromEntries(headers.map((h, i) => [h, (vals[i] || '').trim()]));
+    return Object.fromEntries(tsvHeaders.map((h, i) => [h, (vals[i] || '').trim()]));
   });
 
   console.log(`[sync-revenue] flat file rows: ${rows.length}`);
@@ -155,88 +166,94 @@ module.exports = async (req, res) => {
         );
       });
 
-      // Aggregate by order_id to avoid double-counting multi-line-item orders
-      const orderMap = {};
-      for (const row of brandRows) {
-        const orderId = row['amazon-order-id'] || row['order-id'] || '';
-        if (!orderId) continue;
+      // Aggregate by order_id per month
+      // monthMap: { "YYYY-MM": { orderId: { revenue, units, fbaUnits, fbmUnits } } }
+      const monthMap = {};
 
+      for (const row of brandRows) {
+        const orderId   = row['amazon-order-id'] || row['order-id'] || '';
+        const dateRaw   = (row['purchase-date'] || '').slice(0, 7); // "YYYY-MM"
+        if (!orderId || !dateRaw) continue;
+
+        // Only process months we care about
+        if (!targetMonths.includes(dateRaw)) continue;
+
+        if (!monthMap[dateRaw])           monthMap[dateRaw]           = {};
+        if (!monthMap[dateRaw][orderId])  monthMap[dateRaw][orderId]  = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
+
+        const entry   = monthMap[dateRaw][orderId];
         const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
         const price   = parseFloat(row['item-price'] || '0');
         // AFN = Fulfilled by Amazon (FBA), MFN = Merchant Fulfilled (FBM)
-        const channel = (row['fulfillment-channel'] || '').toUpperCase();
-        const isFba   = channel === 'AFN';
+        const isFba   = (row['fulfillment-channel'] || '').toUpperCase() === 'AFN';
 
-        if (!orderMap[orderId]) {
-          orderMap[orderId] = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
-        }
-
-        orderMap[orderId].revenue  = round2(orderMap[orderId].revenue + price);
-        orderMap[orderId].units   += qty;
-        if (isFba) {
-          orderMap[orderId].fbaUnits += qty;
-        } else {
-          orderMap[orderId].fbmUnits += qty;
-        }
+        entry.revenue  = round2(entry.revenue + price);
+        entry.units   += qty;
+        if (isFba) { entry.fbaUnits += qty; } else { entry.fbmUnits += qty; }
       }
 
-      const orders    = Object.keys(orderMap).length;
-      const revenue   = round2(Object.values(orderMap).reduce((s, o) => s + o.revenue, 0));
-      const unitsSold = Object.values(orderMap).reduce((s, o) => s + o.units, 0);
-      const fbaUnits  = Object.values(orderMap).reduce((s, o) => s + o.fbaUnits, 0);
-      const fbmUnits  = Object.values(orderMap).reduce((s, o) => s + o.fbmUnits, 0);
-
-      console.log(`[sync-revenue] ${brand.id} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
-
-      // ── Write to sheet ───────────────────────────────────────────────────
-      // Strategy: read existing rows, replace the row for targetMonth if it
-      // exists, otherwise append. Then rewrite the full tab.
+      // Read existing sheet rows once per brand
       await ensureTab(sheets.revenue, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.revenue, brand.tabName);
 
-      const newRow = [
-        parseInt(tMonth, 10), // MONTH  (numeric, e.g. 5)
-        parseInt(tYear, 10),  // YEAR   (numeric, e.g. 2026)
-        revenue,
-        orders,
-        unitsSold,
-        fbaUnits,
-        fbmUnits,
-      ];
+      // Upsert each target month
+      const brandResults = [];
+      let workingRows = existingRows;
 
-      // Match on MONTH + YEAR columns (indices 0 and 1)
-      const idx = existingRows.findIndex(
-        r => String(r['MONTH']) === String(parseInt(tMonth, 10)) &&
-             String(r['YEAR'])  === String(parseInt(tYear, 10))
-      );
+      for (const targetMonth of targetMonths) {
+        const [tYear, tMonth] = targetMonth.split('-');
+        const orderData = monthMap[targetMonth] || {};
+        const orders    = Object.keys(orderData).length;
+        const revenue   = round2(Object.values(orderData).reduce((s, o) => s + o.revenue, 0));
+        const unitsSold = Object.values(orderData).reduce((s, o) => s + o.units, 0);
+        const fbaUnits  = Object.values(orderData).reduce((s, o) => s + o.fbaUnits, 0);
+        const fbmUnits  = Object.values(orderData).reduce((s, o) => s + o.fbmUnits, 0);
 
-      let updatedRows;
-      if (idx >= 0) {
-        // Overwrite existing row
-        updatedRows = existingRows.map((r, i) => {
-          if (i !== idx) return Object.values(r);
-          return newRow;
-        });
-        console.log(`[sync-revenue] ${brand.id} — overwrote existing row for ${targetMonth}`);
-      } else {
-        // Append new row, keep sorted by YEAR then MONTH
-        const allAsArrays = existingRows.map(r => [
-          parseInt(r['MONTH'], 10),
-          parseInt(r['YEAR'],  10),
-          parseFloat(r['REVENUE']    || 0),
-          parseInt(r['ORDERS']       || 0, 10),
-          parseInt(r['UNITS SOLD']   || 0, 10),
-          parseInt(r['FBA UNITS']    || 0, 10),
-          parseInt(r['FBM UNITS']    || 0, 10),
-        ]);
-        allAsArrays.push(newRow);
-        allAsArrays.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
-        updatedRows = allAsArrays;
-        console.log(`[sync-revenue] ${brand.id} — appended new row for ${targetMonth}`);
+        console.log(`[sync-revenue] ${brand.id} ${targetMonth} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
+
+        const newRow = [
+          parseInt(tMonth, 10),
+          parseInt(tYear,  10),
+          revenue,
+          orders,
+          unitsSold,
+          fbaUnits,
+          fbmUnits,
+        ];
+
+        // Match on MONTH + YEAR
+        const idx = workingRows.findIndex(
+          r => String(r['MONTH']) === String(parseInt(tMonth, 10)) &&
+               String(r['YEAR'])  === String(parseInt(tYear,  10))
+        );
+
+        if (idx >= 0) {
+          workingRows = workingRows.map((r, i) => i === idx ? newRow : Object.values(r));
+          console.log(`[sync-revenue] ${brand.id} — overwrote ${targetMonth}`);
+        } else {
+          // Convert existing rows to arrays and append, then sort
+          const allAsArrays = workingRows.map(r =>
+            Array.isArray(r) ? r : [
+              parseInt(r['MONTH']      || 0, 10),
+              parseInt(r['YEAR']       || 0, 10),
+              parseFloat(r['REVENUE']  || 0),
+              parseInt(r['ORDERS']     || 0, 10),
+              parseInt(r['UNITS SOLD'] || 0, 10),
+              parseInt(r['FBA UNITS']  || 0, 10),
+              parseInt(r['FBM UNITS']  || 0, 10),
+            ]
+          );
+          allAsArrays.push(newRow);
+          allAsArrays.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
+          workingRows = allAsArrays;
+          console.log(`[sync-revenue] ${brand.id} — appended ${targetMonth}`);
+        }
+
+        brandResults.push({ month: targetMonth, orders, revenue, units: unitsSold });
       }
 
-      await replaceRows(sheets.revenue, brand.tabName, updatedRows);
-      results.push({ brand: brand.id, status: 'ok', month: targetMonth, orders, revenue });
+      await replaceRows(sheets.revenue, brand.tabName, workingRows);
+      results.push({ brand: brand.id, status: 'ok', months: brandResults });
 
     } catch (err) {
       console.error(`[sync-revenue] ${brand.id} failed:`, err.message);
@@ -244,7 +261,7 @@ module.exports = async (req, res) => {
     }
   }
 
-  res.status(200).json({ synced: results, reportId, month: targetMonth });
+  res.status(200).json({ synced: results, reportId });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
