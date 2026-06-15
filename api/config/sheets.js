@@ -5,9 +5,10 @@
  */
 
 module.exports = {
-  orders:           process.env.SHEET_ORDERS,           // amazon-orders (rolling current month)
-  ordersHistorical: process.env.SHEET_ORDERS_HISTORICAL, // amazon-orders-historical (18 months)
-  products:         process.env.SHEET_PRODUCTS,          // amazon-products
-  advertising:      process.env.SHEET_ADVERTISING,       // amazon-advertising
-  subscriptions:    process.env.SHEET_SUBSCRIPTIONS,     // amazon-subscriptions
+  orders:           process.env.SHEET_ORDERS,
+  ordersHistorical: process.env.SHEET_ORDERS_HISTORICAL,
+  products:         process.env.SHEET_PRODUCTS,
+  advertising:      process.env.SHEET_ADVERTISING,
+  subscriptions:    process.env.SHEET_SUBSCRIPTIONS,
+  revenue:          process.env.SHEET_REVENUE,           // amazon-revenue (monthly totals)
 };
