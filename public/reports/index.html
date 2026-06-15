@@ -967,6 +967,11 @@ function initSns() {
     return true;
   }
 
+  function parseAmt(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+  }
+
   function filterRows(rows) {
     return rows.filter(r => isEvolisRow(r) && isValidOrder(r));
   }
@@ -1020,7 +1025,7 @@ function initSns() {
     const orderTotals = {};
     filtered.forEach(r => {
       if (r.order_id && !orderTotals[r.order_id]) {
-        orderTotals[r.order_id] = parseFloat(r.order_total) || 0;
+        orderTotals[r.order_id] = parseAmt(r.order_total);
       }
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
@@ -1145,11 +1150,7 @@ function initSns() {
       const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
 
       if (!curr) {
-        const syncSample = syncRows.slice(0,2).map(r => `${r.date}|${r.brand}|${r.status}`).join(', ');
-        const histSample = histRows.slice(0,2).map(r => `${r.date}|${r.brand}|${r.status}`).join(', ');
-        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. `
-          + `syncRows:${syncRows.length} histRows:${histRows.length} allRows:${allRows.length}. `
-          + `Sync sample: [${syncSample || 'none'}] Hist sample: [${histSample || 'none'}]`);
+        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
         return;
       }
 
