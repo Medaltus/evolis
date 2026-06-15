@@ -1231,7 +1231,10 @@ function initSns() {
       // Only render years that have data
       const datasets = [];
       const currentYear = new Date().getFullYear();
-      const currentMonth = new Date().getMonth(); // 0-indexed
+      const currentMonth = new Date().getMonth(); // 0-indexed, e.g. June = 5
+      // Last full month (0-indexed): month before current
+      const lastFullYear  = currentMonth === 0 ? currentYear - 1 : currentYear;
+      const lastFullMonth = currentMonth === 0 ? 11 : currentMonth - 1; // e.g. May = 4
 
       const yearStyles = {
         2023: { borderColor: '#ccd3d5', backgroundColor: 'transparent' },
@@ -1244,9 +1247,10 @@ function initSns() {
       for (const y of [2023, 2024, 2025, 2026]) {
         if (!yearData[y]) continue;
         const style = yearStyles[y] || { borderColor: '#ccd3d5', backgroundColor: 'transparent' };
-        // For current year: null out future months
+        // Null out anything after the last full month
         const data = yearData[y].map((v, idx) => {
-          if (y === currentYear && idx > currentMonth) return null;
+          if (y === lastFullYear && idx > lastFullMonth) return null;
+          if (y > lastFullYear) return null;
           return v;
         });
         datasets.push({
@@ -1255,7 +1259,7 @@ function initSns() {
           borderColor: style.borderColor,
           backgroundColor: style.backgroundColor,
           fill: style.fill || false,
-          borderWidth: y === currentYear ? 2 : 1.5,
+          borderWidth: y === lastFullYear ? 2 : 1.5,
           pointRadius: 2,
           tension: 0.3,
         });
