@@ -1186,14 +1186,14 @@ function initSns() {
   async function initAmazonRevenueChart() {
     if (window._amazonChart) return;
 
-    const REVENUE_SHEET_ID = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank';
+    const REVENUE_SHEET_ID  = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank';
+    const REVENUE_EVOLIS_GID = '1237377804';
 
     try {
-      // Fetch evolis tab by name (gviz returns JSON keyed by sheet name)
-      const url = `https://docs.google.com/spreadsheets/d/${REVENUE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=evolis`;
+      const url  = `https://docs.google.com/spreadsheets/d/${REVENUE_SHEET_ID}/export?format=csv&gid=${REVENUE_EVOLIS_GID}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error('Revenue sheet fetch failed');
-      const csv = await resp.text();
+      const csv  = await resp.text();
 
       if (!csv || csv.trim().startsWith('<')) throw new Error('Revenue sheet not accessible');
 
@@ -1223,8 +1223,8 @@ function initSns() {
         const m = parseInt(row['MONTH'], 10);
         if (!y || !m || m < 1 || m > 12) continue;
         if (!yearData[y]) yearData[y] = new Array(12).fill(null);
-        // Strip $ and commas from revenue
-        const rev = parseFloat((row['REVENUE'] || '0').replace(/[$,]/g, '')) || 0;
+        // Strip $, commas, quotes from revenue e.g. "$10,856.00" → 10856
+        const rev = parseFloat((row['REVENUE'] || '0').replace(/[$,"]/g, '')) || 0;
         yearData[y][m - 1] = rev;
       }
 
