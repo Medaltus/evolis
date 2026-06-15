@@ -412,6 +412,12 @@
   .footer-logo img { height: 22px; }
   .footer-meta { font-size: 10px; color: var(--slate); text-align: right; line-height: 1.8; }
   .confidential { color: var(--green); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  /* ── Top Products dynamic table ── */
+  #amazon-top-sellers thead th { text-align: left; }
+  #amazon-top-sellers tbody td:first-child { font-weight: 500; color: var(--slate); width: 36px; }
+  #amazon-top-sellers .tp-units { color: #24e9a3; font-weight: 700; font-size: 13px; }
+  #amazon-top-sellers .tp-dash { color: rgba(107,123,162,.45); }
+
 </style>
 </head>
 <body>
@@ -524,23 +530,62 @@
         <div class="card-title">Sales Revenue by Month</div>
         <div class="chart-wrap"><canvas id="chart-amazon"></canvas></div>
       </div>
-      <div class="card">
-        <div class="card-title">Top Selling Products <span style="font-size:11px;color:var(--slate);font-weight:400;">(by Units)</span></div>
-        <table class="data-table" id="amazon-top-sellers">
-          <thead><tr><th>#</th><th>Product Name</th><th>Units Sold</th><th>Revenue</th><th>Conv. Rate</th></tr></thead>
-          <tbody>
-            <tr><td>1.</td><td>Reverse Shampoo (Travel Size)</td><td>59</td><td>—</td><td>—</td></tr>
-            <tr><td>2.</td><td>Promote Activator</td><td>29</td><td>—</td><td>—</td></tr>
-            <tr><td>3.</td><td>Reverse Activator</td><td>24</td><td>—</td><td>—</td></tr>
-            <tr><td>4.</td><td>Prevent Conditioner</td><td>17</td><td>—</td><td>—</td></tr>
-            <tr><td>5.</td><td>Reverse Conditioner (Travel Size)</td><td>9</td><td>—</td><td>—</td></tr>
-            <tr><td>6.</td><td>Promote Conditioner</td><td>6</td><td>—</td><td>—</td></tr>
-            <tr><td>7.</td><td>Prevent Activator</td><td>4</td><td>—</td><td>—</td></tr>
-          </tbody>
-        </table>
-        <div id="amazon-products-source" style="font-size:10px;color:var(--slate);margin-top:8px;">Showing cached data · Connect SP-API to load live data</div>
-        <div class="insight"><strong>Key Insight:</strong> Unit sales increased modestly MOM, with organic demand driving the majority of growth as organic units rose 8%. Reverse Shampoo (Travel Size) became the top-selling SKU, while Promote and Reverse Activators continued to be leading contributors.</div>
-      </div>
+      <div class="card" id="top-products-card">
+
+        <!-- Card header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+          <div>
+            <span class="card-title" style="margin-bottom:0;">Top Selling Products</span>
+            <span style="font-size:11px;color:var(--slate);margin-left:8px;font-weight:400;">(by Units)</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="amazon-products-source" style="font-size:10px;color:var(--slate);"></span>
+            <button id="tp-insight-edit-btn" title="Edit Key Insight"
+              style="background:none;border:1px solid rgba(107,123,162,.3);border-radius:5px;padding:3px 9px;font-size:10px;color:var(--slate);cursor:pointer;transition:background .15s;"
+              onmouseover="this.style.background='rgba(107,123,162,.08)'"
+              onmouseout="this.style.background='none'">✏️ Edit insight</button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="amazon-top-sellers">
+            <thead>
+              <tr>
+                <th style="width:36px;">#</th>
+                <th>PRODUCT NAME</th>
+                <th>UNITS SOLD</th>
+                <th>UNITS (ADS)</th>
+                <th>UNITS (ORGANIC)</th>
+                <th>CONV. RATE</th>
+              </tr>
+            </thead>
+            <tbody id="tp-tbody">
+              <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Key Insight display bar -->
+        <div id="tp-insight-bar" class="insight" style="margin-top:16px;">
+          <strong>Key Insight:</strong> <span id="tp-insight-text"></span>
+        </div>
+
+        <!-- Hidden edit panel -->
+        <div id="tp-insight-editor" style="display:none;padding:14px 18px;border-top:1px solid rgba(107,123,162,.15);background:rgba(107,123,162,.04);margin-top:8px;border-radius:0 0 8px 8px;">
+          <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:8px;">Edit Key Insight <span style="font-weight:400;color:var(--slate);">(saved in your browser)</span></div>
+          <textarea id="tp-insight-textarea"
+            style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(107,123,162,.35);border-radius:6px;font-family:'Montserrat',sans-serif;font-size:12px;color:var(--navy);resize:vertical;min-height:72px;background:#fff;outline:none;"
+            placeholder="Enter the key insight to display below the table…"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end;">
+            <button id="tp-insight-cancel"
+              style="padding:5px 14px;font-size:11px;border:1px solid rgba(107,123,162,.35);background:#fff;border-radius:5px;cursor:pointer;color:var(--slate);">Cancel</button>
+            <button id="tp-insight-save"
+              style="padding:5px 14px;font-size:11px;border:none;background:var(--navy);color:#fff;border-radius:5px;cursor:pointer;">Save</button>
+          </div>
+        </div>
+
+      </div><!-- end top-products-card -->
     </div>
 
     <!-- ══ WEB ══ -->
@@ -1173,125 +1218,143 @@ function initSns() {
 
       renderKPIs(curr, prev, prevYoy);
       setSourceLabel(year, month);
-
-      // ── Revenue by Month chart ───────────────────────────────────────────
-      // Fetches from the revenue history sheet (evolis tab, sheet name lookup)
-      initAmazonRevenueChart();
+      buildTopProductsTable(allRows, year, month);
 
     } catch (err) {
       showError(err.message);
     }
   };
 
-  async function initAmazonRevenueChart() {
-    if (window._amazonChart) return;
+  // ── Top Products Table ────────────────────────────────────────────────────
+  // Product name lookup: sheet 1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA, gid 164358627
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
 
-    const REVENUE_SHEET_ID  = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank';
-    const REVENUE_EVOLIS_GID = '1237377804';
+  async function buildTopProductsTable(allRows, targetYear, targetMonth) {
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
 
-    try {
-      const url  = `https://docs.google.com/spreadsheets/d/${REVENUE_SHEET_ID}/export?format=csv&gid=${REVENUE_EVOLIS_GID}`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('Revenue sheet fetch failed');
-      const csv  = await resp.text();
+    // Filter to last full month (same rules as KPIs)
+    const monthRows = allRows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      if (d !== prefix) return false;
+      const status = (r.status || '').toLowerCase();
+      if (status === 'cancelled' || status === 'pending') return false;
+      const promos = (r.promotion_ids || '').toLowerCase();
+      if (promos.includes('vine')) return false;
+      return true;
+    });
 
-      if (!csv || csv.trim().startsWith('<')) throw new Error('Revenue sheet not accessible');
-
-      // Parse CSV — columns: MONTH, YEAR, REVENUE, ORDERS, UNITS SOLD, FBA UNITS, FBM UNITS
-      const lines = csv.trim().split('\n');
-      const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-      const rows = lines.slice(1).map(line => {
-        // Handle quoted values like "$10,856.00"
-        const cols = [];
-        let cur = '', inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const c = line[i];
-          if (c === '"') { inQ = !inQ; }
-          else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
-          else { cur += c; }
-        }
-        cols.push(cur);
-        const obj = {};
-        headers.forEach((h, i) => { obj[h] = (cols[i] || '').replace(/"/g, '').trim(); });
-        return obj;
-      }).filter(r => r['MONTH'] && r['YEAR']);
-
-      // Group by year → array of 12 monthly revenue values
-      const yearData = {};
-      for (const row of rows) {
-        const y = parseInt(row['YEAR'], 10);
-        const m = parseInt(row['MONTH'], 10);
-        if (!y || !m || m < 1 || m > 12) continue;
-        if (!yearData[y]) yearData[y] = new Array(12).fill(null);
-        // Strip $, commas, quotes from revenue e.g. "$10,856.00" → 10856
-        const rev = parseFloat((row['REVENUE'] || '0').replace(/[$,"]/g, '')) || 0;
-        yearData[y][m - 1] = rev;
-      }
-
-      // Only render years that have data
-      const datasets = [];
-      const currentYear = new Date().getFullYear();
-      const currentMonth = new Date().getMonth(); // 0-indexed, e.g. June = 5
-      // Last full month (0-indexed): month before current
-      const lastFullYear  = currentMonth === 0 ? currentYear - 1 : currentYear;
-      const lastFullMonth = currentMonth === 0 ? 11 : currentMonth - 1; // e.g. May = 4
-
-      // Color by recency: current year = green, -1 = navy, -2 = sand, -3 = grey
-      const yearStyles = {
-        [lastFullYear]:     { borderColor: '#24e9a3', backgroundColor: 'rgba(36,233,163,0.08)', fill: true },
-        [lastFullYear - 1]: { borderColor: '#001f60', backgroundColor: 'transparent' },
-        [lastFullYear - 2]: { borderColor: '#f4dfd0', backgroundColor: 'transparent' },
-        [lastFullYear - 3]: { borderColor: '#ccd3d5', backgroundColor: 'transparent' },
-      };
-
-      // Render in order: 2023, 2024, 2025, 2026
-      for (const y of [2023, 2024, 2025, 2026]) {
-        if (!yearData[y]) continue;
-        const style = yearStyles[y] || { borderColor: '#ccd3d5', backgroundColor: 'transparent' };
-        // Null out anything after the last full month
-        const data = yearData[y].map((v, idx) => {
-          if (y === lastFullYear && idx > lastFullMonth) return null;
-          if (y > lastFullYear) return null;
-          return v;
-        });
-        datasets.push({
-          label: String(y),
-          data,
-          borderColor: style.borderColor,
-          backgroundColor: style.backgroundColor,
-          fill: style.fill || false,
-          borderWidth: y === lastFullYear ? 2 : 1.5,
-          pointRadius: 2,
-          tension: 0.3,
-        });
-      }
-
-      window._amazonChart = new Chart(document.getElementById('chart-amazon'), {
-        type: 'line',
-        data: { labels: months12, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'top',
-              labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12 },
-            },
-          },
-          scales: {
-            x: { grid: { color: 'rgba(0,0,0,0.04)' } },
-            y: {
-              grid: { color: 'rgba(0,0,0,0.04)' },
-              ticks: { callback: v => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v) },
-            },
-          },
-        },
-      });
-
-    } catch (err) {
-      console.warn('[revenue chart] failed to load:', err.message);
+    const tbody = document.getElementById('tp-tbody');
+    if (!monthRows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
     }
+
+    // Aggregate units per individual SKU
+    // Each row has a `skus` field (comma-separated, e.g. "EVO0001" or "EVO0011, EVO0014")
+    // and `unit_count` for total units on that order.
+    // Because the sheet is order-level (not line-item), we split unit_count equally
+    // across SKUs on multi-SKU orders — this is a known approximation until
+    // sync-orders.js is updated to write one row per line item (Option A).
+    const skuUnits = {};
+    for (const row of monthRows) {
+      const skuList = (row.skus || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (!skuList.length) continue;
+      const qty = parseInt(row.unit_count, 10) || 0;
+      if (!qty) continue;
+      // Split equally across SKUs on this order (rounded, any remainder goes to first SKU)
+      const perSku = Math.floor(qty / skuList.length);
+      const remainder = qty - (perSku * skuList.length);
+      skuList.forEach((sku, idx) => {
+        skuUnits[sku] = (skuUnits[sku] || 0) + perSku + (idx === 0 ? remainder : 0);
+      });
+    }
+
+    // Fetch product name lookup sheet
+    let skuNameMap = {};
+    try {
+      const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}`;
+      const resp = await fetch(namesCsvUrl);
+      if (resp.ok) {
+        const csv = await resp.text();
+        if (isCsv(csv)) {
+          const lines = csv.trim().split('\n');
+          // Expect header: SKU, Product Name (columns A, B)
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCsvLine(lines[i]);
+            const sku  = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+            const name = (cols[1] || '').replace(/^"|"$/g,'').trim();
+            if (sku && name) skuNameMap[sku] = name;
+          }
+        }
+      }
+    } catch (e) {
+      // Name lookup failure is non-fatal — shows SKU codes instead
+      console.warn('[TopProducts] Name lookup failed:', e.message);
+    }
+
+    // Sort by units desc, remove zeros
+    const sorted = Object.entries(skuUnits)
+      .filter(([, u]) => u > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    tbody.innerHTML = '';
+    sorted.forEach(([sku, units], idx) => {
+      const name    = skuNameMap[sku] || sku;
+      const adUnits = 0; // placeholder until SP-API advertising connected
+      const orgUnits = units - adUnits;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}.</td>
+        <td>${name}</td>
+        <td class="tp-units">${units.toLocaleString()}</td>
+        <td class="tp-dash">—</td>
+        <td>${orgUnits.toLocaleString()}</td>
+        <td class="tp-dash">—</td>`;
+      tbody.appendChild(tr);
+    });
+
+    // Update source label
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const srcEl = document.getElementById('amazon-products-source');
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth - 1]} ${targetYear}`;
   }
+
+  // ── Key Insights (localStorage) ───────────────────────────────────────────
+  (function initInsights() {
+    const STORAGE_KEY = 'evolis_amazon_key_insight';
+    const textEl      = document.getElementById('tp-insight-text');
+    const barEl       = document.getElementById('tp-insight-bar');
+    const editorEl    = document.getElementById('tp-insight-editor');
+    const textareaEl  = document.getElementById('tp-insight-textarea');
+    const editBtn     = document.getElementById('tp-insight-edit-btn');
+    const saveBtn     = document.getElementById('tp-insight-save');
+    const cancelBtn   = document.getElementById('tp-insight-cancel');
+
+    function loadInsight() {
+      const saved = localStorage.getItem(STORAGE_KEY) || '';
+      textEl.textContent = saved || 'No insight added yet — click "Edit insight" to add one.';
+      textEl.style.opacity = saved ? '1' : '0.55';
+    }
+
+    editBtn.addEventListener('click', () => {
+      textareaEl.value = localStorage.getItem(STORAGE_KEY) || '';
+      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+      if (editorEl.style.display === 'block') setTimeout(() => textareaEl.focus(), 50);
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const val = textareaEl.value.trim();
+      if (val) localStorage.setItem(STORAGE_KEY, val);
+      else localStorage.removeItem(STORAGE_KEY);
+      loadInsight();
+      editorEl.style.display = 'none';
+    });
+
+    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+
+    loadInsight();
+  })();
 
 })();
 
