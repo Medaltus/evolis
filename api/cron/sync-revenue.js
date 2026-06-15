@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
   // ── Determine target months ────────────────────────────────────────────────
   // Manual override: ?month=YYYY-MM runs only that one month (for backfill)
   // Default: prior month + current month in one report request
-  let targetMonths; // array of "YYYY-MM" strings
+  let targetMonths;
   let start, end;
 
   if (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) {
@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
     end   = `${req.query.month}-${pad(lastDay)}T23:59:59Z`;
   } else {
     // Default mode — prior month through now
-    const prior = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prior  = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const pYear  = prior.getFullYear();
     const pMonth = pad(prior.getMonth() + 1);
     const cYear  = now.getFullYear();
@@ -171,34 +171,52 @@ module.exports = async (req, res) => {
       const monthMap = {};
 
       for (const row of brandRows) {
-        const orderId   = row['amazon-order-id'] || row['order-id'] || '';
-        const dateRaw   = (row['purchase-date'] || '').slice(0, 7); // "YYYY-MM"
+        const orderId = row['amazon-order-id'] || row['order-id'] || '';
+        const dateRaw = (row['purchase-date'] || '').slice(0, 7); // "YYYY-MM"
         if (!orderId || !dateRaw) continue;
 
         // Only process months we care about
         if (!targetMonths.includes(dateRaw)) continue;
 
-        if (!monthMap[dateRaw])           monthMap[dateRaw]           = {};
-        if (!monthMap[dateRaw][orderId])  monthMap[dateRaw][orderId]  = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
+        if (!monthMap[dateRaw])          monthMap[dateRaw]          = {};
+        if (!monthMap[dateRaw][orderId]) monthMap[dateRaw][orderId] = { revenue: 0, units: 0, fbaUnits: 0, fbmUnits: 0 };
 
-        const entry   = monthMap[dateRaw][orderId];
-        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
-        const price   = parseFloat(row['item-price'] || '0');
+        const entry = monthMap[dateRaw][orderId];
+        const qty   = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+        const price = parseFloat(row['item-price'] || '0');
         // AFN = Fulfilled by Amazon (FBA), MFN = Merchant Fulfilled (FBM)
-        const isFba   = (row['fulfillment-channel'] || '').toUpperCase() === 'AFN';
+        const isFba = (row['fulfillment-channel'] || '').toUpperCase() === 'AFN';
 
         entry.revenue  = round2(entry.revenue + price);
         entry.units   += qty;
         if (isFba) { entry.fbaUnits += qty; } else { entry.fbmUnits += qty; }
       }
 
-      // Read existing sheet rows once per brand
+      // ── Read existing sheet rows once per brand ──────────────────────────
       await ensureTab(sheets.revenue, brand.tabName, HEADERS);
-      const existingRows = await readRows(sheets.revenue, brand.tabName);
+      const rawExisting = await readRows(sheets.revenue, brand.tabName);
 
-      // Upsert each target month
+      // Normalize existing rows to plain arrays — handles empty tab (new brands)
+      // and object rows returned by readRows equally
+      const existingArrays = (rawExisting || []).map(r =>
+        Array.isArray(r)
+          ? r
+          : [
+              parseInt(r['MONTH']      || 0, 10),
+              parseInt(r['YEAR']       || 0, 10),
+              parseFloat(r['REVENUE']  || 0),
+              parseInt(r['ORDERS']     || 0, 10),
+              parseInt(r['UNITS SOLD'] || 0, 10),
+              parseInt(r['FBA UNITS']  || 0, 10),
+              parseInt(r['FBM UNITS']  || 0, 10),
+            ]
+      );
+
+      // Work with a mutable copy
+      let workingRows = [...existingArrays];
+
+      // ── Upsert each target month ─────────────────────────────────────────
       const brandResults = [];
-      let workingRows = existingRows;
 
       for (const targetMonth of targetMonths) {
         const [tYear, tMonth] = targetMonth.split('-');
@@ -221,36 +239,24 @@ module.exports = async (req, res) => {
           fbmUnits,
         ];
 
-        // Match on MONTH + YEAR
+        // Match on MONTH (index 0) + YEAR (index 1)
         const idx = workingRows.findIndex(
-          r => String(r['MONTH']) === String(parseInt(tMonth, 10)) &&
-               String(r['YEAR'])  === String(parseInt(tYear,  10))
+          r => r[0] === parseInt(tMonth, 10) && r[1] === parseInt(tYear, 10)
         );
 
         if (idx >= 0) {
-          workingRows = workingRows.map((r, i) => i === idx ? newRow : Object.values(r));
+          workingRows[idx] = newRow;
           console.log(`[sync-revenue] ${brand.id} — overwrote ${targetMonth}`);
         } else {
-          // Convert existing rows to arrays and append, then sort
-          const allAsArrays = workingRows.map(r =>
-            Array.isArray(r) ? r : [
-              parseInt(r['MONTH']      || 0, 10),
-              parseInt(r['YEAR']       || 0, 10),
-              parseFloat(r['REVENUE']  || 0),
-              parseInt(r['ORDERS']     || 0, 10),
-              parseInt(r['UNITS SOLD'] || 0, 10),
-              parseInt(r['FBA UNITS']  || 0, 10),
-              parseInt(r['FBM UNITS']  || 0, 10),
-            ]
-          );
-          allAsArrays.push(newRow);
-          allAsArrays.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
-          workingRows = allAsArrays;
+          workingRows.push(newRow);
           console.log(`[sync-revenue] ${brand.id} — appended ${targetMonth}`);
         }
 
         brandResults.push({ month: targetMonth, orders, revenue, units: unitsSold });
       }
+
+      // Sort by YEAR then MONTH before writing
+      workingRows.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
 
       await replaceRows(sheets.revenue, brand.tabName, workingRows);
       results.push({ brand: brand.id, status: 'ok', months: brandResults });
