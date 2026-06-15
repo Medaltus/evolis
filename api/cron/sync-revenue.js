@@ -193,11 +193,10 @@ module.exports = async (req, res) => {
       }
 
       // ── Read existing sheet rows once per brand ──────────────────────────
-      await ensureTab(sheets.revenue, brand.tabName, HEADERS);
+      const token = await ensureTab(sheets.revenue, brand.tabName, HEADERS);
       const rawExisting = await readRows(sheets.revenue, brand.tabName);
 
-      // Normalize existing rows to plain arrays — handles empty tab (new brands)
-      // and object rows returned by readRows equally
+      // Normalize to plain arrays — handles empty tab and object rows equally
       const existingArrays = (rawExisting || []).map(r =>
         Array.isArray(r)
           ? r
@@ -212,7 +211,6 @@ module.exports = async (req, res) => {
             ]
       );
 
-      // Work with a mutable copy
       let workingRows = [...existingArrays];
 
       // ── Upsert each target month ─────────────────────────────────────────
@@ -258,7 +256,8 @@ module.exports = async (req, res) => {
       // Sort by YEAR then MONTH before writing
       workingRows.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
 
-      await replaceRows(sheets.revenue, brand.tabName, workingRows);
+      // replaceRows(sheetId, tabName, headers, rows, token)
+      await replaceRows(sheets.revenue, brand.tabName, HEADERS, workingRows, token);
       results.push({ brand: brand.id, status: 'ok', months: brandResults });
 
     } catch (err) {
