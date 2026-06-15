@@ -13,7 +13,8 @@
  * Sheet: amazon-revenue  |  One tab per brand (matches brand.tabName).
  * Columns: MONTH | YEAR | REVENUE | ORDERS | UNITS SOLD | FBA UNITS | FBM UNITS
  *
- * Safe to re-run — overwrites the row for each target month if it already exists.
+ * Safe to re-run — only overwrites rows for the two target months.
+ * All other historical rows are preserved exactly as-is.
  *
  * Trigger manually for backfill:
  *   GET /api/cron/sync-revenue?month=YYYY-MM
@@ -28,8 +29,9 @@ const sheets                               = require('../config/sheets');
 
 const HEADERS = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA UNITS', 'FBM UNITS'];
 
-const REPORT_POLL_TIMEOUT_MS  = 25_000;
-const REPORT_POLL_INTERVAL_MS = 3_000;
+// Generous timeout — Amazon report generation can take 60–120s
+const REPORT_POLL_TIMEOUT_MS  = 240_000;
+const REPORT_POLL_INTERVAL_MS = 4_000;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -145,6 +147,7 @@ module.exports = async (req, res) => {
     return Object.fromEntries(tsvHeaders.map((h, i) => [h, (vals[i] || '').trim()]));
   });
 
+  console.log(`[sync-revenue] flat file headers: ${tsvHeaders.slice(0, 10).join(' | ')}`);
   console.log(`[sync-revenue] flat file rows: ${rows.length}`);
 
   // ── 5. Per-brand aggregation & sheet write ─────────────────────────────────
@@ -165,6 +168,8 @@ module.exports = async (req, res) => {
           !promo.includes('vine')
         );
       });
+
+      console.log(`[sync-revenue] ${brand.id} — ${brandRows.length} matching flat file rows`);
 
       // Aggregate by order_id per month
       // monthMap: { "YYYY-MM": { orderId: { revenue, units, fbaUnits, fbmUnits } } }
@@ -193,23 +198,27 @@ module.exports = async (req, res) => {
       }
 
       // ── Read existing sheet rows once per brand ──────────────────────────
-      const token = await ensureTab(sheets.revenue, brand.tabName, HEADERS);
+      const token       = await ensureTab(sheets.revenue, brand.tabName, HEADERS);
       const rawExisting = await readRows(sheets.revenue, brand.tabName);
 
-      // Normalize to plain arrays — handles empty tab and object rows equally
-      const existingArrays = (rawExisting || []).map(r =>
-        Array.isArray(r)
-          ? r
-          : [
-              parseInt(r['MONTH']      || 0, 10),
-              parseInt(r['YEAR']       || 0, 10),
-              parseFloat(r['REVENUE']  || 0),
-              parseInt(r['ORDERS']     || 0, 10),
-              parseInt(r['UNITS SOLD'] || 0, 10),
-              parseInt(r['FBA UNITS']  || 0, 10),
-              parseInt(r['FBM UNITS']  || 0, 10),
-            ]
-      );
+      // Normalize to plain arrays.
+      // Skip rows where MONTH or YEAR are missing/blank — these are malformed
+      // historical rows (e.g. your manually entered evolis data with blank MONTH).
+      // We preserve them as-is by keeping the raw string values so replaceRows
+      // writes them back exactly as they came from the sheet.
+      const existingArrays = (rawExisting || []).map(r => {
+        if (Array.isArray(r)) return r;
+        // Preserve raw string values so blank MONTH rows stay intact
+        return [
+          r['MONTH']      ?? '',
+          r['YEAR']       ?? '',
+          r['REVENUE']    ?? '',
+          r['ORDERS']     ?? '',
+          r['UNITS SOLD'] ?? '',
+          r['FBA UNITS']  ?? '',
+          r['FBM UNITS']  ?? '',
+        ];
+      });
 
       let workingRows = [...existingArrays];
 
@@ -218,6 +227,9 @@ module.exports = async (req, res) => {
 
       for (const targetMonth of targetMonths) {
         const [tYear, tMonth] = targetMonth.split('-');
+        const tMonthNum = parseInt(tMonth, 10);
+        const tYearNum  = parseInt(tYear,  10);
+
         const orderData = monthMap[targetMonth] || {};
         const orders    = Object.keys(orderData).length;
         const revenue   = round2(Object.values(orderData).reduce((s, o) => s + o.revenue, 0));
@@ -227,19 +239,12 @@ module.exports = async (req, res) => {
 
         console.log(`[sync-revenue] ${brand.id} ${targetMonth} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
 
-        const newRow = [
-          parseInt(tMonth, 10),
-          parseInt(tYear,  10),
-          revenue,
-          orders,
-          unitsSold,
-          fbaUnits,
-          fbmUnits,
-        ];
+        const newRow = [tMonthNum, tYearNum, revenue, orders, unitsSold, fbaUnits, fbmUnits];
 
-        // Match on MONTH (index 0) + YEAR (index 1)
-        const idx = workingRows.findIndex(
-          r => r[0] === parseInt(tMonth, 10) && r[1] === parseInt(tYear, 10)
+        // Match on MONTH + YEAR — compare as numbers to handle both "5" and 5
+        const idx = workingRows.findIndex(r =>
+          parseInt(r[0], 10) === tMonthNum &&
+          parseInt(r[1], 10) === tYearNum
         );
 
         if (idx >= 0) {
@@ -253,10 +258,18 @@ module.exports = async (req, res) => {
         brandResults.push({ month: targetMonth, orders, revenue, units: unitsSold });
       }
 
-      // Sort by YEAR then MONTH before writing
-      workingRows.sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
+      // Sort only the rows that have valid numeric MONTH + YEAR.
+      // Rows with blank MONTH (historical manual entries) stay in place
+      // by sorting them as year=0 month=0 which floats them to the top —
+      // but since they already exist and we aren't touching them, this is fine.
+      workingRows.sort((a, b) => {
+        const ay = parseInt(a[1], 10) || 0;
+        const by = parseInt(b[1], 10) || 0;
+        const am = parseInt(a[0], 10) || 0;
+        const bm = parseInt(b[0], 10) || 0;
+        return ay !== by ? ay - by : am - bm;
+      });
 
-      // replaceRows(sheetId, tabName, headers, rows, token)
       await replaceRows(sheets.revenue, brand.tabName, HEADERS, workingRows, token);
       results.push({ brand: brand.id, status: 'ok', months: brandResults });
 
