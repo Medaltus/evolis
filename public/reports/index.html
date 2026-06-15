@@ -1236,11 +1236,12 @@ function initSns() {
       const lastFullYear  = currentMonth === 0 ? currentYear - 1 : currentYear;
       const lastFullMonth = currentMonth === 0 ? 11 : currentMonth - 1; // e.g. May = 4
 
+      // Color by recency: current year = green, -1 = navy, -2 = sand, -3 = grey
       const yearStyles = {
-        2023: { borderColor: '#ccd3d5', backgroundColor: 'transparent' },
-        2024: { borderColor: '#001f60', backgroundColor: 'transparent' },
-        2025: { borderColor: '#f4dfd0', backgroundColor: 'transparent' },
-        2026: { borderColor: '#24e9a3', backgroundColor: 'rgba(36,233,163,0.08)', fill: true },
+        [lastFullYear]:     { borderColor: '#24e9a3', backgroundColor: 'rgba(36,233,163,0.08)', fill: true },
+        [lastFullYear - 1]: { borderColor: '#001f60', backgroundColor: 'transparent' },
+        [lastFullYear - 2]: { borderColor: '#f4dfd0', backgroundColor: 'transparent' },
+        [lastFullYear - 3]: { borderColor: '#ccd3d5', backgroundColor: 'transparent' },
       };
 
       // Render in order: 2023, 2024, 2025, 2026
