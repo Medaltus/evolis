@@ -1,28 +1,30 @@
 {
   "version": 2,
   "crons": [
-    { "path": "/api/cron/sync-orders",          "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-orders-backfill", "schedule": "0 4 5 * *"  },
-    { "path": "/api/cron/sync-products",        "schedule": "30 2 * * *"  },
-    { "path": "/api/cron/sync-advertising",     "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/sync-subscriptions",   "schedule": "30 3 * * *"  },
-    { "path": "/api/cron/trim-orders",          "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/reconcile-orders",     "schedule": "0 8 * * *"   },
-    { "path": "/api/cron/sync-revenue",         "schedule": "0 6 * * *"   }
+    { "path": "/api/cron/sync-orders",           "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-orders-backfill",  "schedule": "0 4 5 * *"  },
+    { "path": "/api/cron/sync-products",         "schedule": "30 2 * * *"  },
+    { "path": "/api/cron/sync-advertising",      "schedule": "0 3 * * *"   },
+    { "path": "/api/cron/sync-subscriptions",    "schedule": "30 3 * * *"  },
+    { "path": "/api/cron/trim-orders",           "schedule": "0 3 * * *"   },
+    { "path": "/api/cron/reconcile-orders",      "schedule": "0 8 * * *"   },
+    { "path": "/api/cron/sync-revenue-request",  "schedule": "0 5 * * *"   },
+    { "path": "/api/cron/sync-revenue-process",  "schedule": "15 5 * * *"  }
   ],
   "functions": {
-    "api/sales.js":                        { "maxDuration": 30  },
-    "api/products.js":                     { "maxDuration": 30  },
-    "api/advertising.js":                  { "maxDuration": 30  },
-    "api/subscriptions.js":                { "maxDuration": 30  },
-    "api/cron/sync-orders.js":             { "maxDuration": 300 },
-    "api/cron/sync-orders-backfill.js":    { "maxDuration": 300 },
-    "api/cron/sync-products.js":           { "maxDuration": 300 },
-    "api/cron/sync-advertising.js":        { "maxDuration": 300 },
-    "api/cron/sync-subscriptions.js":      { "maxDuration": 300 },
-    "api/cron/trim-orders.js":             { "maxDuration": 300 },
-    "api/cron/reconcile-orders.js":        { "maxDuration": 300 },
-    "api/cron/sync-revenue.js":            { "maxDuration": 300 }
+    "api/sales.js":                          { "maxDuration": 30  },
+    "api/products.js":                       { "maxDuration": 30  },
+    "api/advertising.js":                    { "maxDuration": 30  },
+    "api/subscriptions.js":                  { "maxDuration": 30  },
+    "api/cron/sync-orders.js":               { "maxDuration": 300 },
+    "api/cron/sync-orders-backfill.js":      { "maxDuration": 300 },
+    "api/cron/sync-products.js":             { "maxDuration": 300 },
+    "api/cron/sync-advertising.js":          { "maxDuration": 300 },
+    "api/cron/sync-subscriptions.js":        { "maxDuration": 300 },
+    "api/cron/trim-orders.js":               { "maxDuration": 300 },
+    "api/cron/reconcile-orders.js":          { "maxDuration": 300 },
+    "api/cron/sync-revenue-request.js":      { "maxDuration": 30  },
+    "api/cron/sync-revenue-process.js":      { "maxDuration": 300 }
   },
   "routes": [
     {
