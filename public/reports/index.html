@@ -1250,27 +1250,39 @@ function initSns() {
       return;
     }
 
-    // Aggregate units per individual SKU
-    // Each row has a `skus` field (comma-separated, e.g. "EVO0001" or "EVO0011, EVO0014")
-    // and `unit_count` for total units on that order.
-    // Because the sheet is order-level (not line-item), we split unit_count equally
-    // across SKUs on multi-SKU orders — this is a known approximation until
-    // sync-orders.js is updated to write one row per line item (Option A).
+    // Aggregate units per normalized SKU.
+    // Each row is now one line item (one SKU, one qty) from the updated sync-orders.js.
+    // SKU normalization: strip the "-SF" suffix so FBA (EVO0001) and FBM (EVO0001-SF)
+    // both count toward the same product.
     const skuUnits = {};
     for (const row of monthRows) {
-      const skuList = (row.skus || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-      if (!skuList.length) continue;
+      // `sku` is the new single-SKU column; fall back to `skus` for backwards
+      // compatibility with any older aggregated rows still in the sheet.
+      const rawSku = (row.sku || row.skus || '').trim().toUpperCase();
+      if (!rawSku) continue;
+
       const qty = parseInt(row.unit_count, 10) || 0;
       if (!qty) continue;
-      // Split equally across SKUs on this order (rounded, any remainder goes to first SKU)
-      const perSku = Math.floor(qty / skuList.length);
-      const remainder = qty - (perSku * skuList.length);
-      skuList.forEach((sku, idx) => {
-        skuUnits[sku] = (skuUnits[sku] || 0) + perSku + (idx === 0 ? remainder : 0);
+
+      // Handle both new (single sku) and legacy (comma-joined skus) rows
+      const skuList = rawSku.includes(',')
+        ? rawSku.split(',').map(s => s.trim())
+        : [rawSku];
+
+      // For legacy multi-SKU rows, split equally (same as before)
+      const perSku    = skuList.length > 1 ? Math.floor(qty / skuList.length) : qty;
+      const remainder = skuList.length > 1 ? qty - (perSku * skuList.length) : 0;
+
+      skuList.forEach((rawSkuEntry, idx) => {
+        // Normalize: strip "-SF" suffix (FBM variant) to merge with FBA base SKU
+        const normalizedSku = rawSkuEntry.replace(/-SF$/i, '');
+        const units = perSku + (idx === 0 ? remainder : 0);
+        skuUnits[normalizedSku] = (skuUnits[normalizedSku] || 0) + units;
       });
     }
 
-    // Fetch product name lookup sheet
+    // Fetch product name lookup sheet.
+    // Tab gid=164358627: column B = SKU (base, no -SF), column C = Product Name.
     let skuNameMap = {};
     try {
       const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}`;
@@ -1279,17 +1291,18 @@ function initSns() {
         const csv = await resp.text();
         if (isCsv(csv)) {
           const lines = csv.trim().split('\n');
-          // Expect header: SKU, Product Name (columns A, B)
+          // Header row in row 1 — skip it. Data rows: col B (index 1) = SKU, col C (index 2) = Product Name
           for (let i = 1; i < lines.length; i++) {
             const cols = parseCsvLine(lines[i]);
-            const sku  = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
-            const name = (cols[1] || '').replace(/^"|"$/g,'').trim();
+            // col B (index 1) = SKU, col C (index 2) = Product Name
+            const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+            const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
             if (sku && name) skuNameMap[sku] = name;
           }
         }
       }
     } catch (e) {
-      // Name lookup failure is non-fatal — shows SKU codes instead
+      // Name lookup failure is non-fatal — falls back to showing normalized SKU codes
       console.warn('[TopProducts] Name lookup failed:', e.message);
     }
 
@@ -1300,8 +1313,8 @@ function initSns() {
 
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
-      const name    = skuNameMap[sku] || sku;
-      const adUnits = 0; // placeholder until SP-API advertising connected
+      const name     = skuNameMap[sku] || sku;
+      const adUnits  = 0; // placeholder until SP-API advertising data connected
       const orgUnits = units - adUnits;
       const tr = document.createElement('tr');
       tr.innerHTML = `
