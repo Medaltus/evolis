@@ -972,9 +972,10 @@ function initSns() {
   'use strict';
 
   // ── Sheet IDs ─────────────────────────────────────────────────────────────
-  const SYNC_SHEET_ID      = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (MOM)
+  const SYNC_SHEET_ID       = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (MOM)
   const HISTORICAL_SHEET_ID = '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU'; // historical cache (YOY)
-  const BRAND = 'evolis';
+  const REVENUE_SHEET_ID    = '1equxdiqpzonA5TgsrKzbrpk92QHyJP8kQ2RoUiYmank'; // revenue history
+  const REVENUE_GID         = '1237377804';                                     // Évolis tab
 
   // Derive the last FULL month from today
   function getLastFullMonth() {
@@ -1220,10 +1221,99 @@ function initSns() {
       setSourceLabel(year, month);
       buildTopProductsTable(allRows, year, month);
 
+      // Revenue chart — fetches from the separate revenue history sheet
+      buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
+
     } catch (err) {
       showError(err.message);
     }
   };
+
+  // ── Revenue chart ─────────────────────────────────────────────────────────
+  // Reads from revenue history sheet. Columns: MONTH | YEAR | REVENUE | ...
+  // Renders up to 4 years of data stopping at the last full calendar month.
+  // Colors: current year green, prior navy, -2 sand, -3 grey.
+  async function buildRevenueChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(REVENUE_SHEET_ID, REVENUE_GID))
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    // Parse all rows into { year, month(1-12), revenue }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols    = parseCsvLine(lines[i]);
+      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,''), 10);
+      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,''), 10);
+      const rev     = parseFloat((cols[revenueIdx] || '').replace(/^"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+    }
+
+    // Last full month = last full calendar month relative to current year param
+    const now        = new Date();
+    const stopYear   = now.getFullYear();
+    const stopMonth  = now.getMonth(); // 0-indexed = last full month (1-indexed)
+
+    const COLORS = {
+      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  }, // current year
+      1: { border: '#001f60', bg: 'transparent',           fill: false }, // -1
+      2: { border: '#f4dfd0', bg: 'transparent',           fill: false }, // -2
+      3: { border: '#ccd3d5', bg: 'transparent',           fill: false }, // -3
+    };
+
+    const datasets = [];
+    for (let offset = 0; offset <= 3; offset++) {
+      const yr     = currentYear - offset;
+      const color  = COLORS[offset];
+      const data   = months12.map((_, idx) => {
+        const mo = idx + 1; // 1-indexed
+        // Don't plot future months for the current year
+        if (yr === stopYear && mo > stopMonth) return null;
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
+      });
+      // Skip year if it has no data at all
+      if (data.every(v => v === null)) continue;
+      datasets.push({
+        label: String(yr),
+        data,
+        borderColor:     color.border,
+        backgroundColor: color.bg,
+        fill:            color.fill,
+        ...lineDefaults,
+      });
+    }
+
+    if (datasets.length === 0) return;
+
+    const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+
+    if (window._amazonChart) window._amazonChart.destroy();
+    window._amazonChart = new Chart(document.getElementById('chart-amazon'), {
+      type: 'line',
+      data: { labels: months12, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { color: 'rgba(0,0,0,0.04)' } },
+          y: { grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { callback: fmtDollar } },
+        },
+      },
+    });
+  }
 
   // ── Top Products Table ────────────────────────────────────────────────────
   // Product name lookup: sheet 1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA, gid 164358627
