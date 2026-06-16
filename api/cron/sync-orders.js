@@ -3,11 +3,18 @@
  * Runs every 2 hours — pulls orders from the flat file report for ALL brands.
  * Uses GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL (GZIP TSV).
  * Writes to the rolling current-month sheet (amazon-orders).
- * Deduplicates on order_id before writing — safe to re-run.
+ * Deduplicates on order_id + sku before writing — safe to re-run.
  *
  * Why flat file instead of Orders API:
  *   The Orders API only returns FBA orders reliably. The flat file report
  *   covers FBA + FBM and is Amazon's source of truth for reconciliation.
+ *
+ * Row granularity — ONE ROW PER LINE ITEM:
+ *   The flat file already has one row per line item (one SKU per row).
+ *   We now write that directly to the sheet instead of aggregating by order_id.
+ *   This allows the dashboard to compute accurate per-SKU unit counts without
+ *   needing to split quantities across SKUs on multi-item orders.
+ *   The dedup key is order_id + sku (composite) to handle re-runs safely.
  *
  * Modes (via ?mode=):
  *   rolling   — last 2.5 hours (default, used by cron)
@@ -28,7 +35,7 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'skus', 'brand', 'last_updated',
+  'unit_count', 'sku', 'brand', 'last_updated',
 ];
 
 // How long to poll for a report to be ready (ms)
@@ -154,74 +161,49 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      // Aggregate by order_id (flat file has one row per line item)
-      const orderMap = {};
-      for (const row of brandRows) {
-        const orderId = row['amazon-order-id'] || row['order-id'] || '';
-        if (!orderId) continue;
+      // Build one sheet row per flat-file line item (no aggregation).
+      // Each flat-file row is already one SKU + its quantity on that order.
+      const newRows = brandRows.map(row => {
+        const orderId  = row['amazon-order-id'] || row['order-id'] || '';
+        const sku      = row['sku'] || row['seller-sku'] || '';
+        const qty      = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+        const qtyShip  = parseInt(row['quantity-shipped'] || '0', 10);
+        const price    = parseFloat(row['item-price'] || '0');
+        const disc     = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
 
-        if (!orderMap[orderId]) {
-          orderMap[orderId] = {
-            order_id:           orderId,
-            date:               (row['purchase-date'] || '').slice(0, 10),
-            status:             row['order-status'] || '',
-            order_total:        0,
-            promotion_ids:      row['promotion-ids'] || '',
-            is_premium_order:   'FALSE',
-            promotion_discount: 0,
-            item_price:         0,
-            quantity_ordered:   0,
-            quantity_shipped:   0,
-            skus:               new Set(),
-            brand:              brand.id,
-            last_updated:       now,
-          };
-        }
+        return [
+          orderId,
+          (row['purchase-date'] || '').slice(0, 10),
+          row['order-status'] || '',
+          round2(price),                   // order_total = item_price for this line
+          row['promotion-ids'] || '',
+          'FALSE',                          // is_premium_order (not in flat file)
+          round2(disc),                     // promotion_discount
+          round2(price),                    // item_price
+          qty,                              // quantity_ordered
+          qtyShip,                          // quantity_shipped
+          qty,                              // unit_count (same as qty for line items)
+          sku,                              // single SKU — no more comma-joined sets
+          brand.id,
+          now,
+        ];
+      }).filter(row => row[0]);             // drop rows with no order_id
 
-        const entry = orderMap[orderId];
-
-        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
-        const qtyShip = parseInt(row['quantity-shipped'] || '0', 10);
-        const price   = parseFloat(row['item-price'] || '0');
-        const disc    = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
-        const sku     = row['sku'] || row['seller-sku'] || '';
-
-        entry.quantity_ordered   += qty;
-        entry.quantity_shipped   += qtyShip;
-        entry.item_price         = round2(entry.item_price + price);
-        entry.promotion_discount = round2(entry.promotion_discount + disc);
-        entry.order_total        = round2(entry.item_price);
-        if (sku) entry.skus.add(sku);
-      }
-
-      // Build sheet rows
-      const newRows = Object.values(orderMap).map(o => [
-        o.order_id,
-        o.date,
-        o.status,
-        o.order_total,
-        o.promotion_ids,
-        o.is_premium_order,
-        o.promotion_discount,
-        o.item_price,
-        o.quantity_ordered,
-        o.quantity_shipped,
-        o.quantity_ordered,
-        [...o.skus].join(', '),
-        o.brand,
-        o.last_updated,
-      ]);
-
-      // Dedup — skip order_ids already in the sheet
+      // Dedup — composite key: order_id + sku
+      // This correctly handles re-runs and rolling windows without duplicates.
       const token        = await ensureTab(sheets.orders, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.orders, brand.tabName);
-      const existingIds  = new Set(existingRows.map(r => r.order_id).filter(Boolean));
+      const existingKeys = new Set(
+        existingRows
+          .map(r => `${r.order_id}||${r.sku}`)
+          .filter(k => k !== '||')
+      );
 
-      const dedupedRows = newRows.filter(row => !existingIds.has(row[0]));
+      const dedupedRows = newRows.filter(row => !existingKeys.has(`${row[0]}||${row[11]}`));
       const dupCount    = newRows.length - dedupedRows.length;
 
       if (dupCount > 0) {
-        console.log(`[sync-orders] ${brand.id} — skipped ${dupCount} duplicate order_ids`);
+        console.log(`[sync-orders] ${brand.id} — skipped ${dupCount} duplicate order+sku rows`);
       }
 
       if (dedupedRows.length > 0) {
