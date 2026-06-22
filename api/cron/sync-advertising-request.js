@@ -29,7 +29,7 @@ const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // Default: last 7 days. Pass ?days=N (max 30) to override.
-const DEFAULT_DAYS = 7;
+const DEFAULT_DAYS = 30;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
