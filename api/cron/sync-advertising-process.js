@@ -181,37 +181,43 @@ module.exports = async (req, res) => {
     }
   }
   // ── 5. Write brand summary to SHEET_ADVERTISING using campaign name matching ─
-  // Campaign names start with the brand name (e.g. "Evolis - SP - ...", "Skinuva Brite - SP - ...").
-  // Match by checking which brand prefix the campaign name starts with (case-insensitive).
-  // Order matters — more specific prefixes first to avoid false matches.
-  const CAMPAIGN_PREFIX_MAP = [
-    { prefix: 'skinuva',          tabName: 'skinuva'        },
-    { prefix: 'the creme shop',   tabName: 'creme-shop'     },
-    { prefix: 'cloud cafe',       tabName: 'cloud-cafe'     },
-    { prefix: 'just bjorn',       tabName: 'just-bjorn'     },
-    { prefix: 'just-bjorn',       tabName: 'just-bjorn'     },
-    { prefix: 'pb & jay',         tabName: 'pbj'            },
-    { prefix: 'pb&jay',           tabName: 'pbj'            },
-    { prefix: 'miguard',          tabName: 'miguard'        },
-    { prefix: 'dearcloud',        tabName: 'dearcloud'      },
-    { prefix: 'eraclea',          tabName: 'eraclea'        },
-    { prefix: 'evolis',           tabName: 'evolis'         },
-    { prefix: 'amala',            tabName: 'amala'          },
-    { prefix: 'cimeosil',         tabName: 'cimeosil'       },
-    { prefix: 'collagelee',       tabName: 'collagelee'     },
-    { prefix: 'hillside',         tabName: 'hillside'       },
-    { prefix: 'prohibition',      tabName: 'prohibition'    },
-    { prefix: 'skinside',         tabName: 'skinside-seoul' },
-  ];
+  // Match campaigns to brands using substring matching — brand name must appear
+  // anywhere in the campaign name (case-insensitive). Longest match wins to
+  // prevent "Cloud" matching before "Cloud Cafe". Rows with no match are logged.
+  // Source: coworker's fetch_ads_data.py identify_brand() function.
 
-  // Build per-brand aggregates from summaryRows using campaign name prefix
+  const CAMPAIGN_BRANDS = [
+    { name: 'skinuva',          tabName: 'skinuva'        },
+    { name: 'the creme shop',   tabName: 'creme-shop'     },
+    { name: 'cloud cafe',       tabName: 'cloud-cafe'     },
+    { name: 'just bjorn',       tabName: 'just-bjorn'     },
+    { name: 'pb & jay',         tabName: 'pbj'            },
+    { name: 'pb&jay',           tabName: 'pbj'            },
+    { name: 'miguard',          tabName: 'miguard'        },
+    { name: 'dearcloud',        tabName: 'dearcloud'      },
+    { name: 'eraclea',          tabName: 'eraclea'        },
+    { name: 'evolis',           tabName: 'evolis'         },
+    { name: 'amala',            tabName: 'amala'          },
+    { name: 'cimeosil',         tabName: 'cimeosil'       },
+    { name: 'collagelee',       tabName: 'collagelee'     },
+    { name: 'hillside',         tabName: 'hillside'       },
+    { name: 'prohibition',      tabName: 'prohibition'    },
+    { name: 'skinside seoul',   tabName: 'skinside-seoul' },
+    { name: 'skinside-seoul',   tabName: 'skinside-seoul' },
+  // Sort longest first so "the creme shop" matches before "creme", "cloud cafe" before "cloud"
+  ].sort((a, b) => b.name.length - a.name.length);
+
+  function identifyBrand(campaignName) {
+    const lower = (campaignName || '').toLowerCase();
+    const match = CAMPAIGN_BRANDS.find(b => lower.includes(b.name));
+    return match ? match.tabName : null;
+  }
+
+  // Build per-brand aggregates from summaryRows
   const brandSummaryTotals = {};
 
   summaryRows.forEach(r => {
-    const name    = (r.campaignName || '').toLowerCase().trim();
-    const matched = CAMPAIGN_PREFIX_MAP.find(({ prefix }) => name.startsWith(prefix));
-    const tabName = matched ? matched.tabName : null;
-
+    const tabName = identifyBrand(r.campaignName);
     if (!tabName) {
       console.log(`[sync-advertising-process] unmatched campaign: "${r.campaignName}"`);
       return;
