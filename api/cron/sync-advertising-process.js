@@ -94,34 +94,86 @@ module.exports = async (req, res) => {
   const year  = parseInt(yearStr,  10) || new Date().getFullYear();
   const month = parseInt(monthStr, 10) || new Date().getMonth() + 1;
 
-  // ── 3. Write ASIN-level data to SHEET_AD_ORDERS → asin-data ───────────────
-  if (asinRows.length > 0) {
-    const cutoff  = new Date().getFullYear() - TRIM_YEARS;
-    const asinMap = {};
-    asinRows.forEach(r => {
-      const asin = (r.advertisedAsin || '').trim().toUpperCase();
-      if (!asin) return;
-      if (!asinMap[asin]) asinMap[asin] = { adUnits: 0, spend: 0, sales: 0 };
-      asinMap[asin].adUnits += r.unitsSoldClicks14d || 0;
-      asinMap[asin].spend   += r.spend              || 0;
-      asinMap[asin].sales   += r.sales14d            || 0;
-    });
+  // ── 3. Build ASIN → brand map from product sheet ──────────────────────────
+  // Sheet 1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA, gid 164358627
+  // Col A = ASIN, col B = SKU, col C = Product Short Name, col D = Brand
+  const PRODUCT_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_SHEET_GID = '164358627';
+  const asinBrandMap = {}; // ASIN → tabName
 
-    const asinSheetRows = Object.entries(asinMap).map(([asin, agg]) => {
-      const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
-      return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, 'all', now];
-    }).filter(r => parseInt(r[0], 10) >= cutoff);
+  try {
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_SHEET_ID}/export?format=csv&gid=${PRODUCT_SHEET_GID}`;
+    const csvResp = await fetch(csvUrl);
+    if (csvResp.ok) {
+      const csv = await csvResp.text();
+      const lines = csv.trim().split('\n').slice(1); // skip header
+      lines.forEach(line => {
+        const cols     = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+        const asin     = (cols[0] || '').toUpperCase();
+        const brandName = (cols[3] || '').toLowerCase().trim();
+        if (!asin || !brandName) return;
 
-    try {
-      const asinToken = await ensureTab(SHEET_AD_ORDERS, 'asin-data', ASIN_HEADERS);
-      await replaceRows(SHEET_AD_ORDERS, 'asin-data', ASIN_HEADERS, asinSheetRows, asinToken);
-      console.log(`[sync-advertising-process] asin-data: ${asinSheetRows.length} rows written`);
-    } catch (err) {
-      console.error('[sync-advertising-process] asin-data write failed:', err.message);
+        // Match brand name to a tabName in brands.js
+        const matched = brands.find(b =>
+          b.active && (
+            brandName === b.id.toLowerCase() ||
+            brandName === b.displayName.toLowerCase() ||
+            brandName.includes(b.id.toLowerCase())
+          )
+        );
+        if (matched) asinBrandMap[asin] = matched.tabName;
+      });
+      console.log(`[sync-advertising-process] ASIN→brand map: ${Object.keys(asinBrandMap).length} entries`);
     }
+  } catch (err) {
+    console.warn('[sync-advertising-process] ASIN→brand lookup failed:', err.message);
   }
 
-  // ── 4. Write campaign summary per brand to SHEET_ADVERTISING ──────────────
+  // ── 4. Write ASIN-level data — split by brand via ASIN lookup ─────────────
+  if (asinRows.length > 0) {
+    const cutoff = new Date().getFullYear() - TRIM_YEARS;
+
+    // Group rows by brand tab
+    const byBrand = {}; // brandTabName → [rows]
+    byBrand['asin-data'] = []; // catch-all for unmatched ASINs
+
+    asinRows.forEach(r => {
+      const asin    = (r.advertisedAsin || '').trim().toUpperCase();
+      if (!asin) return;
+      const tabName = asinBrandMap[asin] || 'asin-data';
+      if (!byBrand[tabName]) byBrand[tabName] = [];
+      byBrand[tabName].push(r);
+    });
+
+    // Aggregate and write per brand tab
+    for (const [tabName, tabRows] of Object.entries(byBrand)) {
+      if (tabRows.length === 0) continue;
+
+      const asinMap = {};
+      tabRows.forEach(r => {
+        const asin = (r.advertisedAsin || '').trim().toUpperCase();
+        if (!asin) return;
+        if (!asinMap[asin]) asinMap[asin] = { adUnits: 0, spend: 0, sales: 0 };
+        asinMap[asin].adUnits += r.unitsSoldClicks14d || 0;
+        asinMap[asin].spend   += r.spend              || 0;
+        asinMap[asin].sales   += r.sales14d            || 0;
+      });
+
+      const brandLabel = tabName === 'asin-data' ? 'unmatched' : tabName;
+      const sheetRows  = Object.entries(asinMap).map(([asin, agg]) => {
+        const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
+        return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, brandLabel, now];
+      }).filter(r => parseInt(r[0], 10) >= cutoff);
+
+      try {
+        const tok = await ensureTab(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
+        await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, sheetRows, tok);
+        console.log(`[sync-advertising-process] ${tabName}: ${sheetRows.length} ASIN rows written`);
+      } catch (err) {
+        console.error(`[sync-advertising-process] ${tabName} write failed:`, err.message);
+      }
+    }
+  }
   const results = [];
   for (const brand of brands.filter(b => b.active)) {
     try {
