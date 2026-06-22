@@ -180,43 +180,40 @@ module.exports = async (req, res) => {
       }
     }
   }
-  // ── 5. Write brand summary to SHEET_ADVERTISING using portfolio data ────────
-  // Explicit portfolio name → brand tabName map.
-  // Portfolio names come from the Amazon Ads console and don't always match
-  // brand IDs — this hardcoded map is the source of truth for ads only.
-  const PORTFOLIO_BRAND_MAP = {
-    'amala':               'amala',
-    'cimeosil':            'cimeosil',
-    'cloud cafe':          'cloud-cafe',
-    'collagelee':          'collagelee',
-    'dearcloud':           'dearcloud',
-    'eraclea':             'eraclea',
-    'evolis':              'evolis',
-    'hillside candle':     'hillside',
-    'hillside':            'hillside',
-    'just bjorn':          'just-bjorn',
-    'just-bjorn':          'just-bjorn',
-    'miguard':             'miguard',
-    'pb & jay':            'pbj',
-    'pb & jay':            'pbj',
-    'prohibition wellness':'prohibition',
-    'prohibition':         'prohibition',
-    'skinuva':             'skinuva',
-    'skinside seoul':      'skinside-seoul',
-    'skinside-seoul':      'skinside-seoul',
-    'the creme shop':      'creme-shop',
-    'creme shop':          'creme-shop',
-    'creme-shop':          'creme-shop',
-  };
+  // ── 5. Write brand summary to SHEET_ADVERTISING using campaign name matching ─
+  // Campaign names start with the brand name (e.g. "Evolis - SP - ...", "Skinuva Brite - SP - ...").
+  // Match by checking which brand prefix the campaign name starts with (case-insensitive).
+  // Order matters — more specific prefixes first to avoid false matches.
+  const CAMPAIGN_PREFIX_MAP = [
+    { prefix: 'skinuva',          tabName: 'skinuva'        },
+    { prefix: 'the creme shop',   tabName: 'creme-shop'     },
+    { prefix: 'cloud cafe',       tabName: 'cloud-cafe'     },
+    { prefix: 'just bjorn',       tabName: 'just-bjorn'     },
+    { prefix: 'just-bjorn',       tabName: 'just-bjorn'     },
+    { prefix: 'pb & jay',         tabName: 'pbj'            },
+    { prefix: 'pb&jay',           tabName: 'pbj'            },
+    { prefix: 'miguard',          tabName: 'miguard'        },
+    { prefix: 'dearcloud',        tabName: 'dearcloud'      },
+    { prefix: 'eraclea',          tabName: 'eraclea'        },
+    { prefix: 'evolis',           tabName: 'evolis'         },
+    { prefix: 'amala',            tabName: 'amala'          },
+    { prefix: 'cimeosil',         tabName: 'cimeosil'       },
+    { prefix: 'collagelee',       tabName: 'collagelee'     },
+    { prefix: 'hillside',         tabName: 'hillside'       },
+    { prefix: 'prohibition',      tabName: 'prohibition'    },
+    { prefix: 'skinside',         tabName: 'skinside-seoul' },
+  ];
 
-  // Build per-brand portfolio aggregates from summaryRows
-  const brandSummaryTotals = {}; // tabName → { impressions, clicks, spend, sales, adUnits }
+  // Build per-brand aggregates from summaryRows using campaign name prefix
+  const brandSummaryTotals = {};
 
   summaryRows.forEach(r => {
-    const portfolioName = (r.portfolioName || r.name || '').toLowerCase().trim();
-    const tabName = PORTFOLIO_BRAND_MAP[portfolioName];
+    const name    = (r.campaignName || '').toLowerCase().trim();
+    const matched = CAMPAIGN_PREFIX_MAP.find(({ prefix }) => name.startsWith(prefix));
+    const tabName = matched ? matched.tabName : null;
+
     if (!tabName) {
-      if (portfolioName) console.log(`[sync-advertising-process] unmatched portfolio: "${r.portfolioName || r.name}"`);
+      console.log(`[sync-advertising-process] unmatched campaign: "${r.campaignName}"`);
       return;
     }
     if (!brandSummaryTotals[tabName]) {
