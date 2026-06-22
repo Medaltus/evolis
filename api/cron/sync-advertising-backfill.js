@@ -89,8 +89,8 @@ module.exports = async (req, res) => {
         endDate,
         configuration: {
           adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['campaign'],
-          columns:      ['impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
+          groupBy:      ['portfolio'],
+          columns:      ['portfolioId', 'portfolioName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
           reportTypeId: 'spCampaigns',
           timeUnit:     'SUMMARY',
           format:       'GZIP_JSON',
