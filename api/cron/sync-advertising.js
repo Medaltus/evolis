@@ -168,7 +168,7 @@ async function fetchSpSkuReport(months, token, profileId) {
         endDate,
         configuration: {
           adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['advertised_asin'],
+          groupBy:      ['advertiser'],
           columns:      [
             'advertisedAsin',
             'impressions',
