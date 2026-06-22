@@ -50,7 +50,7 @@ const SUMMARY_HEADERS = [
 ];
 
 const SKU_HEADERS = [
-  'year', 'month', 'sku', 'ad_units', 'spend', 'sales',
+  'year', 'month', 'asin', 'ad_units', 'spend', 'sales',
   'acos', 'brand', 'last_updated',
 ];
 
@@ -129,25 +129,21 @@ module.exports = async (req, res) => {
       await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS, summaryRows, summaryToken);
       console.log(`[sync-advertising] ${brand.id} summary — ${summaryRows.length} rows`);
 
-      // ── SKU detail tab in ad orders sheet ─────────────────────────────────
-      const brandSkuRows = skuReportRows.filter(r =>
-        (r.advertisedSku || r.sku || '').toUpperCase().startsWith(prefix)
-      );
-      const skuRows = buildSkuRows(brandSkuRows, months, brand.id, now);
+    // ── ASIN detail tab — written once (not per brand) ────────────────────
+    // We write all ASINs to a single 'asin-data' tab since we can't split
+    // by brand without the master ASIN→brand lookup sheet.
+    // Skip this block for all brands except the first active one to avoid
+    // writing the same data 15 times.
+    if (brand === brands.filter(b => b.active)[0]) {
+      const cutoff     = new Date().getFullYear() - TRIM_YEARS;
+      const allSkuRows = buildSkuRows(skuReportRows, months, 'all', now);
+      const trimmed    = allSkuRows.filter(r => parseInt(r[0], 10) >= cutoff);
+      const skuToken   = await ensureTab(SHEET_AD_ORDERS, 'asin-data', SKU_HEADERS);
+      await replaceRows(SHEET_AD_ORDERS, 'asin-data', SKU_HEADERS, trimmed, skuToken);
+      console.log(`[sync-advertising] asin-data tab — ${trimmed.length} rows`);
+    }
 
-      // Trim rows older than TRIM_YEARS before writing
-      const cutoff    = new Date().getFullYear() - TRIM_YEARS;
-      const trimmed   = skuRows.filter(r => parseInt(r[0], 10) >= cutoff);
-      const trimCount = skuRows.length - trimmed.length;
-      if (trimCount > 0) {
-        console.log(`[sync-advertising] ${brand.id} trimmed ${trimCount} rows older than ${TRIM_YEARS} years`);
-      }
-
-      const skuToken = await ensureTab(SHEET_AD_ORDERS, brand.tabName, SKU_HEADERS);
-      await replaceRows(SHEET_AD_ORDERS, brand.tabName, SKU_HEADERS, trimmed, skuToken);
-      console.log(`[sync-advertising] ${brand.id} sku detail — ${trimmed.length} rows`);
-
-      results.push({ brand: brand.id, status: 'ok', summaryRows: summaryRows.length, skuRows: trimmed.length });
+      results.push({ brand: brand.id, status: 'ok', summaryRows: summaryRows.length });
     } catch (err) {
       console.error(`[sync-advertising] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
@@ -167,14 +163,13 @@ async function fetchSpSkuReport(months, token, profileId) {
   for (const { year, month, startDate, endDate } of months) {
     try {
       const body = {
-        name: `SP_sku_${year}_${String(month).padStart(2,'0')}`,
+        name: `SP_asin_${year}_${String(month).padStart(2,'0')}`,
         startDate,
         endDate,
         configuration: {
           adProduct:    'SPONSORED_PRODUCTS',
           groupBy:      ['advertised_asin'],
           columns:      [
-            'advertisedSku',
             'advertisedAsin',
             'impressions',
             'clicks',
@@ -278,21 +273,21 @@ function buildSkuRows(rows, months, brandId, now) {
   for (const { year, month } of months) {
     const monthRows = rows.filter(r => r._year === year && r._month === month);
 
-    // Aggregate by normalized SKU within this month
-    const skuMap = {};
+    // Aggregate by ASIN within this month
+    const asinMap = {};
     monthRows.forEach(r => {
-      const rawSku  = (r.advertisedSku || r.sku || '').toUpperCase().replace(/-SF$/i, '');
-      if (!rawSku) return;
-      if (!skuMap[rawSku]) skuMap[rawSku] = { adUnits: 0, spend: 0, sales: 0 };
-      skuMap[rawSku].adUnits += r.unitsSoldClicks14d || 0;
-      skuMap[rawSku].spend   += r.spend              || 0;
-      skuMap[rawSku].sales   += r.sales14d            || 0;
+      const asin = (r.advertisedAsin || '').trim().toUpperCase();
+      if (!asin) return;
+      if (!asinMap[asin]) asinMap[asin] = { adUnits: 0, spend: 0, sales: 0 };
+      asinMap[asin].adUnits += r.unitsSoldClicks14d || 0;
+      asinMap[asin].spend   += r.spend              || 0;
+      asinMap[asin].sales   += r.sales14d           || 0;
     });
 
-    Object.entries(skuMap).forEach(([sku, agg]) => {
+    Object.entries(asinMap).forEach(([asin, agg]) => {
       const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
       output.push([
-        year, month, sku,
+        year, month, asin,
         agg.adUnits, round2(agg.spend), round2(agg.sales),
         acos, brandId, now,
       ]);
