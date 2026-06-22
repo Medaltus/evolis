@@ -258,13 +258,56 @@ module.exports = async (req, res) => {
     }
   }
 
-  // ── 5. Mark _meta as PROCESSED ────────────────────────────────────────────
+  // ── 5. Mark _meta as PROCESSED + auto-advance backfill queue ────────────────
   try {
     const existing  = await readRows(SHEET_AD_SUMMARY, META_TAB);
     const metaMap   = {};
     existing.forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
     metaMap['ad_report_status'] = ['ad_report_status', 'PROCESSED', now];
     metaMap['ad_backfill']      = ['ad_backfill', 'false', now];
+
+    // ── Queue auto-advance ──────────────────────────────────────────────────
+    // If a backfill queue exists and has remaining months, fire the next request
+    // automatically so the 15-min cron can pick it up without manual intervention.
+    const queueStr = metaMap['ad_backfill_queue']?.[1] || '';
+    const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (queue.length > 0) {
+      const nextMonth = queue.shift(); // pop oldest month off front
+      metaMap['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
+
+      console.log(`[sync-advertising-process] queue: firing next month ${nextMonth} (${queue.length} remaining)`);
+
+      // Fire the backfill request for the next month inline
+      // (lightweight — just requests the report and writes to _meta, no polling)
+      try {
+        const backfillHandler = require('./sync-advertising-backfill');
+        const fakeReq = {
+          method:  'GET',
+          headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+          query:   { month: nextMonth },
+        };
+        const fakeRes = {
+          status: (code) => ({ json: (data) => {
+            console.log(`[sync-advertising-process] backfill request for ${nextMonth}:`, JSON.stringify(data).slice(0, 200));
+          }}),
+          end: () => {},
+        };
+        await backfillHandler(fakeReq, fakeRes);
+        // Status will be reset to REQUESTED by backfill handler — process cron picks it up in 15 min
+      } catch (err) {
+        console.error(`[sync-advertising-process] failed to fire next queue month ${nextMonth}:`, err.message);
+        // Put month back at front of queue so it retries next run
+        queue.unshift(nextMonth);
+        metaMap['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
+      }
+
+      if (queue.length === 0) {
+        metaMap['ad_backfill_complete'] = ['ad_backfill_complete', 'true', now];
+        console.log('[sync-advertising-process] backfill queue complete!');
+      }
+    }
+
     const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
     await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
   } catch (err) {
