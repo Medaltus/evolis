@@ -180,34 +180,61 @@ module.exports = async (req, res) => {
       }
     }
   }
+  // ── 5. Write brand summary to SHEET_ADVERTISING using portfolio data ────────
+  // summaryRows are grouped by portfolio — each row has portfolioName.
+  // Match portfolioName to brand by checking if brand id/displayName/skuPrefix
+  // appears in the portfolio name.
+
+  // Build per-brand portfolio aggregates from summaryRows
+  const brandSummaryTotals = {}; // tabName → { impressions, clicks, spend, sales, adUnits }
+
+  summaryRows.forEach(r => {
+    const portfolioName = (r.portfolioName || '').toLowerCase().trim();
+
+    const matched = brands.find(b =>
+      b.active && (
+        portfolioName.includes(b.id.toLowerCase()) ||
+        portfolioName.includes(b.displayName.toLowerCase()) ||
+        portfolioName.includes(b.skuPrefix.toLowerCase())
+      )
+    );
+
+    const tabName = matched ? matched.tabName : null;
+    if (!tabName) {
+      console.log(`[sync-advertising-process] unmatched portfolio: "${r.portfolioName}"`);
+      return;
+    }
+
+    if (!brandSummaryTotals[tabName]) {
+      brandSummaryTotals[tabName] = { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
+    }
+    brandSummaryTotals[tabName].impressions += r.impressions         || 0;
+    brandSummaryTotals[tabName].clicks      += r.clicks              || 0;
+    brandSummaryTotals[tabName].spend       += r.spend               || 0;
+    brandSummaryTotals[tabName].sales       += r.sales14d            || 0;
+    brandSummaryTotals[tabName].adUnits     += r.unitsSoldClicks14d  || 0;
+  });
+
   const results = [];
   for (const brand of brands.filter(b => b.active)) {
     try {
-      const prefix     = brand.skuPrefix.toUpperCase();
-      // Filter summary rows by campaign name matching brand prefix
-      // (campaign names follow "{BRAND} - {campaign name}" convention)
-      const brandRows  = summaryRows; // all campaigns — brand split by campaign name not available here
-      // Aggregate all summary rows into one monthly row per brand
-      let impressions = 0, clicks = 0, spend = 0, sales = 0, adUnits = 0;
-      brandRows.forEach(r => {
-        impressions += r.impressions         || 0;
-        clicks      += r.clicks              || 0;
-        spend       += r.spend               || 0;
-        sales       += r.sales14d            || 0;
-        adUnits     += r.unitsSoldClicks14d  || 0;
-      });
+      const t = brandSummaryTotals[brand.tabName] || { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
 
-      const acos = sales  > 0 ? round2((spend / sales) * 100)  : null;
-      const roas = spend  > 0 ? round2(sales / spend)           : null;
-      const ctr  = impressions > 0 ? round2((clicks / impressions) * 100) : 0;
-      const cpc  = clicks > 0 ? round2(spend / clicks) : 0;
+      const acos = t.sales  > 0 ? round2((t.spend / t.sales) * 100)          : null;
+      const roas = t.spend  > 0 ? round2(t.sales / t.spend)                   : null;
+      const ctr  = t.impressions > 0 ? round2((t.clicks / t.impressions) * 100) : 0;
+      const cpc  = t.clicks > 0 ? round2(t.spend / t.clicks)                  : 0;
 
-      const row = [year, month, impressions, clicks, round2(spend), round2(sales),
-                   acos, roas, adUnits, ctr, cpc, brand.id, now];
+      const row = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales),
+                   acos, roas, t.adUnits, ctr, cpc, brand.id, now];
 
       const summaryToken = await ensureTab(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
-      await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS, [row], summaryToken);
-      results.push({ brand: brand.id, status: 'ok' });
+      if (isBackfill) {
+        await appendRows(SHEET_AD_SUMMARY, brand.tabName, [row], summaryToken);
+      } else {
+        await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS, [row], summaryToken);
+      }
+      results.push({ brand: brand.id, status: 'ok', spend: round2(t.spend), adUnits: t.adUnits });
     } catch (err) {
       console.error(`[sync-advertising-process] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
