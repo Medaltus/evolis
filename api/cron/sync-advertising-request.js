@@ -71,7 +71,9 @@ module.exports = async (req, res) => {
       console.error('[sync-advertising-request] ASIN report request failed:', err.message);
     }
 
-    // ── 3. Request campaign summary report ────────────────────────────────────
+    // ── 3. Request portfolio-level summary report ─────────────────────────────
+    // Grouping by portfolio gives us accurate per-brand impressions/clicks/spend/sales.
+    // Portfolios are named by brand in the Amazon Ads console.
     let summaryReportId = null;
     try {
       const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
@@ -80,8 +82,8 @@ module.exports = async (req, res) => {
         endDate,
         configuration: {
           adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['campaign'],
-          columns:      ['impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
+          groupBy:      ['portfolio'],
+          columns:      ['portfolioId', 'portfolioName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
           reportTypeId: 'spCampaigns',
           timeUnit:     'SUMMARY',
           format:       'GZIP_JSON',
