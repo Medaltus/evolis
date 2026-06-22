@@ -64,6 +64,26 @@ module.exports = async (req, res) => {
 
   const now     = new Date().toISOString();
   const token   = await getAdToken();
+
+  // Discover the correct US NewDerm seller profile ID dynamically
+  let profileId;
+  try {
+    const profiles = await adRequest('GET', '/v2/profiles', token, null, null);
+    const newdermUS = profiles.find(p =>
+      p.countryCode === 'US' &&
+      p.accountInfo?.type === 'seller' &&
+      (p.accountInfo?.name?.toLowerCase().includes('newderm') ||
+       p.accountInfo?.id === 'A25QTQX4QSLFM9')
+    );
+    if (!newdermUS) throw new Error('NewDerm US seller profile not found in /v2/profiles');
+    profileId = newdermUS.profileId;
+    console.log(`[sync-advertising] using profileId=${profileId} (${newdermUS.accountInfo?.name} ${newdermUS.countryCode})`);
+  } catch (err) {
+    // Fall back to env var if discovery fails
+    profileId = process.env.SP_AD_PROFILE_ID;
+    console.warn(`[sync-advertising] profile discovery failed, using env var: ${err.message}`);
+  }
+
   const months  = rollingMonths(13);
   const results = [];
 
@@ -75,7 +95,7 @@ module.exports = async (req, res) => {
 
   try {
     console.log('[sync-advertising] requesting SP SKU report...');
-    skuReportRows = await fetchSpSkuReport(months, token);
+    skuReportRows = await fetchSpSkuReport(months, token, profileId);
     console.log(`[sync-advertising] SP SKU report: ${skuReportRows.length} rows`);
   } catch (err) {
     console.error('[sync-advertising] SP SKU report failed:', err.message);
@@ -84,7 +104,7 @@ module.exports = async (req, res) => {
 
   try {
     console.log('[sync-advertising] requesting SP summary report...');
-    summaryReportRows = await fetchSpSummaryReport(months, token);
+    summaryReportRows = await fetchSpSummaryReport(months, token, profileId);
     console.log(`[sync-advertising] SP summary report: ${summaryReportRows.length} rows`);
   } catch (err) {
     console.error('[sync-advertising] SP summary report failed:', err.message);
@@ -137,7 +157,7 @@ module.exports = async (req, res) => {
 // Groups by advertised SKU + date, giving us per-SKU per-month metrics.
 // We request one report per month (same date chunking as summary).
 
-async function fetchSpSkuReport(months, token) {
+async function fetchSpSkuReport(months, token, profileId) {
   const allRows = [];
 
   for (const { year, month, startDate, endDate } of months) {
@@ -165,8 +185,8 @@ async function fetchSpSkuReport(months, token) {
         },
       };
 
-      const create   = await adRequest('POST', '/reporting/reports', token, body);
-      const meta     = await pollAdReport(create.reportId, token, 90_000);
+      const create   = await adRequest('POST', '/reporting/reports', token, profileId, body);
+      const meta     = await pollAdReport(create.reportId, token, profileId, 90_000);
       const rows     = await downloadAdReport(meta.url);
 
       // Tag each row with year+month for later aggregation
@@ -185,7 +205,7 @@ async function fetchSpSkuReport(months, token) {
 // ── SP campaign-level summary report ─────────────────────────────────────────
 // Groups by campaign for brand-level totals. Same structure as before.
 
-async function fetchSpSummaryReport(months, token) {
+async function fetchSpSummaryReport(months, token, profileId) {
   const allRows = [];
 
   for (const { year, month, startDate, endDate } of months) {
@@ -204,8 +224,8 @@ async function fetchSpSummaryReport(months, token) {
         },
       };
 
-      const create = await adRequest('POST', '/reporting/reports', token, body);
-      const meta   = await pollAdReport(create.reportId, token, 90_000);
+      const create = await adRequest('POST', '/reporting/reports', token, profileId, body);
+      const meta   = await pollAdReport(create.reportId, token, profileId, 90_000);
       const rows   = await downloadAdReport(meta.url);
 
       rows.forEach(r => { r._year = year; r._month = month; });
@@ -280,16 +300,18 @@ function buildSkuRows(rows, months, brandId, now) {
 
 // ── Advertising API helpers ───────────────────────────────────────────────────
 
-function adRequest(method, path, token, body) {
+function adRequest(method, path, token, profileId, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : '';
     const headers = {
       'Authorization':                   `Bearer ${token}`,
       'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
-      'Amazon-Advertising-API-Scope':    process.env.SP_AD_PROFILE_ID,
-      'Content-Type':                    'application/vnd.createasyncreportrequest.v3+json',
-      'Content-Length':                  Buffer.byteLength(bodyStr),
+      'Content-Type':                    method === 'POST' && path === '/reporting/reports'
+                                           ? 'application/vnd.createasyncreportrequest.v3+json'
+                                           : 'application/json',
     };
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
     const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
       let d = '';
       res.on('data', c => d += c);
@@ -304,10 +326,10 @@ function adRequest(method, path, token, body) {
   });
 }
 
-async function pollAdReport(reportId, token, timeoutMs) {
+async function pollAdReport(reportId, token, profileId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const resp = await adRequest('GET', `/reporting/reports/${reportId}`, token, null);
+    const resp = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
     console.log(`[sync-advertising] poll ${reportId}: ${resp.status}`);
     if (resp.status === 'COMPLETED') return resp;
     if (resp.status === 'FAILED')    throw new Error(`Ad report ${reportId} FAILED: ${JSON.stringify(resp)}`);
@@ -351,8 +373,8 @@ function rollingMonths(n) {
     const lastDay = new Date(year, month, 0).getDate();
     months.push({
       year, month,
-      startDate: `${year}${pad(month)}01`,
-      endDate:   `${year}${pad(month)}${pad(lastDay)}`,
+      startDate: `${year}-${pad(month)}-01`,
+      endDate:   `${year}-${pad(month)}-${pad(lastDay)}`,
     });
   }
   return months;
