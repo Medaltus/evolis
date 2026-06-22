@@ -16,7 +16,7 @@
     "api/products.js":                               { "maxDuration": 30  },
     "api/advertising.js":                            { "maxDuration": 30  },
     "api/subscriptions.js":                          { "maxDuration": 30  },
-    "api/test-ad-connection.js":                     { "maxDuration": 120 },
+    "api/test-ad-connection.js":                     { "maxDuration": 300 },
     "api/cron/sync-orders.js":                       { "maxDuration": 300 },
     "api/cron/sync-orders-backfill.js":              { "maxDuration": 300 },
     "api/cron/sync-products.js":                     { "maxDuration": 300 },
