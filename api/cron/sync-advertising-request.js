@@ -72,8 +72,8 @@ module.exports = async (req, res) => {
     }
 
     // ── 3. Request portfolio-level summary report ─────────────────────────────
-    // Grouping by portfolio gives us accurate per-brand impressions/clicks/spend/sales.
-    // Portfolios are named by brand in the Amazon Ads console.
+    // Group by campaign but include portfolioName so we can aggregate per brand.
+    // portfolioName matches the names in the Amazon Ads console portfolio list.
     let summaryReportId = null;
     try {
       const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
@@ -82,7 +82,7 @@ module.exports = async (req, res) => {
         endDate,
         configuration: {
           adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['portfolio'],
+          groupBy:      ['campaign'],
           columns:      ['portfolioId', 'portfolioName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
           reportTypeId: 'spCampaigns',
           timeUnit:     'SUMMARY',
