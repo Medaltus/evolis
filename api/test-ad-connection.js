@@ -1,6 +1,6 @@
 /**
  * api/test-ad-connection.js
- * Debug endpoint — dumps raw Amazon Ads API responses at each step.
+ * Debug endpoint — lists all profiles and tests report creation on the US NewDerm profile.
  */
 
 const { getAdToken } = require('./_spauth');
@@ -14,76 +14,123 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const debug = {};
+  const log = [];
+  const step = (msg, data) => { console.log(`[test-ad] ${msg}`); log.push({ step: msg, ...data }); };
 
-  // ── Step 1: LWA token ───────────────────────────────────────────────────
-  let token;
   try {
-    token = await getAdToken();
-    debug.step1_lwa = { ok: true, tokenPrefix: token.slice(0, 20) + '...' };
-  } catch (err) {
-    debug.step1_lwa = { ok: false, error: err.message };
-    return res.status(200).json(debug);
-  }
+    // ── Step 1: LWA token ──────────────────────────────────────────────────
+    step('LWA token...', {});
+    const token = await getAdToken();
+    step('LWA OK', { tokenPrefix: token.slice(0, 20) + '...' });
 
-  // ── Step 2: GET /v2/profiles — raw dump ────────────────────────────────
-  // Try with no Content-Type at all on GET
-  try {
-    const raw = await rawRequest('GET', '/v2/profiles', token, null, null);
-    debug.step2_profiles = { statusCode: raw.statusCode, headers: raw.headers, body: raw.body };
-  } catch (err) {
-    debug.step2_profiles = { ok: false, error: err.message };
-  }
+    // ── Step 2: List ALL profiles (no truncation) ──────────────────────────
+    step('Fetching profiles...', {});
+    const profiles = await adRequest('GET', '/v2/profiles', token, null, null);
 
-  // ── Step 3: Try /v2/profiles with Accept header ─────────────────────────
-  try {
-    const raw = await rawRequest('GET', '/v2/profiles', token, null, null, {
-      'Accept': 'application/json',
+    if (!Array.isArray(profiles)) {
+      return res.status(200).json({ success: false, log, error: 'Profiles not an array', raw: profiles });
+    }
+
+    const profileList = profiles.map(p => ({
+      profileId:   p.profileId,
+      name:        p.accountInfo?.name,
+      type:        p.accountInfo?.type,
+      countryCode: p.countryCode,
+      sellerId:    p.accountInfo?.id,
+    }));
+    step(`Found ${profiles.length} profiles`, { profiles: profileList });
+
+    // ── Step 3: Find US NewDerm seller profile ─────────────────────────────
+    const newdermUS = profiles.find(p =>
+      p.countryCode === 'US' &&
+      p.accountInfo?.type === 'seller' &&
+      (p.accountInfo?.name?.toLowerCase().includes('newderm') ||
+       p.accountInfo?.id === 'A25QTQX4QSLFM9')
+    );
+
+    if (!newdermUS) {
+      step('NewDerm US profile not found — listing all for manual selection', { profiles: profileList });
+      return res.status(200).json({ success: false, log });
+    }
+
+    step('Using NewDerm US profile', {
+      profileId:   newdermUS.profileId,
+      name:        newdermUS.accountInfo?.name,
+      countryCode: newdermUS.countryCode,
     });
-    debug.step3_profiles_with_accept = { statusCode: raw.statusCode, body: raw.body };
-  } catch (err) {
-    debug.step3_profiles_with_accept = { ok: false, error: err.message };
-  }
 
-  // ── Step 4: Try without Amazon-Advertising-API-ClientId header ──────────
-  try {
-    const raw = await rawRequest('GET', '/v2/profiles', token, null, null, {}, true);
-    debug.step4_profiles_no_client_id = { statusCode: raw.statusCode, body: raw.body };
-  } catch (err) {
-    debug.step4_profiles_no_client_id = { ok: false, error: err.message };
-  }
+    // ── Step 4: Test report creation ───────────────────────────────────────
+    const yesterday = (() => {
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    })();
 
-  return res.status(200).json(debug);
+    step('Requesting test SP report...', { date: yesterday });
+    const createResp = await adRequest('POST', '/reporting/reports', token, newdermUS.profileId, {
+      name:      `test_${yesterday}`,
+      startDate:  yesterday,
+      endDate:    yesterday,
+      configuration: {
+        adProduct:    'SPONSORED_PRODUCTS',
+        groupBy:      ['campaign'],
+        columns:      ['impressions', 'clicks', 'spend', 'purchases7d', 'sales7d'],
+        reportTypeId: 'spCampaigns',
+        timeUnit:     'SUMMARY',
+        format:       'GZIP_JSON',
+      },
+    });
+
+    if (!createResp.reportId) {
+      step('Report creation FAILED', { raw: createResp });
+      return res.status(200).json({ success: false, log });
+    }
+
+    step('Report created — polling 60s...', { reportId: createResp.reportId });
+
+    // ── Step 5: Poll 60s ───────────────────────────────────────────────────
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await sleep(5000);
+      const poll = await adRequest('GET', `/reporting/reports/${createResp.reportId}`, token, newdermUS.profileId, null);
+      step(`Poll: ${poll.status}`, {});
+      if (poll.status === 'COMPLETED') {
+        step('SUCCESS ✓', { profileId: newdermUS.profileId, note: `Update SP_AD_PROFILE_ID to ${newdermUS.profileId}` });
+        return res.status(200).json({ success: true, log, correctProfileId: newdermUS.profileId });
+      }
+      if (poll.status === 'FAILED') {
+        step('Report FAILED', { raw: poll });
+        return res.status(200).json({ success: false, log });
+      }
+    }
+
+    step('Timed out — but auth + report creation worked', { correctProfileId: newdermUS.profileId });
+    return res.status(200).json({ success: false, log, correctProfileId: newdermUS.profileId, note: 'Auth works — report just needs more time. Update SP_AD_PROFILE_ID.' });
+
+  } catch (err) {
+    log.push({ step: 'ERROR', message: err.message });
+    return res.status(200).json({ success: false, log, error: err.message });
+  }
 };
 
-// Raw request — returns statusCode + full body string for debugging
-function rawRequest(method, path, token, profileId, body, extraHeaders = {}, omitClientId = false) {
+function adRequest(method, path, token, profileId, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : '';
     const headers = {
-      'Authorization': `Bearer ${token}`,
-      ...extraHeaders,
+      'Authorization':                   `Bearer ${token}`,
+      'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
+      'Content-Type':                    method === 'POST' && path === '/reporting/reports'
+                                           ? 'application/vnd.createasyncreportrequest.v3+json'
+                                           : 'application/json',
     };
-    if (!omitClientId) {
-      headers['Amazon-Advertising-API-ClientId'] = process.env.SP_AD_CLIENT_ID;
-    }
-    if (profileId) {
-      headers['Amazon-Advertising-API-Scope'] = String(profileId);
-    }
-    if (bodyStr) {
-      headers['Content-Type']   = 'application/json';
-      headers['Content-Length'] = Buffer.byteLength(bodyStr);
-    }
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
 
     const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
-        resolve({
-          statusCode: res.statusCode,
-          headers:    res.headers,
-          body:       d.slice(0, 1000), // cap at 1000 chars
-        });
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`Parse error (${res.statusCode}): ${d.slice(0, 300)}`)); }
       });
     });
     req.on('error', reject);
@@ -91,3 +138,5 @@ function rawRequest(method, path, token, profileId, body, extraHeaders = {}, omi
     req.end();
   });
 }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
