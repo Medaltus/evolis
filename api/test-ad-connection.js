@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
     // ── Step 4: Test report creation ───────────────────────────────────────
     const yesterday = (() => {
       const d = new Date(); d.setDate(d.getDate() - 1);
-      return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+      const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`;
     })();
 
     step('Requesting test SP report...', { date: yesterday });
