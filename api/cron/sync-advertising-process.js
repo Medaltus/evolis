@@ -12,7 +12,7 @@
  */
 
 const { getAdToken }                             = require('../_spauth');
-const { ensureTab, readRows, replaceRows }        = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, appendRows } = require('../config/_sheets_client');
 const brands                                     = require('../config/brands');
 const https                                      = require('https');
 const zlib                                       = require('zlib');
@@ -46,7 +46,7 @@ module.exports = async (req, res) => {
   const now = new Date().toISOString();
 
   // ── 1. Read _meta tab ───────────────────────────────────────────────────────
-  let asinReportId, summaryReportId, startDate, endDate, profileId;
+  let asinReportId, summaryReportId, startDate, endDate, profileId, isBackfill;
   try {
     const rawMeta = await readRows(SHEET_AD_SUMMARY, META_TAB);
     const meta    = {};
@@ -57,6 +57,7 @@ module.exports = async (req, res) => {
     startDate       = meta['ad_start_date'];
     endDate         = meta['ad_end_date'];
     profileId       = meta['ad_profile_id'];
+    isBackfill      = meta['ad_backfill'] === 'true';
 
     if (!asinReportId && !summaryReportId) {
       return res.status(400).json({ error: 'No ad report IDs found in _meta — did sync-advertising-request run?' });
@@ -167,8 +168,13 @@ module.exports = async (req, res) => {
 
       try {
         const tok = await ensureTab(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
-        await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, sheetRows, tok);
-        console.log(`[sync-advertising-process] ${tabName}: ${sheetRows.length} ASIN rows written`);
+        if (isBackfill) {
+          await appendRows(SHEET_AD_ORDERS, tabName, sheetRows, tok);
+          console.log(`[sync-advertising-process] ${tabName}: appended ${sheetRows.length} ASIN rows (backfill)`);
+        } else {
+          await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, sheetRows, tok);
+          console.log(`[sync-advertising-process] ${tabName}: replaced with ${sheetRows.length} ASIN rows`);
+        }
       } catch (err) {
         console.error(`[sync-advertising-process] ${tabName} write failed:`, err.message);
       }
@@ -214,6 +220,7 @@ module.exports = async (req, res) => {
     const metaMap   = {};
     existing.forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
     metaMap['ad_report_status'] = ['ad_report_status', 'PROCESSED', now];
+    metaMap['ad_backfill']      = ['ad_backfill', 'false', now];
     const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
     await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
   } catch (err) {
