@@ -107,6 +107,7 @@ module.exports = async (req, res) => {
       ['ad_start_date',        startDate,              now],
       ['ad_end_date',          endDate,                now],
       ['ad_profile_id',        String(profileId),      now],
+      ['ad_backfill',          'false',                now],
     ];
 
     const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
