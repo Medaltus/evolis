@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
       endDate,
       configuration: {
         adProduct:    'SPONSORED_PRODUCTS',
-        groupBy:      ['advertised_asin'],
+        groupBy:      ['advertiser'],
         columns:      ['advertisedSku', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
         reportTypeId: 'spAdvertisedProduct',
         timeUnit:     'SUMMARY',
