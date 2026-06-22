@@ -63,7 +63,7 @@ function rawRequest(method, path, token, profileId, body, extraHeaders = {}, omi
     const headers = {
       'Authorization': `Bearer ${token}`,
       ...extraHeaders,
-    };
+    }; 
     if (!omitClientId) {
       headers['Amazon-Advertising-API-ClientId'] = process.env.SP_AD_CLIENT_ID;
     }
