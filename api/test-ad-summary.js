@@ -38,7 +38,7 @@ module.exports = async (req, res) => {
       configuration: {
         adProduct:    'SPONSORED_PRODUCTS',
         groupBy:      ['campaign'],
-        columns:      ['portfolioId', 'portfolioName', 'campaignName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
+        columns:      ['campaignName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
         reportTypeId: 'spCampaigns',
         timeUnit:     'SUMMARY',
         format:       'GZIP_JSON',
@@ -75,8 +75,8 @@ module.exports = async (req, res) => {
       columnsSeen:   rows.length > 0 ? Object.keys(rows[0]) : [],
       // Show first 5 rows with just the fields we care about
       sampleRows:    rows.slice(0, 5).map(r => ({
-        portfolioId:   r.portfolioId,
-        portfolioName: r.portfolioName,
+        
+        
         campaignName:  r.campaignName,
         impressions:   r.impressions,
         clicks:        r.clicks,
@@ -85,7 +85,7 @@ module.exports = async (req, res) => {
         unitsSoldClicks14d: r.unitsSoldClicks14d,
       })),
       // Show all unique portfolio names in the data
-      uniquePortfolios: [...new Set(rows.map(r => r.portfolioName).filter(Boolean))].sort(),
+      uniqueCampaignNames: [...new Set(rows.map(r => r.campaignName).filter(Boolean))].sort(),
     });
 
   } catch (err) {
