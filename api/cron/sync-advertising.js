@@ -84,7 +84,7 @@ module.exports = async (req, res) => {
     console.warn(`[sync-advertising] profile discovery failed, using env var: ${err.message}`);
   }
 
-  const months  = rollingMonths(13);
+  const months  = rollingMonths(parseInt(req.query.months, 10) || 2); // default 2; backfill passes 13
   const results = [];
 
   // ── 1. Pull SP report for all brands in one request (grouped by SKU) ───────
@@ -362,6 +362,8 @@ function downloadAdReport(url) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Daily cron pulls current month + prior month only (2 months).
+// For full 13-month history, run sync-advertising-backfill manually.
 function rollingMonths(n) {
   const months = [];
   const now    = new Date();
