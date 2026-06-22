@@ -151,7 +151,7 @@ function adRequest(method, path, token, profileId, body) {
     const headers = {
       'Authorization':                   `Bearer ${token}`,
       'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
-      'Content-Type':                    'application/vnd.createasyncreportrequest.v3+json',
+      'Content-Type': method === 'POST' && path === '/reporting/reports' ? 'application/vnd.createasyncreportrequest.v3+json' : 'application/json',
       'Content-Length':                  Buffer.byteLength(bodyStr),
     };
     // Only add Scope header if profileId is provided (not needed for /v2/profiles list)
