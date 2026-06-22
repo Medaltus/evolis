@@ -181,30 +181,44 @@ module.exports = async (req, res) => {
     }
   }
   // ── 5. Write brand summary to SHEET_ADVERTISING using portfolio data ────────
-  // summaryRows are grouped by portfolio — each row has portfolioName.
-  // Match portfolioName to brand by checking if brand id/displayName/skuPrefix
-  // appears in the portfolio name.
+  // Explicit portfolio name → brand tabName map.
+  // Portfolio names come from the Amazon Ads console and don't always match
+  // brand IDs — this hardcoded map is the source of truth for ads only.
+  const PORTFOLIO_BRAND_MAP = {
+    'amala':               'amala',
+    'cimeosil':            'cimeosil',
+    'cloud cafe':          'cloud-cafe',
+    'collagelee':          'collagelee',
+    'dearcloud':           'dearcloud',
+    'eraclea':             'eraclea',
+    'evolis':              'evolis',
+    'hillside candle':     'hillside',
+    'hillside':            'hillside',
+    'just bjorn':          'just-bjorn',
+    'just-bjorn':          'just-bjorn',
+    'miguard':             'miguard',
+    'pb & jay':            'pbj',
+    'pb & jay':            'pbj',
+    'prohibition wellness':'prohibition',
+    'prohibition':         'prohibition',
+    'skinuva':             'skinuva',
+    'skinside seoul':      'skinside-seoul',
+    'skinside-seoul':      'skinside-seoul',
+    'the creme shop':      'creme-shop',
+    'creme shop':          'creme-shop',
+    'creme-shop':          'creme-shop',
+  };
 
   // Build per-brand portfolio aggregates from summaryRows
   const brandSummaryTotals = {}; // tabName → { impressions, clicks, spend, sales, adUnits }
 
   summaryRows.forEach(r => {
-    const portfolioName = (r.portfolioName || '').toLowerCase().trim();
-
-    const matched = brands.find(b =>
-      b.active && (
-        portfolioName.includes(b.id.toLowerCase()) ||
-        portfolioName.includes(b.displayName.toLowerCase()) ||
-        portfolioName.includes(b.skuPrefix.toLowerCase())
-      )
-    );
-
-    const tabName = matched ? matched.tabName : null;
+    const portfolioName = (r.portfolioName || r.name || '').toLowerCase().trim();
+    const tabName = PORTFOLIO_BRAND_MAP[portfolioName];
     if (!tabName) {
-      console.log(`[sync-advertising-process] unmatched portfolio: "${r.portfolioName}"`);
+      if (portfolioName) console.log(`[sync-advertising-process] unmatched portfolio: "${r.portfolioName || r.name}"`);
       return;
     }
-
     if (!brandSummaryTotals[tabName]) {
       brandSummaryTotals[tabName] = { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
     }
