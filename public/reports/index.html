@@ -1506,7 +1506,7 @@ function initSns() {
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
         <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
-        <td><div class="tp-cell"><span>${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
         <td class="tp-dash">—</td>`;
       tbody.appendChild(tr);
     });
