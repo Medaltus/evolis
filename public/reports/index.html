@@ -1128,7 +1128,7 @@ function initSns() {
     badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
   }
 
-  function renderKPIs(curr, prev, prevYear, adUnits = 0) {
+  function renderKPIs(curr, prev, prevYear, adUnits = 0, prevAdUnits = 0) {
     const fmt  = n => (n ?? 0).toLocaleString();
     const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
 
@@ -1148,11 +1148,7 @@ function initSns() {
 
     // Units Ads — from advertising cache sheet
     setKpiValue('kpi-units-ads', fmt(adUnits));
-    const prevAdUnits = 0; // no prev month ad data yet — will populate as backfill completes
-    if (adUnits > 0) {
-      const momEl = document.querySelector('#kpi-units-ads .kpi-mom');
-      if (momEl) { momEl.textContent = ''; momEl.className = 'kpi-mom flat'; }
-    }
+    setBadge('kpi-units-ads', '.kpi-mom', (prevAdUnits != null && prevAdUnits > 0) ? pct(adUnits, prevAdUnits) : null, 'MOM');
 
     // Units Organic = Total Units - Units Ads
     const organicUnits = curr.totalUnits - adUnits;
@@ -1231,10 +1227,13 @@ function initSns() {
       // Parse ad summary — find current month row for KPI adUnits
       // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
       let adUnitsKpi = 0;
+      let prevAdUnitsKpi = 0;
       if (isCsv(adSummaryCsv)) {
         const adRows = parseCsv(adSummaryCsv);
         const adRow  = adRows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
         if (adRow) adUnitsKpi = parseInt(adRow.ad_units, 10) || 0;
+        const prevAdRow = adRows.find(r => parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth);
+        if (prevAdRow) prevAdUnitsKpi = parseInt(prevAdRow.ad_units, 10) || 0;
       }
 
       // Parse ad orders — ASIN-level for top products table
@@ -1243,7 +1242,7 @@ function initSns() {
         parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
       ) : [];
 
-      renderKPIs(curr, prev, prevYoy, adUnitsKpi);
+      renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
       buildTopProductsTable(allRows, year, month, adOrderRows);
 
@@ -1409,19 +1408,26 @@ function initSns() {
     let skuNameMap = {};
     let skuAsinMap = {}; // normalizedSku → ASIN (for ad units lookup)
     try {
-      const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}`;
+      const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}&_cb=${Date.now()}`;
       const resp = await fetch(namesCsvUrl);
       if (resp.ok) {
         const csv = await resp.text();
         if (isCsv(csv)) {
           const lines = csv.trim().split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const cols = parseCsvLine(lines[i]);
-            const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
-            const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
-            const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
-            if (sku && name) skuNameMap[sku] = name;
-            if (sku && asin) skuAsinMap[sku] = asin;
+          const headerCols = parseCsvLine(lines[0]);
+          const firstHeader = (headerCols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+          if (firstHeader !== 'ASIN') {
+            console.warn('[TopProducts] Name lookup returned wrong tab — col A header:', firstHeader);
+          } else {
+            for (let i = 1; i < lines.length; i++) {
+              const cols = parseCsvLine(lines[i]);
+              const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+              const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
+              const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+              if (sku && name) skuNameMap[sku] = name;
+              if (sku && asin) skuAsinMap[sku] = asin;
+            }
+            console.log('[TopProducts] Loaded', Object.keys(skuNameMap).length, 'names,', Object.keys(skuAsinMap).length, 'ASIN mappings');
           }
         }
       }
