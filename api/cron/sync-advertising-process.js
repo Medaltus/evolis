@@ -64,34 +64,7 @@ module.exports = async (req, res) => {
     }
 
     if (meta['ad_report_status'] === 'PROCESSED') {
-      // Check if there's a backfill queue waiting — if so, advance it
-      const queueStr = meta['ad_backfill_queue'] || '';
-      const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
-      if (queue.length > 0) {
-        console.log(`[sync-advertising-process] PROCESSED but queue has ${queue.length} months — advancing`);
-        // Fire the next backfill request inline then return
-        const nextMonth = queue.shift();
-        try {
-          const backfillHandler = require('./sync-advertising-backfill');
-          await backfillHandler(
-            { method: 'GET', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` }, query: { month: nextMonth } },
-            { status: () => ({ json: (d) => console.log(`[sync-advertising-process] backfill ${nextMonth}:`, JSON.stringify(d).slice(0,150)) }), end: () => {} }
-          );
-          // Update queue in _meta
-          const tok2    = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
-          const ex2     = await readRows(SHEET_AD_SUMMARY, META_TAB);
-          const mm2     = {};
-          ex2.forEach(r => { if (r.KEY) mm2[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-          mm2['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), new Date().toISOString()];
-          if (queue.length === 0) mm2['ad_backfill_complete'] = ['ad_backfill_complete', 'true', new Date().toISOString()];
-          await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(mm2), tok2);
-          return res.status(200).json({ message: `Queue advanced to ${nextMonth}`, remaining: queue.length });
-        } catch (err) {
-          console.error(`[sync-advertising-process] queue advance failed:`, err.message);
-          return res.status(200).json({ message: 'Queue advance failed', error: err.message });
-        }
-      }
-      return res.status(200).json({ message: 'Already processed, no queue remaining', asinReportId, summaryReportId });
+      return res.status(200).json({ message: 'Already processed today', asinReportId, summaryReportId });
     }
 
     console.log(`[sync-advertising-process] resuming asin=${asinReportId} summary=${summaryReportId}`);
@@ -102,40 +75,20 @@ module.exports = async (req, res) => {
   const token = await getAdToken();
 
   // ── 2. Poll + download both reports ────────────────────────────────────────
-  const [asinResult, summaryResult] = await Promise.all([
-    asinReportId    ? pollAndDownload(asinReportId,    token, profileId) : Promise.resolve({ rows: [], status: 'skipped' }),
-    summaryReportId ? pollAndDownload(summaryReportId, token, profileId) : Promise.resolve({ rows: [], status: 'skipped' }),
+  const [asinRows, summaryRows] = await Promise.all([
+    asinReportId    ? pollAndDownload(asinReportId,    token, profileId) : Promise.resolve([]),
+    summaryReportId ? pollAndDownload(summaryReportId, token, profileId) : Promise.resolve([]),
   ]);
 
-  // If reports are still genuinely pending (just requested), wait for next cron run
-  if (asinResult.status === 'pending' || summaryResult.status === 'pending') {
-    console.log('[sync-advertising-process] reports still pending — will retry in 15 min');
+  console.log(`[sync-advertising-process] asin rows: ${asinRows.length}, summary rows: ${summaryRows.length}`);
+
+  if (asinRows === null || summaryRows === null) {
     return res.status(202).json({
       message: 'Reports not ready yet — will retry next run',
       asinReportId,
       summaryReportId,
     });
   }
-
-  // If reports failed or expired, mark as PROCESSED so we don't loop forever
-  // The daily request cron will fire fresh reports tomorrow
-  if (asinResult.status === 'failed' || summaryResult.status === 'failed') {
-    console.error('[sync-advertising-process] one or more reports failed/expired — marking done to unblock queue');
-    try {
-      const existing = await readRows(SHEET_AD_SUMMARY, META_TAB);
-      const metaMap  = {};
-      existing.forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-      metaMap['ad_report_status'] = ['ad_report_status', 'PROCESSED', now];
-      metaMap['ad_backfill']      = ['ad_backfill', 'false', now];
-      const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
-      await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
-    } catch (e) { console.warn('[sync-advertising-process] meta update failed:', e.message); }
-    return res.status(200).json({ message: 'Reports failed/expired — unblocked queue', asinReportId, summaryReportId });
-  }
-
-  const asinRows    = asinResult.rows;
-  const summaryRows = summaryResult.rows;
-  console.log(`[sync-advertising-process] asin rows: ${asinRows.length}, summary rows: ${summaryRows.length}`);
 
   // Derive year/month from endDate
   const [yearStr, monthStr] = (endDate || '').split('-');
@@ -370,28 +323,20 @@ module.exports = async (req, res) => {
 };
 
 // ── Poll + download a single report ──────────────────────────────────────────
-// Returns { rows, status } where status is 'completed'|'pending'|'failed'
+// Returns rows array if completed, null if still pending at timeout
+
 async function pollAndDownload(reportId, token, profileId) {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const resp   = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
     const status = resp.status;
     console.log(`[sync-advertising-process] poll ${reportId}: ${status}`);
-    if (status === 'COMPLETED') {
-      const rows = await downloadAdReport(resp.url);
-      return { rows, status: 'completed' };
-    }
-    if (status === 'FAILED') return { rows: [], status: 'failed' };
-    // PENDING or IN_PROGRESS — keep polling
+    if (status === 'COMPLETED') return downloadAdReport(resp.url);
+    if (status === 'FAILED')    throw new Error(`Report ${reportId} FAILED`);
     await sleep(POLL_INTERVAL_MS);
   }
-  // Timed out — check one more time if it failed vs still pending
-  try {
-    const finalCheck = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
-    if (finalCheck.status === 'FAILED') return { rows: [], status: 'failed' };
-  } catch (e) { /* ignore */ }
   console.warn(`[sync-advertising-process] ${reportId} not ready after ${POLL_TIMEOUT_MS}ms`);
-  return { rows: [], status: 'pending' };
+  return null;
 }
 
 function downloadAdReport(url) {
