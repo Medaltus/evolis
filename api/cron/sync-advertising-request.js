@@ -3,33 +3,37 @@
  * Step 1 of 2 — requests Amazon Advertising reports and stores report IDs in _meta tab.
  * Runs at 3:00 AM UTC daily.
  *
- * Fires two SP report requests:
- *   1. spAdvertisedProduct (ASIN-level) — for per-ASIN ad units
- *   2. spCampaigns (campaign-level)     — for brand-level summary metrics
+ * Fires 6 report requests per run:
+ *   Current month MTD (1st of this month → yesterday):
+ *     1. spAdvertisedProduct  — ASIN-level SP ad units
+ *     2. spCampaigns          — SP campaign-level brand summary
+ *     3. sbCampaigns          — SB campaign-level brand summary
+ *   Last full calendar month (1st → last day of prev month):
+ *     4. spAdvertisedProduct  — ASIN-level SP ad units
+ *     5. spCampaigns          — SP campaign-level brand summary
+ *     6. sbCampaigns          — SB campaign-level brand summary
  *
- * Stores report IDs in SHEET_ADVERTISING → _meta tab so sync-advertising-process
- * can pick them up 15 minutes later once Amazon has finished generating them.
- *
- * _meta tab structure: KEY | VALUE | UPDATED_AT
- *   ad_report_id_asin     — reportId for spAdvertisedProduct report
- *   ad_report_id_summary  — reportId for spCampaigns report
- *   ad_report_status      — REQUESTED | PROCESSED
- *   ad_start_date         — report start date
- *   ad_end_date           — report end date
- *   ad_profile_id         — profile ID used
+ * Stores report IDs in SHEET_ADVERTISING → _meta tab:
+ *   ad_report_id_asin_curr     — SP ASIN report, current month
+ *   ad_report_id_sp_curr       — SP campaign report, current month
+ *   ad_report_id_sb_curr       — SB campaign report, current month
+ *   ad_report_id_asin_prev     — SP ASIN report, last full month
+ *   ad_report_id_sp_prev       — SP campaign report, last full month
+ *   ad_report_id_sb_prev       — SB campaign report, last full month
+ *   ad_report_status           — REQUESTED | PROCESSED
+ *   ad_start_date_curr / ad_end_date_curr
+ *   ad_start_date_prev / ad_end_date_prev
+ *   ad_profile_id
  */
 
-const { getAdToken }                             = require('../_spauth');
-const { ensureTab, readRows, replaceRows }        = require('../config/_sheets_client');
-const https                                      = require('https');
+const { getAdToken }                      = require('../_spauth');
+const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
+const https                               = require('https');
 
-const AD_API_HOST  = 'advertising-api.amazon.com';
+const AD_API_HOST      = 'advertising-api.amazon.com';
 const SHEET_AD_SUMMARY = process.env.SHEET_ADVERTISING;
-const META_TAB     = '_meta';
-const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
-
-// Default: last 7 days. Pass ?days=N (max 30) to override.
-const DEFAULT_DAYS = 30;
+const META_TAB         = '_meta';
+const META_HEADERS     = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -37,101 +41,83 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const now  = new Date().toISOString();
-  const days = Math.min(parseInt(req.query.days, 10) || DEFAULT_DAYS, 30);
-  const { startDate, endDate } = getDateRange(days);
+  const now = new Date().toISOString();
 
-  console.log(`[sync-advertising-request] date range: ${startDate} → ${endDate}`);
+  const curr = getCurrentMonthRange();
+  const prev = getLastMonthRange();
+
+  console.log(`[sync-advertising-request] curr: ${curr.startDate} → ${curr.endDate}`);
+  console.log(`[sync-advertising-request] prev: ${prev.startDate} → ${prev.endDate}`);
 
   try {
-    // ── 1. Get LWA token + discover profile ──────────────────────────────────
     const token     = await getAdToken();
     const profileId = await discoverProfileId(token);
     console.log(`[sync-advertising-request] using profileId=${profileId}`);
 
-    // ── 2. Request ASIN-level report ──────────────────────────────────────────
-    let asinReportId = null;
-    try {
-      const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
-        name:      `ad_asin_${endDate}`,
-        startDate,
-        endDate,
-        configuration: {
-          adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['advertiser'],
-          columns:      ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
-          reportTypeId: 'spAdvertisedProduct',
-          timeUnit:     'SUMMARY',
-          format:       'GZIP_JSON',
-        },
-      });
-      asinReportId = resp.reportId;
-      if (asinReportId) {
-        console.log(`[sync-advertising-request] ASIN report requested: ${asinReportId}`);
-      } else {
-        console.error(`[sync-advertising-request] ASIN report missing reportId. Raw response: ${JSON.stringify(resp).slice(0, 300)}`);
+    // ── Request all 6 reports in parallel ────────────────────────────────────
+    const [
+      asinCurrResp,
+      spCurrResp,
+      sbCurrResp,
+      asinPrevResp,
+      spPrevResp,
+      sbPrevResp,
+    ] = await Promise.allSettled([
+      requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
+      requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
+      requestReport(token, profileId, 'sbCampaigns',         'SPONSORED_BRANDS',   curr, ['campaign'],    ['campaignName','impressions','clicks','cost','purchases14d','sales14d','unitsSoldClicks14d']),
+      requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
+      requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
+      requestReport(token, profileId, 'sbCampaigns',         'SPONSORED_BRANDS',   prev, ['campaign'],    ['campaignName','impressions','clicks','cost','purchases14d','sales14d','unitsSoldClicks14d']),
+    ]);
+
+    const getId = (result, label) => {
+      if (result.status === 'fulfilled' && result.value?.reportId) {
+        console.log(`[sync-advertising-request] ${label}: ${result.value.reportId}`);
+        return result.value.reportId;
       }
-    } catch (err) {
-      console.error('[sync-advertising-request] ASIN report request failed:', err.message);
-    }
+      console.error(`[sync-advertising-request] ${label} failed:`, result.reason?.message || JSON.stringify(result.value).slice(0,200));
+      return null;
+    };
 
-    // ── 3. Request portfolio-level summary report ─────────────────────────────
-    // Group by campaign but include portfolioName so we can aggregate per brand.
-    // portfolioName matches the names in the Amazon Ads console portfolio list.
-    let summaryReportId = null;
-    try {
-      const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
-        name:      `ad_summary_${endDate}`,
-        startDate,
-        endDate,
-        configuration: {
-          adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['campaign'],
-          columns:      ['campaignName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
-          reportTypeId: 'spCampaigns',
-          timeUnit:     'SUMMARY',
-          format:       'GZIP_JSON',
-        },
-      });
-      summaryReportId = resp.reportId;
-      if (summaryReportId) {
-        console.log(`[sync-advertising-request] summary report requested: ${summaryReportId}`);
-      } else {
-        console.error(`[sync-advertising-request] summary report missing reportId. Raw response: ${JSON.stringify(resp).slice(0, 300)}`);
-      }
-    } catch (err) {
-      console.error('[sync-advertising-request] summary report request failed:', err.message);
-    }
+    const asinCurrId = getId(asinCurrResp, 'asin_curr');
+    const spCurrId   = getId(spCurrResp,   'sp_curr');
+    const sbCurrId   = getId(sbCurrResp,   'sb_curr');
+    const asinPrevId = getId(asinPrevResp, 'asin_prev');
+    const spPrevId   = getId(spPrevResp,   'sp_prev');
+    const sbPrevId   = getId(sbPrevResp,   'sb_prev');
 
-    if (!asinReportId && !summaryReportId) {
-      return res.status(500).json({ error: 'Both report requests failed' });
-    }
+    // Require at least one curr and one prev report to succeed
+    if (!spCurrId && !sbCurrId) return res.status(500).json({ error: 'All current month report requests failed' });
+    if (!spPrevId && !sbPrevId) return res.status(500).json({ error: 'All previous month report requests failed' });
 
-    // ── 4. Write report IDs to _meta tab ──────────────────────────────────────
+    // ── Write report IDs to _meta ─────────────────────────────────────────────
     const metaRows = [
-      ['ad_report_id_asin',    asinReportId    || '',  now],
-      ['ad_report_id_summary', summaryReportId || '',  now],
-      ['ad_report_status',     'REQUESTED',            now],
-      ['ad_start_date',        startDate,              now],
-      ['ad_end_date',          endDate,                now],
-      ['ad_profile_id',        String(profileId),      now],
-      ['ad_backfill',          'false',                now],
+      ['ad_report_id_asin_curr', asinCurrId || '', now],
+      ['ad_report_id_sp_curr',   spCurrId   || '', now],
+      ['ad_report_id_sb_curr',   sbCurrId   || '', now],
+      ['ad_report_id_asin_prev', asinPrevId || '', now],
+      ['ad_report_id_sp_prev',   spPrevId   || '', now],
+      ['ad_report_id_sb_prev',   sbPrevId   || '', now],
+      ['ad_report_status',       'REQUESTED',      now],
+      ['ad_start_date_curr',     curr.startDate,   now],
+      ['ad_end_date_curr',       curr.endDate,     now],
+      ['ad_start_date_prev',     prev.startDate,   now],
+      ['ad_end_date_prev',       prev.endDate,     now],
+      ['ad_profile_id',          String(profileId),now],
+      ['ad_backfill',            'false',          now],
     ];
 
-    const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
-    // Read existing _meta rows (may have revenue keys) and merge
+    const token2   = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
     const existing = await readRows(SHEET_AD_SUMMARY, META_TAB);
-    const existingMap = {};
-    existing.forEach(r => { if (r.KEY) existingMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-    metaRows.forEach(r => { existingMap[r[0]] = r; });
-    await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(existingMap), token2);
+    const metaMap  = {};
+    existing.forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+    metaRows.forEach(r => { metaMap[r[0]] = r; });
+    await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
 
     return res.status(200).json({
-      asinReportId,
-      summaryReportId,
-      startDate,
-      endDate,
-      profileId,
+      curr: { asinReportId: asinCurrId, spReportId: spCurrId, sbReportId: sbCurrId, ...curr },
+      prev: { asinReportId: asinPrevId, spReportId: spPrevId, sbReportId: sbPrevId, ...prev },
       note: 'Run sync-advertising-process in 10-15 minutes',
     });
 
@@ -142,6 +128,22 @@ module.exports = async (req, res) => {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function requestReport(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns) {
+  return adRequest('POST', '/reporting/reports', token, profileId, {
+    name:      `ad_${reportTypeId}_${dateRange.endDate}`,
+    startDate: dateRange.startDate,
+    endDate:   dateRange.endDate,
+    configuration: {
+      adProduct,
+      groupBy,
+      columns,
+      reportTypeId,
+      timeUnit: 'SUMMARY',
+      format:   'GZIP_JSON',
+    },
+  });
+}
 
 async function discoverProfileId(token) {
   const profiles = await adRequest('GET', '/v2/profiles', token, null, null);
@@ -155,12 +157,25 @@ async function discoverProfileId(token) {
   return newdermUS.profileId;
 }
 
-function getDateRange(days) {
+function getCurrentMonthRange() {
   const pad   = x => String(x).padStart(2, '0');
-  const end   = new Date(); end.setDate(end.getDate() - 1);
-  const start = new Date(end); start.setDate(start.getDate() - (days - 1));
-  const fmt   = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  return { startDate: fmt(start), endDate: fmt(end) };
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+  const startDate = `${year}-${pad(month)}-01`;
+  const endDate   = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}`;
+  return { startDate, endDate };
+}
+
+function getLastMonthRange() {
+  const pad       = x => String(x).padStart(2, '0');
+  const now       = new Date();
+  const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastOfPrevMonth  = new Date(firstOfThisMonth - 1);
+  const firstOfPrevMonth = new Date(lastOfPrevMonth.getFullYear(), lastOfPrevMonth.getMonth(), 1);
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  return { startDate: fmt(firstOfPrevMonth), endDate: fmt(lastOfPrevMonth) };
 }
 
 function adRequest(method, path, token, profileId, body) {
