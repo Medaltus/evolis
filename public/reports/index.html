@@ -1241,6 +1241,15 @@ function initSns() {
       const adOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
         parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
       ) : [];
+      // Debug: show raw ad orders data
+      if (isCsv(adOrdersCsv)) {
+        const rawRows = parseCsv(adOrdersCsv);
+        console.log('[AdOrders] total rows:', rawRows.length, '| looking for year=', year, 'month=', month);
+        if (rawRows.length > 0) console.log('[AdOrders] first row raw:', JSON.stringify(rawRows[0]));
+        if (rawRows.length > 1) console.log('[AdOrders] second row raw:', JSON.stringify(rawRows[1]));
+      } else {
+        console.warn('[AdOrders] adOrdersCsv is not valid CSV');
+      }
 
       renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
