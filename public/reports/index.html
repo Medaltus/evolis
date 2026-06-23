@@ -976,6 +976,10 @@ function initSns() {
   const HISTORICAL_SHEET_ID = '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU'; // historical cache (YOY)
   const REVENUE_SHEET_ID    = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank'; // revenue history
   const REVENUE_GID         = '1237377804';                                     // Évolis tab
+  const AD_SUMMARY_SHEET_ID = '13cN301QZxkEGy6-8LfdzB8zmsHhUKwZqz6lsXKUJcnI'; // advertising cache
+  const AD_SUMMARY_GID      = '2032256212';                                     // Évolis tab
+  const AD_ORDERS_SHEET_ID  = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI'; // ad orders cache
+  const AD_ORDERS_GID       = '158578426';                                      // Évolis tab
   const BRAND               = 'evolis';
 
   // Derive the last FULL month from today
@@ -1124,7 +1128,7 @@ function initSns() {
     badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
   }
 
-  function renderKPIs(curr, prev, prevYear) {
+  function renderKPIs(curr, prev, prevYear, adUnits = 0) {
     const fmt  = n => (n ?? 0).toLocaleString();
     const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
 
@@ -1142,9 +1146,13 @@ function initSns() {
     setKpiValue('kpi-avg-order', '$' + fmt2(curr.avgOrder));
     setBadge('kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
 
-    // Units Ads (placeholder = 0)
-    const adUnits = 0;
-    setKpiValue('kpi-units-ads', '0');
+    // Units Ads — from advertising cache sheet
+    setKpiValue('kpi-units-ads', fmt(adUnits));
+    const prevAdUnits = 0; // no prev month ad data yet — will populate as backfill completes
+    if (adUnits > 0) {
+      const momEl = document.querySelector('#kpi-units-ads .kpi-mom');
+      if (momEl) { momEl.textContent = ''; momEl.className = 'kpi-mom flat'; }
+    }
 
     // Units Organic = Total Units - Units Ads
     const organicUnits = curr.totalUnits - adUnits;
@@ -1198,9 +1206,11 @@ function initSns() {
       const SYNC_GID = '1163928587';
       const HIST_GID = '1249281379';
 
-      const [syncCsv, histCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
@@ -1218,9 +1228,24 @@ function initSns() {
         return;
       }
 
-      renderKPIs(curr, prev, prevYoy);
+      // Parse ad summary — find current month row for KPI adUnits
+      // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
+      let adUnitsKpi = 0;
+      if (isCsv(adSummaryCsv)) {
+        const adRows = parseCsv(adSummaryCsv);
+        const adRow  = adRows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+        if (adRow) adUnitsKpi = parseInt(adRow.ad_units, 10) || 0;
+      }
+
+      // Parse ad orders — ASIN-level for top products table
+      // Columns: year, month, asin, ad_units, spend, sales, acos, brand, last_updated
+      const adOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
+        parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
+      ) : [];
+
+      renderKPIs(curr, prev, prevYoy, adUnitsKpi);
       setSourceLabel(year, month);
-      buildTopProductsTable(allRows, year, month);
+      buildTopProductsTable(allRows, year, month, adOrderRows);
 
       // Revenue chart — fetches from the separate revenue history sheet
       buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
@@ -1321,7 +1346,7 @@ function initSns() {
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
   const PRODUCT_NAMES_GID      = '164358627';
 
-  async function buildTopProductsTable(allRows, targetYear, targetMonth) {
+  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = []) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
 
     // Filter to last full month (same rules as KPIs)
@@ -1372,9 +1397,17 @@ function initSns() {
       });
     }
 
+    // Build ASIN → ad_units map from adOrderRows (passed in from initAmazonLive)
+    const asinAdUnitsMap = {};
+    adOrderRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (asin) asinAdUnitsMap[asin] = (asinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+    });
+
     // Fetch product name lookup sheet.
-    // Tab gid=164358627: column B = SKU (base, no -SF), column C = Product Name.
+    // Tab gid=164358627: col A = ASIN, col B = SKU (base, no -SF), col C = Product Name.
     let skuNameMap = {};
+    let skuAsinMap = {}; // normalizedSku → ASIN (for ad units lookup)
     try {
       const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}`;
       const resp = await fetch(namesCsvUrl);
@@ -1382,18 +1415,17 @@ function initSns() {
         const csv = await resp.text();
         if (isCsv(csv)) {
           const lines = csv.trim().split('\n');
-          // Header row in row 1 — skip it. Data rows: col B (index 1) = SKU, col C (index 2) = Product Name
           for (let i = 1; i < lines.length; i++) {
             const cols = parseCsvLine(lines[i]);
-            // col B (index 1) = SKU, col C (index 2) = Product Name
-            const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+            const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+            const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
             const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
             if (sku && name) skuNameMap[sku] = name;
+            if (sku && asin) skuAsinMap[sku] = asin;
           }
         }
       }
     } catch (e) {
-      // Name lookup failure is non-fatal — falls back to showing normalized SKU codes
       console.warn('[TopProducts] Name lookup failed:', e.message);
     }
 
@@ -1404,15 +1436,16 @@ function initSns() {
 
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
-      const name     = skuNameMap[sku] || sku;
-      const adUnits  = 0; // placeholder until SP-API advertising data connected
-      const orgUnits = units - adUnits;
+      const name    = skuNameMap[sku] || sku;
+      const asin    = skuAsinMap[sku] || '';
+      const adUnits = asin ? (asinAdUnitsMap[asin] || 0) : 0;
+      const orgUnits = Math.max(0, units - adUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td class="tp-units">${units.toLocaleString()}</td>
-        <td class="tp-dash">—</td>
+        <td class="${adUnits > 0 ? 'tp-units' : 'tp-dash'}">${adUnits > 0 ? adUnits.toLocaleString() : '—'}</td>
         <td>${orgUnits.toLocaleString()}</td>
         <td class="tp-dash">—</td>`;
       tbody.appendChild(tr);
