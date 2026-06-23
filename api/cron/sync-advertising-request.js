@@ -66,7 +66,11 @@ module.exports = async (req, res) => {
         },
       });
       asinReportId = resp.reportId;
-      console.log(`[sync-advertising-request] ASIN report requested: ${asinReportId}`);
+      if (asinReportId) {
+        console.log(`[sync-advertising-request] ASIN report requested: ${asinReportId}`);
+      } else {
+        console.error(`[sync-advertising-request] ASIN report missing reportId. Raw response: ${JSON.stringify(resp).slice(0, 300)}`);
+      }
     } catch (err) {
       console.error('[sync-advertising-request] ASIN report request failed:', err.message);
     }
@@ -90,7 +94,11 @@ module.exports = async (req, res) => {
         },
       });
       summaryReportId = resp.reportId;
-      console.log(`[sync-advertising-request] summary report requested: ${summaryReportId}`);
+      if (summaryReportId) {
+        console.log(`[sync-advertising-request] summary report requested: ${summaryReportId}`);
+      } else {
+        console.error(`[sync-advertising-request] summary report missing reportId. Raw response: ${JSON.stringify(resp).slice(0, 300)}`);
+      }
     } catch (err) {
       console.error('[sync-advertising-request] summary report request failed:', err.message);
     }
