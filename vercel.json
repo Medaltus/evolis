@@ -5,7 +5,7 @@
     { "path": "/api/cron/sync-orders-backfill",  "schedule": "0 4 5 * *"  },
     { "path": "/api/cron/sync-products",         "schedule": "30 2 * * *"  },
     { "path": "/api/cron/sync-advertising-request",  "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/sync-advertising-process",  "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/sync-advertising-process",  "schedule": "15 3 * * *"  },
     { "path": "/api/cron/sync-subscriptions",    "schedule": "30 3 * * *"  },
     { "path": "/api/cron/trim-orders",           "schedule": "0 3 * * *"   },
     { "path": "/api/cron/reconcile-orders",      "schedule": "0 8 * * *"   },
