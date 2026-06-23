@@ -273,10 +273,10 @@ module.exports = async (req, res) => {
     }
 
     // ── 5b. Merge SP + SB campaign rows, aggregate per brand ─────────────────
-    // SB uses 'cost' instead of 'spend' — normalise
+    // SB uses 'cost' instead of 'spend', and 'purchases14d' for units (no unitsSoldClicks14d)
     const allCampaignRows = [
       ...spRows,
-      ...sbRows.map(r => ({ ...r, spend: r.cost || r.spend || 0 })),
+      ...sbRows.map(r => ({ ...r, spend: r.cost || r.spend || 0, unitsSoldClicks14d: r.purchases14d || 0 })),
     ];
 
     const brandTotals = {};
