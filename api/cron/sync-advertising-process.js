@@ -267,47 +267,43 @@ module.exports = async (req, res) => {
     metaMap['ad_backfill']      = ['ad_backfill', 'false', now];
 
     // ── Queue auto-advance ──────────────────────────────────────────────────
-    // If a backfill queue exists and has remaining months, fire the next request
-    // automatically so the 15-min cron can pick it up without manual intervention.
     const queueStr = metaMap['ad_backfill_queue']?.[1] || '';
     const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
 
     if (queue.length > 0) {
-      const nextMonth = queue.shift(); // pop oldest month off front
+      const nextMonth = queue.shift();
       metaMap['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
-
-      console.log(`[sync-advertising-process] queue: firing next month ${nextMonth} (${queue.length} remaining)`);
-
-      // Fire the backfill request for the next month inline
-      // (lightweight — just requests the report and writes to _meta, no polling)
-      try {
-        const backfillHandler = require('./sync-advertising-backfill');
-        const fakeReq = {
-          method:  'GET',
-          headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-          query:   { month: nextMonth },
-        };
-        const fakeRes = {
-          status: (code) => ({ json: (data) => {
-            console.log(`[sync-advertising-process] backfill request for ${nextMonth}:`, JSON.stringify(data).slice(0, 200));
-          }}),
-          end: () => {},
-        };
-        await backfillHandler(fakeReq, fakeRes);
-        // Status will be reset to REQUESTED by backfill handler — process cron picks it up in 15 min
-      } catch (err) {
-        console.error(`[sync-advertising-process] failed to fire next queue month ${nextMonth}:`, err.message);
-        // Put month back at front of queue so it retries next run
-        queue.unshift(nextMonth);
-        metaMap['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
-      }
-
       if (queue.length === 0) {
         metaMap['ad_backfill_complete'] = ['ad_backfill_complete', 'true', now];
         console.log('[sync-advertising-process] backfill queue complete!');
       }
-    }
+      console.log(`[sync-advertising-process] queue: firing next month ${nextMonth} (${queue.length} remaining)`);
 
+      // Write updated queue to _meta FIRST — prevents race condition where
+      // backfill handler overwrites our queue update
+      const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+      await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
+
+      // Now fire backfill — it merges REQUESTED status into _meta on top of our queue write
+      try {
+        const backfillHandler = require('./sync-advertising-backfill');
+        await backfillHandler(
+          { method: 'GET', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` }, query: { month: nextMonth } },
+          { status: () => ({ json: (d) => console.log(`[sync-advertising-process] backfill ${nextMonth}:`, JSON.stringify(d).slice(0,150)) }), end: () => {} }
+        );
+      } catch (err) {
+        console.error(`[sync-advertising-process] failed to fire backfill ${nextMonth}:`, err.message);
+        // Re-add month to front of queue on failure
+        queue.unshift(nextMonth);
+        const ex3 = await readRows(SHEET_AD_SUMMARY, META_TAB);
+        const mm3 = {};
+        ex3.forEach(r => { if (r.KEY) mm3[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+        mm3['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
+        const tok3 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+        await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(mm3), tok3);
+      }
+      return res.status(200).json({ asinRows: asinRows.length, summaryRows: summaryRows.length, brands: results, queueAdvanced: nextMonth, remaining: queue.length, timestamp: now });
+    }
     const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
     await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
   } catch (err) {
