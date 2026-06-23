@@ -80,8 +80,6 @@ module.exports = async (req, res) => {
     summaryReportId ? pollAndDownload(summaryReportId, token, profileId) : Promise.resolve([]),
   ]);
 
-  console.log(`[sync-advertising-process] asin rows: ${asinRows.length}, summary rows: ${summaryRows.length}`);
-
   if (asinRows === null || summaryRows === null) {
     return res.status(202).json({
       message: 'Reports not ready yet — will retry next run',
@@ -89,6 +87,8 @@ module.exports = async (req, res) => {
       summaryReportId,
     });
   }
+
+  console.log(`[sync-advertising-process] asin rows: ${asinRows.length}, summary rows: ${summaryRows.length}`);
 
   // Derive year/month from endDate
   const [yearStr, monthStr] = (endDate || '').split('-');
