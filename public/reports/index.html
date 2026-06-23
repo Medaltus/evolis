@@ -415,11 +415,12 @@
   /* ── Top Products dynamic table ── */
   #amazon-top-sellers thead th { text-align: left; }
   #amazon-top-sellers tbody td:first-child { font-weight: 500; color: var(--slate); width: 36px; }
-  #amazon-top-sellers .tp-units { color: #24e9a3; font-weight: 700; font-size: 13px; }
+  #amazon-top-sellers .tp-units { color: var(--navy); font-weight: 700; font-size: 13px; }
   #amazon-top-sellers .tp-dash { color: rgba(107,123,162,.45); }
-  #amazon-top-sellers .tp-mom-up { color: #24e9a3; font-size: 11px; font-weight: 600; }
-  #amazon-top-sellers .tp-mom-dn { color: #ff6b6b; font-size: 11px; font-weight: 600; }
-  #amazon-top-sellers .tp-mom-flat { color: rgba(107,123,162,.45); font-size: 11px; }
+  #amazon-top-sellers .tp-cell { display: flex; flex-direction: column; gap: 2px; }
+  #amazon-top-sellers .tp-mom-up { color: #24e9a3; font-size: 10px; font-weight: 700; }
+  #amazon-top-sellers .tp-mom-dn { color: #ff6b6b; font-size: 10px; font-weight: 700; }
+  #amazon-top-sellers .tp-mom-flat { color: rgba(107,123,162,.35); font-size: 10px; }
 
 </style>
 </head>
@@ -558,16 +559,13 @@
                 <th style="width:36px;">#</th>
                 <th>PRODUCT NAME</th>
                 <th>UNITS SOLD</th>
-                <th style="width:70px;">MOM</th>
                 <th>UNITS (ADS)</th>
-                <th style="width:70px;">MOM</th>
                 <th>UNITS (ORGANIC)</th>
-                <th style="width:70px;">MOM</th>
                 <th>CONV. RATE</th>
               </tr>
             </thead>
             <tbody id="tp-tbody">
-              <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
+              <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1372,7 +1370,7 @@ function initSns() {
 
     const tbody = document.getElementById('tp-tbody');
     if (!monthRows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
       return;
     }
 
@@ -1441,13 +1439,13 @@ function initSns() {
       if (asin) prevAsinAdUnitsMap[asin] = (prevAsinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
     });
 
-    // Helper: format MOM badge
-    function momBadge(curr, prev) {
-      if (!prev || prev === 0) return '<td class="tp-dash">—</td>';
+    // Helper: inline stacked MOM badge (renders inside same <td> as the number)
+    function momSpan(curr, prev) {
+      if (!prev || prev === 0) return '';
       const pctVal = Math.round(((curr - prev) / prev) * 100);
-      const cls = pctVal > 0 ? 'tp-mom-up' : pctVal < 0 ? 'tp-mom-dn' : 'tp-mom-flat';
-      const sign = pctVal > 0 ? '+' : '';
-      return `<td class="${cls}">${sign}${pctVal}%</td>`;
+      if (pctVal > 0) return `<span class="tp-mom-up">▲ ${pctVal}%</span>`;
+      if (pctVal < 0) return `<span class="tp-mom-dn">▼ ${Math.abs(pctVal)}%</span>`;
+      return `<span class="tp-mom-flat">0%</span>`;
     }
     // Note: sheet column is named 'sku' but contains ASINs
     const asinAdUnitsMap = {};
@@ -1506,12 +1504,9 @@ function initSns() {
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
-        <td class="tp-units">${units.toLocaleString()}</td>
-        ${momBadge(units, prevUnits)}
-        <td class="${adUnits > 0 ? 'tp-units' : 'tp-dash'}">${adUnits > 0 ? adUnits.toLocaleString() : '—'}</td>
-        ${adUnits > 0 && prevAdUnits > 0 ? momBadge(adUnits, prevAdUnits) : '<td class="tp-dash">—</td>'}
-        <td>${orgUnits.toLocaleString()}</td>
-        ${momBadge(orgUnits, prevOrgUnits)}
+        <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
+        <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span>${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
         <td class="tp-dash">—</td>`;
       tbody.appendChild(tr);
     });
