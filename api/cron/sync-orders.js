@@ -254,12 +254,14 @@ function getDateRange(mode, req) {
   }
 
   if (mode === 'week') {
-    const start = req?.query?.start;
-    const end   = req?.query?.end;
+    const start     = req?.query?.start;
+    const end       = req?.query?.end;
+    const startTime = req?.query?.startTime || '00:00:00';
+    const endTime   = req?.query?.endTime   || '23:59:59';
     if (!start || !end) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
-    const endTs  = new Date(`${end}T23:59:59Z`);
-    const endStr = endTs > now ? safeBefore : `${end}T23:59:59Z`;
-    return { start: `${start}T00:00:00Z`, end: endStr };
+    const endTs  = new Date(`${end}T${endTime}Z`);
+    const endStr = endTs > now ? safeBefore : `${end}T${endTime}Z`;
+    return { start: `${start}T${startTime}Z`, end: endStr };
   }
 
   throw new Error(`Unknown mode: ${mode}`);
