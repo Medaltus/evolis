@@ -64,7 +64,34 @@ module.exports = async (req, res) => {
     }
 
     if (meta['ad_report_status'] === 'PROCESSED') {
-      return res.status(200).json({ message: 'Already processed today', asinReportId, summaryReportId });
+      // Check queue before exiting — if months remain, advance and return
+      const queueStr = meta['ad_backfill_queue'] || '';
+      const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
+      if (queue.length > 0) {
+        const nextMonth = queue.shift();
+        console.log(`[sync-advertising-process] PROCESSED + queue has ${queue.length + 1} months — advancing to ${nextMonth}`);
+        try {
+          // Write updated queue first to prevent race condition
+          const tok = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+          const ex  = await readRows(SHEET_AD_SUMMARY, META_TAB);
+          const mm  = {};
+          ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+          mm['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), new Date().toISOString()];
+          if (queue.length === 0) mm['ad_backfill_complete'] = ['ad_backfill_complete', 'true', new Date().toISOString()];
+          await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(mm), tok);
+          // Then fire backfill request for next month
+          const backfillHandler = require('./sync-advertising-backfill');
+          await backfillHandler(
+            { method: 'GET', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` }, query: { month: nextMonth } },
+            { status: () => ({ json: (d) => console.log(`[sync-advertising-process] queued ${nextMonth}:`, JSON.stringify(d).slice(0,150)) }), end: () => {} }
+          );
+          return res.status(200).json({ message: `Queue advanced to ${nextMonth}`, remaining: queue.length });
+        } catch (err) {
+          console.error(`[sync-advertising-process] queue advance failed:`, err.message);
+          return res.status(200).json({ message: 'Queue advance failed', error: err.message });
+        }
+      }
+      return res.status(200).json({ message: 'Already processed, no queue remaining', asinReportId, summaryReportId });
     }
 
     console.log(`[sync-advertising-process] resuming asin=${asinReportId} summary=${summaryReportId}`);
