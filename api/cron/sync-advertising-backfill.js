@@ -76,7 +76,11 @@ module.exports = async (req, res) => {
         },
       });
       asinReportId = resp.reportId;
-      console.log(`[sync-advertising-backfill] ASIN report: ${asinReportId}`);
+      if (asinReportId) {
+        console.log(`[sync-advertising-backfill] ASIN report: ${asinReportId}`);
+      } else {
+        console.error(`[sync-advertising-backfill] ASIN report missing reportId. Raw: ${JSON.stringify(resp).slice(0,300)}`);
+      }
     } catch (err) {
       console.error('[sync-advertising-backfill] ASIN report failed:', err.message);
     }
@@ -97,7 +101,11 @@ module.exports = async (req, res) => {
         },
       });
       summaryReportId = resp.reportId;
-      console.log(`[sync-advertising-backfill] summary report: ${summaryReportId}`);
+      if (summaryReportId) {
+        console.log(`[sync-advertising-backfill] summary report: ${summaryReportId}`);
+      } else {
+        console.error(`[sync-advertising-backfill] summary report missing reportId. Raw: ${JSON.stringify(resp).slice(0,300)}`);
+      }
     } catch (err) {
       console.error('[sync-advertising-backfill] summary report failed:', err.message);
     }
