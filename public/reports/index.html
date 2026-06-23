@@ -1440,6 +1440,14 @@ function initSns() {
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
 
+    // Debug: log first 5 SKUs and their ad unit lookup chain
+    console.log('[TopProducts] asinAdUnitsMap sample:', Object.entries(asinAdUnitsMap).slice(0,5));
+    sorted.slice(0,5).forEach(([sku]) => {
+      const asin = skuAsinMap[sku] || '(no mapping)';
+      const ad   = asinAdUnitsMap[asin] || 0;
+      console.log(`[TopProducts] SKU=${sku} → ASIN=${asin} → adUnits=${ad}`);
+    });
+
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
       const name    = skuNameMap[sku] || sku;
