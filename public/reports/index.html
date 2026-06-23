@@ -1241,15 +1241,6 @@ function initSns() {
       const adOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
         parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
       ) : [];
-      // Debug: show raw ad orders data
-      if (isCsv(adOrdersCsv)) {
-        const rawRows = parseCsv(adOrdersCsv);
-        console.log('[AdOrders] total rows:', rawRows.length, '| looking for year=', year, 'month=', month);
-        if (rawRows.length > 0) console.log('[AdOrders] first row raw:', JSON.stringify(rawRows[0]));
-        if (rawRows.length > 1) console.log('[AdOrders] second row raw:', JSON.stringify(rawRows[1]));
-      } else {
-        console.warn('[AdOrders] adOrdersCsv is not valid CSV');
-      }
 
       renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
@@ -1406,9 +1397,10 @@ function initSns() {
     }
 
     // Build ASIN → ad_units map from adOrderRows (passed in from initAmazonLive)
+    // Note: sheet column is named 'sku' but contains ASINs
     const asinAdUnitsMap = {};
     adOrderRows.forEach(r => {
-      const asin = (r.asin || '').trim().toUpperCase();
+      const asin = (r.asin || r.sku || '').trim().toUpperCase();
       if (asin) asinAdUnitsMap[asin] = (asinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
     });
 
@@ -1448,14 +1440,6 @@ function initSns() {
     const sorted = Object.entries(skuUnits)
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
-
-    // Debug: log first 5 SKUs and their ad unit lookup chain
-    console.log('[TopProducts] asinAdUnitsMap sample:', Object.entries(asinAdUnitsMap).slice(0,5));
-    sorted.slice(0,5).forEach(([sku]) => {
-      const asin = skuAsinMap[sku] || '(no mapping)';
-      const ad   = asinAdUnitsMap[asin] || 0;
-      console.log(`[TopProducts] SKU=${sku} → ASIN=${asin} → adUnits=${ad}`);
-    });
 
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
