@@ -65,10 +65,10 @@ module.exports = async (req, res) => {
     ] = await Promise.allSettled([
       requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
       requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
-      requestReport(token, profileId, 'sbCampaigns',         'SPONSORED_BRANDS',   curr, ['campaign'],    ['campaignName','impressions','clicks','cost','purchases14d','sales14d','unitsSoldClicks14d']),
+      requestReport(token, profileId, 'sbCampaigns', 'SPONSORED_BRANDS',   curr, ['campaign'], ['campaignName','impressions','clicks','cost','purchases14d','sales14d']),
       requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
       requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
-      requestReport(token, profileId, 'sbCampaigns',         'SPONSORED_BRANDS',   prev, ['campaign'],    ['campaignName','impressions','clicks','cost','purchases14d','sales14d','unitsSoldClicks14d']),
+      requestReport(token, profileId, 'sbCampaigns', 'SPONSORED_BRANDS',   prev, ['campaign'], ['campaignName','impressions','clicks','cost','purchases14d','sales14d']),
     ]);
 
     const getId = (result, label) => {
