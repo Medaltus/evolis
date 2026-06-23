@@ -19,7 +19,7 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'skus', 'brand', 'last_updated',
+  'unit_count', 'sku', 'brand', 'last_updated',
 ];
 
 const MAX_PENDING_AGE_DAYS    = 14;
