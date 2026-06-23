@@ -417,6 +417,9 @@
   #amazon-top-sellers tbody td:first-child { font-weight: 500; color: var(--slate); width: 36px; }
   #amazon-top-sellers .tp-units { color: #24e9a3; font-weight: 700; font-size: 13px; }
   #amazon-top-sellers .tp-dash { color: rgba(107,123,162,.45); }
+  #amazon-top-sellers .tp-mom-up { color: #24e9a3; font-size: 11px; font-weight: 600; }
+  #amazon-top-sellers .tp-mom-dn { color: #ff6b6b; font-size: 11px; font-weight: 600; }
+  #amazon-top-sellers .tp-mom-flat { color: rgba(107,123,162,.45); font-size: 11px; }
 
 </style>
 </head>
@@ -523,7 +526,7 @@
         <div class="kpi-card" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
         <div class="kpi-card" id="kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
         <div class="kpi-card" id="kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">0</div><div class="kpi-mom flat">Ads not yet connected</div></div>
+        <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
@@ -555,13 +558,16 @@
                 <th style="width:36px;">#</th>
                 <th>PRODUCT NAME</th>
                 <th>UNITS SOLD</th>
+                <th style="width:70px;">MOM</th>
                 <th>UNITS (ADS)</th>
+                <th style="width:70px;">MOM</th>
                 <th>UNITS (ORGANIC)</th>
+                <th style="width:70px;">MOM</th>
                 <th>CONV. RATE</th>
               </tr>
             </thead>
             <tbody id="tp-tbody">
-              <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
+              <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1242,9 +1248,14 @@ function initSns() {
         parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
       ) : [];
 
+      // Parse prev month ad orders for MOM comparison in table
+      const prevAdOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
+        parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth
+      ) : [];
+
       renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
-      buildTopProductsTable(allRows, year, month, adOrderRows);
+      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows);
 
       // Revenue chart — fetches from the separate revenue history sheet
       buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
@@ -1345,7 +1356,7 @@ function initSns() {
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
   const PRODUCT_NAMES_GID      = '164358627';
 
-  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = []) {
+  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = []) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
 
     // Filter to last full month (same rules as KPIs)
@@ -1361,7 +1372,7 @@ function initSns() {
 
     const tbody = document.getElementById('tp-tbody');
     if (!monthRows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
       return;
     }
 
@@ -1396,7 +1407,48 @@ function initSns() {
       });
     }
 
-    // Build ASIN → ad_units map from adOrderRows (passed in from initAmazonLive)
+    // Build prev month SKU units for MOM comparison
+    const skuUnitsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      const prevMonthRows = allRows.filter(r => {
+        const d = normalizeDate(r.date).substring(0, 7);
+        if (d !== prevPrefix) return false;
+        const status = (r.status || '').toLowerCase();
+        if (status === 'cancelled' || status === 'pending') return false;
+        const promos = (r.promotion_ids || '').toLowerCase();
+        if (promos.includes('vine')) return false;
+        return true;
+      });
+      prevMonthRows.forEach(row => {
+        const rawSku = (row.sku || row.skus || '').trim().toUpperCase();
+        if (!rawSku) return;
+        const qty = parseInt(row.unit_count, 10) || 0;
+        if (!qty) return;
+        const skuList = rawSku.includes(',') ? rawSku.split(',').map(s => s.trim()) : [rawSku];
+        const perSku = skuList.length > 1 ? Math.floor(qty / skuList.length) : qty;
+        skuList.forEach(s => {
+          const norm = s.replace(/-SF$/i, '');
+          skuUnitsPrev[norm] = (skuUnitsPrev[norm] || 0) + perSku;
+        });
+      });
+    }
+
+    // Build prev month ASIN → ad_units map
+    const prevAsinAdUnitsMap = {};
+    prevAdOrderRows.forEach(r => {
+      const asin = (r.asin || r.sku || '').trim().toUpperCase();
+      if (asin) prevAsinAdUnitsMap[asin] = (prevAsinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+    });
+
+    // Helper: format MOM badge
+    function momBadge(curr, prev) {
+      if (!prev || prev === 0) return '<td class="tp-dash">—</td>';
+      const pctVal = Math.round(((curr - prev) / prev) * 100);
+      const cls = pctVal > 0 ? 'tp-mom-up' : pctVal < 0 ? 'tp-mom-dn' : 'tp-mom-flat';
+      const sign = pctVal > 0 ? '+' : '';
+      return `<td class="${cls}">${sign}${pctVal}%</td>`;
+    }
     // Note: sheet column is named 'sku' but contains ASINs
     const asinAdUnitsMap = {};
     adOrderRows.forEach(r => {
@@ -1443,17 +1495,23 @@ function initSns() {
 
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
-      const name    = skuNameMap[sku] || sku;
-      const asin    = skuAsinMap[sku] || '';
-      const adUnits = asin ? (asinAdUnitsMap[asin] || 0) : 0;
+      const name     = skuNameMap[sku] || sku;
+      const asin     = skuAsinMap[sku] || '';
+      const adUnits  = asin ? (asinAdUnitsMap[asin] || 0) : 0;
       const orgUnits = Math.max(0, units - adUnits);
+      const prevUnits    = skuUnitsPrev[sku] || 0;
+      const prevAdUnits  = asin ? (prevAsinAdUnitsMap[asin] || 0) : 0;
+      const prevOrgUnits = Math.max(0, prevUnits - prevAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td class="tp-units">${units.toLocaleString()}</td>
+        ${momBadge(units, prevUnits)}
         <td class="${adUnits > 0 ? 'tp-units' : 'tp-dash'}">${adUnits > 0 ? adUnits.toLocaleString() : '—'}</td>
+        ${adUnits > 0 && prevAdUnits > 0 ? momBadge(adUnits, prevAdUnits) : '<td class="tp-dash">—</td>'}
         <td>${orgUnits.toLocaleString()}</td>
+        ${momBadge(orgUnits, prevOrgUnits)}
         <td class="tp-dash">—</td>`;
       tbody.appendChild(tr);
     });
