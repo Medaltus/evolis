@@ -1106,12 +1106,13 @@ function initSns() {
     // Sum units
     const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
 
-    // Avg order total (per unique order) — sum order_total per unique order_id
+    // AOV — sum item_price across ALL line items per order_id, then average those sums.
+    // order_total on each row is the line item price only (one SKU), so we must
+    // accumulate across rows to get the true per-order total before averaging.
     const orderTotals = {};
     filtered.forEach(r => {
-      if (r.order_id && !orderTotals[r.order_id]) {
-        orderTotals[r.order_id] = parseAmt(r.order_total);
-      }
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -1624,9 +1625,8 @@ function initSns() {
     const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
     const orderTotals = {};
     filtered.forEach(r => {
-      if (r.order_id && !orderTotals[r.order_id]) {
-        orderTotals[r.order_id] = parseAmt(r.order_total);
-      }
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -1747,9 +1747,8 @@ function initSns() {
         if (!monthRows.length) return null;
         const orderTotals = {};
         monthRows.forEach(r => {
-          if (r.order_id && !orderTotals[r.order_id]) {
-            orderTotals[r.order_id] = parseAmt(r.order_total);
-          }
+          if (!r.order_id) return;
+          orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
         });
         return Object.values(orderTotals).reduce((s, v) => s + v, 0);
       });
