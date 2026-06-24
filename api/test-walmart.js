@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
     if (endpoint === 'order') {
       const orderId = req.query.orderId;
       if (!orderId) return res.status(400).json({ error: 'orderId required' });
-      const data = await wmRequest('GET', `/v3/orders/${orderId}`, token);
+      const data = await wmRequest('GET', `/v3/orders/${orderId}`, accessToken, clientId, partnerId);
       return res.status(200).json({ endpoint, raw: data });
     }
     if (endpoint === 'orders')     path = WM_ORDERS_PATH;
