@@ -2,19 +2,22 @@
  * api/cron/sync-orders.js
  * Runs every 2 hours — pulls orders from the flat file report for ALL brands.
  * Uses GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL (GZIP TSV).
- * Writes to the rolling current-month sheet (amazon-orders).
- * Deduplicates on order_id + sku before writing — safe to re-run.
+ * Writes to the rolling sheet (amazon-orders). Deduplicates on order_id + sku.
  *
  * Why flat file instead of Orders API:
  *   The Orders API only returns FBA orders reliably. The flat file report
  *   covers FBA + FBM and is Amazon's source of truth for reconciliation.
  *
  * Row granularity — ONE ROW PER LINE ITEM:
- *   The flat file already has one row per line item (one SKU per row).
- *   We now write that directly to the sheet instead of aggregating by order_id.
- *   This allows the dashboard to compute accurate per-SKU unit counts without
- *   needing to split quantities across SKUs on multi-item orders.
- *   The dedup key is order_id + sku (composite) to handle re-runs safely.
+ *   The flat file has one row per line item (one SKU per row). We write that
+ *   directly — no aggregation. This allows the dashboard to compute accurate
+ *   per-SKU unit counts and per-ASIN quantities on multi-item orders.
+ *   Dedup key is order_id + sku (composite) to handle re-runs safely.
+ *
+ * Brand determination:
+ *   Brand is assigned by SKU prefix only — never from the Amazon brand field.
+ *   SKU is read from the flat file, used to match brand, and written to the
+ *   sheet for traceability. ASIN is written to column L (index 12).
  *
  * Modes (via ?mode=):
  *   rolling   — last 2.5 hours (default, used by cron)
@@ -23,13 +26,14 @@
  *   week      — explicit ?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
  * Sheet: amazon-orders  |  One tab per brand, auto-created on first run.
+ * Schedule: every 2 hours ("0 */2 * * *") — 2.5h window gives 30min overlap.
  */
 
-const zlib                                                       = require('zlib');
-const { spRequest }                                              = require('../_spauth');
-const { ensureTab, appendRows, readRows }                        = require('../config/_sheets_client');
-const brands                                                     = require('../config/brands');
-const sheets                                                     = require('../config/sheets');
+const zlib                                    = require('zlib');
+const { spRequest }                           = require('../_spauth');
+const { ensureTab, appendRows, readRows }     = require('../config/_sheets_client');
+const brands                                  = require('../config/brands');
+const sheets                                  = require('../config/sheets');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -38,7 +42,6 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
-// How long to poll for a report to be ready (ms)
 const REPORT_POLL_TIMEOUT_MS  = 25_000;
 const REPORT_POLL_INTERVAL_MS = 3_000;
 
@@ -57,10 +60,10 @@ module.exports = async (req, res) => {
   let reportId;
   try {
     const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-      reportType:      'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
-      marketplaceIds:  [process.env.SP_MARKETPLACE_ID],
-      dataStartTime:   start,
-      dataEndTime:     end,
+      reportType:     'GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL',
+      marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+      dataStartTime:  start,
+      dataEndTime:    end,
     });
     reportId = createResp.reportId;
     console.log(`[sync-orders] report requested: ${reportId}`);
@@ -99,18 +102,14 @@ module.exports = async (req, res) => {
     });
   }
 
-  // ── 3. Download the report document ───────────────────────────────────────
+  // ── 3. Download and decompress ─────────────────────────────────────────────
   let rawTsv;
   try {
-    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
-    const url     = docResp.url;
-
-    const fileResp = await fetch(url);
+    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const fileResp = await fetch(docResp.url);
     if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
     const buffer = Buffer.from(await fileResp.arrayBuffer());
-
-    // Try GZIP first, fall back to plain text
     rawTsv = await new Promise((resolve) => {
       zlib.gunzip(buffer, (err, result) => {
         if (err) {
@@ -137,22 +136,21 @@ module.exports = async (req, res) => {
   console.log(`[sync-orders] flat file rows: ${rows.length}`);
 
   // ── 5. Per-brand processing ────────────────────────────────────────────────
-  const now     = new Date().toISOString();
+  const nowEst  = toEstIso(new Date());
   const results = [];
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      // Filter rows for this brand
+      // Brand is determined by SKU prefix — never by Amazon's brand field
       const brandRows = rows.filter(row => {
         const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
         const status = (row['order-status'] || '').toLowerCase();
         const promo  = (row['promotion-ids'] || '').toLowerCase();
 
-        const isThisBrand   = sku.startsWith(brand.skuPrefix.toUpperCase());
-        const isValidStatus = status !== 'cancelled' && status !== 'pending';
-        const isNotVine     = !promo.includes('vine');
-
-        return isThisBrand && isValidStatus && isNotVine;
+        return sku.startsWith(brand.skuPrefix.toUpperCase())
+          && status !== 'cancelled'
+          && status !== 'pending'
+          && !promo.includes('vine');
       });
 
       if (brandRows.length === 0) {
@@ -161,37 +159,35 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      // Build one sheet row per flat-file line item (no aggregation).
-      // Each flat-file row is already one SKU + its quantity on that order.
+      // One sheet row per flat-file line item — no aggregation
       const newRows = brandRows.map(row => {
-        const orderId  = row['amazon-order-id'] || row['order-id'] || '';
-        const sku      = row['sku'] || row['seller-sku'] || '';
-        const qty      = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
-        const qtyShip  = parseInt(row['quantity-shipped'] || '0', 10);
-        const price    = parseFloat(row['item-price'] || '0');
-        const disc     = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
+        const orderId = row['amazon-order-id'] || row['order-id'] || '';
+        const sku     = row['sku'] || row['seller-sku'] || '';
+        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+        const qtyShip = parseInt(row['quantity-shipped'] || '0', 10);
+        const price   = parseFloat(row['item-price'] || '0');
+        const disc    = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
 
         return [
-          orderId,
-          (row['purchase-date'] || '').slice(0, 10),
-          row['order-status'] || '',
-          round2(price),                   // order_total = item_price for this line
-          row['promotion-ids'] || '',
-          'FALSE',                          // is_premium_order (not in flat file)
-          round2(disc),                     // promotion_discount
-          round2(price),                    // item_price
-          qty,                              // quantity_ordered
-          qtyShip,                          // quantity_shipped
-          qty,                              // unit_count (same as qty for line items)
-          sku,                              // single SKU — no more comma-joined sets
-          row['asin'] || '',                // ASIN from flat file
-          brand.id,
-          now,
+          orderId,                                  // order_id
+          (row['purchase-date'] || '').slice(0, 10), // date
+          row['order-status'] || '',                 // status
+          round2(price),                             // order_total (line item total)
+          row['promotion-ids'] || '',                // promotion_ids
+          'FALSE',                                   // is_premium_order (not in flat file)
+          round2(disc),                              // promotion_discount
+          round2(price),                             // item_price
+          qty,                                       // quantity_ordered
+          qtyShip,                                   // quantity_shipped
+          qty,                                       // unit_count
+          sku,                                       // sku (used for brand ID; kept for traceability)
+          row['asin'] || '',                         // asin (column L)
+          brand.id,                                  // brand
+          nowEst,                                    // last_updated (EST)
         ];
-      }).filter(row => row[0]);             // drop rows with no order_id
+      }).filter(row => row[0]);
 
       // Dedup — composite key: order_id + sku
-      // This correctly handles re-runs and rolling windows without duplicates.
       const token        = await ensureTab(sheets.orders, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.orders, brand.tabName);
       const existingKeys = new Set(
@@ -224,15 +220,15 @@ module.exports = async (req, res) => {
   res.status(200).json({
     synced:    results,
     reportId,
-    timestamp: now,
+    timestamp: nowEst,
   });
 };
 
-// ── Date range ────────────────────────────────────────────────────────────────
+// ── Date range ─────────────────────────────────────────────────────────────────
 
 function getDateRange(mode, req) {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
+  const now        = new Date();
+  const pad        = n => String(n).padStart(2, '0');
   const safeBefore = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
 
   if (mode === 'rolling') {
@@ -249,8 +245,9 @@ function getDateRange(mode, req) {
   }
 
   if (mode === 'yesterday') {
-    const d = new Date(now); d.setDate(d.getDate() - 1);
-    const y = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
+    const d   = new Date(now);
+    d.setDate(d.getDate() - 1);
+    const y   = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
     return { start: `${y}-${m}-${day}T00:00:00Z`, end: `${y}-${m}-${day}T23:59:59Z` };
   }
 
@@ -269,6 +266,28 @@ function getDateRange(mode, req) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Returns an ISO-8601 timestamp converted to Eastern Time (ET).
+ * Handles EST (UTC-5) and EDT (UTC-4) automatically via Intl.
+ * Format: 2026-06-24T15:16:45.000Z  (the Z suffix is kept by convention
+ * to signal a fixed-format string — the value itself reflects ET wall time).
+ */
+function toEstIso(date) {
+  const estStr = new Intl.DateTimeFormat('en-US', {
+    timeZone:  'America/New_York',
+    year:      'numeric',
+    month:     '2-digit',
+    day:       '2-digit',
+    hour:      '2-digit',
+    minute:    '2-digit',
+    second:    '2-digit',
+    hour12:    false,
+  }).formatToParts(date);
+
+  const p = Object.fromEntries(estStr.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
