@@ -561,11 +561,10 @@
                 <th>UNITS SOLD</th>
                 <th>UNITS (ADS)</th>
                 <th>UNITS (ORGANIC)</th>
-                <th>CONV. RATE</th>
               </tr>
             </thead>
             <tbody id="tp-tbody">
-              <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
+              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
             </tbody>
           </table>
         </div>
@@ -611,18 +610,18 @@
       </div>
       <div class="card">
         <div class="card-title">Top Selling Products <span style="font-size:11px;color:var(--slate);font-weight:400;">(by Units)</span></div>
-        <table class="data-table">
-          <thead><tr><th>#</th><th>Product Name</th><th>Units Sold</th></tr></thead>
-          <tbody>
-            <tr><td>1.</td><td>Reverse Activator</td><td>32</td></tr>
-            <tr><td>2.</td><td>Reverse Shampoo (Travel Size)</td><td>11</td></tr>
-            <tr><td>3.</td><td>Reverse Conditioner (Travel Size)</td><td>6</td></tr>
-            <tr><td>4.</td><td>Promote Activator</td><td>3</td></tr>
-            <tr><td>5.</td><td>Style + Treat Dry Shampoo</td><td>2</td></tr>
-            <tr><td>6.</td><td>Promote Conditioner</td><td>2</td></tr>
-            <tr><td>7.</td><td>Reverse Treatment Mask (Travel Size)</td><td>1</td></tr>
-            <tr><td>8.</td><td>Reverse Conditioner</td><td>1</td></tr>
-            <tr><td>9.</td><td>Promote Treatment Mask</td><td>1</td></tr>
+        <table class="data-table" id="amazon-top-sellers-cover">
+          <thead>
+            <tr>
+              <th style="width:36px;">#</th>
+              <th>PRODUCT NAME</th>
+              <th>UNITS SOLD</th>
+              <th>UNITS (ADS)</th>
+              <th>UNITS (ORGANIC)</th>
+            </tr>
+          </thead>
+          <tbody id="tp-tbody-cover">
+            <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading product data…</td></tr>
           </tbody>
         </table>
         <div class="insight"><strong>Key Insight:</strong> Performance rebounded in May, with units sold increasing 29% and orders increasing 36% MOM. Reverse Activator remained the top-selling product, while organic orders outpaced ad-driven sales, indicating stronger direct customer demand.</div>
@@ -665,10 +664,9 @@
                 <th>UNITS SOLD</th>
                 <th>UNITS (ADS)</th>
                 <th>UNITS (ORGANIC)</th>
-                <th>CONV. RATE</th>
               </tr>
             </thead>
-            <tbody id="wtp-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading…</td></tr></tbody>
+            <tbody id="wtp-tbody"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1387,7 +1385,7 @@ function initSns() {
 
     const tbody = document.getElementById('tp-tbody');
     if (!monthRows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
       return;
     }
 
@@ -1498,8 +1496,7 @@ function initSns() {
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
         <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
-        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
-        <td class="tp-dash">—</td>`;
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
@@ -1652,7 +1649,7 @@ function initSns() {
     try {
       const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
       if (!isCsv(csv)) {
-        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
+        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
         return;
       }
 
@@ -1872,8 +1869,7 @@ function initSns() {
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
         <td><div class="tp-cell"><span class="tp-dash">—</span></div></td>
-        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
-        <td class="tp-dash">—</td>`;
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
