@@ -1516,8 +1516,9 @@ function initSns() {
 (function () {
   'use strict';
 
-  const SHOPIFY_SHEET_ID  = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
-  const SHOPIFY_SHEET_GID = '597852778'; // orders tab
+  const SHOPIFY_SHEET_ID      = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
+  const SHOPIFY_SHEET_GID     = '597852778'; // orders tab
+  const SHOPIFY_REVENUE_GID   = '7000599';   // revenue tab
 
   // Product name lookup: col A = ASIN (unused here), col B = SKU, col C = Name
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
@@ -1668,7 +1669,7 @@ function initSns() {
         setKpiValue('web-kpi-units-onetime',  '0');
         document.getElementById('web-tp-tbody').innerHTML =
           '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
-        buildWebChart(allRows, year);
+        buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
         return;
       }
 
@@ -1688,7 +1689,7 @@ function initSns() {
       setKpiValue('web-kpi-units-onetime', fmt(curr.onetimeUnits));
       setBadgeWeb('web-kpi-units-onetime', '.kpi-mom', prev ? pct(curr.onetimeUnits, prev.onetimeUnits) : null, 'MOM');
 
-      buildWebChart(allRows, year);
+      buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
       buildWebTopProducts(allRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
@@ -1698,10 +1699,33 @@ function initSns() {
   };
 
   // ── Revenue chart — computed from orders sheet ────────────────────────────
-  function buildWebChart(allRows, currentYear) {
+  // ── Website revenue chart — reads from revenue tab (mirrors Amazon/Walmart) ─
+  async function buildWebChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_REVENUE_GID) + `&_cb=${Date.now()}`)
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^\"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+    }
+
     const now       = new Date();
     const stopYear  = now.getFullYear();
-    const stopMonth = now.getMonth(); // 0-indexed = last full month
+    const stopMonth = now.getMonth(); // 0-indexed = last full month (1-indexed)
 
     const COLORS = {
       0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  },
@@ -1717,18 +1741,8 @@ function initSns() {
       const data  = months12.map((_, idx) => {
         const mo = idx + 1;
         if (yr === stopYear && mo > stopMonth) return null;
-        const prefix = `${yr}-${String(mo).padStart(2,'0')}`;
-        const monthRows = allRows.filter(r => {
-          const d = normalizeDate(r.date).substring(0, 7);
-          return d === prefix && isValidRow(r);
-        });
-        if (!monthRows.length) return null;
-        const orderTotals = {};
-        monthRows.forEach(r => {
-          if (!r.order_id) return;
-          orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
-        });
-        return Object.values(orderTotals).reduce((s, v) => s + v, 0);
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
       });
       if (data.every(v => v === null)) continue;
       datasets.push({
@@ -1737,6 +1751,8 @@ function initSns() {
         fill: color.fill, ...lineDefaults,
       });
     }
+
+    if (datasets.length === 0) return;
 
     const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0));
 
