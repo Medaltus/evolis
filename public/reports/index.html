@@ -1388,39 +1388,21 @@ function initSns() {
       return;
     }
 
-    // Aggregate units per normalized SKU.
-    // Each row is now one line item (one SKU, one qty) from the updated sync-orders.js.
-    // SKU normalization: strip the "-SF" suffix so FBA (EVO0001) and FBM (EVO0001-SF)
-    // both count toward the same product.
-    const skuUnits = {};
+    // Aggregate units per ASIN.
+    // Every order row has `asin` regardless of when it was written (old or new schema),
+    // so keying on ASIN works for all historical data. This fixes the table being empty
+    // for rows written before the SKU column was added to the sheet.
+    const asinUnits = {};
     for (const row of monthRows) {
-      // `sku` is the new single-SKU column; fall back to `skus` for backwards
-      // compatibility with any older aggregated rows still in the sheet.
-      const rawSku = (row.sku || row.skus || '').trim().toUpperCase();
-      if (!rawSku) continue;
-
+      const asin = (row.asin || '').trim().toUpperCase();
+      if (!asin) continue;
       const qty = parseInt(row.unit_count, 10) || 0;
       if (!qty) continue;
-
-      // Handle both new (single sku) and legacy (comma-joined skus) rows
-      const skuList = rawSku.includes(',')
-        ? rawSku.split(',').map(s => s.trim())
-        : [rawSku];
-
-      // For legacy multi-SKU rows, split equally (same as before)
-      const perSku    = skuList.length > 1 ? Math.floor(qty / skuList.length) : qty;
-      const remainder = skuList.length > 1 ? qty - (perSku * skuList.length) : 0;
-
-      skuList.forEach((rawSkuEntry, idx) => {
-        // Normalize: strip "-SF" suffix (FBM variant) to merge with FBA base SKU
-        const normalizedSku = rawSkuEntry.replace(/-SF$/i, '');
-        const units = perSku + (idx === 0 ? remainder : 0);
-        skuUnits[normalizedSku] = (skuUnits[normalizedSku] || 0) + units;
-      });
+      asinUnits[asin] = (asinUnits[asin] || 0) + qty;
     }
 
-    // Build prev month SKU units for MOM comparison
-    const skuUnitsPrev = {};
+    // Build prev month ASIN units for MOM comparison
+    const asinUnitsPrev = {};
     if (prevYear && prevMonth) {
       const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
       const prevMonthRows = allRows.filter(r => {
@@ -1433,16 +1415,11 @@ function initSns() {
         return true;
       });
       prevMonthRows.forEach(row => {
-        const rawSku = (row.sku || row.skus || '').trim().toUpperCase();
-        if (!rawSku) return;
+        const asin = (row.asin || '').trim().toUpperCase();
+        if (!asin) return;
         const qty = parseInt(row.unit_count, 10) || 0;
         if (!qty) return;
-        const skuList = rawSku.includes(',') ? rawSku.split(',').map(s => s.trim()) : [rawSku];
-        const perSku = skuList.length > 1 ? Math.floor(qty / skuList.length) : qty;
-        skuList.forEach(s => {
-          const norm = s.replace(/-SF$/i, '');
-          skuUnitsPrev[norm] = (skuUnitsPrev[norm] || 0) + perSku;
-        });
+        asinUnitsPrev[asin] = (asinUnitsPrev[asin] || 0) + qty;
       });
     }
 
@@ -1470,8 +1447,8 @@ function initSns() {
 
     // Fetch product name lookup sheet.
     // Tab gid=164358627: col A = ASIN, col B = SKU (base, no -SF), col C = Product Name.
-    let skuNameMap = {};
-    let skuAsinMap = {}; // normalizedSku → ASIN (for ad units lookup)
+    // asinNameMap: ASIN → product name (col A = ASIN, col C = name)
+    let asinNameMap = {};
     try {
       const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}&_cb=${Date.now()}`;
       const resp = await fetch(namesCsvUrl);
@@ -1489,10 +1466,9 @@ function initSns() {
               const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
               const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
               const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
-              if (sku && name) skuNameMap[sku] = name;
-              if (sku && asin) skuAsinMap[sku] = asin;
+              if (asin && name) asinNameMap[asin] = name;
             }
-            console.log('[TopProducts] Loaded', Object.keys(skuNameMap).length, 'names,', Object.keys(skuAsinMap).length, 'ASIN mappings');
+            console.log('[TopProducts] Loaded', Object.keys(asinNameMap).length, 'ASIN→name mappings');
           }
         }
       }
@@ -1501,18 +1477,17 @@ function initSns() {
     }
 
     // Sort by units desc, remove zeros
-    const sorted = Object.entries(skuUnits)
+    const sorted = Object.entries(asinUnits)
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
 
     tbody.innerHTML = '';
-    sorted.forEach(([sku, units], idx) => {
-      const name     = skuNameMap[sku] || sku;
-      const asin     = skuAsinMap[sku] || '';
-      const adUnits  = asin ? (asinAdUnitsMap[asin] || 0) : 0;
-      const orgUnits = Math.max(0, units - adUnits);
-      const prevUnits    = skuUnitsPrev[sku] || 0;
-      const prevAdUnits  = asin ? (prevAsinAdUnitsMap[asin] || 0) : 0;
+    sorted.forEach(([asin, units], idx) => {
+      const name         = asinNameMap[asin] || asin;
+      const adUnits      = asinAdUnitsMap[asin] || 0;
+      const orgUnits     = Math.max(0, units - adUnits);
+      const prevUnits    = asinUnitsPrev[asin] || 0;
+      const prevAdUnits  = prevAsinAdUnitsMap[asin] || 0;
       const prevOrgUnits = Math.max(0, prevUnits - prevAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
