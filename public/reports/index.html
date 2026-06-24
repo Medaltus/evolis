@@ -1518,10 +1518,12 @@ function initSns() {
 (function () {
   'use strict';
 
-  const WALMART_SHEET_ID    = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
-  const WALMART_GID         = '1844526926';
-  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
-  const PRODUCT_NAMES_GID      = '164358627';
+  const WALMART_SHEET_ID         = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
+  const WALMART_GID              = '1844526926';
+  const WALMART_REVENUE_SHEET_ID = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE';
+  const WALMART_REVENUE_GID      = '812984298';                                      // Évolis tab
+  const PRODUCT_NAMES_SHEET_ID   = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID        = '164358627';
 
   function getLastFullMonth() {
     const now = new Date();
@@ -1671,7 +1673,7 @@ function initSns() {
         setKpiValue('wkpi-units-organic', '0');
         setBadge('wkpi-units-organic','.kpi-mom', null, 'MOM');
         document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
-        buildWalmartChart(allRows, year);
+        buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
         return;
       }
 
@@ -1698,7 +1700,7 @@ function initSns() {
       setKpiValue('wkpi-units-organic', fmt(curr.totalUnits));
       setBadge('wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
 
-      buildWalmartChart(allRows, year);
+      buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
       buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
@@ -1707,38 +1709,67 @@ function initSns() {
     }
   };
 
-  function buildWalmartChart(allRows, currentYear) {
-    const now = new Date();
+  // ── Walmart Revenue chart ──────────────────────────────────────────────────
+  // Reads from Walmart revenue history sheet (WALMART_REVENUE_SHEET_ID).
+  // Mirrors buildRevenueChart on the Amazon page exactly.
+  // Renders up to 4 years of data stopping at the last full calendar month.
+  async function buildWalmartChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(WALMART_REVENUE_SHEET_ID, WALMART_REVENUE_GID) + `&_cb=${Date.now()}`)
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^\"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    // Parse all rows into { year, month(1-12), revenue }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+    }
+
+    const now       = new Date();
+    const stopYear  = now.getFullYear();
     const stopMonth = now.getMonth(); // 0-indexed = last full month (1-indexed)
 
     const COLORS = {
-      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  },
-      1: { border: '#001f60', bg: 'transparent',           fill: false },
+      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  }, // current year
+      1: { border: '#001f60', bg: 'transparent',           fill: false }, // -1
+      2: { border: '#f4dfd0', bg: 'transparent',           fill: false }, // -2
+      3: { border: '#ccd3d5', bg: 'transparent',           fill: false }, // -3
     };
 
     const datasets = [];
-    for (let offset = 0; offset <= 1; offset++) {
+    for (let offset = 0; offset <= 3; offset++) {
       const yr    = currentYear - offset;
       const color = COLORS[offset];
       const data  = months12.map((_, idx) => {
         const mo = idx + 1;
-        if (yr === now.getFullYear() && mo > stopMonth) return null;
-        const prefix = `${yr}-${String(mo).padStart(2,'0')}`;
-        const monthRows = allRows.filter(r => {
-          const d = normalizeDate(r.date).substring(0, 7);
-          return d === prefix && isValidWalmartRow(r);
-        });
-        if (!monthRows.length) return null;
-        const orderTotals = {};
-        monthRows.forEach(r => {
-          if (!r.order_id) return;
-          orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
-        });
-        return Object.values(orderTotals).reduce((s, v) => s + v, 0);
+        if (yr === stopYear && mo > stopMonth) return null;
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
       });
       if (data.every(v => v === null)) continue;
-      datasets.push({ label: String(yr), data, borderColor: color.border, backgroundColor: color.bg, fill: color.fill, ...lineDefaults });
+      datasets.push({
+        label:           String(yr),
+        data,
+        borderColor:     color.border,
+        backgroundColor: color.bg,
+        fill:            color.fill,
+        ...lineDefaults,
+      });
     }
+
+    if (datasets.length === 0) return;
 
     const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
 
