@@ -1,18 +1,18 @@
 {
   "version": 2,
   "crons": [
-    { "path": "/api/cron/sync-orders",           "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-walmart-orders",   "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-walmart-revenue",  "schedule": "0 4 * * *"   },
-    { "path": "/api/cron/sync-orders-backfill",  "schedule": "0 4 5 * *"  },
-    { "path": "/api/cron/sync-products",         "schedule": "30 2 * * *"  },
+    { "path": "/api/cron/sync-orders",               "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-walmart-orders",       "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-walmart-revenue",      "schedule": "0 4 * * *"   },
+    { "path": "/api/cron/sync-orders-backfill",      "schedule": "0 4 5 * *"   },
+    { "path": "/api/cron/sync-products",             "schedule": "30 2 * * *"  },
     { "path": "/api/cron/sync-advertising-request",  "schedule": "0 3 * * *"   },
     { "path": "/api/cron/sync-advertising-process",  "schedule": "15 3 * * *"  },
-    { "path": "/api/cron/sync-subscriptions",    "schedule": "30 3 * * *"  },
-    { "path": "/api/cron/trim-orders",           "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/reconcile-orders",      "schedule": "0 8 * * *"   },
-    { "path": "/api/cron/sync-revenue-request",  "schedule": "0 5 * * *"   },
-    { "path": "/api/cron/sync-revenue-process",  "schedule": "15 5 * * *"  }
+    { "path": "/api/cron/sync-subscriptions",        "schedule": "30 3 * * *"  },
+    { "path": "/api/cron/trim-orders",               "schedule": "0 3 * * *"   },
+    { "path": "/api/cron/reconcile-orders",          "schedule": "0 8 * * *"   },
+    { "path": "/api/cron/sync-revenue-request",      "schedule": "0 5 * * *"   },
+    { "path": "/api/cron/sync-revenue-process",      "schedule": "15 5 * * *"  }
   ],
   "functions": {
     "api/sales.js":                                  { "maxDuration": 30  },
@@ -47,7 +47,7 @@
       "continue": true
     },
     { "src": "/reports/dazzle-dry", "dest": "/reports/dazzle-dry/index.html" },
-    { "src": "/reports",            "dest": "/reports/index.html" },
-    { "src": "/",                   "dest": "/reports/index.html" }
+    { "src": "/reports",            "dest": "/reports/index.html"             },
+    { "src": "/",                   "dest": "/reports/index.html"             }
   ]
 }
