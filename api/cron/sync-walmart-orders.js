@@ -1,6 +1,6 @@
 /**
  * api/cron/sync-walmart-orders.js
- * Runs once daily — pulls all orders placed today from Walmart Marketplace API.
+ * Runs every 2 hours — pulls orders from Walmart Marketplace API.
  * Writes one row per line item (one SKU per row) to the rolling sheet.
  * Deduplicates on purchaseOrderId + sku — safe to re-run.
  *
@@ -10,7 +10,7 @@
  *   unit_count, sku, brand, last_updated
  *
  * Modes:
- *   day       — today from midnight UTC to now (default, used by cron)
+ *   rolling   — last 2.5 hours (default, used by cron)
  *   day       — today from midnight UTC to now
  *   yesterday — full yesterday
  *   week      — ?start=YYYY-MM-DD&end=YYYY-MM-DD (with optional startTime/endTime)
@@ -33,7 +33,7 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'sku', 'brand', 'last_updated',
+  'unit_count', 'sku', 'brand', 'last_updated', 'fulfillment_type',
 ];
 
 // SKU prefix → brand mapping (same as Amazon)
@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
 
   if (!SHEET_ID) return res.status(500).json({ error: 'WALMART_ORDERS_SHEET env var not set' });
 
-  const mode = req.query.mode || 'day';
+  const mode = req.query.mode || 'rolling';
   const { startDate, endDate } = getDateRange(mode, req);
 
   console.log(`[sync-walmart-orders] mode=${mode} start=${startDate} end=${endDate}`);
@@ -81,6 +81,7 @@ module.exports = async (req, res) => {
       const data = await wmRequest('GET', path, token);
 
       const orders = data?.list?.elements?.order || [];
+      orders.forEach(o => { o._fulfillmentType = 'Seller'; });
       allOrders.push(...orders);
 
       const meta = data?.list?.meta;
@@ -102,6 +103,7 @@ module.exports = async (req, res) => {
       const data = await wmRequest('GET', path, token);
 
       const orders = data?.list?.elements?.order || [];
+      orders.forEach(o => { o._fulfillmentType = 'WFS'; });
       allOrders.push(...orders);
 
       const meta = data?.list?.meta;
@@ -154,6 +156,7 @@ module.exports = async (req, res) => {
           sku,
           brand_obj:          identifyBrand(sku),
           last_updated:       now,
+          fulfillment_type:   order._fulfillmentType || '',
         });
       }
     }
@@ -199,6 +202,7 @@ module.exports = async (req, res) => {
             item.promotion_ids, item.is_premium_order, item.promotion_discount,
             item.item_price, item.quantity_ordered, item.quantity_shipped,
             item.unit_count, item.sku, brand.id, item.last_updated,
+            item.fulfillment_type,
           ]);
 
         const dupCount = items.length - newRows.length;
