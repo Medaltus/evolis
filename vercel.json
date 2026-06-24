@@ -2,6 +2,7 @@
   "version": 2,
   "crons": [
     { "path": "/api/cron/sync-orders",           "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-walmart-orders",   "schedule": "0 */2 * * *" },
     { "path": "/api/cron/sync-orders-backfill",  "schedule": "0 4 5 * *"  },
     { "path": "/api/cron/sync-products",         "schedule": "30 2 * * *"  },
     { "path": "/api/cron/sync-advertising-request",  "schedule": "0 3 * * *"   },
@@ -21,6 +22,7 @@
     "api/test-ad-summary.js":                        { "maxDuration": 300 },
     "api/test-walmart.js":                           { "maxDuration": 30  },
     "api/cron/sync-orders.js":                       { "maxDuration": 300 },
+    "api/cron/sync-walmart-orders.js":               { "maxDuration": 300 },
     "api/cron/sync-orders-backfill.js":              { "maxDuration": 300 },
     "api/cron/sync-products.js":                     { "maxDuration": 300 },
     "api/cron/sync-advertising-request.js":          { "maxDuration": 300 },
