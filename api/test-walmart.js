@@ -13,6 +13,7 @@ const WM_HOST        = 'marketplace.walmartapis.com';
 const WM_TOKEN_PATH  = '/v3/token';
 const WM_ORDERS_PATH = '/v3/orders?createdStartDate=2026-05-01&limit=10';
 const WM_ITEMS_PATH  = '/v3/items?limit=10';
+const WM_WFS_PATH    = '/v3/fulfillment/orders-fulfillment?createdStartDate=2026-06-01T00:00:00Z&createdEndDate=2026-06-24T23:59:59Z&limit=10';
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -53,6 +54,7 @@ module.exports = async (req, res) => {
     }
     if (endpoint === 'orders')     path = WM_ORDERS_PATH;
     else if (endpoint === 'items') path = WM_ITEMS_PATH;
+    else if (endpoint === 'wfs')   path = WM_WFS_PATH;
     else return res.status(400).json({ error: `Unknown endpoint: ${endpoint}` });
 
     console.log(`[test-walmart] calling ${path}...`);
