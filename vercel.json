@@ -13,7 +13,8 @@
     { "path": "/api/cron/reconcile-orders",          "schedule": "0 8 * * *"   },
     { "path": "/api/cron/sync-revenue-request",      "schedule": "0 5 * * *"   },
     { "path": "/api/cron/sync-revenue-process",      "schedule": "15 5 * * *"  },
-    { "path": "/api/cron/sync-shopify-orders",        "schedule": "0 7 * * *"   }
+    { "path": "/api/cron/sync-shopify-orders",        "schedule": "0 7 * * *"   },
+    { "path": "/api/cron/sync-shopify-revenue",       "schedule": "5 7 * * *"   }
   ],
   "functions": {
     "api/sales.js":                                  { "maxDuration": 30  },
@@ -36,7 +37,8 @@
     "api/cron/reconcile-orders.js":                  { "maxDuration": 300 },
     "api/cron/sync-revenue-request.js":              { "maxDuration": 30  },
     "api/cron/sync-revenue-process.js":              { "maxDuration": 300 },
-    "api/cron/sync-shopify-orders.js":               { "maxDuration": 300 }
+    "api/cron/sync-shopify-orders.js":               { "maxDuration": 300 },
+    "api/cron/sync-shopify-revenue.js":              { "maxDuration": 300 }
   },
   "routes": [
     {
