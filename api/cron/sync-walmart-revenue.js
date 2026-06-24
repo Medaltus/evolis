@@ -1,17 +1,20 @@
 /**
  * api/cron/sync-walmart-revenue.js
- * Runs daily at 4 AM UTC.
- * Reads Walmart rolling orders sheet (all brand tabs), aggregates revenue
- * by brand + year + month, and upserts into the Walmart revenue history sheet.
+ * Runs daily at 4AM UTC — reads Walmart rolling orders sheet, aggregates
+ * revenue for the current month and last month only, and upserts those two
+ * rows into the Walmart revenue history sheet.
  *
- * Revenue = sum of order_total per unique order_id per month.
- * Excludes Cancelled orders.
+ * Historical rows are preserved — only current month + last month are touched.
+ * WFS UNITS and FBM UNITS are left blank (fulfillment type not yet tracked
+ * in the orders sheet; will be populated once sync-walmart-orders writes it).
  *
  * Sheet structure (one tab per brand):
- *   MONTH | YEAR | REVENUE | ORDERS | UNITS | last_updated
+ *   MONTH | YEAR | REVENUE | ORDERS | UNITS SOLD | WFS UNITS | FBM UNITS | Last Updated
  *
  * WALMART_ORDERS_SHEET  = rolling orders (source)
  * WALMART_REVENUE_SHEET = revenue history (destination)
+ *
+ * Schedule: daily at 4AM UTC ("0 4 * * *")
  */
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
@@ -20,7 +23,10 @@ const brands = require('../config/brands');
 const ORDERS_SHEET_ID  = process.env.WALMART_ORDERS_SHEET;
 const REVENUE_SHEET_ID = process.env.WALMART_REVENUE_SHEET;
 
-const REVENUE_HEADERS = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS', 'last_updated'];
+const REVENUE_HEADERS = [
+  'MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD',
+  'WFS UNITS', 'FBM UNITS', 'Last Updated',
+];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -31,7 +37,24 @@ module.exports = async (req, res) => {
   if (!ORDERS_SHEET_ID)  return res.status(500).json({ error: 'WALMART_ORDERS_SHEET not set' });
   if (!REVENUE_SHEET_ID) return res.status(500).json({ error: 'WALMART_REVENUE_SHEET not set' });
 
-  const now = new Date().toISOString();
+  const nowEst = toEstIso(new Date());
+
+  // Determine current month and last month
+  const today = new Date();
+  const currYear  = today.getUTCFullYear();
+  const currMonth = today.getUTCMonth() + 1; // 1-indexed
+
+  let prevMonth = currMonth - 1;
+  let prevYear  = currYear;
+  if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+  const targetKeys = new Set([
+    `${currYear}-${String(currMonth).padStart(2,'0')}`,
+    `${prevYear}-${String(prevMonth).padStart(2,'0')}`,
+  ]);
+
+  console.log(`[sync-walmart-revenue] updating months: ${[...targetKeys].join(', ')}`);
+
   const activeBrands = brands.filter(b => b.active);
   const results = [];
 
@@ -42,7 +65,6 @@ module.exports = async (req, res) => {
       try {
         orderRows = await readRows(ORDERS_SHEET_ID, brand.tabName);
       } catch (e) {
-        // Tab doesn't exist yet for this brand — skip silently
         console.log(`[sync-walmart-revenue] ${brand.id} — no orders tab, skipping`);
         continue;
       }
@@ -52,21 +74,17 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      // ── 2. Aggregate by year-month ────────────────────────────────────────
-      // Filter out cancelled orders
-      const validRows = orderRows.filter(r => {
-        const status = (r.status || '').toLowerCase().trim();
-        return status !== 'cancelled' && status !== 'canceled';
-      });
+      // ── 2. Aggregate current + last month from orders ─────────────────────
+      const monthMap = {}; // "YYYY-MM" → { revenue, orderIds, units }
 
-      // Group by year-month
-      const monthMap = {}; // key: "YYYY-MM" → { revenue, orderIds, units }
+      for (const row of orderRows) {
+        const status = (row.status || '').toLowerCase().trim();
+        if (status === 'cancelled' || status === 'canceled') continue;
 
-      for (const row of validRows) {
         const date = normalizeDate(row.date);
         if (!date) continue;
         const key = date.substring(0, 7); // "YYYY-MM"
-        if (!key.match(/^\d{4}-\d{2}$/)) continue;
+        if (!targetKeys.has(key)) continue; // only process current + last month
 
         if (!monthMap[key]) {
           monthMap[key] = { orderIds: new Set(), revenue: 0, units: 0 };
@@ -76,7 +94,7 @@ module.exports = async (req, res) => {
         const total   = parseFloat((row.order_total || '0').replace(/[$,]/g, '')) || 0;
         const units   = parseInt(row.unit_count, 10) || 0;
 
-        // Sum order_total once per unique order_id (avoid double-counting multi-line orders)
+        // Revenue: sum order_total once per unique order_id (avoid multi-line double count)
         if (orderId && !monthMap[key].orderIds.has(orderId)) {
           monthMap[key].orderIds.add(orderId);
           monthMap[key].revenue += total;
@@ -85,57 +103,65 @@ module.exports = async (req, res) => {
       }
 
       if (!Object.keys(monthMap).length) {
-        console.log(`[sync-walmart-revenue] ${brand.id} — no valid month data`);
+        console.log(`[sync-walmart-revenue] ${brand.id} — no data for target months`);
         continue;
       }
 
-      // ── 3. Read existing revenue rows for this brand ──────────────────────
+      // ── 3. Read existing revenue rows ─────────────────────────────────────
       const tok = await ensureTab(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS);
       let existingRows = [];
       try {
         existingRows = await readRows(REVENUE_SHEET_ID, brand.tabName);
-      } catch (e) { /* new tab, no rows yet */ }
+      } catch (e) { /* new tab */ }
 
-      // Build existing map: "YYYY-MM" → row index
+      // Build map of all existing rows keyed by "YYYY-MM"
+      // Preserve ALL columns including WFS UNITS / FBM UNITS that may be
+      // manually populated on historical rows.
       const existingMap = {};
-      existingRows.forEach(r => {
+      for (const r of existingRows) {
         const yr = String(r.YEAR  || r.year  || '').trim();
         const mo = String(r.MONTH || r.month || '').trim().padStart(2, '0');
         if (yr && mo) existingMap[`${yr}-${mo}`] = r;
-      });
-
-      // ── 4. Upsert — merge new aggregates into existing rows ───────────────
-      // Start with all existing rows, then overwrite/add months we computed
-      const mergedMap = { ...existingMap };
-      for (const [key, data] of Object.entries(monthMap)) {
-        const [yr, mo] = key.split('-');
-        mergedMap[key] = {
-          MONTH: parseInt(mo, 10),
-          YEAR:  parseInt(yr, 10),
-          REVENUE: Math.round(data.revenue * 100) / 100,
-          ORDERS:  data.orderIds.size,
-          UNITS:   data.units,
-          last_updated: now,
-        };
       }
 
-      // Sort by year-month ascending
-      const sortedKeys = Object.keys(mergedMap).sort();
+      // ── 4. Upsert only target months ──────────────────────────────────────
+      let updatedCount = 0;
+      for (const [key, data] of Object.entries(monthMap)) {
+        const [yr, mo] = key.split('-');
+        const existing = existingMap[key] || {};
+
+        existingMap[key] = {
+          MONTH:          parseInt(mo, 10),
+          YEAR:           parseInt(yr, 10),
+          REVENUE:        Math.round(data.revenue * 100) / 100,
+          ORDERS:         data.orderIds.size,
+          'UNITS SOLD':   data.units,
+          'WFS UNITS':    existing['WFS UNITS'] || '',   // preserve if manually set
+          'FBM UNITS':    existing['FBM UNITS'] || '',   // preserve if manually set
+          'Last Updated': nowEst,
+        };
+        updatedCount++;
+      }
+
+      // ── 5. Write all rows back sorted by year-month ascending ─────────────
+      const sortedKeys = Object.keys(existingMap).sort();
       const newRows = sortedKeys.map(key => {
-        const r = mergedMap[key];
+        const r = existingMap[key];
         return [
-          r.MONTH || r.month,
-          r.YEAR  || r.year,
-          r.REVENUE || r.revenue || 0,
-          r.ORDERS  || r.orders  || 0,
-          r.UNITS   || r.units   || 0,
-          r.last_updated || now,
+          r.MONTH       || r.month       || '',
+          r.YEAR        || r.year        || '',
+          r.REVENUE     || r.revenue     || 0,
+          r.ORDERS      || r.orders      || 0,
+          r['UNITS SOLD'] || r.units     || 0,
+          r['WFS UNITS']  || '',
+          r['FBM UNITS']  || '',
+          r['Last Updated'] || r.last_updated || '',
         ];
       });
 
       await replaceRows(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS, newRows, tok);
-      console.log(`[sync-walmart-revenue] ${brand.id} — wrote ${newRows.length} months`);
-      results.push({ brand: brand.id, months: newRows.length });
+      console.log(`[sync-walmart-revenue] ${brand.id} — ${updatedCount} months updated, ${newRows.length} total rows written`);
+      results.push({ brand: brand.id, monthsUpdated: updatedCount, totalRows: newRows.length });
 
     } catch (err) {
       console.error(`[sync-walmart-revenue] ${brand.id} error:`, err.message);
@@ -143,10 +169,11 @@ module.exports = async (req, res) => {
     }
   }
 
-  return res.status(200).json({ synced: results, timestamp: now });
+  return res.status(200).json({ synced: results, timestamp: nowEst });
 };
 
-// Normalize date to YYYY-MM-DD
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function normalizeDate(val) {
   if (!val) return '';
   if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
@@ -158,4 +185,19 @@ function normalizeDate(val) {
     return `${y}-${m}-${d}`;
   }
   return val;
+}
+
+/**
+ * Returns EST wall-time formatted as ISO-8601.
+ * Handles EDT (UTC-4) and EST (UTC-5) automatically via Intl.
+ */
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
 }
