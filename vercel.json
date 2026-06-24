@@ -2,7 +2,7 @@
   "version": 2,
   "crons": [
     { "path": "/api/cron/sync-orders",               "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-walmart-orders",       "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-walmart-orders",       "schedule": "0 6 * * *"   },
     { "path": "/api/cron/sync-walmart-revenue",      "schedule": "0 4 * * *"   },
     { "path": "/api/cron/sync-orders-backfill",      "schedule": "0 4 5 * *"   },
     { "path": "/api/cron/sync-products",             "schedule": "30 2 * * *"  },
