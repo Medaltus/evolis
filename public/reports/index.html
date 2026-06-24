@@ -1024,7 +1024,10 @@ function initSns() {
   function isEvolisRow(row) {
     const brand = (row.brand || '').toLowerCase().trim();
     const skus  = (row.sku || row.skus || '').toUpperCase();
-    return brand === BRAND || skus.split(',').some(s => s.trim().startsWith('EVO'));
+    // Match 'evolis' and encoding-corrupted variants of 'Évolis' (e.g. √âvolis)
+    // that appear in older rows written before the encoding was fixed.
+    const isEvolisBrand = brand === BRAND || brand.endsWith('volis');
+    return isEvolisBrand || skus.split(',').some(s => s.trim().startsWith('EVO'));
   }
 
   function isValidOrder(row) {
