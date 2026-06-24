@@ -636,11 +636,11 @@
         <span class="channel-hdr-date" id="walmart-hdr-date">📅 Loading…</span>
       </div>
       <div class="kpi-row kpi-5">
-        <div class="kpi-card" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card" id="wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card" id="wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
@@ -1660,13 +1660,16 @@ function initSns() {
       const prev = aggregateMonth(allRows, prevYear, prevMonth);
 
       if (!curr) {
-        setKpiValue('wkpi-total-units',  '0');
-        setKpiValue('wkpi-total-orders', '0');
-        setKpiValue('wkpi-avg-order',    '$0.00');
-        const adsEl2 = document.getElementById('wkpi-units-ads');
-        if (adsEl2) { const b = adsEl2.querySelector('.kpi-mom'); if (b) { b.className = 'kpi-mom flat'; b.textContent = ''; } }
-        setKpiValue('wkpi-units-ads',    '—');
-        setKpiValue('wkpi-units-organic','0');
+        setKpiValue('wkpi-total-units',   '0');
+        setBadge('wkpi-total-units',  '.kpi-mom', null, 'MOM');
+        setKpiValue('wkpi-total-orders',  '0');
+        setBadge('wkpi-total-orders', '.kpi-mom', null, 'MOM');
+        setKpiValue('wkpi-avg-order',     '$0.00');
+        setBadge('wkpi-avg-order',    '.kpi-mom', null, 'MOM');
+        setKpiValue('wkpi-units-ads',     '—');
+        setBadge('wkpi-units-ads',    '.kpi-mom', null, 'MOM');
+        setKpiValue('wkpi-units-organic', '0');
+        setBadge('wkpi-units-organic','.kpi-mom', null, 'MOM');
         document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
         buildWalmartChart(allRows, year);
         return;
@@ -1675,22 +1678,25 @@ function initSns() {
       const fmt  = n => (n ?? 0).toLocaleString();
       const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
 
-      setKpiValue('wkpi-total-units',  fmt(curr.totalUnits));
-      setBadge('wkpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null);
+      // Total Units
+      setKpiValue('wkpi-total-units', fmt(curr.totalUnits));
+      setBadge('wkpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
 
+      // Total Orders
       setKpiValue('wkpi-total-orders', fmt(curr.totalOrders));
-      setBadge('wkpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null);
+      setBadge('wkpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
 
+      // Average Order
       setKpiValue('wkpi-avg-order', '$' + fmt2(curr.avgOrder));
-      setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null);
+      setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
 
-      // Walmart has no ads data — ads = —, organic = total
+      // Units (Ads) — Walmart has no ads data
       setKpiValue('wkpi-units-ads', '—');
-      const el = document.getElementById('wkpi-units-ads');
-      if (el) { const b = el.querySelector('.kpi-mom'); if (b) { b.className = 'kpi-mom flat'; b.textContent = ''; } }
+      setBadge('wkpi-units-ads', '.kpi-mom', null, 'MOM');
 
+      // Units (Organic) = all units (no ads to subtract)
       setKpiValue('wkpi-units-organic', fmt(curr.totalUnits));
-      setBadge('wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null);
+      setBadge('wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
 
       buildWalmartChart(allRows, year);
       buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
