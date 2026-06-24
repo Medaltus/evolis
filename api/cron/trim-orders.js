@@ -5,10 +5,9 @@
  *
  * Keeps the sheet lean for fast reads while retaining enough history
  * for current month + 2 full prior months (MOM trending).
- * YOY data lives in sheets.ordersHistorical (handled by sync-orders-backfill).
+ * YOY data lives in sheets.ordersHistorical.
  *
- * Schedule: daily at 3AM UTC (add to vercel.json crons)
- *   "0 3 * * *"
+ * Schedule: daily at 3AM UTC ("0 3 * * *")
  *
  * GET /api/cron/trim-orders
  * Authorization: Bearer <CRON_SECRET>
@@ -22,10 +21,9 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'sku', 'brand', 'last_updated',
+  'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
-// Keep 90 days — enough for current month + 2 full prior months
 const RETENTION_DAYS = 90;
 
 module.exports = async (req, res) => {
@@ -34,11 +32,11 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const cutoff = new Date();
+  const cutoff    = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   const cutoffStr = cutoff.toISOString().slice(0, 10); // YYYY-MM-DD
 
-  console.log(`[trim-orders] Trimming rows before ${cutoffStr}`);
+  console.log(`[trim-orders] trimming rows before ${cutoffStr}`);
 
   const results = [];
 
