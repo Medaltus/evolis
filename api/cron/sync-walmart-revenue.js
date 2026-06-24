@@ -1,32 +1,51 @@
 /**
- * api/cron/sync-walmart-revenue.js
- * Runs daily at 4AM UTC — reads Walmart rolling orders sheet, aggregates
- * revenue for the current month and last month only, and upserts those two
- * rows into the Walmart revenue history sheet.
+ * api/cron/sync-walmart-orders.js
+ * Runs every 2 hours — pulls orders from Walmart Marketplace API.
+ * Writes one row per line item (one SKU per row) to the rolling sheet.
+ * Deduplicates on purchaseOrderId + sku — safe to re-run.
  *
- * Historical rows are preserved — only current month + last month are touched.
- * WFS UNITS and FBM UNITS are left blank (fulfillment type not yet tracked
- * in the orders sheet; will be populated once sync-walmart-orders writes it).
+ * Row structure mirrors amazon-orders for dashboard compatibility:
+ *   order_id, date, status, order_total, promotion_ids, is_premium_order,
+ *   promotion_discount, item_price, quantity_ordered, quantity_shipped,
+ *   unit_count, sku, brand, last_updated
  *
- * Sheet structure (one tab per brand):
- *   MONTH | YEAR | REVENUE | ORDERS | UNITS SOLD | WFS UNITS | FBM UNITS | Last Updated
+ * Modes:
+ *   rolling   — last 2.5 hours (default, used by cron)
+ *   day       — today from midnight UTC to now
+ *   yesterday — full yesterday
+ *   week      — ?start=YYYY-MM-DD&end=YYYY-MM-DD (with optional startTime/endTime)
  *
- * WALMART_ORDERS_SHEET  = rolling orders (source)
- * WALMART_REVENUE_SHEET = revenue history (destination)
- *
- * Schedule: daily at 4AM UTC ("0 4 * * *")
+ * Sheet: Newderm - Walmart Orders Cache (WALMART_ORDERS_SHEET)
+ * One tab per brand, auto-created on first run.
  */
 
-const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
+const https = require('https');
+const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
 const brands = require('../config/brands');
 
-const ORDERS_SHEET_ID  = process.env.WALMART_ORDERS_SHEET;
-const REVENUE_SHEET_ID = process.env.WALMART_REVENUE_SHEET;
+const WM_HOST       = 'marketplace.walmartapis.com';
+const WM_TOKEN_PATH = '/v3/token';
+const WM_PAGE_LIMIT = 100;
 
-const REVENUE_HEADERS = [
-  'MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD',
-  'WFS UNITS', 'FBM UNITS', 'Last Updated',
+const SHEET_ID = process.env.WALMART_ORDERS_SHEET;
+
+const HEADERS = [
+  'order_id', 'date', 'status', 'order_total',
+  'promotion_ids', 'is_premium_order', 'promotion_discount',
+  'item_price', 'quantity_ordered', 'quantity_shipped',
+  'unit_count', 'sku', 'brand', 'last_updated', 'fulfillment_type',
 ];
+
+// SKU prefix → brand mapping (same as Amazon)
+const SKU_PREFIX_MAP = {};
+brands.filter(b => b.active).forEach(b => {
+  SKU_PREFIX_MAP[b.skuPrefix.toUpperCase()] = b;
+});
+
+function identifyBrand(sku) {
+  const upper = (sku || '').toUpperCase();
+  return brands.find(b => b.active && upper.startsWith(b.skuPrefix.toUpperCase())) || null;
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -34,170 +53,294 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!ORDERS_SHEET_ID)  return res.status(500).json({ error: 'WALMART_ORDERS_SHEET not set' });
-  if (!REVENUE_SHEET_ID) return res.status(500).json({ error: 'WALMART_REVENUE_SHEET not set' });
+  if (!SHEET_ID) return res.status(500).json({ error: 'WALMART_ORDERS_SHEET env var not set' });
 
-  const nowEst = toEstIso(new Date());
+  const mode = req.query.mode || 'rolling';
+  const { startDate, endDate } = getDateRange(mode, req);
 
-  // Determine current month and last month
-  const today = new Date();
-  const currYear  = today.getUTCFullYear();
-  const currMonth = today.getUTCMonth() + 1; // 1-indexed
+  console.log(`[sync-walmart-orders] mode=${mode} start=${startDate} end=${endDate}`);
 
-  let prevMonth = currMonth - 1;
-  let prevYear  = currYear;
-  if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+  const now = new Date().toISOString();
 
-  const targetKeys = new Set([
-    `${currYear}-${String(currMonth).padStart(2,'0')}`,
-    `${prevYear}-${String(prevMonth).padStart(2,'0')}`,
-  ]);
+  try {
+    // ── 1. Get token ──────────────────────────────────────────────────────────
+    const tokenData = await getWalmartToken();
+    const token     = tokenData.access_token;
+    if (!token) throw new Error('No access_token returned');
+    console.log('[sync-walmart-orders] token obtained');
 
-  console.log(`[sync-walmart-revenue] updating months: ${[...targetKeys].join(', ')}`);
+    // ── 2a. Fetch seller-fulfilled orders ─────────────────────────────────────
+    const allOrders = [];
+    let   nextCursor = null;
+    let   page       = 0;
 
-  const activeBrands = brands.filter(b => b.active);
-  const results = [];
+    do {
+      page++;
+      const path = buildOrdersPath(startDate, endDate, nextCursor, 'SellerFulfilled');
+      console.log(`[sync-walmart-orders] seller page ${page}: ${path.slice(0, 80)}...`);
+      const data = await wmRequest('GET', path, token);
 
-  for (const brand of activeBrands) {
-    try {
-      // ── 1. Read rolling orders for this brand ─────────────────────────────
-      let orderRows = [];
-      try {
-        orderRows = await readRows(ORDERS_SHEET_ID, brand.tabName);
-      } catch (e) {
-        console.log(`[sync-walmart-revenue] ${brand.id} — no orders tab, skipping`);
-        continue;
-      }
+      const orders = data?.list?.elements?.order || [];
+      orders.forEach(o => { o._fulfillmentType = 'Seller'; });
+      allOrders.push(...orders);
 
-      if (!orderRows.length) {
-        console.log(`[sync-walmart-revenue] ${brand.id} — 0 rows, skipping`);
-        continue;
-      }
+      const meta = data?.list?.meta;
+      nextCursor = meta?.nextCursor || null;
 
-      // ── 2. Aggregate current + last month from orders ─────────────────────
-      const monthMap = {}; // "YYYY-MM" → { revenue, orderIds, units }
+      console.log(`[sync-walmart-orders] seller page ${page}: ${orders.length} orders (total so far: ${allOrders.length})`);
 
-      for (const row of orderRows) {
-        const status = (row.status || '').toLowerCase().trim();
-        if (status === 'cancelled' || status === 'canceled') continue;
+      if (page >= 50) { console.warn('[sync-walmart-orders] hit page cap'); break; }
+    } while (nextCursor);
 
-        const date = normalizeDate(row.date);
-        if (!date) continue;
-        const key = date.substring(0, 7); // "YYYY-MM"
-        if (!targetKeys.has(key)) continue; // only process current + last month
+    // ── 2b. Fetch WFS-fulfilled orders ────────────────────────────────────────
+    let wfsPage = 0;
+    let wfsCursor = null;
 
-        if (!monthMap[key]) {
-          monthMap[key] = { orderIds: new Set(), revenue: 0, units: 0 };
-        }
+    do {
+      wfsPage++;
+      const path = buildOrdersPath(startDate, endDate, wfsCursor, 'WFSFulfilled');
+      console.log(`[sync-walmart-orders] WFS page ${wfsPage}: ${path.slice(0, 80)}...`);
+      const data = await wmRequest('GET', path, token);
 
-        const orderId = (row.order_id || '').trim();
-        const total   = parseFloat((row.order_total || '0').replace(/[$,]/g, '')) || 0;
-        const units   = parseInt(row.unit_count, 10) || 0;
+      const orders = data?.list?.elements?.order || [];
+      orders.forEach(o => { o._fulfillmentType = 'WFS'; });
+      allOrders.push(...orders);
 
-        // Revenue: sum order_total once per unique order_id (avoid multi-line double count)
-        if (orderId && !monthMap[key].orderIds.has(orderId)) {
-          monthMap[key].orderIds.add(orderId);
-          monthMap[key].revenue += total;
-        }
-        monthMap[key].units += units;
-      }
+      const meta = data?.list?.meta;
+      wfsCursor = meta?.nextCursor || null;
 
-      if (!Object.keys(monthMap).length) {
-        console.log(`[sync-walmart-revenue] ${brand.id} — no data for target months`);
-        continue;
-      }
+      console.log(`[sync-walmart-orders] WFS page ${wfsPage}: ${orders.length} orders (total so far: ${allOrders.length})`);
 
-      // ── 3. Read existing revenue rows ─────────────────────────────────────
-      const tok = await ensureTab(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS);
-      let existingRows = [];
-      try {
-        existingRows = await readRows(REVENUE_SHEET_ID, brand.tabName);
-      } catch (e) { /* new tab */ }
+      if (wfsPage >= 50) { console.warn('[sync-walmart-orders] hit WFS page cap'); break; }
+    } while (wfsCursor);
 
-      // Build map of all existing rows keyed by "YYYY-MM"
-      // Preserve ALL columns including WFS UNITS / FBM UNITS that may be
-      // manually populated on historical rows.
-      const existingMap = {};
-      for (const r of existingRows) {
-        const yr = String(r.YEAR  || r.year  || '').trim();
-        const mo = String(r.MONTH || r.month || '').trim().padStart(2, '0');
-        if (yr && mo) existingMap[`${yr}-${mo}`] = r;
-      }
+    console.log(`[sync-walmart-orders] total orders fetched: ${allOrders.length}`);
 
-      // ── 4. Upsert only target months ──────────────────────────────────────
-      let updatedCount = 0;
-      for (const [key, data] of Object.entries(monthMap)) {
-        const [yr, mo] = key.split('-');
-        const existing = existingMap[key] || {};
-
-        existingMap[key] = {
-          MONTH:          parseInt(mo, 10),
-          YEAR:           parseInt(yr, 10),
-          REVENUE:        Math.round(data.revenue * 100) / 100,
-          ORDERS:         data.orderIds.size,
-          'UNITS SOLD':   data.units,
-          'WFS UNITS':    existing['WFS UNITS'] || '',   // preserve if manually set
-          'FBM UNITS':    existing['FBM UNITS'] || '',   // preserve if manually set
-          'Last Updated': nowEst,
-        };
-        updatedCount++;
-      }
-
-      // ── 5. Write all rows back sorted by year-month ascending ─────────────
-      const sortedKeys = Object.keys(existingMap).sort();
-      const newRows = sortedKeys.map(key => {
-        const r = existingMap[key];
-        return [
-          r.MONTH       || r.month       || '',
-          r.YEAR        || r.year        || '',
-          r.REVENUE     || r.revenue     || 0,
-          r.ORDERS      || r.orders      || 0,
-          r['UNITS SOLD'] || r.units     || 0,
-          r['WFS UNITS']  || '',
-          r['FBM UNITS']  || '',
-          r['Last Updated'] || r.last_updated || '',
-        ];
-      });
-
-      await replaceRows(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS, newRows, tok);
-      console.log(`[sync-walmart-revenue] ${brand.id} — ${updatedCount} months updated, ${newRows.length} total rows written`);
-      results.push({ brand: brand.id, monthsUpdated: updatedCount, totalRows: newRows.length });
-
-    } catch (err) {
-      console.error(`[sync-walmart-revenue] ${brand.id} error:`, err.message);
-      results.push({ brand: brand.id, status: 'error', error: err.message });
+    if (allOrders.length === 0) {
+      return res.status(200).json({ message: 'No orders in range', mode, startDate, endDate });
     }
-  }
 
-  return res.status(200).json({ synced: results, timestamp: nowEst });
+    // ── 3. Flatten to line items ──────────────────────────────────────────────
+    const lineItems = [];
+    for (const order of allOrders) {
+      const orderId   = order.purchaseOrderId || '';
+      const orderDate = order.orderDate
+        ? new Date(order.orderDate).toISOString().slice(0, 10)
+        : '';
+
+      const lines = order.orderLines?.orderLine || [];
+      for (const line of lines) {
+        const sku      = line.item?.sku || '';
+        const qty      = parseInt(line.orderLineQuantity?.amount || '1', 10);
+        const status   = line.orderLineStatuses?.orderLineStatus?.[0]?.status || '';
+        const qtyShip  = parseInt(line.orderLineStatuses?.orderLineStatus?.[0]?.statusQuantity?.amount || '0', 10);
+
+        // Sum PRODUCT charges only
+        const charges  = line.charges?.charge || [];
+        const itemPrice = charges
+          .filter(c => c.chargeType === 'PRODUCT')
+          .reduce((sum, c) => sum + (c.chargeAmount?.amount || 0), 0);
+
+        lineItems.push({
+          order_id:           orderId,
+          date:               orderDate,
+          status,
+          order_total:        round2(itemPrice),
+          promotion_ids:      '',
+          is_premium_order:   'FALSE',
+          promotion_discount: 0,
+          item_price:         round2(itemPrice),
+          quantity_ordered:   qty,
+          quantity_shipped:   qtyShip,
+          unit_count:         qty,
+          sku,
+          brand_obj:          identifyBrand(sku),
+          last_updated:       now,
+          fulfillment_type:   order._fulfillmentType || '',
+        });
+      }
+    }
+
+    console.log(`[sync-walmart-orders] total line items: ${lineItems.length}`);
+
+    // ── 4. Per-brand write ────────────────────────────────────────────────────
+    // Group line items by brand
+    const byBrand = {};
+    const unmatched = [];
+
+    for (const item of lineItems) {
+      if (item.brand_obj) {
+        const key = item.brand_obj.tabName;
+        if (!byBrand[key]) byBrand[key] = { brand: item.brand_obj, items: [] };
+        byBrand[key].items.push(item);
+      } else {
+        unmatched.push(item);
+      }
+    }
+
+    if (unmatched.length > 0) {
+      console.warn(`[sync-walmart-orders] ${unmatched.length} line items with unrecognized SKU prefix`);
+      unmatched.slice(0, 5).forEach(i => console.warn(`  SKU: ${i.sku}`));
+    }
+
+    const results = [];
+
+    for (const [tabName, { brand, items }] of Object.entries(byBrand)) {
+      try {
+        const token2       = await ensureTab(SHEET_ID, tabName, HEADERS);
+        const existingRows = await readRows(SHEET_ID, tabName);
+        const existingKeys = new Set(
+          existingRows
+            .map(r => `${r.order_id}||${r.sku}`)
+            .filter(k => k !== '||')
+        );
+
+        const newRows = items
+          .filter(item => !existingKeys.has(`${item.order_id}||${item.sku}`))
+          .map(item => [
+            item.order_id, item.date, item.status, item.order_total,
+            item.promotion_ids, item.is_premium_order, item.promotion_discount,
+            item.item_price, item.quantity_ordered, item.quantity_shipped,
+            item.unit_count, item.sku, brand.id, item.last_updated,
+            item.fulfillment_type,
+          ]);
+
+        const dupCount = items.length - newRows.length;
+        if (dupCount > 0) console.log(`[sync-walmart-orders] ${tabName} — skipped ${dupCount} duplicates`);
+
+        if (newRows.length > 0) {
+          await appendRows(SHEET_ID, tabName, newRows, token2);
+          console.log(`[sync-walmart-orders] ${tabName} — wrote ${newRows.length} rows`);
+        } else {
+          console.log(`[sync-walmart-orders] ${tabName} — 0 new rows`);
+        }
+
+        results.push({ brand: brand.id, rows: newRows.length, skipped: dupCount });
+      } catch (err) {
+        console.error(`[sync-walmart-orders] ${tabName} failed:`, err.message);
+        results.push({ brand: brand.id, status: 'error', error: err.message });
+      }
+    }
+
+    return res.status(200).json({ synced: results, totalOrders: allOrders.length, mode, startDate, endDate, timestamp: now });
+
+  } catch (err) {
+    console.error('[sync-walmart-orders] fatal:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Date range helpers ────────────────────────────────────────────────────────
+function getDateRange(mode, req) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => d.toISOString().slice(0, 19) + 'Z';
+  const safeBefore = new Date(now.getTime() - 10 * 60 * 1000);
 
-function normalizeDate(val) {
-  if (!val) return '';
-  if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
-  const parts = val.split('/');
-  if (parts.length === 3) {
-    const m = parts[0].padStart(2, '0');
-    const d = parts[1].padStart(2, '0');
-    const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
-    return `${y}-${m}-${d}`;
+  if (mode === 'rolling') {
+    const hours = parseFloat(req?.query?.hours || 2.5);
+    return {
+      startDate: fmt(new Date(now.getTime() - hours * 60 * 60 * 1000)),
+      endDate:   fmt(safeBefore),
+    };
   }
-  return val;
+
+  if (mode === 'day') {
+    const y = now.getUTCFullYear(), m = pad(now.getUTCMonth()+1), d = pad(now.getUTCDate());
+    return { startDate: `${y}-${m}-${d}T00:00:00Z`, endDate: fmt(safeBefore) };
+  }
+
+  if (mode === 'yesterday') {
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    const y = d.getFullYear(), m = pad(d.getMonth()+1), day = pad(d.getDate());
+    return { startDate: `${y}-${m}-${day}T00:00:00Z`, endDate: `${y}-${m}-${day}T23:59:59Z` };
+  }
+
+  if (mode === 'week') {
+    const start     = req?.query?.start;
+    const end       = req?.query?.end;
+    const startTime = req?.query?.startTime || '00:00:00';
+    const endTime   = req?.query?.endTime   || '23:59:59';
+    if (!start || !end) throw new Error('mode=week requires ?start=YYYY-MM-DD&end=YYYY-MM-DD');
+    const endTs = new Date(`${end}T${endTime}Z`);
+    return {
+      startDate: `${start}T${startTime}Z`,
+      endDate:   endTs > now ? fmt(safeBefore) : `${end}T${endTime}Z`,
+    };
+  }
+
+  throw new Error(`Unknown mode: ${mode}`);
 }
 
-/**
- * Returns EST wall-time formatted as ISO-8601.
- * Handles EDT (UTC-4) and EST (UTC-5) automatically via Intl.
- */
-function toEstIso(date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
-  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+function buildOrdersPath(startDate, endDate, cursor, shipNodeType = 'SellerFulfilled') {
+  if (cursor) {
+    return cursor.startsWith('/') ? cursor : `/v3/orders${cursor.startsWith('?') ? '' : '?'}${cursor}`;
+  }
+  return `/v3/orders?createdStartDate=${encodeURIComponent(startDate)}&createdEndDate=${encodeURIComponent(endDate)}&limit=${WM_PAGE_LIMIT}&shipNodeType=${shipNodeType}`;
 }
+
+// ── Walmart auth ──────────────────────────────────────────────────────────────
+function getWalmartToken() {
+  return new Promise((resolve, reject) => {
+    const clientId     = process.env.WALMART_CLIENT_ID;
+    const clientSecret = process.env.WALMART_CLIENT_SECRET;
+    const partnerId    = process.env.WALMART_PARTNER_ID;
+    if (!clientId || !clientSecret) return reject(new Error('WALMART credentials not set'));
+
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const body        = 'grant_type=client_credentials';
+    const headers = {
+      'Authorization':         `Basic ${credentials}`,
+      'Content-Type':          'application/x-www-form-urlencoded',
+      'Accept':                'application/json',
+      'WM_SVC.NAME':           'Walmart Marketplace',
+      'WM_QOS.CORRELATION_ID': `token-${Date.now()}`,
+      'WM_SVC.VERSION':        '1.0.0',
+      'Content-Length':        Buffer.byteLength(body),
+    };
+    if (partnerId) headers['WM_PARTNER.ID'] = partnerId;
+
+    const req = https.request({ hostname: WM_HOST, path: WM_TOKEN_PATH, method: 'POST', headers }, httpRes => {
+      let d = '';
+      httpRes.on('data', c => d += c);
+      httpRes.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`Token parse error (${httpRes.statusCode}): ${d.slice(0,300)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Walmart API request ───────────────────────────────────────────────────────
+function wmRequest(method, path, token) {
+  return new Promise((resolve, reject) => {
+    const clientId  = process.env.WALMART_CLIENT_ID;
+    const partnerId = process.env.WALMART_PARTNER_ID;
+    const headers = {
+      'Authorization':         `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
+      'WM_SEC.ACCESS_TOKEN':   token,
+      'WM_SVC.NAME':           'Walmart Marketplace',
+      'WM_QOS.CORRELATION_ID': `req-${Date.now()}`,
+      'WM_SVC.VERSION':        '1.0.0',
+      'Accept':                'application/json',
+      'Content-Type':          'application/json',
+    };
+    if (partnerId) headers['WM_PARTNER.ID'] = partnerId;
+
+    const req = https.request({ hostname: WM_HOST, path, method, headers }, httpRes => {
+      let d = '';
+      httpRes.on('data', c => d += c);
+      httpRes.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`Parse error (${httpRes.statusCode}): ${d.slice(0,300)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const round2 = n => Math.round(n * 100) / 100;
