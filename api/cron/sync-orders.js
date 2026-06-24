@@ -35,7 +35,7 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'sku', 'brand', 'last_updated',
+  'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
 // How long to poll for a report to be ready (ms)
@@ -184,6 +184,7 @@ module.exports = async (req, res) => {
           qtyShip,                          // quantity_shipped
           qty,                              // unit_count (same as qty for line items)
           sku,                              // single SKU — no more comma-joined sets
+          row['asin'] || '',                // ASIN from flat file
           brand.id,
           now,
         ];
