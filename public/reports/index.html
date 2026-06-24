@@ -639,20 +639,38 @@
         <div class="kpi-card" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units Organic</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="wkpi-units-ads"><div class="kpi-label">Units Ads</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
       </div>
       <div class="card">
-        <div class="card-title">Sales by Month</div>
+        <div class="card-title">Sales Revenue by Month</div>
         <div class="chart-wrap"><canvas id="chart-walmart"></canvas></div>
       </div>
-      <div class="card">
-        <div class="card-title">Top Selling Products <span style="font-size:11px;color:var(--slate);font-weight:400;">(by Units)</span></div>
-        <div style="font-size:10px;color:var(--slate);margin-bottom:10px;" id="walmart-products-source"></div>
-        <table class="data-table">
-          <thead><tr><th>#</th><th>Product Name</th><th>Units Sold</th><th>Units Organic</th></tr></thead>
-          <tbody id="wtp-tbody"><tr><td colspan="4" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading…</td></tr></tbody>
-        </table>
+      <div class="card" id="walmart-top-products-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+          <div>
+            <span class="card-title" style="margin-bottom:0;">Top Selling Products</span>
+            <span style="font-size:11px;color:var(--slate);margin-left:8px;font-weight:400;">(by Units)</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="walmart-products-source" style="font-size:10px;color:var(--slate);"></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="walmart-top-sellers">
+            <thead>
+              <tr>
+                <th style="width:36px;">#</th>
+                <th>PRODUCT NAME</th>
+                <th>UNITS SOLD</th>
+                <th>UNITS (ADS)</th>
+                <th>UNITS (ORGANIC)</th>
+                <th>CONV. RATE</th>
+              </tr>
+            </thead>
+            <tbody id="wtp-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1005,7 +1023,7 @@ function initSns() {
   // ── Row filtering ─────────────────────────────────────────────────────────
   function isEvolisRow(row) {
     const brand = (row.brand || '').toLowerCase().trim();
-    const skus  = (row.skus  || '').toUpperCase();
+    const skus  = (row.sku || row.skus || '').toUpperCase();
     return brand === BRAND || skus.split(',').some(s => s.trim().startsWith('EVO'));
   }
 
@@ -1654,7 +1672,7 @@ function initSns() {
     try {
       const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
       if (!isCsv(csv)) {
-        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
+        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
         return;
       }
 
@@ -1667,9 +1685,11 @@ function initSns() {
         setKpiValue('wkpi-total-units',  '0');
         setKpiValue('wkpi-total-orders', '0');
         setKpiValue('wkpi-avg-order',    '$0.00');
-        setKpiValue('wkpi-units-organic','0');
+        const adsEl2 = document.getElementById('wkpi-units-ads');
+        if (adsEl2) { const b = adsEl2.querySelector('.kpi-mom'); if (b) { b.className = 'kpi-mom flat'; b.textContent = ''; } }
         setKpiValue('wkpi-units-ads',    '—');
-        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+        setKpiValue('wkpi-units-organic','0');
+        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
         buildWalmartChart(allRows, year);
         return;
       }
@@ -1686,17 +1706,20 @@ function initSns() {
       setKpiValue('wkpi-avg-order', '$' + fmt2(curr.avgOrder));
       setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null);
 
-      // Walmart has no ads data — show organic = total, ads = —
+      // Walmart has no ads data — ads = —, organic = total
+      setKpiValue('wkpi-units-ads', '—');
+      const el = document.getElementById('wkpi-units-ads');
+      if (el) { const b = el.querySelector('.kpi-mom'); if (b) { b.className = 'kpi-mom flat'; b.textContent = ''; } }
+
       setKpiValue('wkpi-units-organic', fmt(curr.totalUnits));
       setBadge('wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null);
-      setKpiValue('wkpi-units-ads', '—');
 
       buildWalmartChart(allRows, year);
       buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
       console.error('[WalmartLive]', err.message);
-      document.getElementById('wtp-tbody').innerHTML = `<tr><td colspan="4" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Error: ${err.message}</td></tr>`;
+      document.getElementById('wtp-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Error: ${err.message}</td></tr>`;
     }
   };
 
@@ -1764,7 +1787,7 @@ function initSns() {
 
     const tbody = document.getElementById('wtp-tbody');
     if (!monthRows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
       return;
     }
 
@@ -1827,12 +1850,16 @@ function initSns() {
     sorted.forEach(([sku, units], idx) => {
       const name      = skuNameMap[sku] || sku;
       const prevUnits = skuUnitsPrev[sku] || 0;
+      const orgUnits  = units; // no ads data for Walmart
+      const prevOrgUnits = prevUnits;
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>`;
+        <td><div class="tp-cell"><span class="tp-dash">—</span></div></td>
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>
+        <td class="tp-dash">—</td>`;
       tbody.appendChild(tr);
     });
 
