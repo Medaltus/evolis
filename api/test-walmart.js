@@ -45,8 +45,12 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: 'No access_token in response', tokenData });
     }
 
-    // ── Step 2: Call requested endpoint ────────────────────────────────────
-    let path;
+    if (endpoint === 'order') {
+      const orderId = req.query.orderId;
+      if (!orderId) return res.status(400).json({ error: 'orderId required' });
+      const data = await wmRequest('GET', `/v3/orders/${orderId}`, token);
+      return res.status(200).json({ endpoint, raw: data });
+    }
     if (endpoint === 'orders')     path = WM_ORDERS_PATH;
     else if (endpoint === 'items') path = WM_ITEMS_PATH;
     else return res.status(400).json({ error: `Unknown endpoint: ${endpoint}` });
