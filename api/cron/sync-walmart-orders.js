@@ -69,15 +69,15 @@ module.exports = async (req, res) => {
     if (!token) throw new Error('No access_token returned');
     console.log('[sync-walmart-orders] token obtained');
 
-    // ── 2. Fetch all orders in date range (paginated) ─────────────────────────
+    // ── 2a. Fetch seller-fulfilled orders ─────────────────────────────────────
     const allOrders = [];
     let   nextCursor = null;
     let   page       = 0;
 
     do {
       page++;
-      const path = buildOrdersPath(startDate, endDate, nextCursor);
-      console.log(`[sync-walmart-orders] fetching page ${page}: ${path.slice(0, 80)}...`);
+      const path = buildOrdersPath(startDate, endDate, nextCursor, 'SellerFulfilled');
+      console.log(`[sync-walmart-orders] seller page ${page}: ${path.slice(0, 80)}...`);
       const data = await wmRequest('GET', path, token);
 
       const orders = data?.list?.elements?.order || [];
@@ -86,11 +86,31 @@ module.exports = async (req, res) => {
       const meta = data?.list?.meta;
       nextCursor = meta?.nextCursor || null;
 
-      console.log(`[sync-walmart-orders] page ${page}: ${orders.length} orders (total so far: ${allOrders.length})`);
+      console.log(`[sync-walmart-orders] seller page ${page}: ${orders.length} orders (total so far: ${allOrders.length})`);
 
-      // Safety cap — avoid runaway pagination
       if (page >= 50) { console.warn('[sync-walmart-orders] hit page cap'); break; }
     } while (nextCursor);
+
+    // ── 2b. Fetch WFS-fulfilled orders ────────────────────────────────────────
+    let wfsPage = 0;
+    let wfsCursor = null;
+
+    do {
+      wfsPage++;
+      const path = buildOrdersPath(startDate, endDate, wfsCursor, 'WFSFulfilled');
+      console.log(`[sync-walmart-orders] WFS page ${wfsPage}: ${path.slice(0, 80)}...`);
+      const data = await wmRequest('GET', path, token);
+
+      const orders = data?.list?.elements?.order || [];
+      allOrders.push(...orders);
+
+      const meta = data?.list?.meta;
+      wfsCursor = meta?.nextCursor || null;
+
+      console.log(`[sync-walmart-orders] WFS page ${wfsPage}: ${orders.length} orders (total so far: ${allOrders.length})`);
+
+      if (wfsPage >= 50) { console.warn('[sync-walmart-orders] hit WFS page cap'); break; }
+    } while (wfsCursor);
 
     console.log(`[sync-walmart-orders] total orders fetched: ${allOrders.length}`);
 
@@ -248,12 +268,11 @@ function getDateRange(mode, req) {
   throw new Error(`Unknown mode: ${mode}`);
 }
 
-function buildOrdersPath(startDate, endDate, cursor) {
+function buildOrdersPath(startDate, endDate, cursor, shipNodeType = 'SellerFulfilled') {
   if (cursor) {
-    // cursor already contains the full query string
     return cursor.startsWith('/') ? cursor : `/v3/orders${cursor.startsWith('?') ? '' : '?'}${cursor}`;
   }
-  return `/v3/orders?createdStartDate=${encodeURIComponent(startDate)}&createdEndDate=${encodeURIComponent(endDate)}&limit=${WM_PAGE_LIMIT}`;
+  return `/v3/orders?createdStartDate=${encodeURIComponent(startDate)}&createdEndDate=${encodeURIComponent(endDate)}&limit=${WM_PAGE_LIMIT}&shipNodeType=${shipNodeType}`;
 }
 
 // ── Walmart auth ──────────────────────────────────────────────────────────────
