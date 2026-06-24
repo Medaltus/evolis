@@ -253,7 +253,7 @@ function buildOrdersPath(startDate, endDate, cursor) {
     // cursor already contains the full query string
     return cursor.startsWith('/') ? cursor : `/v3/orders${cursor.startsWith('?') ? '' : '?'}${cursor}`;
   }
-  return `/v3/orders?createdStartDate=${encodeURIComponent(startDate)}&createdEndDate=${encodeURIComponent(endDate)}&limit=${WM_PAGE_LIMIT}&status=Created,Acknowledged,Shipped,Cancelled`;
+  return `/v3/orders?createdStartDate=${encodeURIComponent(startDate)}&createdEndDate=${encodeURIComponent(endDate)}&limit=${WM_PAGE_LIMIT}`;
 }
 
 // ── Walmart auth ──────────────────────────────────────────────────────────────
