@@ -1,6 +1,6 @@
 /**
  * api/cron/sync-walmart-orders.js
- * Runs every 2 hours — pulls orders from Walmart Marketplace API.
+ * Runs once daily — pulls all orders placed today from Walmart Marketplace API.
  * Writes one row per line item (one SKU per row) to the rolling sheet.
  * Deduplicates on purchaseOrderId + sku — safe to re-run.
  *
@@ -10,7 +10,7 @@
  *   unit_count, sku, brand, last_updated
  *
  * Modes:
- *   rolling   — last 2.5 hours (default, used by cron)
+ *   day       — today from midnight UTC to now (default, used by cron)
  *   day       — today from midnight UTC to now
  *   yesterday — full yesterday
  *   week      — ?start=YYYY-MM-DD&end=YYYY-MM-DD (with optional startTime/endTime)
@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
 
   if (!SHEET_ID) return res.status(500).json({ error: 'WALMART_ORDERS_SHEET env var not set' });
 
-  const mode = req.query.mode || 'rolling';
+  const mode = req.query.mode || 'day';
   const { startDate, endDate } = getDateRange(mode, req);
 
   console.log(`[sync-walmart-orders] mode=${mode} start=${startDate} end=${endDate}`);
