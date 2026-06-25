@@ -847,14 +847,8 @@ const months12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','N
 const lineDefaults = { pointRadius:2, tension:0.3, borderWidth:2 };
 
 // ── NAV ──
-const pageTitles = {
-  overview:'Overview', sales:'Sales — Évolis',
-  marketing:'Marketing — Évolis', events:'Events — Évolis',
-  inventory:'Inventory', fulfillment:'Fulfillment',
-  insights:'Insights', listing:'Listing Audit',
-  ppc:'PPC', organic:'Organic'
-};
-function nav(id, el) { /* legacy stub */ }
+// pageTitles defined in shell JS above
+// nav() defined in shell JS above
 
 function switchPhase(ph, el) {
   document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
