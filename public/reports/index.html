@@ -1134,7 +1134,7 @@ function initSns() {
     const banner = document.createElement('div');
     banner.style.cssText = 'background:#fff0f0;border-left:3px solid #db372d;padding:14px 18px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;margin-bottom:20px;';
     banner.innerHTML = `<strong>Data load error:</strong> ${msg}<br><span style="color:#888;font-size:11px;">Check that the Google Sheet is publicly accessible.</span>`;
-    const page = document.getElementById('page-amazon');
+    const page = document.getElementById('s-amazon') || document.getElementById('page-amazon');
     if (page) page.prepend(banner);
     ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-organic'].forEach(id => {
       const el = document.getElementById(id);
@@ -1179,10 +1179,10 @@ function initSns() {
       const HIST_GID = '1249281379';
 
       const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
-        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
       ]);
 
       const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
@@ -1619,9 +1619,9 @@ function initSns() {
       // Fetch orders and ads data in parallel
       const [csv, adsCsv] = await Promise.all([
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
-          .then(r => r.ok ? r.text() : '').catch(() => ''),
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
-          .then(r => r.ok ? r.text() : '').catch(() => ''),
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
       ]);
 
       if (!isCsv(csv)) {
@@ -1816,7 +1816,7 @@ function initSns() {
     const skuNameMap = {};
     try {
       const namesCsv = await fetch(sheetCsvUrl(PRODUCT_NAMES_SHEET_ID, PRODUCT_NAMES_GID) + `&_cb=${Date.now()}`)
-        .then(r => r.ok ? r.text() : '').catch(() => '');
+        .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
       if (isCsv(namesCsv)) {
         const lines = namesCsv.trim().split('\n');
         for (let i = 1; i < lines.length; i++) {
@@ -2019,7 +2019,7 @@ function initSns() {
     if (hdrEl) hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${new Date(year, month, 0).getDate()}, ${year}`;
 
     try {
-      const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
       if (!isCsv(csv)) {
         document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
         return;
@@ -2327,11 +2327,13 @@ function initSns() {
 
   // ── Auto-init all data on page load (no lazy loading) ──
   document.addEventListener('DOMContentLoaded', function () {
-    window.initAmazonLive  && window.initAmazonLive();
-    window.initWebLive     && window.initWebLive();
-    window.initWalmartLive && window.initWalmartLive();
-    window.initStewardship && window.initStewardship();
-    window.initSns         && window.initSns();
+    // Amazon/Web/Walmart are window.xxx async functions defined in the inner IIFE
+    if (typeof window.initAmazonLive  === 'function') window.initAmazonLive();
+    if (typeof window.initWebLive     === 'function') window.initWebLive();
+    if (typeof window.initWalmartLive === 'function') window.initWalmartLive();
+    // Stewardship and SNS are plain functions defined at script scope
+    if (typeof initStewardship === 'function') initStewardship();
+    if (typeof initSns         === 'function') initSns();
   });
 
 })();
