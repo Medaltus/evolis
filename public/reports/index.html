@@ -1215,12 +1215,12 @@ function initSns() {
 
     // Units Ads — from advertising cache sheet
     setKpiValue('kpi-units-ads', fmt(adUnits));
-    setBadge('kpi-units-ads', '.kpi-mom', (prevAdUnits != null && prevAdUnits > 0) ? pct(adUnits, prevAdUnits) : null, 'MOM');
+    setBadge('kpi-units-ads', '.kpi-mom', (prevAdUnits != null && prev) ? pct(adUnits, prevAdUnits) : null, 'MOM');
 
     // Units Organic = Total Units - Units Ads
     const organicUnits = curr.totalUnits - adUnits;
     setKpiValue('kpi-units-organic', fmt(organicUnits));
-    const prevOrganic = prev ? prev.totalUnits - 0 : null;
+    const prevOrganic = prev ? prev.totalUnits - (prevAdUnits || 0) : null;
     setBadge('kpi-units-organic', '.kpi-mom', prevOrganic != null ? pct(organicUnits, prevOrganic) : null, 'MOM');
   }
 
@@ -1757,7 +1757,7 @@ function initSns() {
       setBadgeWeb('web-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
 
       setKpiValue('web-kpi-units-ads', adUnits > 0 ? fmt(adUnits) : '—');
-      setBadgeWeb('web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prevAdUnits > 0 ? pct(adUnits, prevAdUnits) : null, 'MOM');
+      setBadgeWeb('web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prev ? pct(adUnits, prevAdUnits) : null, 'MOM');
 
       setKpiValue('web-kpi-units-organic', fmt(orgUnits));
       setBadgeWeb('web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
