@@ -185,6 +185,137 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .tp-mom-up{display:inline-flex;align-items:center;color:#1db88a;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap;}
 .tp-mom-dn{display:inline-flex;align-items:center;color:var(--danger);font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap;}
 .tp-mom-flat{display:inline-flex;align-items:center;color:rgba(107,123,162,.4);font-size:10px;margin-left:6px;}
+
+/* ════════════════════════════════════════
+   INSIGHTS + LISTING AUDIT — page CSS
+   ════════════════════════════════════════ */
+
+/* Shared sub-tab nav (inside a channel-page) */
+.sub-tabs{display:flex;gap:0;margin-bottom:22px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;flex-wrap:wrap;}
+.sub-tab{padding:7px 16px;border:none;background:none;font-family:var(--font);font-size:12px;color:var(--muted);cursor:pointer;border-right:1px solid var(--border);transition:all .13s;white-space:nowrap;}
+.sub-tab:last-child{border-right:none;}
+.sub-tab:hover{background:var(--bg);color:var(--navy);}
+.sub-tab.active{background:var(--navy);color:var(--white);font-weight:500;}
+
+/* Section label */
+.sec-lbl{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;margin-top:20px;}
+.sec-lbl:first-child{margin-top:0;}
+
+/* Insight header card — main takeaway */
+.insight-hero{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);border-radius:var(--radius);padding:22px 26px;margin-bottom:20px;color:#fff;}
+.insight-hero-label{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:8px;}
+.insight-hero-text{font-size:16px;font-weight:600;line-height:1.45;color:#fff;}
+.insight-hero-sub{font-size:12px;color:rgba(255,255,255,.55);margin-top:8px;line-height:1.6;}
+
+/* Overview metric strip — 6 cards in one bordered row */
+.metric-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;}
+.metric-strip-card{background:var(--white);padding:14px 16px;}
+.ms-label{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;}
+.ms-value{font-size:22px;font-weight:700;color:var(--navy);line-height:1;}
+.ms-sub{font-size:10px;color:var(--muted);margin-top:4px;}
+
+/* Chart section */
+.chart-section{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px;}
+.chart-section .card-title{margin-bottom:14px;}
+
+/* Brand-at-a-glance + Priority actions row */
+.glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+.glance-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2);}
+.glance-item:last-child{border-bottom:none;}
+.glance-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;margin-top:5px;}
+.glance-text{font-size:12.5px;color:var(--navy);line-height:1.55;}
+.priority-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2);}
+.priority-item:last-child{border-bottom:none;}
+.priority-num{width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.priority-text{font-size:12.5px;color:var(--navy);line-height:1.55;}
+.priority-tag{display:inline-block;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:10px;margin-left:6px;}
+.priority-tag.urgent{background:rgba(219,55,45,.1);color:var(--danger);}
+.priority-tag.monitor{background:rgba(200,125,47,.1);color:var(--warn);}
+.priority-tag.good{background:rgba(36,233,163,.13);color:#1db88a;}
+
+/* Product scorecard rows (Amazon + Walmart) */
+.scorecard-header{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:16px 0 8px;display:flex;align-items:center;gap:8px;}
+.scorecard-header::after{content:'';flex:1;height:1px;background:var(--border);}
+.scorecard-row{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;}
+.sc-card{background:var(--white);padding:12px 14px;}
+.sc-label{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:5px;}
+.sc-value{font-size:18px;font-weight:700;color:var(--navy);line-height:1;}
+.sc-sub{font-size:10px;color:var(--muted);margin-top:3px;}
+.sc-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;}
+.sc-badge.good{background:rgba(36,233,163,.13);color:#1db88a;}
+.sc-badge.warn{background:rgba(200,125,47,.1);color:var(--warn);}
+.sc-badge.danger{background:rgba(219,55,45,.1);color:var(--danger);}
+
+/* Product + formula card */
+.formula-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+.formula-row{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border2);font-size:12.5px;}
+.formula-row:last-child{border-bottom:none;}
+.formula-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);width:110px;flex-shrink:0;padding-top:1px;}
+.formula-val{color:var(--navy);line-height:1.55;flex:1;}
+.free-from-tag{display:inline-block;background:rgba(36,233,163,.1);border:1px solid rgba(36,233,163,.25);color:#1db88a;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin:2px 3px 2px 0;}
+
+/* Competitor price card */
+.comp-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border2);font-size:12.5px;}
+.comp-row:last-child{border-bottom:none;}
+.comp-name{flex:1;color:var(--navy);font-weight:500;}
+.comp-price{font-size:13px;font-weight:700;color:var(--navy);width:60px;text-align:right;}
+.comp-diff{font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;width:56px;text-align:center;}
+.comp-diff.lower{background:rgba(219,55,45,.1);color:var(--danger);}
+.comp-diff.higher{background:rgba(36,233,163,.13);color:#1db88a;}
+.comp-diff.same{background:var(--bg);color:var(--muted);}
+.comp-ours{background:rgba(0,31,96,.04);border-radius:var(--radius-sm);}
+
+/* Keyword table pills */
+.rank-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+.rank-top{background:rgba(36,233,163,.15);color:#1db88a;}
+.rank-mid{background:rgba(200,125,47,.1);color:var(--warn);}
+.rank-low{background:rgba(219,55,45,.1);color:var(--danger);}
+.rank-none{background:var(--bg);color:var(--muted);}
+
+/* Reviews */
+.voc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.voc-chip{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:500;}
+.voc-chip.pos{background:rgba(36,233,163,.13);color:#1db88a;}
+.voc-chip.neg{background:rgba(219,55,45,.08);color:var(--danger);}
+.voc-chip.gap{background:rgba(200,125,47,.1);color:var(--warn);}
+.rev-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;}
+.rev-hdr{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;}
+.rev-name{font-weight:600;font-size:12px;color:var(--navy);}
+.rev-stars-5{color:#24e9a3;font-size:12px;}
+.rev-stars-4{color:#24e9a3;font-size:12px;}
+.rev-stars-3{color:var(--warn);font-size:12px;}
+.rev-stars-1{color:var(--danger);font-size:12px;}
+.rev-title{font-weight:600;font-size:12.5px;color:var(--navy);margin-bottom:4px;}
+.rev-body{font-size:12px;color:var(--muted);line-height:1.65;}
+.rev-date{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.star-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11.5px;}
+.star-bar-lbl{width:36px;text-align:right;color:var(--muted);}
+.star-bar-track{flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;}
+.star-bar-fill{height:100%;border-radius:4px;background:var(--green);}
+.star-bar-count{width:28px;font-weight:600;color:var(--navy);font-size:11px;}
+
+/* Listing audit */
+.listing-status-bar{display:flex;align-items:center;gap:10px;background:rgba(36,233,163,.08);border:1px solid rgba(36,233,163,.2);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:18px;font-size:12.5px;color:var(--navy);}
+.listing-status-bar .icon{font-size:16px;flex-shrink:0;}
+.listing-section{margin-bottom:22px;}
+.listing-section-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.listing-section-hd .status-ok{color:#1db88a;}
+.listing-section-hd .status-warn{color:var(--warn);}
+.listing-section-hd .char-count{font-size:10px;font-weight:400;color:var(--muted);margin-left:auto;}
+.listing-block{background:var(--bg);border-left:3px solid var(--border);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:12px 16px;margin-bottom:8px;font-size:13px;color:var(--navy);line-height:1.6;}
+.listing-block.ok{border-left-color:var(--green);}
+.listing-block.warn{border-left-color:var(--warn);}
+.listing-block.error{border-left-color:var(--danger);}
+.listing-note{font-size:11px;color:var(--muted);margin-top:6px;display:flex;align-items:flex-start;gap:5px;}
+.listing-note .icon{flex-shrink:0;}
+.kw-coverage-tag{display:inline-block;background:rgba(0,31,96,.06);color:var(--navy);font-size:10px;font-weight:600;padding:1px 7px;border-radius:8px;margin:2px 3px 0 0;}
+.kw-coverage-tag.hit{background:rgba(36,233,163,.15);color:#1db88a;}
+.char-pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:8px;}
+.char-pill.ok{background:rgba(36,233,163,.13);color:#1db88a;}
+.char-pill.warn{background:rgba(200,125,47,.1);color:var(--warn);}
+.char-pill.error{background:rgba(219,55,45,.1);color:var(--danger);}
+
+.sub-page{display:none;}.sub-page.active{display:block;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -654,63 +785,1156 @@ As inventory availability improves, the current sales mix provides a strong foun
 
   <!-- ══ INSIGHTS LOG (internal only) ══ -->
   <div class="page" id="page-insights">
+
     <div class="page-hd">
-      <div><div class="page-title">Insights</div><div class="page-sub">Edit, stage, and approve insights before they appear on the partner dashboard</div></div>
-      <button class="btn-edit" style="padding:8px 16px;font-size:12px;" onclick="alert('Opens new insight entry form')">+ New Insight</button>
+      <div><div class="page-title">Insights</div><div class="page-sub">Brand intelligence, product analysis, and listing health</div></div>
     </div>
 
-    <div style="background:rgba(200,125,47,0.08);border:1px solid rgba(200,125,47,0.20);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:18px;font-size:12px;color:var(--warn);">
-      <strong>Staging Review Required:</strong> 1 insight is pending leadership approval before going live to the partner dashboard.
+    <!-- Top-level tabs -->
+    <div class="channel-tabs">
+      <button class="ch-tab active" onclick="showChannel('insights','ins-overview',this)">Overview</button>
+      <button class="ch-tab" onclick="showChannel('insights','ins-products',this)">Products</button>
+      <button class="ch-tab" onclick="showChannel('insights','ins-reviews',this)">Reviews</button>
+      <button class="ch-tab" onclick="showChannel('insights','ins-log',this)">Insights Log</button>
     </div>
 
-    <div class="log-entry">
-      <div class="log-entry-hd">
-        <span class="log-date">2026-05-31</span>
-        <span class="log-page">Sales → Amazon</span>
-        <span class="log-status-staging">◎ In Staging</span>
-      </div>
-      <div class="log-text">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</div>
-      <div class="log-actions">
-        <button class="btn-edit">✏️ Edit</button>
-        <button class="btn-approve" onclick="openApproveModal('log-amazon')">Approve → Live</button>
-      </div>
-    </div>
+    <!-- ── OVERVIEW TAB ── -->
+    <div class="channel-page active" id="ins-overview">
 
-    <div class="log-entry">
-      <div class="log-entry-hd">
-        <span class="log-date">2026-05-31</span>
-        <span class="log-page">Sales → Overview</span>
-        <span class="log-status-live">● Live</span>
+      <!-- 1. Insights header / main takeaway -->
+      <div class="insight-hero">
+        <div class="insight-hero-label">May 2026 — Key Takeaway</div>
+        <div class="insight-hero-text" id="ins-hero-text">Organic momentum is carrying performance as ad spend moderates. Reverse Shampoo Travel Size is the breakout SKU across all channels. Subscription retention at 70% signals strong brand loyalty.</div>
+        <div class="insight-hero-sub">May 1 – May 31, 2026 &nbsp;·&nbsp; Data reflects last full calendar month</div>
+        <div style="margin-top:14px;">
+          <button class="btn-edit" onclick="toggleEditor('ins-hero')" style="font-size:11px;">✏️ Edit takeaway</button>
+        </div>
       </div>
-      <div class="log-text">Amazon remains dominant at 68% of revenue but declined MOM. Website share grew to 22% on subscription momentum. Walmart softened as expected post-promo period.</div>
-      <div class="log-actions">
-        <button class="btn-edit">✏️ Edit</button>
+      <div class="insight-editor" id="editor-ins-hero">
+        <textarea id="textarea-ins-hero" placeholder="Enter the main monthly takeaway…">Organic momentum is carrying performance as ad spend moderates. Reverse Shampoo Travel Size is the breakout SKU across all channels. Subscription retention at 70% signals strong brand loyalty.</textarea>
+        <div class="editor-footer">
+          <span class="editor-note">Internal-only overview takeaway.</span>
+          <button class="btn-cancel" onclick="toggleEditor('ins-hero')">Cancel</button>
+          <button class="btn-save-stage" onclick="saveToStaging('ins-hero')">Save</button>
+        </div>
       </div>
-    </div>
 
-    <div class="log-entry">
-      <div class="log-entry-hd">
-        <span class="log-date">2026-04-30</span>
-        <span class="log-page">Overview</span>
-        <span class="log-status-live">● Live</span>
+      <!-- 2. Metric strip — 6 cards -->
+      <div class="metric-strip">
+        <div class="metric-strip-card">
+          <div class="ms-label">Total Sessions</div>
+          <div class="ms-value">557</div>
+          <div class="ms-sub">Amazon · May 2026</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="ms-label">Blended Conv %</div>
+          <div class="ms-value">10.4%</div>
+          <div class="ms-sub">↑ from 8.6% Apr</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="ms-label">Active SKUs</div>
+          <div class="ms-value">12</div>
+          <div class="ms-sub">with sales this month</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="ms-label">Top 50 Organic</div>
+          <div class="ms-value">18</div>
+          <div class="ms-sub">keywords ranked</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="ms-label">Peak Month</div>
+          <div class="ms-value">Mar '26</div>
+          <div class="ms-sub">highest units sold</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="ms-label">Total SKUs</div>
+          <div class="ms-value">24</div>
+          <div class="ms-sub">in active catalog</div>
+        </div>
       </div>
-      <div class="log-text">April saw strong Website growth (+35% units) offset by Amazon softness. Subscription attach rate reached 18% of Website orders — a new high.</div>
-      <div class="log-actions">
-        <button class="btn-edit">✏️ Edit</button>
+
+      <!-- 3. Units sold per month bar chart -->
+      <div class="chart-section">
+        <div class="card-title">Units Sold per Month — All Channels</div>
+        <div style="position:relative;height:200px;"><canvas id="chart-ins-units"></canvas></div>
       </div>
-    </div>
+
+      <!-- 4. Two cards: Brand at a glance + Priority actions -->
+      <div class="glance-grid">
+        <div class="card">
+          <div class="card-title">Brand at a Glance</div>
+          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Reverse Shampoo Travel Size is the #1 SKU by units — 59 units on Amazon in May</div></div>
+          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Website rebounded +27% MOM driven by subscription renewals and organic traffic</div></div>
+          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Subscribe &amp; Save retention held at 70% (90-day) — above category average</div></div>
+          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Ad impressions down 38% MOM — organic units increased 8% as a result</div></div>
+          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Promote and Reverse Activators continue as top performers across all channels</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">This Month's Priority Actions</div>
+          <div class="priority-item">
+            <div class="priority-num">1</div>
+            <div class="priority-text">Refresh title + bullet 1 on Reverse Shampoo Travel Size to capture "travel shampoo" keyword opportunity <span class="priority-tag urgent">Urgent</span></div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-num">2</div>
+            <div class="priority-text">Plan Prime Day deal submission — recommend 20% off full-sized Reverse line <span class="priority-tag urgent">Urgent</span></div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-num">3</div>
+            <div class="priority-text">Build Promote Treatment Mask listing — currently missing A+ content <span class="priority-tag monitor">Monitor</span></div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-num">4</div>
+            <div class="priority-text">Subscription conversion on Website is below target — test bundle offer <span class="priority-tag monitor">Monitor</span></div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-num">5</div>
+            <div class="priority-text">Listing health check across Walmart catalog — 3 ASINs flagged for image quality <span class="priority-tag good">In Progress</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ins-overview -->
+
+    <!-- ── PRODUCTS TAB ── -->
+    <div class="channel-page" id="ins-products">
+
+      <!-- Product type sub-tabs -->
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('ins-products','pt-activators',this)">Activators</button>
+        <button class="sub-tab" onclick="showSubTab('ins-products','pt-shampoos',this)">Shampoos</button>
+        <button class="sub-tab" onclick="showSubTab('ins-products','pt-conditioners',this)">Conditioners</button>
+        <button class="sub-tab" onclick="showSubTab('ins-products','pt-masks',this)">Hair Masks</button>
+        <button class="sub-tab" onclick="showSubTab('ins-products','pt-dryshampoo',this)">Dry Shampoo</button>
+      </div>
+
+      <!-- ── ACTIVATORS ── -->
+      <div class="sub-page active" id="pt-activators">
+        <div class="sub-tabs" style="margin-bottom:18px;">
+          <button class="sub-tab active" onclick="showSubTab('pt-activators','act-reverse-product',this)">Reverse (EVO0001)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-activators','act-promote-product',this)">Promote (EVO0005)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-activators','act-prevent-product',this)">Prevent (EVO0009)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-activators','act-keywords',this)">Keywords</button>
+          <button class="sub-tab" onclick="showSubTab('pt-activators','act-competitors',this)">Competitors</button>
+        </div>
+
+        
+        <div class="sub-page active" id="act-reverse-product">
+          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
+          
+          <div class="scorecard-header">Amazon — April 2026</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#1,220</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">122</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">28</div><div class="sc-badge good">$1,399.72</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">22.95%</div><div class="sc-badge good"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
+          
+          <div class="scorecard-header">Walmart</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
+          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
+          <div class="formula-grid">
+            <div class="card">
+              <div class="card-title">Product &amp; Formula — Reverse Activator</div>
+              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0001 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B08BJBM77V</span></div></div>
+              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
+              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Hydrolyzed Keratin, Hydrolyzed Wheat Protein, Rosemary Leaf Oil, Vitamin E, Vitamin C</div></div>
+              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, SALICYLIC ACID, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, HYDROLYZED WHEAT PROTEIN, HYDROLYZED KERATIN, PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></div>
+              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily to scalp on wet or dry hair. Use self-dosing pipette — 1 tube front-to-back, 1 tube side-to-side. Targets thinning hair, postpartum shedding, age-related hair loss.</div></div>
+              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss"</div></div>
+              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Competitive Price Context</div>
+              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Reverse Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">IGK Scalp Treatment (2.1 fl oz)</div><div class="comp-price">$45.00</div><div class="comp-diff lower">-10%</div></div><div class="comp-row"><div class="comp-name">Philip Kingsley Scalp Foam (4oz)</div><div class="comp-price">$39.00</div><div class="comp-diff lower">-22%</div></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="sub-page active" id="act-promote-product">
+          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
+          
+          <div class="scorecard-header">Amazon — April 2026</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#1,220</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">1,125</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">36</div><div class="sc-badge warn">$1,799.14</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">3.20%</div><div class="sc-badge warn"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
+          
+          <div class="scorecard-header">Walmart</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
+          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
+          <div class="formula-grid">
+            <div class="card">
+              <div class="card-title">Product &amp; Formula — Promote Activator</div>
+              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0005 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B07SG6S4VV</span></div></div>
+              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
+              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Baobab Oil (Adansonia Digitata), Rosemary Leaf Oil, Green Tea Extract (Camellia Sinensis), Flaxseed Oil (Linum Usitatissimum), Pro-Vitamin B5 (Panthenyl Ethyl Ether)</div></div>
+              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">ALCOHOL, ASCORBYL PALMITATE, BUTYLENE GLYCOL, CAMELLIA SINENSIS LEAF EXTRACT, CANANGA ODORATA FLOWER OIL, CITRIC ACID, FRAGRANCE, GARCINIA MANGOSTANA PEEL EXTRACT, GLYCYRRHETINIC ACID, LAVANDULA ANGUSTIFOLIA OIL, LINUM USITATISSIMUM SEED OIL, LYCIUM BARBARUM FRUIT EXTRACT, PANTHENYL ETHYL ETHER, PUNICA GRANATUM EXTRACT, ROSA MULTIFLORA FRUIT EXTRACT, ROSMARINUS OFFICINALIS LEAF OIL, SANGUISORBA OFFICINALIS ROOT EXTRACT, SODIUM CITRATE, SWERTIA CHIRATA EXTRACT, TOCOPHERYL ACETATE, WATER (AQUA)</div></div>
+              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily to scalp. Use self-dosing pipette for precise application. Targets breakage prevention, promotes longer stronger hair. 1 bottle = 6–8 weeks.</div></div>
+              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" · 2024 People.com Lengthening Award</div></div>
+              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Competitive Price Context</div>
+              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Promote Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">IGK Scalp Treatment (2.1 fl oz)</div><div class="comp-price">$45.00</div><div class="comp-diff lower">-10%</div></div><div class="comp-row"><div class="comp-name">HairMax Acceler8 (4 fl oz)</div><div class="comp-price">$44.79</div><div class="comp-diff lower">-10%</div></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="sub-page active" id="act-prevent-product">
+          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
+          
+          <div class="scorecard-header">Amazon — April 2026</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#2,496</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">15</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">0</div><div class="sc-badge danger">$0.00</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">0.00%</div><div class="sc-badge danger"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
+          
+          <div class="scorecard-header">Walmart</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
+          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
+          <div class="formula-grid">
+            <div class="card">
+              <div class="card-title">Product &amp; Formula — Prevent Activator</div>
+              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0009 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B07SJ8K9HS</span></div></div>
+              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
+              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Rosemary Leaf Oil (Rosmarinus Officinalis), Green Tea Extract (Camellia Sinensis), Mangosteen Extract (Garcinia Mangostana), Flaxseed Oil, Goji Berry Extract (Lycium Barbarum), Pomegranate Extract, Ylang Ylang Oil, Lavender Oil</div></div>
+              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, LYCIUM BARBARUM FRUIT EXTRACT, GARCINIA MANGOSTANA PEEL EXTRACT, LINUM USITATISSIMIM (FLAXSEED OIL), PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></div>
+              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily. For sensitive, dry, or oily scalps. Ideal for early signs of thinning or family history of hair loss. Use self-dosing pipette, 1 bottle = 6–8 weeks.</div></div>
+              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" (2018)</div></div>
+              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Competitive Price Context</div>
+              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Prevent Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">Philip Kingsley Scalp Foam (4oz)</div><div class="comp-price">$39.00</div><div class="comp-diff lower">-22%</div></div><div class="comp-row"><div class="comp-name">Stripes Beauty Scalp Serum (1.7oz)</div><div class="comp-price">$50.00</div><div class="comp-diff same">+0%</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Keywords -->
+        <div class="sub-page" id="act-keywords">
+          <div style="background:rgba(0,31,96,.04);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--muted);">
+            ℹ All 59 keywords are tracked on ASIN B08BJBM77V (Reverse Activator). Organic rank shows only "evolis" (brand term, #4) has meaningful position — all non-brand terms are &gt;306. Brand is almost entirely dependent on PPC for non-brand traffic.
+          </div>
+          <div class="sec-lbl" style="margin-top:0;">Tier 1 — Core High-Intent (Primary PPC + title/bullets)</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Where in Listing</th><th>Action</th></tr></thead>
+              <tbody><tr><td>hair growth</td><td>131,492</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">PPC broad — competitive</td></tr><tr><td>rosemary oil for hair growth</td><td>131,425</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>47.6%</td><td style="color:var(--muted);font-size:11px;">Title, Backend</td><td style="font-size:11px;">✅ PPC exact match</td></tr><tr><td>hair growth serum</td><td>71,798</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">✅ Primary target</td></tr><tr><td>keratin hair treatment</td><td>43,011</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>27.0%</td><td style="color:var(--muted);font-size:11px;">Title, Bullet 3</td><td style="font-size:11px;">✅ PPC support</td></tr><tr><td>hair serum</td><td>34,835</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>20.1%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">PPC + backend</td></tr><tr><td>hair growth accelerator</td><td>20,925</td><td><span class="rank-pill rank-none">—</span></td><td>51.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">✅ LOW comp, HIGH ABA — priority</td></tr><tr><td>ordinary hair growth serum</td><td>29,521</td><td><span class="rank-pill rank-none">—</span></td><td>82.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">✅ Competitor halo, high ABA</td></tr><tr><td>scalp serum</td><td>14,567</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.5%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">✅ PPC + title (Prevent)</td></tr><tr><td>scalp oil</td><td>15,715</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>29.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td style="font-size:11px;">✅ Strong buying signal</td></tr><tr><td>scalp treatment</td><td>10,266</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>22.9%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">✅ Backend + PPC</td></tr><tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 1</td><td style="font-size:11px;">✅ 661 comps — high intent</td></tr><tr><td>activator</td><td>7,940</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>63.7%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">✅ 45 title density — winnable</td></tr><tr><td>hair thickening products for women</td><td>9,036</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.1%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td style="font-size:11px;">PPC secondary</td></tr><tr><td>hair loss treatments for women</td><td>9,031</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>11.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td style="font-size:11px;">PPC test</td></tr><tr><td>scalp serum for hair growth</td><td>2,909</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.0%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">Long-tail, low comp</td></tr><tr><td>hair serum for hair growth</td><td>8,012</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>17.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">Backend + PPC</td></tr><tr><td>hair loss serum</td><td>1,002</td><td><span class="rank-pill rank-none">—</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">Direct product match</td></tr><tr><td>hair oils for hair growth</td><td>15,755</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.7%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">Adjacent format</td></tr><tr><td>hair growth products</td><td>5,787</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>25.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td style="font-size:11px;">Category browse</td></tr><tr><td>scalp massager hair growth</td><td>23,650</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>15.7%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">Backend + PPC</td></tr></tbody>
+            </table>
+          </div>
+          <div class="sec-lbl">Tier 2 — Opportunity (High ABA, winnable, bullets 3–5 + backend)</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Notes</th></tr></thead>
+              <tbody><tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td style="font-size:11px;color:var(--muted);">661 comps — priority PPC exact match</td></tr><tr><td>dry scalp treatment</td><td>9,034</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>31.7%</td><td style="font-size:11px;color:var(--muted);">Prevent Activator exact match</td></tr><tr><td>thinning hair treatment</td><td>465</td><td><span class="rank-pill rank-none">—</span></td><td>50.0%</td><td style="font-size:11px;color:var(--muted);">Highest conv share in set</td></tr><tr><td>hair growth treatment</td><td>903</td><td><span class="rank-pill rank-none">—</span></td><td>44.4%</td><td style="font-size:11px;color:var(--muted);">High ABA — PPC test</td></tr><tr><td>hair growth oil spray</td><td>607</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>28.6%</td><td style="font-size:11px;color:var(--muted);">Very high click share, 2K comps</td></tr><tr><td>hair volumizer for fine hair</td><td>639</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>33.3%</td><td style="font-size:11px;color:var(--muted);">Promote angle — fine hair</td></tr><tr><td>hair treatment for dry damaged hair</td><td>2,474</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>31.2%</td><td style="font-size:11px;color:var(--muted);">Prevent angle — dry/damaged</td></tr><tr><td>oil for hair growth</td><td>2,568</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>20.3%</td><td style="font-size:11px;color:var(--muted);">445 competing — winnable</td></tr><tr><td>hair growth oil for women</td><td>1,934</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>22.9%</td><td style="font-size:11px;color:var(--muted);">9K comp, 0 title density</td></tr><tr><td>hair regrowth for men</td><td>2,568</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>17.4%</td><td style="font-size:11px;color:var(--muted);">Male audience expansion</td></tr></tbody>
+            </table>
+          </div>
+          <div class="sec-lbl">Tier 3 — Reach / Long-Term (Track only — aspirational organic goals)</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Conv%</th><th>Strategic Notes</th></tr></thead>
+              <tbody><tr><td>batana oil for hair growth</td><td>70,565</td><td>32.5%</td><td style="font-size:11px;color:var(--muted);">Trending ingredient — aspirational, >1K comps</td></tr><tr><td>hair skin and nails vitamins</td><td>96,816</td><td>31.5%</td><td style="font-size:11px;color:var(--muted);">Cross-category supplement buyers — backend only</td></tr><tr><td>hair growth supplements</td><td>45,917</td><td>16.8%</td><td style="font-size:11px;color:var(--muted);">Supplement category — different purchase intent</td></tr><tr><td>lilyeve hair growth serum</td><td>26,662</td><td>75.0%</td><td style="font-size:11px;color:var(--muted);">Dominant competitor brand halo — very high conv</td></tr><tr><td>spartan root activator shampoo</td><td>29,536</td><td>61.6%</td><td style="font-size:11px;color:var(--muted);">Competitor with "activator" in name — halo</td></tr><tr><td>wild growth hair oil</td><td>33,264</td><td>70.3%</td><td style="font-size:11px;color:var(--muted);">Competitor brand halo — very high conv, 997 comps</td></tr><tr><td>hair growth shampoo</td><td>27,361</td><td>15.0%</td><td style="font-size:11px;color:var(--muted);">Wrong format but high volume — brand awareness PPC</td></tr><tr><td>serum</td><td>34,820</td><td>19.8%</td><td style="font-size:11px;color:var(--muted);">40K competing ASINs — extremely broad index value</td></tr><tr><td>hair conditioner</td><td>33,224</td><td>24.3%</td><td style="font-size:11px;color:var(--muted);">Wrong format but brand discovery opportunity</td></tr><tr><td>hair growth</td><td>131,492</td><td>24.0%</td><td style="font-size:11px;color:var(--muted);">Long-term organic rank goal — must be in title</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Competitors -->
+        <div class="sub-page" id="act-competitors">
+          <div class="sec-lbl" style="margin-top:0;">Current Competitors — Data: Helium 10</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+            </table>
+          </div>
+          <div class="sec-lbl">Category Leaders</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
+              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+            </table>
+          </div>
+          <div style="background:rgba(0,31,96,.04);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;margin-top:16px;font-size:12px;color:var(--navy);line-height:1.6;">
+            <strong>Key differentiation:</strong> No direct competitor targets the hair follicle's stop-signal (FGF5). Every other product stimulates, nourishes, or supplements — évolis is the only brand that targets the biological trigger of the shedding phase itself. In buyer language: "most products feed your hair. We stop it from falling."
+          </div>
+        </div>
+      </div><!-- /pt-activators -->
+
+      <!-- ── SHAMPOOS ── -->
+      <div class="sub-page" id="pt-shampoos">
+        <div class="sub-tabs" style="margin-bottom:18px;">
+          <button class="sub-tab active" onclick="showSubTab('pt-shampoos','sh-reverse',this)">Reverse (EVO0002)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-shampoos','sh-promote',this)">Promote (EVO0006)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-shampoos','sh-prevent',this)">Prevent (EVO0010)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-shampoos','sh-reverse-ts',this)">Reverse Travel (EVO0014)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-shampoos','sh-promote-ts',this)">Promote Travel (EVO0016)</button>
+        </div>
+        <div class="sub-page active" id="sh-reverse">
+          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
+          
+          <div class="scorecard-header">Amazon</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.4 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">—</div></div></div>
+          <div class="formula-grid">
+            <div class="card">
+              <div class="card-title">Product &amp; Formula — Reverse Thickening Shampoo</div>
+              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0002 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B07S8QJSNP</span></div></div>
+              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">— &nbsp;·&nbsp; 8.5 fl oz</div></div>
+              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata, Rosa Multiflora (FGF5 inhibitors), Keratin, Hydrolyzed Wheat Protein, Rosemary Oil</div></div>
+              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Daily cleansing shampoo. Massage into wet hair, lather from scalp to ends, rinse. For best results use with Reverse Conditioner and Reverse Activator.</div></div>
+              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">Clinically tested · 95% noticed increased thickness in 90 days · 97% reduced hair loss by 120 days</div></div>
+              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Competitive Price Context</div>
+              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Reverse Thickening Shampoo</strong></div><div class="comp-price">—</div><div class="comp-diff same">Our price</div></div>
+              <div class="comp-row"><div class="comp-name">Nioxin System 1 Shampoo (10oz)</div><div class="comp-price">$22.00</div><div class="comp-diff lower">Lower</div></div>
+              <div class="comp-row"><div class="comp-name">Pura D'Or Anti-Thinning Shampoo (16oz)</div><div class="comp-price">$27.99</div><div class="comp-diff lower">Lower</div></div>
+              <div class="comp-row"><div class="comp-name">OGX Thick & Full Biotin (13oz)</div><div class="comp-price">$9.97</div><div class="comp-diff lower">Lower</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="sub-page" id="sh-promote"><div class="placeholder-block"><div class="ph-icon">🍃</div><div class="ph-title">Promote Shampoo — EVO0006</div><div class="ph-sub">ASIN B07S9SZ56F · 8.5 fl oz · 2024 People.com Lengthening Award<br>Hero actives: Baobab, Keratin, FGF5 blockers, Rosemary Oil · Sulfate-free, Color-safe</div></div></div>
+        <div class="sub-page" id="sh-prevent"><div class="placeholder-block"><div class="ph-icon">🌿</div><div class="ph-title">Prevent Anti-Aging Shampoo — EVO0010</div><div class="ph-sub">ASIN B07S7RLWVK · 8.5 fl oz<br>Hero actives: Mangosteen, Green Tea, Rosemary Oil, FGF5 blockers · For sensitive/dry scalps</div></div></div>
+        <div class="sub-page" id="sh-reverse-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Reverse Thickening Shampoo — Travel Size (EVO0014)</div><div class="ph-sub">ASIN B0C634RF2M · 2 fl oz · Same formula as full-size Reverse Shampoo</div></div></div>
+        <div class="sub-page" id="sh-promote-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Promote Nourishing Shampoo — Travel Size (EVO0016)</div><div class="ph-sub">ASIN B0C62SD751 · 2 fl oz · 2024 People.com Lengthening Award · Same formula as full-size Promote Shampoo</div></div></div>
+      </div><!-- /pt-shampoos -->
+
+      <!-- ── CONDITIONERS ── -->
+      <div class="sub-page" id="pt-conditioners">
+        <div class="sub-tabs" style="margin-bottom:18px;">
+          <button class="sub-tab active" onclick="showSubTab('pt-conditioners','cond-reverse',this)">Reverse (EVO0003)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-conditioners','cond-promote',this)">Promote (EVO0007)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-conditioners','cond-prevent',this)">Prevent (EVO0011)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-conditioners','cond-reverse-ts',this)">Reverse Travel (EVO0015)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-conditioners','cond-promote-ts',this)">Promote Travel (EVO0017)</button>
+        </div>
+        <div class="sub-page active" id="cond-reverse"><div class="placeholder-block"><div class="ph-icon">💚</div><div class="ph-title">Reverse Thickening Conditioner — EVO0003</div><div class="ph-sub">ASIN B07S7RLBVV · 8.5 fl oz<br>Hero actives: Keratin, Hydrolyzed Wheat Protein, FGF5 blockers, Rosemary Oil · Sulfate-free, Color-safe</div></div></div>
+        <div class="sub-page" id="cond-promote"><div class="placeholder-block"><div class="ph-icon">💚</div><div class="ph-title">Promote Nourishing Conditioner — EVO0007</div><div class="ph-sub">ASIN B07SBWSJXP · 8.5 fl oz<br>Hero actives: Baobab, Keratin, Wheat Protein, FGF5 blockers · For longer stronger hair</div></div></div>
+        <div class="sub-page" id="cond-prevent"><div class="placeholder-block"><div class="ph-icon">💚</div><div class="ph-title">Prevent Anti-Aging Conditioner — EVO0011</div><div class="ph-sub">ASIN B07SBWS4BS · 8.5 fl oz<br>Hero actives: Mangosteen, Green Tea, Rosemary Oil, FGF5 blockers, Swertia Chirata · For sensitive scalps</div></div></div>
+        <div class="sub-page" id="cond-reverse-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Reverse Thickening Conditioner — Travel Size (EVO0015)</div><div class="ph-sub">ASIN B0C633C5MS · 2 fl oz · Same formula as full-size Reverse Conditioner</div></div></div>
+        <div class="sub-page" id="cond-promote-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Promote Nourishing Conditioner — Travel Size (EVO0017)</div><div class="ph-sub">ASIN B0C63177RS · 2 fl oz · 2024 People.com Lengthening Award · Same formula as full-size Promote Conditioner</div></div></div>
+      </div><!-- /pt-conditioners -->
+
+      <!-- ── HAIR MASKS ── -->
+      <div class="sub-page" id="pt-masks">
+        <div class="sub-tabs" style="margin-bottom:18px;">
+          <button class="sub-tab active" onclick="showSubTab('pt-masks','mask-reverse',this)">Reverse (EVO0004)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-masks','mask-promote',this)">Promote (EVO0008)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-masks','mask-promote-ts',this)">Promote Travel (EVO0018)</button>
+          <button class="sub-tab" onclick="showSubTab('pt-masks','mask-reverse-ts',this)">Reverse Travel (EVO0019)</button>
+        </div>
+        <div class="sub-page active" id="mask-reverse"><div class="placeholder-block"><div class="ph-icon">🫙</div><div class="ph-title">Reverse Repairing Hair Mask — EVO0004</div><div class="ph-sub">ASIN B07S7RLM1R · 8 fl oz<br>Hero actives: Keratin, Collagen, FGF5 blockers (Sanguisorba, Rosa Multiflora, Swertia Chirata) · Leave 10 min, can leave overnight</div></div></div>
+        <div class="sub-page" id="mask-promote"><div class="placeholder-block"><div class="ph-icon">🫙</div><div class="ph-title">Promote Nourishing Hair Mask — EVO0008</div><div class="ph-sub">ASIN B07S7RKMZC · 8.5 fl oz<br>Hero actives: Baobab (nature's moisture miracle), FGF5 blockers, Keratin · Super-charged hydration formula</div></div></div>
+        <div class="sub-page" id="mask-promote-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Promote Nourishing Hair Mask — Travel Size (EVO0018)</div><div class="ph-sub">ASIN B0C62QRGVX · 1 fl oz · Same formula as full-size Promote Mask</div></div></div>
+        <div class="sub-page" id="mask-reverse-ts"><div class="placeholder-block"><div class="ph-icon">✈️</div><div class="ph-title">Reverse Repairing Hair Mask — Travel Size (EVO0019)</div><div class="ph-sub">ASIN B0C63BJKBF · 1 fl oz · Same formula as full-size Reverse Mask</div></div></div>
+      </div><!-- /pt-masks -->
+
+      <!-- ── DRY SHAMPOO ── -->
+      <div class="sub-page" id="pt-dryshampoo">
+        <div class="sec-lbl" style="margin-top:0;">Scorecard</div>
+        
+          <div class="scorecard-header">Amazon</div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">—</div><div class="sc-sub">—</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">—</div></div></div>
+        <div class="formula-grid">
+          <div class="card">
+            <div class="card-title">Product &amp; Formula — Style + Treat Dry Shampoo</div>
+            <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0012 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B08BGCRKTV</span></div></div>
+            <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">— &nbsp;·&nbsp; 5.2 oz spray</div></div>
+            <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Rosemary Extract, Green Tea Extract, Mangosteen Extract (Garcinia Mangostana) — FGF5-inhibiting botanicals + antioxidant complex</div></div>
+            <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Multi-use styling spray. Instantly absorbs excess oil, delivers root lift, touchable texture, and weightless volume. No chalky residue on dark hair.</div></div>
+            <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">Formulated by hair biologists · Recommended by stylists</div></div>
+            <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Non-Comedogenic</span><span class="free-from-tag">Residue-Free</span><span class="free-from-tag">Cruelty-Free</span></div></div>
+            <div class="formula-row"><div class="formula-lbl">Notes</div><div class="formula-val">Color-safe · Keratin-treatment safe · Safe for thinning/sensitive scalps · Works as dry shampoo, texture spray, and volume powder in one</div></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Competitive Price Context</div>
+            <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Style + Treat Dry Shampoo</strong></div><div class="comp-price">—</div><div class="comp-diff same">Our price</div></div>
+            <div class="comp-row"><div class="comp-name">Batiste Original Dry Shampoo (6.73oz)</div><div class="comp-price">$8.97</div><div class="comp-diff lower">Lower</div></div>
+            <div class="comp-row"><div class="comp-name">Living Proof Perfect Hair Day (5oz)</div><div class="comp-price">$27.00</div><div class="comp-diff lower">Lower</div></div>
+            <div class="comp-row"><div class="comp-name">Moroccanoil Dry Shampoo (5.4oz)</div><div class="comp-price">$26.00</div><div class="comp-diff lower">Lower</div></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);">Note: Dry shampoo category is dominated by mass-market brands. évolis' FGF5-supporting botanicals differentiate from pure styling plays — positioning should emphasize scalp health + styling dual benefit.</div>
+          </div>
+        </div>
+      </div><!-- /pt-dryshampoo -->
+
+    </div><!-- /ins-products -->
+
+    <div class="channel-page" id="ins-reviews">
+
+      <div class="two-col" style="margin-bottom:20px;">
+        <!-- Star distribution -->
+        <div class="card">
+          <div class="card-title">Star Rating Distribution — Activators</div>
+          <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">4.1 <span style="font-size:16px;color:var(--muted);font-weight:400;">/ 5</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">63 total reviews · Reverse, Promote &amp; Prevent Activator</div>
+          <div class="star-bar-row"><div class="star-bar-lbl">5 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:57%;"></div></div><div class="star-bar-count">36</div></div>
+          <div class="star-bar-row"><div class="star-bar-lbl">4 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:24%;background:#a8d9c8;"></div></div><div class="star-bar-count">15</div></div>
+          <div class="star-bar-row"><div class="star-bar-lbl">3 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:11%;background:var(--warn);"></div></div><div class="star-bar-count">7</div></div>
+          <div class="star-bar-row"><div class="star-bar-lbl">2 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:3%;background:#e8a080;"></div></div><div class="star-bar-count">2</div></div>
+          <div class="star-bar-row"><div class="star-bar-lbl">1 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:5%;background:var(--danger);"></div></div><div class="star-bar-count">3</div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--border2);">⚠ 1-star reviews dominated by bottle/pipette opening difficulty — a fixable copywriting issue, not product failure.</div>
+        </div>
+
+        <!-- VOC Themes -->
+        <div class="card">
+          <div class="card-title">VOC Themes — Activators (63 reviews)</div>
+          <div class="sec-lbl" style="margin-top:0;">Positive</div>
+          <div class="voc-chips">
+            <span class="voc-chip pos">Noticeable new baby hairs</span>
+            <span class="voc-chip pos">Less hair in shower drain</span>
+            <span class="voc-chip pos">Hair feels thicker over time</span>
+            <span class="voc-chip pos">Light &amp; non-greasy formula</span>
+            <span class="voc-chip pos">Precise pipette applicator</span>
+            <span class="voc-chip pos">Pleasant light scent</span>
+            <span class="voc-chip pos">Hair softer and shinier</span>
+            <span class="voc-chip pos">Works for postpartum shedding</span>
+            <span class="voc-chip pos">Scalp condition improved</span>
+          </div>
+          <div class="sec-lbl">Objections + Gaps</div>
+          <div class="voc-chips">
+            <span class="voc-chip neg">Price too high for size</span>
+            <span class="voc-chip neg">Bottle hard to open (multiple reviews)</span>
+            <span class="voc-chip neg">Results slower than expected</span>
+            <span class="voc-chip gap">Wants larger size option</span>
+            <span class="voc-chip gap">No money-back guarantee mentioned</span>
+            <span class="voc-chip gap">Wants comparison vs Minoxidil</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.7;border-top:1px solid var(--border2);padding-top:10px;">
+            <strong style="color:var(--navy);">Mirror language for bullets:</strong> "baby hairs popping up within weeks" · "less hair on my brush" · "worth it if it gets my hair back" · "finally seeing fill-in along my hairline" · "lightest serum I've ever used — dries instantly"
+          </div>
+        </div>
+      </div>
+
+      <!-- Reviewer filter tabs -->
+      <div class="sub-tabs" style="margin-bottom:16px;">
+        <button class="sub-tab active" onclick="showSubTab('ins-reviews','rev-reverse',this)">Reverse Activator</button>
+        <button class="sub-tab" onclick="showSubTab('ins-reviews','rev-promote',this)">Promote Activator</button>
+        <button class="sub-tab" onclick="showSubTab('ins-reviews','rev-prevent',this)">Prevent Activator</button>
+      </div>
+
+      <div class="sub-page active" id="rev-reverse">
+        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Activator (B08BJBM77V)</div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">E. Blackburn</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"It Does What It Says"</div><div class="rev-body">I have "aging and thinning" hair. I am 65. I have only been using this product for about 6 weeks and I am really seeing fine hairs starting to come in along my hair line. I'm less than thrilled with the price but it is worth it if I get my hair back.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Mariah</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Patience is a virtue"</div><div class="rev-body">I wish it worked overnight but it does work. My hair has filled in in spots that it didn't have hair before and that's a good thing!</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Robyn F.</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"It works!"</div><div class="rev-body">This product does help grow hair! My husband mainly used it for thinning hair and it helped within 1–2 weeks. Well worth the money!</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">karen arondoski</span><span class="rev-stars-1">★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Bad product — no directions to open bottle"</div><div class="rev-body">How do you open this? No directions came with it. For $65 I don't want to damage it since it's not returnable. This is a recurring objection across multiple reviews — fixable by adding opening instructions to Bullet 5 or the product description.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">cbddallas</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Yes it's hard to open the first time!"</div><div class="rev-body">Turn the top counter-clockwise slightly until the center button pops up. Then keep turning counter-clockwise — it WILL open. Will update on results after I've used it for a while!</div></div>
+        <div class="insight-bar" style="margin-top:8px;"><strong>Action:</strong><span class="insight-text"> Add one line to Bullet 5 across all three activators: "Note: the precision pipette requires a firm first press to activate the valve — this ensures exact dosing every application." This single change would prevent a significant share of 1-star reviews.</span></div>
+      </div>
+
+      <div class="sub-page" id="rev-promote">
+        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Activator (B07SG6S4VV)</div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">hellionwheels</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"My hair is much thicker after regular use!"</div><div class="rev-body">My sister and I have been using this product for almost a year. From our experience, you'll start to notice small hairs growing at the hairline within a few weeks. At this point, both of our hair is significantly thicker! We have had several bottles with the tops stuck (unable to open) — another reviewer suggested holding the button on the top down while screwing off the cap.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">JTHB</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"This actually might work!!"</div><div class="rev-body">I am 15 months postpartum and my hair continues to fall out like crazy!! The baby hairs I have growing all over my head is NUTS! I currently look so silly with my hair in a pony because I have baby hairs popping up like a mad scientist! Its only been a few weeks but I can definitely see an increase in baby hairs.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Adela gallagher</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Amazing product! Highly recommend buying!"</div><div class="rev-body">This product was great, has a nice light scent, and is light on hair — not gooey or sticky. Would highly recommend, 5 out of 5 stars!</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Twinpossible</span><span class="rev-stars-1">★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Didn't do a darned thing for my hair loss!"</div><div class="rev-body">I haven't seen any results at all. The bottle is almost empty, and I would not order the product again at this point. Maybe it takes more time? I'd do most anything to get my hair back. I hope my review is helpful to others. Maybe other types of hair loss would be helped by this.</div></div>
+      </div>
+
+      <div class="sub-page" id="rev-prevent">
+        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Prevent Activator (B07SJ8K9HS)</div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">AD</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Very effective and high quality"</div><div class="rev-body">This activator hair treatment is for sure one of the most effective hair treatments that I have ever tried. It comes in a very cute packaging and contains 1.7 oz of product which is enough for 6–8 weeks of use. It's very effective and high quality — super lightweight and doesn't make your scalp or hair greasy or oily.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Jamie</span><span class="rev-stars-4">★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Seemed to work on my hairline"</div><div class="rev-body">After using a bottle of évolis PREVENT Activator on my hair I noticed my hairline in the front was a little fuller. Overall it was easy to apply and didn't feel greasy or oily.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Amazon_Consumer</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Helps"</div><div class="rev-body">I use a few of these droplets and rub it into my scalp really well. I think the stimulation to the blood flow helps. It's too early to see a main difference in thickness — hair grows in cycles. I hope this helps make your decision easier.</div></div>
+        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Lashello</span><span class="rev-stars-3">★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"So Expensive Not So Much Product!"</div><div class="rev-body">For $65 I thought after a month of use I would see a major difference, but I didn't notice any difference at all. I did make my scalp feel clean and my hair feel silky but I did not see any new growth. The dispenser was very hard to open and I would not repurchase.</div></div>
+      </div>
+
+    </div><!-- /ins-reviews -->
+
+    <div class="channel-page" id="ins-log">
+      <div class="page-hd" style="margin-bottom:16px;">
+        <div><div style="font-size:14px;font-weight:600;color:var(--navy);">Insights Log</div><div class="page-sub" style="margin-top:2px;">Track all approved and staged insights across the dashboard</div></div>
+        <button class="btn-edit" style="padding:7px 14px;font-size:11.5px;" onclick="alert('Opens new insight entry form')">+ New Insight</button>
+      </div>
+
+      <div style="background:rgba(200,125,47,0.08);border:1px solid rgba(200,125,47,0.20);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--warn);">
+        <strong>Staging Review Required:</strong> 1 insight is pending leadership approval before going live to the partner dashboard.
+      </div>
+
+      <div class="log-entry">
+        <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Amazon</span><span class="log-status-staging">◎ In Staging</span></div>
+        <div class="log-text">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</div>
+        <div class="log-actions"><button class="btn-edit">✏️ Edit</button><button class="btn-approve" onclick="openApproveModal('log-amazon')">Approve → Live</button></div>
+      </div>
+      <div class="log-entry">
+        <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Overview</span><span class="log-status-live">● Live</span></div>
+        <div class="log-text">Amazon remains dominant at 68% of revenue but declined MOM. Website share grew to 22% on subscription momentum. Walmart softened as expected post-promo period.</div>
+        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
+      </div>
+      <div class="log-entry">
+        <div class="log-entry-hd"><span class="log-date">2026-04-30</span><span class="log-page">Overview</span><span class="log-status-live">● Live</span></div>
+        <div class="log-text">April saw strong Website growth (+35% units) offset by Amazon softness. Subscription attach rate reached 18% of Website orders — a new high.</div>
+        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
+      </div>
+    </div><!-- /ins-log -->
+
   </div>
 
   <!-- ══ LISTING AUDIT (internal only) ══ -->
   <div class="page" id="page-listing">
+
     <div class="page-hd">
-      <div><div class="page-title">Listing Audit</div><div class="page-sub">Amazon listing compliance, title, bullets, images</div></div>
+      <div><div class="page-title">Listing Audit</div><div class="page-sub">Live listing copy · Title · Item Highlights · Bullets 1–5 · Description · Backend Keywords</div></div>
     </div>
-    <div class="placeholder-block">
-      <div class="ph-icon">🔍</div>
-      <div class="ph-title">Listing Audit</div>
-      <div class="ph-sub">Will be populated with MiGuard-style listing audit data.<br>Includes: Title compliance · Bullet analysis · Image audit · Keyword gap · A+ content review</div>
+
+    <!-- Product type tabs -->
+    <div class="channel-tabs">
+      <button class="ch-tab active" onclick="showChannel('listing','la-activators',this)">Activators</button>
+      <button class="ch-tab" onclick="showChannel('listing','la-shampoos',this)">Shampoos</button>
+      <button class="ch-tab" onclick="showChannel('listing','la-conditioners',this)">Conditioners</button>
+      <button class="ch-tab" onclick="showChannel('listing','la-masks',this)">Hair Masks</button>
+      <button class="ch-tab" onclick="showChannel('listing','la-dryshampoo',this)">Dry Shampoo</button>
     </div>
+
+    <!-- ── ACTIVATORS ── -->
+    <div class="channel-page active" id="la-activators">
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('la-activators','la-evo0001',this)">Reverse (EVO0001)</button>
+        <button class="sub-tab" onclick="showSubTab('la-activators','la-evo0005',this)">Promote (EVO0005)</button>
+        <button class="sub-tab" onclick="showSubTab('la-activators','la-evo0009',this)">Prevent (EVO0009)</button>
+      </div>
+
+      <!-- EVO0001 Reverse Activator -->
+      <div class="sub-page active" id="la-evo0001">
+        <div class="listing-status-bar">
+          <span class="icon">✅</span>
+          <span><strong>EVO0001 · B08BJBM77V · Updated 5/15/2026.</strong> Current live listing with keyword coverage and priority action notes. April data: 122 sessions, 28 units, 22.95% conversion — strong conversion, low traffic.</span>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">166 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">évolis Reverse Activator — Hair Growth Serum for Thinning Hair & Postpartum Shedding — Targets the Stop-Growing Signal in Your Follicle, Clinically Tested (1.7 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Within 75-char July 2026 limit. Strong headline. "Clinically Tested" and product benefit both present. <span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">postpartum shedding</span><span class="kw-coverage-tag hit">activator</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 2 — Item Highlights
+            <span class="char-pill ok">140 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">Clinically tested formula that reverses thinning and supports visible hair growth using FGF5-blocking technology. Clean, scalp-safe formula.</div>
+          <div class="listing-note"><span class="icon">💡</span>Concise and benefit-led. Recommend adding "postpartum" as a secondary callout for high-intent buyer. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 1
+            
+            
+          </div>
+          <div class="listing-block ok">CLINICALLY TESTED HAIR GROWTH SERUM FOR THINNING HAIR: In 3 independent studies, 95% of users reported visibly thicker hair within 90 days and 97% noticed significantly reduced shedding by 120 days. Reverse Activator targets thinning hair, postpartum hair loss, and age-related shedding by addressing the root biological cause — not just the symptom. Developed by hair biologists.</div>
+          <div class="listing-note"><span class="icon">💡</span>Excellent — clinical stats and target audience both present. FGF5 mechanism clearly introduced. <span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">postpartum hair loss</span><span class="kw-coverage-tag hit">95% in 90 days</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 4 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">THE SCIENCE BEHIND THE RESULTS — YOUR HAIR HAS A "STOP GROWING" SIGNAL: Every hair follicle receives a biological signal — driven by a protein called FGF5 — that tells it to stop growing and begin shedding. Most hair loss products ignore this. Reverse Activator's proprietary blend of Sanguisorba Officinalis, Swertia Chirata, and Rosa Multiflora (Japanese Tea Rose) blocks that signal — keeping each follicle in the active growth phase longer. The result is hair that grows further before it falls.</div>
+          <div class="listing-note"><span class="icon">💡</span>Science story told in plain language. FGF5 mechanism explained — differentiates from all competitors. <span class="kw-coverage-tag hit">FGF5 blocker</span><span class="kw-coverage-tag hit">Sanguisorba Officinalis</span><span class="kw-coverage-tag hit">Rosa Multiflora</span><span class="kw-coverage-tag hit">Swertia Chirata</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block ok">KERATIN + WHEAT PROTEIN SCALP SERUM FOR HAIR GROWTH: Formulated with keratin, hydrolyzed wheat protein, and a full antioxidant complex, this lightweight, non-greasy serum strengthens each strand from root to tip while the growth-phase-extending botanicals work at the follicle level. Hair serum for hair growth and a thinning hair treatment in one formula. Apply twice daily with the precision self-dosing pipette — one bottle lasts 6–8 weeks.</div>
+          <div class="listing-note"><span class="icon">💡</span>Keratin and wheat protein keywords present. "Scalp serum for hair growth" and "hair serum" both addressed. <span class="kw-coverage-tag hit">keratin hair treatment</span><span class="kw-coverage-tag hit">scalp serum</span><span class="kw-coverage-tag hit">hair serum</span><span class="kw-coverage-tag hit">hair growth serum</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 6 — Bullet 4
+            
+            
+          </div>
+          <div class="listing-block ok">HAIR GROWTH ACCELERATOR FOR WOMEN & MEN — ALL HAIR TYPES: Reverse Activator works across all hair types — fine, thick, color-treated, natural. Safe for daily use with no known dependency or rebound shedding (unlike Minoxidil). Works as a hair loss serum, scalp oil, and hair thickening products for women dealing with hormonal or age-related thinning. Start seeing results in 4–8 weeks; full clinical results at 90–120 days.</div>
+          <div class="listing-note"><span class="icon">💡</span>"Hair growth accelerator" in copy — high conv keyword (51.3% ABA). Minoxidil differentiation made explicit. <span class="kw-coverage-tag hit">hair growth accelerator</span><span class="kw-coverage-tag hit">hair thickening products for women</span><span class="kw-coverage-tag hit">hair loss serum</span><span class="kw-coverage-tag hit">scalp oil</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 7 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block warn">DEVELOPED BY HAIR BIOLOGISTS — CLEAN, PROFESSIONAL FORMULA: Infused with rosemary oil for hair growth and free from parabens, sulfates, silicones, and phthalates. Safe for color-treated hair. 100% cruelty-free. No minoxidil. No hormones. Note: the precision pipette requires a firm first press to activate — this ensures exact dosing every use. Winner: AskMen Grooming Awards "Best Natural Alternative for Hair Loss."</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Add pipette opening instruction to all 3 activators — multiple 1-star reviews caused by this alone. <span class="kw-coverage-tag hit">rosemary oil for hair growth</span><span class="kw-coverage-tag hit">paraben-free</span><span class="kw-coverage-tag hit">cruelty-free</span><span class="kw-coverage-tag hit">activator</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 8 — Product Description
+            
+            
+          </div>
+          <div class="listing-block ok">Bring Back Your Best Hair — Hair Growth Serum That Targets the Root Cause<br><br>évolis Reverse Activator is a clinically tested hair growth serum and thinning hair treatment built around one insight: your hair has a biological stop-signal. A protein called FGF5 tells each follicle to stop growing and begin shedding — and most hair loss products never address it. Reverse Activator's proprietary botanical blend — Sanguisorba Officinalis, Rosa Multiflora (Japanese Tea Rose), and Swertia Chirata — blocks that stop-signal, extending the anagen (growth) phase so each strand grows longer before it falls.<br><br>Clinically Tested Results<br>In 3 independent studies, 95% of users noticed increased hair thickness within 90 days. 97% experienced reduced shedding by 120 days. Suitable for all hair types. Works on thinning hair, postpartum hair loss, and age-related shedding.<br><br>Weightless Formula<br>Non-greasy, fast-absorbing scalp serum for hair growth. Strengthened with keratin, hydrolyzed wheat protein, and rosemary oil for hair growth. Dries instantly — no residue. One bottle = 6–8 weeks of twice-daily use.<br><br>Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe · Cruelty-free</div>
+          <div class="listing-note"><span class="icon">💡</span>Full science story with clinical results. Good for A+ content translation. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 9 — Backend Keywords
+            <span class="char-pill ok">130 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">postpartum hair loss hair growth accelerator thinning hair treatment hair loss serum scalp serum for hair growth rosemary oil for hair growth dry scalp treatment hair follicle treatment oil for hair growth hair treatment oils</div>
+          <div class="listing-note"><span class="icon">💡</span>Current backend. 10 terms, ~130 bytes. 120 bytes remaining — room to add: scalp oil, hair follicle treatment, hair growth oil spray. <span class="kw-coverage-tag hit">postpartum hair loss</span><span class="kw-coverage-tag hit">hair growth accelerator</span><span class="kw-coverage-tag hit">scalp serum for hair growth</span><span class="kw-coverage-tag hit">rosemary oil</span><span class="kw-coverage-tag hit">thinning hair treatment</span></div>
+        </div>
+      </div>
+
+      <!-- EVO0005 Promote Activator -->
+      <div class="sub-page" id="la-evo0005">
+        <div class="listing-status-bar">
+          <span class="icon">⚠️</span>
+          <span><strong>EVO0005 · B07SG6S4VV · Updated 5/15/2026.</strong> ⚠ Critical conversion gap — 3.20% on 1,125 sessions. Clinical results buried in Bullet 4. Conversion at 15% benchmark = 169 units/month vs 36 today.</span>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">152 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">évolis Promote Activator — Hair Growth Serum for Longer Stronger Hair — Scalp Serum That Extends Your Hair's Growth Phase, Clinically Tested (1.7 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. "Longer Stronger Hair" and "Extends Growth Phase" differentiate from Reverse. "Clinically Tested" present. <span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">scalp serum</span><span class="kw-coverage-tag hit">activator</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 2 — Item Highlights
+            <span class="char-pill ok">120 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block warn">Strengthening scalp treatment for longer, stronger hair. Extends the natural growth phase with FGF5-blocking technology.</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Recommend leading with the 95%/90-day clinical stat for above-the-fold conversion lift. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 1
+            
+            
+          </div>
+          <div class="listing-block ok">CLINICALLY TESTED: 95% OF USERS REPORT THICKER HAIR IN 90 DAYS — In 3 independent clinical studies, 95% of users reported visibly thicker hair within 90 days and 97% noticed significantly reduced hair fall by 120 days. Promote Activator is a hair growth serum for longer, stronger hair — developed by hair biologists to address the biological root cause of shedding and thinning, not just the surface symptom.</div>
+          <div class="listing-note"><span class="icon">💡</span>Strong — clinical data now in Bullet 1. FGF5 mechanism implied. Good conversion-focused lead. <span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">95% in 90 days</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 4 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">THE SCIENCE THAT MAKES PROMOTE DIFFERENT — YOUR HAIR'S GROWTH PHASE CAN BE EXTENDED: Hair grows, then stops, then sheds — that cycle is controlled by a protein signal in your follicle. Promote's three clinically studied botanicals (Sanguisorba Officinalis, Swertia Chirata, Rosa Multiflora) block that stop-signal — keeping follicles active longer so hair grows further before it falls. Enriched with rosemary oil, rose hip, and marula oil for antioxidant protection and lightweight hydration.</div>
+          <div class="listing-note"><span class="icon">💡</span>FGF5 stop-signal mechanism explained clearly. Rosemary oil, rose hip, marula oil present. <span class="kw-coverage-tag hit">FGF5 blocker</span><span class="kw-coverage-tag hit">rosemary oil for hair growth</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block ok">HAIR SERUM FOR HAIR GROWTH WITH ROSEMARY OIL, MARULA & ROSE HIP: Beyond the growth-cycle botanicals, Promote is enriched with rosemary oil for hair growth, marula oil for lightweight nourishment, and rose hip oil for antioxidant protection. This hydrating serum and hair treatment for dry damaged hair works on all hair types. Self-dosing pipette for precise scalp application. One bottle = 6–8 weeks twice daily.</div>
+          <div class="listing-note"><span class="icon">💡</span>"Rosemary oil for hair growth" present. "Hair treatment for dry damaged hair" covered. <span class="kw-coverage-tag hit">rosemary oil for hair growth</span><span class="kw-coverage-tag hit">hair treatment for dry damaged hair</span><span class="kw-coverage-tag hit">hair serum</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 6 — Bullet 4
+            
+            
+          </div>
+          <div class="listing-block ok">HAIR GROWTH ACCELERATOR FOR WOMEN & MEN — ALL HAIR TYPES: Promote Activator works as a hair growth accelerator for fine, thin, color-treated, or natural hair. Addresses hair loss treatments for women dealing with breakage, postpartum shedding, or hormonal thinning. No minoxidil, no hormones, no harsh chemicals. Results begin in 4–6 weeks. Full clinical results at 90–120 days of consistent twice-daily use.</div>
+          <div class="listing-note"><span class="icon">💡</span>"Hair growth accelerator" present. "Hair loss treatments for women" present. <span class="kw-coverage-tag hit">hair growth accelerator</span><span class="kw-coverage-tag hit">hair loss treatments for women</span><span class="kw-coverage-tag hit">postpartum shedding</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 7 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block warn">DEVELOPED BY HAIR BIOLOGISTS — CLEAN FORMULA, STYLIST RECOMMENDED: Free from parabens, sulfates, silicones, and phthalates. Safe for color-treated hair. 100% cruelty-free. Recommended by professional stylists and trichologists as a scalp serum for hair growth. Note: the precision pipette requires a firm first press to activate — this ensures exact dosing every use. Winner: AskMen Grooming Awards "Best Natural Alternative for Hair Loss."</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Same pipette opening note needed as Reverse. "Scalp serum for hair growth" and "trichologists" added — good. <span class="kw-coverage-tag hit">scalp serum for hair growth</span><span class="kw-coverage-tag hit">paraben-free</span><span class="kw-coverage-tag hit">cruelty-free</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 8 — Product Description
+            
+            
+          </div>
+          <div class="listing-block ok">For Longer, Stronger Hair — Hair Growth Serum That Extends Your Growth Phase. EVOLIS Promote Activator is a clinically tested hair growth serum developed by hair biologists around one key discovery: your hair's growth cycle ends because of a biological stop-signal, not because the follicle is dead. A protein called FGF5 triggers each follicle to stop growing and shed prematurely. Promote's proprietary botanical blend — Sanguisorba Officinalis, Swertia Chirata, and Rosa Multiflora — blocks that signal, extending the growth phase so hair grows longer before it falls. Rosemary oil, marula, and rose hip add lightweight hydration and antioxidant protection at every strand. In 3 independent studies, 95% of users noticed increased hair thickness within 90 days. 97% noticed reduced hair fall by 120 days.</div>
+          <div class="listing-note"><span class="icon">💡</span>Science narrative complete. Clinical results present. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 9 — Backend Keywords
+            <span class="char-pill ok">155 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">hair growth accelerator hair loss treatments for women hair growth oil for women hair volumizer for fine hair thinning hair treatment scalp serum for hair growth hair treatment for dry damaged hair rosemary oil for hair hair serum for hair growth hair growth treatment</div>
+          <div class="listing-note"><span class="icon">💡</span>10 terms, ~155 bytes. ~95 bytes remaining — add: scalp oil, hair follicle treatment, baobab hair serum. <span class="kw-coverage-tag hit">hair growth accelerator</span><span class="kw-coverage-tag hit">hair loss treatments for women</span><span class="kw-coverage-tag hit">thinning hair treatment</span><span class="kw-coverage-tag hit">scalp serum for hair growth</span></div>
+        </div>
+      </div>
+
+      <!-- EVO0009 Prevent Activator -->
+      <div class="sub-page" id="la-evo0009">
+        <div class="listing-status-bar">
+          <span class="icon">🚨</span>
+          <span><strong>EVO0009 · B07SJ8K9HS · Updated 5/15/2026.</strong> 🚨 15 sessions, 0 units in April. Listing needs PPC activation before copy changes have any impact. Investigate suppression status immediately.</span>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">171 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">évolis Prevent Activator — Hair Growth Serum & Dry Scalp Treatment with Rosemary Oil — Extends Your Hair's Growth Phase, Clinically Tested for Sensitive Scalps (1.7 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>"Dry Scalp Treatment" and "Rosemary Oil" in title — trending keywords. "Clinically Tested for Sensitive Scalps" differentiates from Reverse and Promote. <span class="kw-coverage-tag hit">dry scalp treatment</span><span class="kw-coverage-tag hit">rosemary oil for hair growth</span><span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">sensitive scalp</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 2 — Item Highlights
+            <span class="char-pill ok">140 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block warn">Award-winning scalp serum that protects against premature hair loss. Clinically tested for sensitive scalps with rosemary oil, green tea, and mangosteen.</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Add "Best Natural Alternative for Hair Loss" award name explicitly — establishes trust faster. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 1
+            
+            
+          </div>
+          <div class="listing-block ok">AWARD-WINNING DRY SCALP TREATMENT & HAIR GROWTH SERUM: AskMen Grooming Awards "Best Natural Alternative for Hair Loss." In 3 independent clinical studies, 95% of users reported increased hair thickness within 90 days and 97% noticed reduced shedding by 120 days. Prevent Activator calms sensitive and irritated scalps while protecting against premature thinning — the ideal hair growth serum for those who want to preserve what they have before loss accelerates.</div>
+          <div class="listing-note"><span class="icon">💡</span>Award and clinical data both in Bullet 1. Strong — "preserve what you have" positioning is differentiated. <span class="kw-coverage-tag hit">dry scalp treatment</span><span class="kw-coverage-tag hit">hair growth serum</span><span class="kw-coverage-tag hit">rosemary oil</span><span class="kw-coverage-tag hit">95% in 90 days</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 4 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">THE SCIENCE OF KEEPING THE HAIR YOU HAVE — GROWTH CYCLE PROTECTION MEETS ROSEMARY OIL: Your hair follicle receives a biological stop-signal that ends each strand's growth phase. Prevent's proprietary botanical blend (Sanguisorba Officinalis, Swertia Chirata, Rosa Multiflora) blocks that signal — extending active growth before shedding begins. Combined with rosemary oil, one of the most studied botanicals for scalp circulation, plus green tea extract and mangosteen for antioxidant protection.</div>
+          <div class="listing-note"><span class="icon">💡</span>FGF5 mechanism + rosemary oil + green tea + mangosteen all present. <span class="kw-coverage-tag hit">FGF5 blocker</span><span class="kw-coverage-tag hit">rosemary oil for hair growth</span><span class="kw-coverage-tag hit">scalp treatment</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block ok">HAIR GROWTH ACCELERATOR — NATURAL ALTERNATIVE TO MINOXIDIL: Prevent Activator targets the biology of hair loss without drugs, hormones, or harsh chemicals. No rebound shedding. No scalp irritation from chemicals. Works as a hair thinning treatment and scalp oil to extend the growth phase and reduce premature shedding. A science-backed natural alternative for those who prefer to manage hair health proactively — before significant loss occurs.</div>
+          <div class="listing-note"><span class="icon">💡</span>"Natural alternative to Minoxidil" — high search intent phrase. "Hair thinning treatment" and "scalp oil" covered. <span class="kw-coverage-tag hit">thinning hair treatment</span><span class="kw-coverage-tag hit">scalp oil</span><span class="kw-coverage-tag hit">hair growth accelerator</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 6 — Bullet 4
+            
+            
+          </div>
+          <div class="listing-block ok">HAIR LOSS TREATMENTS FOR WOMEN & MEN — SENSITIVE SCALP FORMULA: Developed by hair biologists specifically for sensitive, dry, and irritated scalps. Free from parabens, sulfates, silicones, and phthalates. Safe for color-treated hair. 100% cruelty-free. Ideal for hair loss treatments for women dealing with hormonal thinning or age-related hair changes — and for men with a family history of thinning who want to act early.</div>
+          <div class="listing-note"><span class="icon">💡</span>"Hair loss treatments for women" present. Male family history angle unique in category. <span class="kw-coverage-tag hit">hair loss treatments for women</span><span class="kw-coverage-tag hit">hair loss treatments for men</span><span class="kw-coverage-tag hit">dry scalp treatment</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 7 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block warn">HAIR THICKENING PRODUCTS FOR WOMEN & MEN — 6–8 WEEKS PER BOTTLE: Prevent Activator supports fuller, thicker hair over time by addressing scalp sensitivity while the growth-cycle-protecting botanicals keep each follicle active longer. One 1.7 fl oz bottle lasts 6–8 weeks with twice-daily use. Note: the precision pipette requires a firm first press to activate — this ensures exact dosing every use. Pair with évolis shampoo and conditioner for full-system results.</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Same pipette opening note needed. "Hair thickening products for women & men" — keyword present. <span class="kw-coverage-tag hit">hair thickening products for women</span><span class="kw-coverage-tag hit">paraben-free</span><span class="kw-coverage-tag hit">cruelty-free</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 8 — Product Description
+            
+            
+          </div>
+          <div class="listing-block ok">Protect Your Hair Before the Thinning Starts — Growth Cycle Serum with Rosemary Oil. évolis Prevent Activator is a clinically tested scalp serum and dry scalp treatment for people in the early stages of hair change. Hair growth ends when a biological stop-signal (driven by FGF5) triggers each follicle to stop growing and shed. Prevent's proprietary botanical blend — Sanguisorba Officinalis, Rosa Multiflora, and Swertia Chirata — blocks that signal before it gains momentum, combined with rosemary oil, green tea extract, and mangosteen to support a calm, healthy scalp environment.</div>
+          <div class="listing-note"><span class="icon">💡</span>Full preventative positioning story. "Before the thinning starts" — differentiated angle not used by any competitor. </div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 9 — Backend Keywords
+            <span class="char-pill ok">140 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">hair growth accelerator dry scalp treatment rosemary oil for hair growth hair regrowth for men hair loss treatments for men hair follicle treatment thinning hair treatment scalp serum for hair growth hair loss serum oil for hair growth</div>
+          <div class="listing-note"><span class="icon">💡</span>10 terms, ~140 bytes. ~110 bytes remaining — add: scalp oil, dry scalp serum, hair growth oil, anti-aging scalp treatment. <span class="kw-coverage-tag hit">hair growth accelerator</span><span class="kw-coverage-tag hit">dry scalp treatment</span><span class="kw-coverage-tag hit">scalp serum for hair growth</span><span class="kw-coverage-tag hit">rosemary oil for hair growth</span></div>
+        </div>
+      </div>
+    </div><!-- /la-activators -->
+
+    <!-- ── SHAMPOOS ── -->
+    <div class="channel-page" id="la-shampoos">
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('la-shampoos','la-evo0002',this)">Reverse (EVO0002)</button>
+        <button class="sub-tab" onclick="showSubTab('la-shampoos','la-evo0006',this)">Promote (EVO0006)</button>
+        <button class="sub-tab" onclick="showSubTab('la-shampoos','la-evo0010',this)">Prevent (EVO0010)</button>
+        <button class="sub-tab" onclick="showSubTab('la-shampoos','la-evo0014',this)">Reverse Travel (EVO0014)</button>
+        <button class="sub-tab" onclick="showSubTab('la-shampoos','la-evo0016',this)">Promote Travel (EVO0016)</button>
+      </div>
+      <div class="sub-page active" id="la-evo0002">
+        <div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0002 · B07S8QJSNP · 8.5 fl oz</strong> — Full listing loaded from xlsx Listings sheet.</span></div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">122 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Thickening Shampoo for Hair Growth - Keratin Treatment for Thinning Hair and Hair Loss - Volumizing Shampoo (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Within character limit. Core keywords: thinning hair, hair growth, keratin treatment present. <span class="kw-coverage-tag">hair growth shampoo</span><span class="kw-coverage-tag hit">keratin hair treatment</span><span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">volumizing shampoo</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 2 — Bullet 1
+            
+            
+          </div>
+          <div class="listing-block ok">Reverse the hair loss cycle – Reverse thickening shampoo helps those experiencing hair thinning, postpartum shedding, or aging hair. Infused with a hair growth serum, this rich-lathering formula gently cleanses the scalp while boosting volume and density.</div>
+          <div class="listing-note"><span class="icon">💡</span> <span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">postpartum shedding</span><span class="kw-coverage-tag hit">hair growth</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">Keratin Hair Treatment – Formulated with keratin and wheat proteins, this sulfate free shampoo helps strengthen fragile strands while improving overall hair resilience. Designed as a thickening shampoo with rosemary oil for hair growth, it leaves hair looking visibly fuller, stronger, and more voluminous.</div>
+          <div class="listing-note"><span class="icon">💡</span> <span class="kw-coverage-tag hit">keratin hair treatment</span><span class="kw-coverage-tag hit">sulfate-free shampoo</span><span class="kw-coverage-tag hit">rosemary oil for hair growth</span><span class="kw-coverage-tag hit">thickening shampoo</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 4 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block warn">Proprietary Blend – A powerful hair growth shampoo with a unique blend of botanical actives and antioxidants to inhibit FGF5, a protein linked to hair aging and thinning. Extending the growth cycle, this shampoo works to nourish the scalp and support hair growth for men and women.</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ FGF5 mentioned but not explained for this product. Recommend pairing with plain-language explanation as used in Activator listings. <span class="kw-coverage-tag hit">hair growth shampoo</span><span class="kw-coverage-tag hit">FGF5</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 4
+            
+            
+          </div>
+          <div class="listing-block ok">Developed by hair biologists - Free of parabens, sulfates, silicones, and phthalates, this volumizing shampoo is scientifically designed to restore scalp health and support stronger, healthier hair growth. Safe, cruelty-free, and recommended by hair stylists.</div>
+          <div class="listing-note"><span class="icon">💡</span> <span class="kw-coverage-tag hit">paraben-free</span><span class="kw-coverage-tag hit">sulfate-free</span><span class="kw-coverage-tag hit">cruelty-free</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 6 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block ok">Visible Results in 90 Days – Clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. Apply a small amount of shampoo to wet hair, lathering and massaging from scalp to ends. Rinse thoroughly and repeat if necessary. For best results, use with Reverse Conditioner and Reverse Activator.</div>
+          <div class="listing-note"><span class="icon">💡</span> <span class="kw-coverage-tag hit">95% in 90 days</span><span class="kw-coverage-tag hit">hair growth</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 7 — Backend Keywords
+            <span class="char-pill ok">220 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">hair growth shampoo, monoxide for men hair, hair growth shampoo for men, hair regrowth shampoos, shampoo for hair growth, shampoo hair loss, shampoo for thinning hair, evolis, evolis hair products, cruelty free shampoo, sulfate free shampoo, thickening shampoo, Hair thickening products for women, Hair growth serum, Hair loss shampoo, hair oils for hair growth, hair growth products, hair growth oil</div>
+          <div class="listing-note"><span class="icon">💡</span>Covers core shampoo keywords. Could add: keratin shampoo, volumizing shampoo for fine hair. </div>
+        </div>
+      </div>
+      <div class="sub-page" id="la-evo0006"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0006 · B07S9SZ56F · 8.5 fl oz</strong> — Promote Nourishing Shampoo · 2024 People.com Lengthening Award</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">86 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Promote Nourishing Shampoo for Hair Growth – Strengthening Treatment for Longer, Stronger Hair (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good title. Award not in title — consider adding. <span class="kw-coverage-tag hit">hair growth shampoo</span><span class="kw-coverage-tag hit">strengthening treatment</span></div>
+        </div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block ok">Visible Results in 90 Days – Clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. For best results, pair with Promote Conditioner and Promote Activator for a complete hair growth products routine.</div>
+          
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Full bullet detail available in xlsx Listings sheet. Remaining bullets follow same structure as Reverse Shampoo with Baobab/Keratin/FGF5 emphasis.</span></div></div>
+      <div class="sub-page" id="la-evo0010"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0010 · B07S7RLWVK · 8.5 fl oz</strong> — Prevent Anti-Aging Shampoo · Antioxidant-Rich Formula</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">100 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Prevent Anti-Aging Shampoo for Hair Growth – Antioxidant-Rich Formula for Scalp Health & Stronger Hair (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. "Anti-aging" differentiates. "Antioxidant-Rich" is a claim — needs to be supported by ingredient panel (green tea, mangosteen, vitamin E all present). <span class="kw-coverage-tag hit">hair growth shampoo</span><span class="kw-coverage-tag hit">scalp health</span><span class="kw-coverage-tag hit">antioxidant</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Full bullet detail available in xlsx Listings sheet. Key differentiation from Reverse/Promote: soothing scalp angle, mangosteen + green tea emphasis.</span></div></div>
+      <div class="sub-page" id="la-evo0014"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0014 · B0C634RF2M · 2 fl oz Travel Size</strong> — Reverse Thickening Shampoo Travel Size</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">162 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Thickening Shampoo for Thinning Hair and Hair Regrowth, Treating Hair Loss, Created with Botanical Actives for Noticeably Thicker, Fuller Hair - Travel Size (2 fl.oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Title calls out Travel Size but character count long. ✅ "Travel Size" present. ⚠ "hair growth shampoo" keyword missing from title. <span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">travel size</span><span class="kw-coverage-tag hit">hair regrowth</span><span class="kw-coverage-tag">hair growth shampoo</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Same formula as full-size Reverse Shampoo. Bullets closely mirror full-size with added travel-size callouts.</span></div></div>
+      <div class="sub-page" id="la-evo0016"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0016 · B0C62SD751 · 2 fl oz Travel Size</strong> — Promote Nourishing Shampoo Travel Size · 2024 People.com Lengthening Award</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">91 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Promote Nourishing Shampoo – Strengthening Treatment for Longer, Healthier-Looking Hair - Travel Size (2 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. Award win noted in Bullet 1. "Hair growth shampoo" not in title — opportunity. <span class="kw-coverage-tag hit">travel size</span><span class="kw-coverage-tag hit">strengthening treatment</span><span class="kw-coverage-tag">hair growth shampoo</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Bullet 1 highlights the 2024 People.com Lengthening Award — strong social proof lead for travel size. Full bullets in xlsx.</span></div></div>
+    </div><!-- /la-shampoos -->
+
+    <!-- ── CONDITIONERS ── -->
+    <div class="channel-page" id="la-conditioners">
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('la-conditioners','la-cond-evo0003',this)">Reverse (EVO0003)</button>
+        <button class="sub-tab" onclick="showSubTab('la-conditioners','la-cond-evo0007',this)">Promote (EVO0007)</button>
+        <button class="sub-tab" onclick="showSubTab('la-conditioners','la-cond-evo0011',this)">Prevent (EVO0011)</button>
+        <button class="sub-tab" onclick="showSubTab('la-conditioners','la-cond-evo0015',this)">Reverse Travel (EVO0015)</button>
+        <button class="sub-tab" onclick="showSubTab('la-conditioners','la-cond-evo0017',this)">Promote Travel (EVO0017)</button>
+      </div>
+      <div class="sub-page active" id="la-cond-evo0003"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0003 · B07S7RLBVV · 8.5 fl oz</strong> — Reverse Thickening Conditioner</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">122 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Thickening Conditioner for Hair Growth - Keratin Treatment for Thinning Hair and Hair Loss - Volumizing Conditioner (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Mirrors shampoo title structure — consistent branding. <span class="kw-coverage-tag hit">hair growth conditioner</span><span class="kw-coverage-tag hit">keratin hair treatment</span><span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">volumizing conditioner</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Full listing in xlsx. Structure mirrors Reverse Shampoo closely. Hero actives: Keratin, Wheat Protein, FGF5 blockers, Rosemary Oil.</span></div></div>
+      <div class="sub-page" id="la-cond-evo0007"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0007 · B07SBWSJXP · 8.5 fl oz</strong> — Promote Nourishing Conditioner · 2024 People.com Lengthening Award</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">101 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Promote Nourishing Conditioner for Hair Growth – Deep Conditioning Hair Treatment for Longer, Stronger Hair (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. "Deep Conditioning Hair Treatment" adds premium feel. Award not in title. <span class="kw-coverage-tag hit">hair growth conditioner</span><span class="kw-coverage-tag hit">deep conditioning</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Full listing in xlsx. Hero actives: Baobab, FGF5 blockers, Keratin, Wheat Protein. 2024 People.com award featured in copy.</span></div></div>
+      <div class="sub-page" id="la-cond-evo0011"><div class="listing-status-bar"><span class="icon">⚠️</span><span><strong>EVO0011 · B07SBWS4BS · 8.5 fl oz</strong> — Prevent Anti-Aging Conditioner · ⚠ Title has typo: "Conditiner" in xlsx</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 1 — Title
+            <span class="char-pill ok">106 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block warn">EVOLIS Prevent Anti-Aging Conditiner for Fuller-Looking Hair – Antioxidant-Rich Formula for Scalp Health & Stronger Hair (8.5 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ TYPO in title: "Conditiner" should be "Conditioner" — fix immediately on Amazon listing. <span class="kw-coverage-tag hit">anti-aging conditioner</span><span class="kw-coverage-tag hit">antioxidant</span><span class="kw-coverage-tag hit">scalp health</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Note:</strong><span class="insight-text"> Full listing in xlsx. Critical: typo "Conditiner" is in the xlsx data — verify whether this typo is live on Amazon and fix if so.</span></div></div>
+      <div class="sub-page" id="la-cond-evo0015"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0015 · B0C633C5MS · 2 fl oz</strong> — Reverse Thickening Conditioner Travel Size</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">108 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Thickening Conditioner for Fuller-Looking Hair – Keratin Treatment & Formula for Thinning Hair - Travel Size (2 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. Travel Size callout present. <span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">keratin treatment</span><span class="kw-coverage-tag hit">travel size</span></div>
+        </div></div>
+      <div class="sub-page" id="la-cond-evo0017"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0017 · B0C63177RS · 2 fl oz</strong> — Promote Nourishing Conditioner Travel Size · 2024 People.com Lengthening Award</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">97 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Promote Nourishing Conditioner – Deep Conditioning Hair Treatment for Longer, Healthier-Looking Hair - Travel Size (2 oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. Award featured in Bullet 1 per xlsx. <span class="kw-coverage-tag hit">deep conditioning</span><span class="kw-coverage-tag hit">travel size</span></div>
+        </div></div>
+    </div><!-- /la-conditioners -->
+
+    <!-- ── HAIR MASKS ── -->
+    <div class="channel-page" id="la-masks">
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('la-masks','la-mask-evo0004',this)">Reverse (EVO0004)</button>
+        <button class="sub-tab" onclick="showSubTab('la-masks','la-mask-evo0008',this)">Promote (EVO0008)</button>
+        <button class="sub-tab" onclick="showSubTab('la-masks','la-mask-evo0018',this)">Promote Travel (EVO0018)</button>
+        <button class="sub-tab" onclick="showSubTab('la-masks','la-mask-evo0019',this)">Reverse Travel (EVO0019)</button>
+      </div>
+      <div class="sub-page active" id="la-mask-evo0004">
+        <div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0004 · B07S7RLM1R · 8 fl oz</strong> — Reverse Repairing Hair Mask</span></div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">134 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Repairing Hair Mask - Deep Conditioning Hair Mask for Hair Growth & Damage Repair - Hydrating Hair Mask for Dry, Damaged Hair (8 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>All key category terms present. "Hair Growth" + "Damage Repair" + "Deep Conditioning" = strong keyword coverage. <span class="kw-coverage-tag hit">deep conditioning hair mask</span><span class="kw-coverage-tag hit">hair growth</span><span class="kw-coverage-tag hit">damage repair</span><span class="kw-coverage-tag hit">hydrating hair mask</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">Keratin Hair Treatment – This deep conditioning hair mask provides intense moisture to dry, brittle strands, helping to reduce frizz, enhance softness, and restore shine. Infused with hair oils for hair growth, it nourishes from root to tip while supporting stronger, healthier hair.</div>
+          <div class="listing-note"><span class="icon">💡</span> <span class="kw-coverage-tag hit">keratin hair treatment</span><span class="kw-coverage-tag hit">deep conditioning</span><span class="kw-coverage-tag hit">hair oils for hair growth</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 4 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block ok">Powerful Ingredients for Hair Repair – Formulated with a proprietary blend of natural actives and antioxidants, including keratin, collagen, and botanical FGF5 blockers, this protein hair mask helps strengthen weak strands, minimize split ends, and extend the growth phase for visibly healthier, more resilient hair.</div>
+          <div class="listing-note"><span class="icon">💡</span>FGF5 blockers + collagen + keratin all present. <span class="kw-coverage-tag hit">protein hair mask</span><span class="kw-coverage-tag hit">FGF5</span><span class="kw-coverage-tag hit">collagen</span><span class="kw-coverage-tag hit">keratin</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 7 — Backend Keywords
+            <span class="char-pill warn">230 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">Scalp treatment, Scalp serum, Hair growth spray, Oil for hair growth, Hair treatment for dry damaged hair, Hair growth oil spray, Hair thickening products for women, Biotin for hair growth, Hair growth serum, Hair growth products, minoxidil hair growth, hair loss products, hair regrowth treatments, hair serum for hair growth, natural hair thickening products, hair loss treatments for men, hair loss treatments for women, hair regrowth</div>
+          <div class="listing-note"><span class="icon">💡</span>Broad set. "deep conditioning hair mask" and "hair mask for growth" missing — add. </div>
+        </div>
+      </div>
+      <div class="sub-page" id="la-mask-evo0008"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0008 · B07S7RKMZC · 8.5 fl oz</strong> — Promote Nourishing Hair Mask</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">120 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">Promote Nourishing Hair Mask - Deep Conditioning Hair Mask for Hair Growth & Damage Repair - Hydrating Hair Mask for Dry, Damaged Hair (8 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ Missing "EVOLIS" brand prefix. All other titles include "EVOLIS" — fix for brand consistency. <span class="kw-coverage-tag hit">deep conditioning hair mask</span><span class="kw-coverage-tag hit">hair growth</span><span class="kw-coverage-tag">baobab</span></div>
+        </div><div class="insight-bar" style="margin-top:8px;"><strong>Action:</strong><span class="insight-text"> Add "EVOLIS" prefix to title. Baobab (hero active) not mentioned in title — opportunity to differentiate from Reverse mask.</span></div></div>
+      <div class="sub-page" id="la-mask-evo0018"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0018 · B0C62QRGVX · 1 fl oz Travel Size</strong> — Promote Nourishing Treatment Mask Travel Size</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">148 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Promote Nourishing Treatment Mask - Deep Conditioning Hair Mask to Support Hair Growth - Hydrating Hair Mask for Dry, Damaged Hair - Travel Size (1 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. Travel Size, Hair Growth, Deep Conditioning all present. <span class="kw-coverage-tag hit">deep conditioning hair mask</span><span class="kw-coverage-tag hit">hair growth</span><span class="kw-coverage-tag hit">travel size</span></div>
+        </div></div>
+      <div class="sub-page" id="la-mask-evo0019"><div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0019 · B0C63BJKBF · 1 fl oz Travel Size</strong> — Reverse Repairing Treatment Mask Travel Size</span></div>
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">146 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Reverse Repairing Treatment Mask - Deep Conditioning Hair Mask to Support Hair Growth - Hydrating Hair Mask for Dry, Damaged Hair - Travel Size (1 fl oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. Mirrors Promote Travel Mask title structure for consistency. <span class="kw-coverage-tag hit">deep conditioning hair mask</span><span class="kw-coverage-tag hit">hair growth</span><span class="kw-coverage-tag hit">travel size</span></div>
+        </div></div>
+    </div><!-- /la-masks -->
+
+    <!-- ── DRY SHAMPOO ── -->
+    <div class="channel-page" id="la-dryshampoo">
+      <div class="sub-tabs">
+        <button class="sub-tab active">Dry Shampoo (EVO0012)</button>
+      </div>
+      <div>
+        <div class="listing-status-bar"><span class="icon">✅</span><span><strong>EVO0012 · B08BGCRKTV · 5.2 oz</strong> — Style + Treat Dry Shampoo · Fully separate category from activators and treatment line</span></div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 1 — Title
+            <span class="char-pill ok">162 / 200 chars</span>
+            <span class="char-count">Limit: 200 chars</span>
+          </div>
+          <div class="listing-block ok">EVOLIS Style & Treat Dry Shampoo for Volume and Texture – Lightweight Texture Powder for Oily Hair – Clean Hair Care and Volumizing Hair Products for All Hair Types (5.2 oz)</div>
+          <div class="listing-note"><span class="icon">💡</span>Good. "Style & Treat" dual-use positioning clear. "Volumizing Hair Products" keyword present. "Non-comedogenic" claim should be verifiable via formula — it is (no pore-clogging ingredients). <span class="kw-coverage-tag hit">dry shampoo</span><span class="kw-coverage-tag hit">volumizing hair products</span><span class="kw-coverage-tag hit">texture powder</span><span class="kw-coverage-tag hit">clean hair care</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 2 — Bullet 1
+            
+            
+          </div>
+          <div class="listing-block ok">Revives Hair with Volume and Texture – EVOLIS Style Treat dry shampoo and multi-use styling spray instantly absorbs excess oil and odor while delivering root lift, touchable texture, and weightless volume—no chalky residue, even on dark hair.</div>
+          <div class="listing-note"><span class="icon">💡</span>Strong lead. "No chalky residue on dark hair" is a specific, provable claim and a key objection in category. <span class="kw-coverage-tag hit">dry shampoo</span><span class="kw-coverage-tag hit">volume</span><span class="kw-coverage-tag hit">root lift</span><span class="kw-coverage-tag hit">dark hair</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 3 — Bullet 2
+            
+            
+          </div>
+          <div class="listing-block ok">Supports Scalp Health and Fuller-Looking Hair – Developed for all hair types, including those with thinning hair, shedding, or scalp sensitivity, this dry shampoo for women and men uses a blend of natural extracts and antioxidants to support scalp vitality and maintain healthy-looking strands. Ideal for extending time between washes while caring for the scalp.</div>
+          <div class="listing-note"><span class="icon">💡</span>Scalp health differentiation — unique vs mass dry shampoos. <span class="kw-coverage-tag hit">scalp health</span><span class="kw-coverage-tag hit">thinning hair</span><span class="kw-coverage-tag hit">dry shampoo for women</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-warn">⚠</span> 4 — Bullet 3
+            
+            
+          </div>
+          <div class="listing-block warn">Powered by Antioxidants and FGF5-Inhibiting Botanicals – Infused with a proprietary blend of rosemary, green tea, and mangosteen, this natural dry shampoo supports the scalp's natural barrier and helps defend against FGF5, a protein linked to hair thinning. It's a powerful addition to any volumizing hair products or hair care routine.</div>
+          <div class="listing-note"><span class="icon">💡</span>⚠ FGF5 mention in a dry shampoo may confuse buyers unfamiliar with the brand. Consider simplifying to "antioxidant botanicals that support scalp health" and saving FGF5 language for the activators. <span class="kw-coverage-tag hit">rosemary</span><span class="kw-coverage-tag hit">green tea</span><span class="kw-coverage-tag hit">FGF5</span><span class="kw-coverage-tag hit">dry shampoo</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 5 — Bullet 4
+            
+            
+          </div>
+          <div class="listing-block ok">Non-Comedogenic and Residue-Free – This clean formula is non-comedogenic and free from sulfates, parabens, phthalates, and silicones. It won't clog follicles or leave behind powdery buildup, making it suitable for all hair types, including color-treated and keratin-treated hair.</div>
+          <div class="listing-note"><span class="icon">💡</span>Strong clean formula claims — all verifiable via INCI. <span class="kw-coverage-tag hit">non-comedogenic</span><span class="kw-coverage-tag hit">sulfate-free</span><span class="kw-coverage-tag hit">paraben-free</span><span class="kw-coverage-tag hit">keratin-treated hair safe</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 6 — Bullet 5
+            
+            
+          </div>
+          <div class="listing-block ok">Formulated by Hair Biologists, Recommended by Stylists – Like all EVOLIS hair products, this dry shampoo spray is backed by science and crafted for performance. Whether you're styling limp, oily hair or looking to boost volume on the go, it acts as a versatile volume powder, hair volumizer, and hair texture spray.</div>
+          <div class="listing-note"><span class="icon">💡</span>Good multi-use positioning. <span class="kw-coverage-tag hit">volume powder</span><span class="kw-coverage-tag hit">hair volumizer</span><span class="kw-coverage-tag hit">hair texture spray</span></div>
+        </div>
+        
+        <div class="listing-section">
+          <div class="listing-section-hd">
+            <span class="status-ok">✓</span> 7 — Backend Keywords
+            <span class="char-pill warn">245 / 250 chars</span>
+            <span class="char-count">Limit: 250 chars</span>
+          </div>
+          <div class="listing-block ok">dry shampoo, dry shampoo for women, texture powder, arrowroot powder, dry shampoo for dark hair, travel dry shampoo, travel size dry shampoo, volumizing shampoo, dry shampoo travel size, hair products, volumizing hair products, powder dry shampoo, volume spray, root lifter hair products, hair texture spray, hair volumizer, hair products for women, brunette dry shampoo, volume powder, non aerosol dry shampoo, volumizing spray, dry shampoo dark hair, hair root touch up powder</div>
+          <div class="listing-note"><span class="icon">💡</span>Comprehensive keyword set for dry shampoo category. Well-targeted. <span class="kw-coverage-tag hit">dry shampoo</span><span class="kw-coverage-tag hit">dry shampoo for dark hair</span><span class="kw-coverage-tag hit">texture powder</span><span class="kw-coverage-tag hit">volume powder</span><span class="kw-coverage-tag hit">hair volumizer</span></div>
+        </div>
+      </div>
+    </div><!-- /la-dryshampoo -->
+
   </div>
 
   <!-- ══ PPC (internal only) ══ -->
@@ -795,6 +2019,18 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'm-stewardship'   && !window._investChart)    initStewardship();
     if (channelId === 'm-opportunities' && !window._snsChart)       initSns();
   }
+
+  // ── Sub-tab navigation (nested product/variation tabs) ──
+  function showSubTab(parentId, tabId, btn) {
+    const parent = document.getElementById(parentId);
+    if (!parent) return;
+    parent.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
+    parent.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+    const target = document.getElementById(tabId);
+    if (target) target.classList.add('active');
+    if (btn) btn.classList.add('active');
+  }
+
 
 function toggleEditor(key) {
   const ed = document.getElementById('editor-'+key);
@@ -2337,6 +3573,28 @@ function initSns() {
     // Stewardship and SNS are plain functions defined at script scope
     if (typeof initStewardship === 'function') initStewardship();
     if (typeof initSns         === 'function') initSns();
+    // Insights overview — units per month bar chart (solid, all channels combined)
+    (function() {
+      const ctx = document.getElementById('chart-ins-units');
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],
+          datasets: [
+            { label:'Units Sold', data:[285,275,325,243,307,348,222,268,304,374,358,387],
+              backgroundColor:'#001f60', borderRadius:4, barPercentage:0.75 }
+          ]
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{ display:false } },
+          scales: {
+            x:{ grid:{ display:false } },
+            y:{ grid:{ color:'rgba(0,0,0,.04)' }, ticks:{ callback: v => v } }
+          }
+        }
+      });
+    })();
   });
 
 })();
