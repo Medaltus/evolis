@@ -22,7 +22,8 @@ const DEV_TOKEN     = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
 const CLIENT_ID     = process.env.GOOGLE_ADS_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.GOOGLE_ADS_REFRESH_TOKEN;
-const SHEET_ID      = process.env.SHOPIFY_ORDERS_SHEET;
+const SHEET_ID          = process.env.SHOPIFY_ORDERS_SHEET;
+const LOGIN_CUSTOMER_ID = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '6274557152';
 const API_VERSION   = 'v24';
 
 const ORDERS_TAB = 'orders';
@@ -203,9 +204,10 @@ async function googleAdsSearch(accessToken, query) {
     {
       method:  'POST',
       headers: {
-        'Authorization':  `Bearer ${accessToken}`,
-        'developer-token': DEV_TOKEN,
-        'Content-Type':   'application/json',
+        'Authorization':      `Bearer ${accessToken}`,
+        'developer-token':    DEV_TOKEN,
+        'login-customer-id':  LOGIN_CUSTOMER_ID,
+        'Content-Type':       'application/json',
       },
       body: JSON.stringify({ query }),
     }
