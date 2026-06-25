@@ -414,13 +414,48 @@
   .confidential { color: var(--green); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   /* ── Top Products dynamic table ── */
   #amazon-top-sellers thead th { text-align: left; }
-  #amazon-top-sellers tbody td:first-child { font-weight: 500; color: var(--slate); width: 36px; }
-  #amazon-top-sellers .tp-units { color: var(--navy); font-weight: 700; font-size: 13px; }
-  #amazon-top-sellers .tp-dash { color: rgba(107,123,162,.45); }
-  #amazon-top-sellers .tp-cell { display: flex; flex-direction: row; align-items: baseline; gap: 5px; }
-  #amazon-top-sellers .tp-mom-up, #web-top-sellers .tp-mom-up { color: #24e9a3; font-size: 10px; font-weight: 700; }
-  #amazon-top-sellers .tp-mom-dn, #web-top-sellers .tp-mom-dn { color: #ff6b6b; font-size: 10px; font-weight: 700; }
-  #amazon-top-sellers .tp-mom-flat, #web-top-sellers .tp-mom-flat { color: rgba(107,123,162,.35); font-size: 10px; }
+  /* Top products table — shared styles across Amazon, Web, Walmart */
+  #amazon-top-sellers tbody td:first-child,
+  #web-top-sellers tbody td:first-child,
+  #walmart-top-sellers tbody td:first-child { font-weight: 500; color: var(--slate); width: 36px; }
+
+  #amazon-top-sellers .tp-units,
+  #web-top-sellers .tp-units,
+  #walmart-top-sellers .tp-units { color: var(--navy); font-weight: 700; font-size: 13px; }
+
+  #amazon-top-sellers .tp-dash,
+  #web-top-sellers .tp-dash,
+  #walmart-top-sellers .tp-dash { color: rgba(107,123,162,.45); }
+
+  /* gap: 16px gives ~6 spaces between the number and the MOM badge */
+  #amazon-top-sellers .tp-cell,
+  #web-top-sellers .tp-cell,
+  #walmart-top-sellers .tp-cell { display: flex; flex-direction: row; align-items: baseline; gap: 16px; }
+
+  #amazon-top-sellers .tp-mom-up,
+  #web-top-sellers .tp-mom-up,
+  #walmart-top-sellers .tp-mom-up { color: #24e9a3; font-size: 10px; font-weight: 700; }
+
+  #amazon-top-sellers .tp-mom-dn,
+  #web-top-sellers .tp-mom-dn,
+  #walmart-top-sellers .tp-mom-dn { color: #ff6b6b; font-size: 10px; font-weight: 700; }
+
+  #amazon-top-sellers .tp-mom-flat,
+  #web-top-sellers .tp-mom-flat,
+  #walmart-top-sellers .tp-mom-flat { color: rgba(107,123,162,.35); font-size: 10px; }
+
+  /* Fixed-width metric columns so layout matches across all three tables */
+  #amazon-top-sellers th:nth-child(3), #amazon-top-sellers td:nth-child(3),
+  #web-top-sellers th:nth-child(3),    #web-top-sellers td:nth-child(3),
+  #walmart-top-sellers th:nth-child(3), #walmart-top-sellers td:nth-child(3) { width: 180px; }
+
+  #amazon-top-sellers th:nth-child(4), #amazon-top-sellers td:nth-child(4),
+  #web-top-sellers th:nth-child(4),    #web-top-sellers td:nth-child(4),
+  #walmart-top-sellers th:nth-child(4), #walmart-top-sellers td:nth-child(4) { width: 160px; }
+
+  #amazon-top-sellers th:nth-child(5), #amazon-top-sellers td:nth-child(5),
+  #web-top-sellers th:nth-child(5),    #web-top-sellers td:nth-child(5),
+  #walmart-top-sellers th:nth-child(5), #walmart-top-sellers td:nth-child(5) { width: 160px; }
 
 </style>
 </head>
