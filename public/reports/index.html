@@ -227,7 +227,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);}
       <div class="nav-internal-label">Internal Only</div>
     </div>
     <button class="nav-btn" onclick="showPage('insights',this)">
-      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5.5v.5"/></svg>Insights Log
+      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5.5v.5"/></svg>Insights
       <span class="nav-badge">3</span>
     </button>
     <button class="nav-btn" onclick="showPage('listing',this)">
@@ -652,7 +652,7 @@ As inventory availability improves, the current sales mix provides a strong foun
   <!-- ══ INSIGHTS LOG (internal only) ══ -->
   <div class="page" id="page-insights">
     <div class="page-hd">
-      <div><div class="page-title">Insights Log</div><div class="page-sub">Edit, stage, and approve insights before they appear on the partner dashboard</div></div>
+      <div><div class="page-title">Insights</div><div class="page-sub">Edit, stage, and approve insights before they appear on the partner dashboard</div></div>
       <button class="btn-edit" style="padding:8px 16px;font-size:12px;" onclick="alert('Opens new insight entry form')">+ New Insight</button>
     </div>
 
@@ -756,7 +756,7 @@ As inventory availability improves, the current sales mix provides a strong foun
 const pageTitles = {
   overview:'Overview — Évolis',sales:'Sales — Évolis',marketing:'Marketing — Évolis',
   events:'Events — Évolis',inventory:'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
-  insights:'Insights Log — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
+  insights:'Insights — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
 };
 
 function showPage(id, btn) {
@@ -765,6 +765,17 @@ function showPage(id, btn) {
   document.getElementById('page-'+id).classList.add('active');
   btn.classList.add('active');
   document.getElementById('topbar-title').textContent = pageTitles[id] || id;
+  // Auto-init first active channel when navigating to Sales or Marketing
+  const pg = document.getElementById('page-'+id);
+  const ac = pg && pg.querySelector('.channel-page.active');
+  if (ac) {
+    const cid = ac.id;
+    if (cid==='s-amazon'        && !window._amazonLiveInit)  initAmazonLive();
+    if (cid==='s-website'       && !window._webLiveInit)     initWebLive();
+    if (cid==='s-walmart'       && !window._walmartLiveInit) initWalmartLive();
+    if (cid==='m-stewardship'   && !window._investChart)     initStewardship();
+    if (cid==='m-opportunities' && !window._snsChart)        initSns();
+  }
 }
 
 function showChannel(page, channelId, btn) {
@@ -840,7 +851,7 @@ const pageTitles = {
   overview:'Overview', sales:'Sales — Évolis',
   marketing:'Marketing — Évolis', events:'Events — Évolis',
   inventory:'Inventory', fulfillment:'Fulfillment',
-  insights:'Insights Log', listing:'Listing Audit',
+  insights:'Insights', listing:'Listing Audit',
   ppc:'PPC', organic:'Organic'
 };
 function nav(id, el) { /* legacy stub */ }
@@ -2355,4 +2366,3 @@ function initSns() {
 </script>
 </body>
 </html>
- 
