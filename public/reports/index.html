@@ -2325,6 +2325,15 @@ function initSns() {
     loadInsight();
   })();
 
+  // ── Auto-init all data on page load (no lazy loading) ──
+  document.addEventListener('DOMContentLoaded', function () {
+    window.initAmazonLive  && window.initAmazonLive();
+    window.initWebLive     && window.initWebLive();
+    window.initWalmartLive && window.initWalmartLive();
+    window.initStewardship && window.initStewardship();
+    window.initSns         && window.initSns();
+  });
+
 })();
 
 
