@@ -1942,20 +1942,26 @@ function initSns() {
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
 
+    // Compute prev month ad share for MOM on organic
+    const prevTotalUnitsThisMonth = Object.values(skuUnitsPrev).reduce((s, v) => s + v, 0);
+    const prevAdShare = prevTotalUnitsThisMonth > 0 ? prevAdConversions / prevTotalUnitsThisMonth : 0;
+
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
       const name       = skuNameMap[sku] || sku;
       const prevUnits  = skuUnitsPrev[sku] || 0;
       // Distribute ad conversions proportionally by SKU's share of total units
-      const skuAdUnits  = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
-      const skuOrgUnits = Math.max(0, units - skuAdUnits);
+      const skuAdUnits     = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
+      const skuOrgUnits    = Math.max(0, units - skuAdUnits);
+      const skuPrevAdUnits = prevTotalUnitsThisMonth > 0 ? Math.round(prevAdShare * prevUnits) : 0;
+      const skuPrevOrgUnits = Math.max(0, prevUnits - skuPrevAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</div></td>
-        <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span></div></td>`;
+        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span>${momSpan(skuOrgUnits, skuPrevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
