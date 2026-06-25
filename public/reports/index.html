@@ -601,17 +601,26 @@
         <div class="kpi-card" id="web-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
         <div class="kpi-card" id="web-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
         <div class="kpi-card" id="web-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-units-sub"><div class="kpi-label">Units (Subscription)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-units-onetime"><div class="kpi-label">Units (One-time)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="web-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="web-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
         <div class="chart-wrap"><canvas id="chart-web"></canvas></div>
       </div>
       <div class="card" id="web-top-products-card">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
-          <div class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--slate);font-weight:400;">(by Units)</span></div>
-          <span id="web-products-source" style="font-size:10px;color:var(--slate);opacity:0.7;"></span>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+          <div>
+            <span class="card-title" style="margin-bottom:0;">Top Selling Products</span>
+            <span style="font-size:11px;color:var(--slate);margin-left:8px;font-weight:400;">(by Units)</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="web-products-source" style="font-size:10px;color:var(--slate);"></span>
+            <button id="web-insight-edit-btn" title="Edit Key Insight"
+              style="background:none;border:1px solid rgba(107,123,162,.3);border-radius:5px;padding:3px 9px;font-size:10px;color:var(--slate);cursor:pointer;transition:background .15s;"
+              onmouseover="this.style.background='rgba(107,123,162,.08)'"
+              onmouseout="this.style.background='none'">✏️ Edit insight</button>
+          </div>
         </div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="web-top-sellers">
@@ -620,8 +629,8 @@
                 <th style="width:36px;">#</th>
                 <th>PRODUCT NAME</th>
                 <th>UNITS SOLD</th>
-                <th>UNITS (SUBSCRIPTION)</th>
-                <th>UNITS (ONE-TIME)</th>
+                <th>UNITS (ADS)</th>
+                <th>UNITS (ORGANIC)</th>
               </tr>
             </thead>
             <tbody id="web-tp-tbody">
@@ -630,7 +639,21 @@
           </table>
         </div>
         <div id="web-insight-bar" class="insight" style="margin-top:16px;">
-          <strong>Key Insight:</strong> <span id="web-insight-text">No insight added yet — click "Edit insight" to add one.</span>
+          <strong>Key Insight:</strong> <span id="web-insight-text"></span>
+        </div>
+
+        <!-- Hidden edit panel -->
+        <div id="web-insight-editor" style="display:none;padding:14px 18px;border-top:1px solid rgba(107,123,162,.15);background:rgba(107,123,162,.04);margin-top:8px;border-radius:0 0 8px 8px;">
+          <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:8px;">Edit Key Insight <span style="font-weight:400;color:var(--slate);">(saved in your browser)</span></div>
+          <textarea id="web-insight-textarea"
+            style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(107,123,162,.35);border-radius:6px;font-family:'Montserrat',sans-serif;font-size:12px;color:var(--navy);resize:vertical;min-height:72px;background:#fff;outline:none;"
+            placeholder="Enter the key insight to display below the table…"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end;">
+            <button id="web-insight-cancel"
+              style="padding:5px 14px;font-size:11px;border:1px solid rgba(107,123,162,.35);background:#fff;border-radius:5px;cursor:pointer;color:var(--slate);">Cancel</button>
+            <button id="web-insight-save"
+              style="padding:5px 14px;font-size:11px;border:none;background:var(--navy);color:#fff;border-radius:5px;cursor:pointer;">Save</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1519,6 +1542,7 @@ function initSns() {
   const SHOPIFY_SHEET_ID      = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
   const SHOPIFY_SHEET_GID     = '597852778'; // orders tab
   const SHOPIFY_REVENUE_GID   = '7000599';   // revenue tab
+  const SHOPIFY_ADS_GID       = '219707263'; // ads tab
 
   // Product name lookup: col A = ASIN (unused here), col B = SKU, col C = Name
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
@@ -1591,9 +1615,6 @@ function initSns() {
 
     const orderIds  = new Set(filtered.map(r => r.order_id).filter(Boolean));
     const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
-    const subUnits   = filtered.filter(r => r.is_subscription === 'TRUE')
-                               .reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
-    const onetimeUnits = totalUnits - subUnits;
 
     // AOV: sum item_price per unique order_id, then average
     const orderTotals = {};
@@ -1604,7 +1625,7 @@ function initSns() {
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder     = orderIds.size > 0 ? totalRevenue / orderIds.size : 0;
 
-    return { totalUnits, totalOrders: orderIds.size, avgOrder, subUnits, onetimeUnits };
+    return { totalUnits, totalOrders: orderIds.size, avgOrder };
   }
 
   function pct(current, previous) {
@@ -1630,6 +1651,22 @@ function initSns() {
     badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
   }
 
+  // Aggregate ad conversions for a given year-month from ads sheet rows
+  function aggregateAdMonth(adsRows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = adsRows.filter(r => (r.date || '').substring(0,7) === prefix);
+    const totalConversions = filtered.reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0);
+    const prevPrefix = (() => {
+      let pm = month - 1, py = year;
+      if (pm === 0) { pm = 12; py--; }
+      return `${py}-${String(pm).padStart(2,'0')}`;
+    })();
+    const prevConversions = adsRows
+      .filter(r => (r.date || '').substring(0,7) === prevPrefix)
+      .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0);
+    return { totalConversions: Math.round(totalConversions), prevConversions: Math.round(prevConversions) };
+  }
+
   window.initWebLive = async function () {
     if (window._webLiveInit) return;
     window._webLiveInit = true;
@@ -1646,8 +1683,13 @@ function initSns() {
     }
 
     try {
-      const csv = await fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
-        .then(r => r.ok ? r.text() : '').catch(() => '');
+      // Fetch orders and ads data in parallel
+      const [csv, adsCsv] = await Promise.all([
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : '').catch(() => ''),
+      ]);
 
       if (!isCsv(csv)) {
         showWebError('Could not load website data. Check sheet permissions.');
@@ -1655,23 +1697,30 @@ function initSns() {
       }
 
       const allRows = parseCsv(csv);
+      const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
       const curr    = aggregateMonth(allRows, year, month);
       const prev    = aggregateMonth(allRows, prevYear, prevMonth);
+      const ads     = aggregateAdMonth(adsRows, year, month);
 
       const fmt  = n => (n ?? 0).toLocaleString();
       const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
 
       if (!curr) {
-        setKpiValue('web-kpi-total-units',    '0');
-        setKpiValue('web-kpi-total-orders',   '0');
-        setKpiValue('web-kpi-avg-order',      '$0.00');
-        setKpiValue('web-kpi-units-sub',      '0');
-        setKpiValue('web-kpi-units-onetime',  '0');
+        setKpiValue('web-kpi-total-units',   '0');
+        setKpiValue('web-kpi-total-orders',  '0');
+        setKpiValue('web-kpi-avg-order',     '$0.00');
+        setKpiValue('web-kpi-units-ads',     '—');
+        setKpiValue('web-kpi-units-organic', '0');
         document.getElementById('web-tp-tbody').innerHTML =
           '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
         buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
         return;
       }
+
+      const adUnits      = ads.totalConversions;
+      const prevAdUnits  = ads.prevConversions;
+      const orgUnits     = Math.max(0, curr.totalUnits - adUnits);
+      const prevOrgUnits = Math.max(0, (prev ? prev.totalUnits : 0) - prevAdUnits);
 
       // KPIs
       setKpiValue('web-kpi-total-units', fmt(curr.totalUnits));
@@ -1683,14 +1732,14 @@ function initSns() {
       setKpiValue('web-kpi-avg-order', '$' + fmt2(curr.avgOrder));
       setBadgeWeb('web-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
 
-      setKpiValue('web-kpi-units-sub', fmt(curr.subUnits));
-      setBadgeWeb('web-kpi-units-sub', '.kpi-mom', prev ? pct(curr.subUnits, prev.subUnits) : null, 'MOM');
+      setKpiValue('web-kpi-units-ads', adUnits > 0 ? fmt(adUnits) : '—');
+      setBadgeWeb('web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prevAdUnits > 0 ? pct(adUnits, prevAdUnits) : null, 'MOM');
 
-      setKpiValue('web-kpi-units-onetime', fmt(curr.onetimeUnits));
-      setBadgeWeb('web-kpi-units-onetime', '.kpi-mom', prev ? pct(curr.onetimeUnits, prev.onetimeUnits) : null, 'MOM');
+      setKpiValue('web-kpi-units-organic', fmt(orgUnits));
+      setBadgeWeb('web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
 
       buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-      buildWebTopProducts(allRows, year, month, prevYear, prevMonth);
+      buildWebTopProducts(allRows, adsRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
       console.error('[WebLive]', err.message);
@@ -1775,7 +1824,7 @@ function initSns() {
   }
 
   // ── Top products table ────────────────────────────────────────────────────
-  async function buildWebTopProducts(allRows, targetYear, targetMonth, prevYear, prevMonth) {
+  async function buildWebTopProducts(allRows, adsRows, targetYear, targetMonth, prevYear, prevMonth) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
     const tbody  = document.getElementById('web-tp-tbody');
 
@@ -1790,18 +1839,25 @@ function initSns() {
     }
 
     // Aggregate units per SKU
-    const skuUnits    = {};
-    const skuSubUnits = {};
+    const skuUnits = {};
     for (const row of monthRows) {
       const sku = (row.sku || '').trim().toUpperCase();
       if (!sku) continue;
       const qty = parseInt(row.unit_count, 10) || 0;
       if (!qty) continue;
-      skuUnits[sku]    = (skuUnits[sku] || 0) + qty;
-      if (row.is_subscription === 'TRUE') {
-        skuSubUnits[sku] = (skuSubUnits[sku] || 0) + qty;
-      }
+      skuUnits[sku] = (skuUnits[sku] || 0) + qty;
     }
+
+    // Total ad conversions for this month (not per-SKU — Google Ads doesn't break down by SKU)
+    // We show total ad units on the KPI cards; top products table shows organic as units - ad_share
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
+    const totalAdConversions = Math.round(
+      (adsRows || [])
+        .filter(r => (r.date || '').substring(0,7) === prefix)
+        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
+    );
+    const totalUnitsThisMonth = Object.values(skuUnits).reduce((s, v) => s + v, 0);
+    const adShare = totalUnitsThisMonth > 0 ? totalAdConversions / totalUnitsThisMonth : 0;
 
     // Prev month for MOM
     const skuUnitsPrev = {};
@@ -1815,6 +1871,14 @@ function initSns() {
                skuUnitsPrev[sku] = (skuUnitsPrev[sku] || 0) + qty;
              });
     }
+    const prevAdConversions = Math.round(
+      (adsRows || [])
+        .filter(r => {
+          const pm = prevMonth, py = prevYear;
+          return (r.date || '').substring(0,7) === `${py}-${String(pm).padStart(2,'0')}`;
+        })
+        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
+    );
 
     // Load product name lookup — col B = SKU, col C = Name
     const skuNameMap = {};
@@ -1849,17 +1913,18 @@ function initSns() {
 
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
-      const name      = skuNameMap[sku] || sku;
-      const subUnits  = skuSubUnits[sku] || 0;
-      const oneUnits  = Math.max(0, units - subUnits);
-      const prevUnits = skuUnitsPrev[sku] || 0;
+      const name       = skuNameMap[sku] || sku;
+      const prevUnits  = skuUnitsPrev[sku] || 0;
+      // Distribute ad conversions proportionally by SKU's share of total units
+      const skuAdUnits  = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
+      const skuOrgUnits = Math.max(0, units - skuAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${subUnits > 0 ? `<span class="tp-units">${subUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</div></td>
-        <td><div class="tp-cell"><span class="tp-units">${oneUnits.toLocaleString()}</span></div></td>`;
+        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span></div></td>`;
       tbody.appendChild(tr);
     });
 
@@ -2258,6 +2323,44 @@ function initSns() {
     const editBtn     = document.getElementById('tp-insight-edit-btn');
     const saveBtn     = document.getElementById('tp-insight-save');
     const cancelBtn   = document.getElementById('tp-insight-cancel');
+
+    function loadInsight() {
+      const saved = localStorage.getItem(STORAGE_KEY) || '';
+      textEl.textContent = saved || 'No insight added yet — click "Edit insight" to add one.';
+      textEl.style.opacity = saved ? '1' : '0.55';
+    }
+
+    editBtn.addEventListener('click', () => {
+      textareaEl.value = localStorage.getItem(STORAGE_KEY) || '';
+      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+      if (editorEl.style.display === 'block') setTimeout(() => textareaEl.focus(), 50);
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const val = textareaEl.value.trim();
+      if (val) localStorage.setItem(STORAGE_KEY, val);
+      else localStorage.removeItem(STORAGE_KEY);
+      loadInsight();
+      editorEl.style.display = 'none';
+    });
+
+    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+
+    loadInsight();
+  })();
+
+  // ── Key Insights — Website page ──────────────────────────────────────────
+  (function initWebInsights() {
+    const STORAGE_KEY = 'evolis_web_key_insight';
+    const textEl      = document.getElementById('web-insight-text');
+    const barEl       = document.getElementById('web-insight-bar');
+    const editorEl    = document.getElementById('web-insight-editor');
+    const textareaEl  = document.getElementById('web-insight-textarea');
+    const editBtn     = document.getElementById('web-insight-edit-btn');
+    const saveBtn     = document.getElementById('web-insight-save');
+    const cancelBtn   = document.getElementById('web-insight-cancel');
+
+    if (!editBtn) return;
 
     function loadInsight() {
       const saved = localStorage.getItem(STORAGE_KEY) || '';
