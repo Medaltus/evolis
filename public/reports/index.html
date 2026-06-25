@@ -1148,6 +1148,7 @@ function initSns() {
   window.initAmazonLive = async function () {
     if (window._amazonLiveInit) return;
     window._amazonLiveInit = true;
+    console.log('[Evolis] initAmazonLive() called');
 
     const { year, month } = getLastFullMonth();
     const monthNamesAmz = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1178,6 +1179,7 @@ function initSns() {
       const SYNC_GID = '1163928587';
       const HIST_GID = '1249281379';
 
+      console.log('[Evolis] Starting fetch...');
       const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
@@ -1185,6 +1187,8 @@ function initSns() {
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
       ]);
 
+      console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
+      console.log('[Evolis] histCsv length:', histCsv.length, 'isCsv:', isCsv(histCsv));
       const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
       const histRows = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
 
@@ -1603,6 +1607,7 @@ function initSns() {
   window.initWebLive = async function () {
     if (window._webLiveInit) return;
     window._webLiveInit = true;
+    console.log('[Evolis] initWebLive() called');
 
     const { year, month } = getLastFullMonth();
     let prevMonth = month - 1, prevYear = year;
@@ -2008,6 +2013,7 @@ function initSns() {
   window.initWalmartLive = async function () {
     if (window._walmartLiveInit) return;
     window._walmartLiveInit = true;
+    console.log('[Evolis] initWalmartLive() called');
 
     const { year, month } = getLastFullMonth();
     let prevMonth = month - 1, prevYear = year;
@@ -2376,4 +2382,4 @@ function initSns() {
 })();
 </script>
 </body>
-</html> 
+</html>
