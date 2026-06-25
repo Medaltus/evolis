@@ -1850,7 +1850,6 @@ function initSns() {
 
     // Total ad conversions for this month (not per-SKU — Google Ads doesn't break down by SKU)
     // We show total ad units on the KPI cards; top products table shows organic as units - ad_share
-    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
     const totalAdConversions = Math.round(
       (adsRows || [])
         .filter(r => (r.date || '').substring(0,7) === prefix)
