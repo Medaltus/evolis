@@ -143,6 +143,9 @@
     },
     "api/run-listing-audit.js": {
       "maxDuration": 300
+    },
+    "api/write-listing-audit.js": {
+      "maxDuration": 30
     }
   },
   "routes": [
