@@ -1,9 +1,13 @@
 /**
  * api/run-listing-audit.js
  * POST /api/run-listing-audit
+ * 
+ * Calls Claude once per SKU (sequentially) to avoid JSON corruption from
+ * large batched responses. Each call returns a small, simple JSON object
+ * that's easy to parse reliably.
  */
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -18,125 +22,141 @@ export default async function handler(req, res) {
 
   let skill = '';
   if (skillB64) {
-    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 3000); } catch(e) {}
+    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 2000); } catch(e) {}
   }
 
-  const isTravel = catalog.every(s => s.travel);
-
-  function sanitize(s) {
+  function san(s, maxLen) {
     if (!s) return '';
     return String(s)
-      .replace(/&amp;/g, 'and').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/g, ' ')
-      .replace(/[\u2018\u2019\u0060\u00b4]/g, '')  // remove all apostrophe variants
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2013\u2014]/g, '-')
-      .replace(/\s+/g, ' ').trim().slice(0, 350);
+      .replace(/&amp;/g,'and').replace(/&nbsp;/g,' ').replace(/&[a-z]+;/g,' ')
+      .replace(/[\u2018\u2019\u0060\u00b4]/g,'')
+      .replace(/[\u201C\u201D]/g,'')
+      .replace(/[\u2013\u2014]/g,'-')
+      .replace(/\u2026/g,'...')
+      .replace(/"/g,'')
+      .replace(/\\/g,'')
+      .replace(/\r?\n|\r/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0, maxLen || 300);
   }
 
-  const systemPrompt = `You are an Amazon listing compliance auditor for Medaltus / evolis hair care.
+  const systemPrompt = `You are an Amazon listing compliance auditor for evolis hair care (Medaltus).
+${skill ? '\nKey rules:\n' + skill + '\n' : ''}
+OUTPUT FORMAT - follow exactly:
+- Return a single JSON object (not array) for the ONE SKU you are given
+- Use only straight double quotes for JSON
+- No apostrophes in values - write "does not" not "don't"  
+- No em dashes - use hyphen only
+- No newlines inside string values
+- Keep notes under 150 chars, rewrites under the stated char limits
+- Title rewrite: max 75 chars
+- Item Highlights rewrite: max 125 chars (generate even if missing)
+- Bullet rewrite: max 200 chars (B1 only as example)
+- Backend rewrite: max 200 chars
 
-${skill ? 'Key compliance rules:\n' + skill + '\n\n' : ''}STRICT OUTPUT RULES - violations will cause system failure:
-1. Output ONLY a raw JSON array. Zero text before or after the array.
-2. No markdown fences of any kind.
-3. No apostrophes anywhere - write "does not" not "don't", "it is" not "it's", "hair that is" not "hair that's"
-4. No smart quotes - use only straight double quotes " for JSON
-5. No em dashes or en dashes - use hyphen - only
-6. No ellipsis character - write "..." as three separate periods
-7. Every string value must be on a single line - no newlines inside string values
-8. Max 200 characters per string value
-9. Title max 75 chars, Item Highlights max 125 chars`;
+Return exactly this structure:
+{"sku":"SKU","title_notes":"...","title_rewrite":"...","ih_notes":"...","ih_rewrite":"...","bullets_notes":"...","bullets_rewrite":"...","desc_notes":"...","backend_notes":"...","backend_rewrite":"..."}`;
 
-  const catalogText = catalog.map(s => {
-    if (s.travel) {
-      return `SKU:${s.sku}|${s.name}[TRAVEL]|Title:${sanitize(s.title)}|IH:${sanitize(s.item_highlights)||'MISSING'}`;
-    }
-    const bullets = (s.bullets||[]).slice(0,5).map((b,i)=>`B${i+1}:${sanitize(b)}`).join('|');
-    return `SKU:${s.sku}|${s.name}|Title:${sanitize(s.title)}|IH:${sanitize(s.item_highlights)||'MISSING-GENERATE'}|${bullets}|Backend:${sanitize(s.backend)}`;
-  }).join('\n\n');
+  const results = [];
 
-  const schema = isTravel
-    ? `[{"sku":"EVO0014","title":{"notes":"note under 150 chars","rewrite":"title under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":null,"description":null,"backend":{"notes":"note","rewrite":""}}]`
-    : `[{"sku":"EVO0001","title":{"notes":"note under 150 chars","rewrite":"title under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":{"notes":"issues summary under 150 chars","rewrite":"B1 rewrite under 200 chars"},"description":{"notes":"note under 150 chars","rewrite":""},"backend":{"notes":"note under 150 chars","rewrite":"cleaned keywords under 200 chars"}}]`;
-
-  const userPrompt = `Audit these evolis SKUs. Return ONLY a JSON array matching this schema:
-${schema}
-
-Critical: no apostrophes, no em dashes, no smart quotes, no newlines in strings, all values under 200 chars.
-For missing Item Highlights: generate one under 125 chars.
-For travel SKUs: set bullets and description to null.
-
-CATALOG:
-${catalogText}`;
-
-  try {
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
-    });
-
-    if (!claudeRes.ok) {
-      const err = await claudeRes.text();
-      return res.status(502).json({ error: 'Claude API error ' + claudeRes.status, detail: err.slice(0, 200) });
-    }
-
-    const data = await claudeRes.json();
-    if (data.stop_reason === 'max_tokens') console.warn('run-listing-audit: truncated');
-
-    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-
-    // ── Aggressive sanitization of Claude's raw output ──────────────
-    let clean = raw
-      .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```\s*$/i, '')
-      .trim();
-
-    // Extract just the array
-    const arrStart = clean.indexOf('[');
-    const arrEnd   = clean.lastIndexOf(']');
-    if (arrStart >= 0 && arrEnd > arrStart) clean = clean.slice(arrStart, arrEnd + 1);
-
-    // Fix common Claude output issues
-    clean = clean
-      .replace(/[\u2018\u2019\u0060\u00b4]/g, '')           // remove apostrophes
-      .replace(/[\u201C\u201D]/g, '"')                        // smart double → straight
-      .replace(/[\u2013\u2014]/g, '-')                        // dashes → hyphen
-      .replace(/\u2026/g, '...')                              // ellipsis
-      .replace(/\\n/g, ' ')                                   // escaped newlines in strings
-      .replace(/\r?\n/g, ' ')                                 // literal newlines
-      .replace(/\t/g, ' ')                                    // tabs
-      .replace(/,\s*}/g, '}')                                 // trailing commas in objects
-      .replace(/,\s*]/g, ']');                                // trailing commas in arrays
-
-    // Fix unescaped double quotes inside string values — common Claude mistake
-    // Pattern: find ": "...string with "quotes" inside..."
-    // This is the trickiest issue. Try a targeted fix for known patterns.
-    clean = clean.replace(/"notes"\s*:\s*"([^"]*)"([^"]*)"([^"]*)"/g, (m, a, b, c) => {
-      return `"notes":"${a}${b}${c}"`;
-    });
-
-    let results;
+  for (const skuData of catalog) {
     try {
-      results = JSON.parse(clean);
-    } catch(parseErr) {
-      console.error('parse error:', parseErr.message, '| pos:', parseErr.message.match(/\d+/)?.[0]);
-      console.error('Around error:', clean.slice(Math.max(0, (parseInt(parseErr.message.match(/\d+/)?.[0]||0)) - 50), (parseInt(parseErr.message.match(/\d+/)?.[0]||0)) + 50));
+      let userPrompt;
+      if (skuData.travel) {
+        userPrompt = `Audit this travel/size variation SKU. For travel SKUs: check title compliance only, generate Item Highlights if missing. Set bullets_rewrite and desc_notes to empty string.
 
-      // Last resort: try to build a partial result from what parsed successfully
-      const partialMatch = clean.match(/(\{[^{}]*"sku"\s*:\s*"[^"]+"/g);
-      if (partialMatch && partialMatch.length > 0) {
-        return res.status(500).json({
-          error: 'Could not parse full audit response: ' + parseErr.message,
-          partialCount: partialMatch.length,
-          hint: 'Claude output contained characters that broke JSON parsing. Check Vercel logs.'
-        });
+SKU: ${skuData.sku}
+Name: ${skuData.name} [TRAVEL SIZE]
+Title: ${san(skuData.title, 300)}
+Item Highlights: ${san(skuData.item_highlights, 200) || 'MISSING - GENERATE ONE'}
+Backend: ${san(skuData.backend, 200)}`;
+      } else {
+        const bullets = (skuData.bullets||[]).slice(0,5).map((b,i)=>`Bullet ${i+1}: ${san(b,250)}`).join('\n');
+        userPrompt = `Audit this full SKU listing.
+
+SKU: ${skuData.sku}
+Name: ${skuData.name}
+Title: ${san(skuData.title, 300)}
+Item Highlights: ${san(skuData.item_highlights, 200) || 'MISSING - GENERATE ONE'}
+${bullets}
+Description (excerpt): ${san(skuData.description, 300)}
+Backend: ${san(skuData.backend, 200)}`;
       }
-      return res.status(500).json({ error: 'Could not parse audit response: ' + parseErr.message });
+
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 600,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+
+      if (!claudeRes.ok) {
+        console.error(`[audit] ${skuData.sku} Claude error ${claudeRes.status}`);
+        results.push({ sku: skuData.sku, title_notes: 'API error', title_rewrite: '', ih_notes: '', ih_rewrite: '', bullets_notes: '', bullets_rewrite: '', desc_notes: '', backend_notes: '', backend_rewrite: '' });
+        continue;
+      }
+
+      const data = await claudeRes.json();
+      const raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+
+      // Sanitize and parse
+      let clean = raw
+        .replace(/^```json\s*/i,'').replace(/^```\s*/i,'').replace(/\s*```\s*$/i,'')
+        .replace(/[\u2018\u2019\u0060\u00b4]/g,'')
+        .replace(/[\u201C\u201D]/g,'"')
+        .replace(/[\u2013\u2014]/g,'-')
+        .replace(/\u2026/g,'...')
+        .replace(/,\s*}/g,'}')
+        .trim();
+
+      // Extract just the object
+      const objStart = clean.indexOf('{');
+      const objEnd   = clean.lastIndexOf('}');
+      if (objStart >= 0 && objEnd > objStart) clean = clean.slice(objStart, objEnd+1);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(clean);
+      } catch(e) {
+        console.error(`[audit] ${skuData.sku} parse error: ${e.message} | raw: ${clean.slice(0,200)}`);
+        // Build a minimal result so the SKU isn't skipped entirely
+        parsed = {
+          sku: skuData.sku,
+          title_notes: 'Parse error - rerun audit',
+          title_rewrite: '', ih_notes: '', ih_rewrite: '',
+          bullets_notes: '', bullets_rewrite: '', desc_notes: '',
+          backend_notes: '', backend_rewrite: ''
+        };
+      }
+
+      // Normalize to expected structure
+      results.push({
+        sku:              skuData.sku,
+        title:            { notes: parsed.title_notes||'', rewrite: parsed.title_rewrite||'' },
+        item_highlights:  { notes: parsed.ih_notes||'',    rewrite: parsed.ih_rewrite||''    },
+        bullets:          skuData.travel ? null : { notes: parsed.bullets_notes||'', rewrite: parsed.bullets_rewrite||'' },
+        description:      skuData.travel ? null : { notes: parsed.desc_notes||'',   rewrite: '' },
+        backend:          { notes: parsed.backend_notes||'', rewrite: parsed.backend_rewrite||'' }
+      });
+
+      console.log(`[audit] ✓ ${skuData.sku}`);
+
+    } catch(err) {
+      console.error(`[audit] ✗ ${skuData.sku}: ${err.message}`);
+      results.push({
+        sku: skuData.sku,
+        title: { notes: err.message, rewrite: '' },
+        item_highlights: { notes: '', rewrite: '' },
+        bullets: null, description: null,
+        backend: { notes: '', rewrite: '' }
+      });
     }
-
-    return res.status(200).json({ ok: true, results, skuCount: results.length });
-
-  } catch(err) {
-    console.error('run-listing-audit error:', err);
-    return res.status(500).json({ error: err.message });
   }
+
+  return res.status(200).json({ ok: true, results, skuCount: results.length });
 }
