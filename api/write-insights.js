@@ -1,43 +1,17 @@
 /**
  * api/write-insights.js
  * POST /api/write-insights
- * Appends a new row to the brand's tab in the shared Insights Log sheet.
- * Creates the tab if it doesn't exist yet.
- * 
- * Body: { brand, date, organic, ppc, listing, summary, sheetId }
- * 
- * Columns written (in order):
- *   date | organic_json | ppc_json | listing_json | summary | uploaded_at
+ * Prepends a row to the brand's tab in the shared Insights Log sheet.
+ *
+ * Body: { brand, sheetId, gid, date, organic, ppc, listing, summary }
+ * Columns: date | organic_json | ppc_json | listing_json | summary | uploaded_at
  */
 
-const { ensureTab, appendRows } = require('./config/_sheets_client');
+const { google } = require('googleapis');
 
-export default async function handler(req, res) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+const HEADERS = ['date', 'organic_json', 'ppc_json', 'listing_json', 'summary', 'uploaded_at'];
 
-  const { brand, date, organic, ppc, listing, summary, sheetId } = req.body || {};
-
-  if (!brand || !sheetId || !summary) {
-    return res.status(400).json({ error: 'Missing required fields: brand, sheetId, summary' });
-  }
-
-  const HEADERS = ['date', 'organic_json', 'ppc_json', 'listing_json', 'summary', 'uploaded_at'];
-  const row = [
-    date || new Date().toISOString().slice(0, 10),
-    organic || '',
-    ppc || '',
-    listing || '',
-    summary || '',
-    new Date().toISOString()
-  ];
-
-  // Build Google auth token
-  const { google } = require('googleapis');
+async function getAuthToken() {
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -45,34 +19,81 @@ export default async function handler(req, res) {
     },
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
-  const token = await auth.getAccessToken();
-
-  // Ensure the brand tab exists
-  await ensureTab(sheetId, brand, HEADERS, token);
-
-  // Prepend row (newest-first) by inserting at row 2 (after header)
-  await prependRow(sheetId, brand, row, token);
-
-  return res.status(200).json({ ok: true, brand, date });
+  return auth.getAccessToken();
 }
 
-async function prependRow(sheetId, tabName, rowData, token) {
-  // Insert a blank row at position 2 (index 1), then write data to it
-  const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`;
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // First get the sheetId (numeric) for this tab
-  const metaRes = await fetch(`${sheetsUrl}?fields=sheets.properties`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const meta = await metaRes.json();
-  const sheet = meta.sheets.find(s => s.properties.title === tabName);
-  if (!sheet) throw new Error(`Tab "${tabName}" not found`);
-  const numericSheetId = sheet.properties.sheetId;
+  const { brand, sheetId, date, organic, ppc, listing, summary } = req.body || {};
 
-  // Insert blank row at index 1 (row 2)
-  await fetch(`${sheetsUrl}/values/${encodeURIComponent(tabName + '!A2')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
-    method: 'POST',
+  if (!sheetId || !brand || !summary) {
+    return res.status(400).json({ error: 'Missing: brand, sheetId, or summary' });
+  }
+
+  if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    console.error('write-insights: missing Google credentials env vars');
+    return res.status(500).json({ error: 'Google credentials not configured' });
+  }
+
+  try {
+    const token = await getAuthToken();
+
+    // Ensure header row exists
+    await ensureHeaders(sheetId, brand, token);
+
+    // Prepend row at row 2 (newest-first)
+    const row = [
+      date || new Date().toISOString().slice(0, 10),
+      organic  || '',
+      ppc      || '',
+      listing  || '',
+      summary  || '',
+      new Date().toISOString()
+    ];
+
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(brand + '!A2')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    const appendRes = await fetch(appendUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [row] })
+    });
+
+    if (!appendRes.ok) {
+      const err = await appendRes.text();
+      console.error('write-insights append failed:', appendRes.status, err.slice(0, 300));
+      return res.status(502).json({ error: 'Sheets append failed', status: appendRes.status, detail: err.slice(0, 200) });
+    }
+
+    return res.status(200).json({ ok: true, brand, date });
+
+  } catch (err) {
+    console.error('write-insights error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+async function ensureHeaders(sheetId, tabName, token) {
+  const checkUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:F1')}`;
+  const checkRes = await fetch(checkUrl, { headers: { Authorization: `Bearer ${token}` } });
+
+  if (!checkRes.ok) {
+    console.error('write-insights: could not check headers, status', checkRes.status);
+    return;
+  }
+
+  const data = await checkRes.json();
+  if (data.values && data.values[0] && data.values[0].length > 0) return;
+
+  // Write headers
+  const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1')}?valueInputOption=RAW`;
+  await fetch(putUrl, {
+    method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [rowData] })
+    body: JSON.stringify({ values: [HEADERS] })
   });
 }
