@@ -4938,52 +4938,31 @@ async function runListingAudit() {
   const btn = document.getElementById('run-audit-btn');
   const st  = document.getElementById('upload-status');
   btn.classList.add('running'); btn.disabled = true;
-  st.textContent = 'Extracting listing copy\u2026'; st.className = 'upload-status';
+  st.textContent = 'Running listing audit — reads source sheet, writes to audit sheet. This takes 5–6 minutes…';
+  st.className = 'upload-status';
 
   try {
-    const catalog = extractAllListingCopy();
-    const fullSkus   = catalog.filter(s => !s.travel);
-    const travelSkus = catalog.filter(s => s.travel);
-    const allResults = [];
-
-    // ── Call 1: Full SKUs (11 SKUs — title, IH, all bullets, description, backend) ──
-    st.textContent = 'Auditing full SKUs (1/2 — \u2248 30s)\u2026';
-    // Debug: log first SKU title to confirm cleanCopy is working
-    if (fullSkus.length) console.log('[audit] EVO0001 title sample:', fullSkus[0].title && fullSkus[0].title.slice(0,80));
-    const res1 = await fetch('/api/run-listing-audit', {
+    const res = await fetch('/api/run-listing-audit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: fullSkus, skillB64: LISTING_SKILL_B64 })
+      body: JSON.stringify({
+        brand:         INSIGHTS_BRAND_TAB,
+        sourceSheetId: SHEET_LISTINGS_ID,
+        auditSheetId:  LISTING_AUDIT_SHEET_ID
+      })
     });
-    if (!res1.ok) {
-      const errBody = await res1.json().catch(() => ({}));
-      throw new Error('Listing audit API error ' + res1.status + ': ' + (errBody.error || errBody.detail || JSON.stringify(errBody)));
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error('Listing audit error ' + res.status + ': ' + (errBody.error || JSON.stringify(errBody)));
     }
-    const data1 = await res1.json();
-    if (data1.results) allResults.push(...data1.results);
-
-    // ── Call 2: Travel SKUs (7 SKUs — light audit) ──
-    st.textContent = 'Auditing travel SKUs (2/2 — \u2248 15s)\u2026';
-    const res2 = await fetch('/api/run-listing-audit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: travelSkus, skillB64: LISTING_SKILL_B64 })
-    });
-    if (!res2.ok) {
-      const errBody2 = await res2.json().catch(() => ({}));
-      throw new Error('Listing audit API error (travel) ' + res2.status + ': ' + (errBody2.error || JSON.stringify(errBody2)));
-    }
-    const data2 = await res2.json();
-    if (data2.results) allResults.push(...data2.results);
-
-    st.textContent = 'Injecting audit results\u2026';
-    injectAuditResults(allResults);
-
-    st.textContent = 'Saving audit results\u2026';
-    await saveAuditResultsToSheet(allResults);
-
-    st.textContent = '\u2713 Listing audit complete \u2014 ' + allResults.length + ' SKUs reviewed \u2014 ' + new Date().toLocaleTimeString();
+    const data = await res.json();
+    st.textContent = '\u2713 Audit complete \u2014 ' + (data.skuCount || 0) + ' SKUs written to audit sheet \u2014 ' + new Date().toLocaleTimeString();
     st.className = 'upload-status success';
+
+    // Auto-reload audit results into the page
+    st.textContent += ' \u2014 Loading results\u2026';
+    await loadAuditResultsFromSheet();
+    st.textContent = '\u2713 Audit complete \u2014 ' + (data.skuCount || 0) + ' SKUs \u2014 results loaded \u2014 ' + new Date().toLocaleTimeString();
 
   } catch(err) {
     console.error('Listing audit error:', err);
@@ -4996,61 +4975,72 @@ async function runListingAudit() {
 
 // ── Inject audit results below each la-card ───────────────────────
 function injectAuditResults(results) {
-  _lastAuditResults = results; // save for history
+  _lastAuditResults = results;
   // Clear any previous audit zones
   document.querySelectorAll('.la-audit-zone').forEach(z => z.remove());
 
-  for (const result of results) {
-    const skuMeta = EVOLIS_SKUS.find(s => s.sku === result.sku);
-    if (!skuMeta) continue;
-    const el = document.getElementById(skuMeta.id);
+  for (const r of results) {
+    const pageId = SKU_TO_PAGE_ID[r.sku];
+    if (!pageId) continue;
+    const el = document.getElementById(pageId);
     if (!el) continue;
 
     // Show the update bar for this SKU
-    const updateBar = document.getElementById('update-bar-' + skuMeta.id);
+    const updateBar = document.getElementById('update-bar-' + pageId);
     if (updateBar) updateBar.style.display = 'flex';
 
-    // Inject below each field card
-    const fieldMap = [
-      { label: 'Active Title',          auditKey: 'title'           },
-      { label: 'Item Highlights',       auditKey: 'item_highlights' },
-      { label: 'Active Bullet Points',  auditKey: 'bullets'         },
-      { label: 'Active Product Description', auditKey: 'description'},
-      { label: 'Backend Keywords',      auditKey: 'backend'         },
-    ];
-
-    for (const { label, auditKey } of fieldMap) {
-      const auditData = result[auditKey];
-      if (!auditData) continue;
-
-      // Find the la-card with this label
+    // Helper: inject an audit zone below a specific la-card
+    function injectZone(labelText, sublabelText, note, rewrite, charLimit) {
       const card = [...el.querySelectorAll('.la-card')].find(c => {
         const lbl = c.querySelector('.la-card-label');
-        return lbl && lbl.textContent.includes(label);
+        if (!lbl || !lbl.textContent.includes(labelText)) return false;
+        if (sublabelText) {
+          const sub = c.querySelector('.la-card-sublabel');
+          return sub && sub.textContent.includes(sublabelText);
+        }
+        return true;
       });
-      if (!card) continue;
-
-      // Build audit zone HTML
-      const note   = Array.isArray(auditData.notes) ? auditData.notes.join(' ') : (auditData.notes || '');
-      const rewrite = auditData.rewrite || '';
-      const chars  = rewrite.length;
-      const limit  = auditKey === 'title' ? 75 : auditKey === 'item_highlights' ? 125 : auditKey === 'backend' ? 500 : 0;
-      const charInfo = limit > 0 ? `<div class="la-audit-chars">${chars} chars ${chars > limit ? '<span class="over">OVER limit of '+limit+'</span>' : '✔ within '+limit+' char limit'}</div>` : '';
-
+      if (!card) return;
+      if (!note && !rewrite) return;
+      const chars = rewrite ? rewrite.length : 0;
+      const charInfo = (charLimit > 0 && rewrite)
+        ? \`<div class="la-audit-chars">\${chars} chars \${chars > charLimit ? '<span class="over">OVER limit of '+charLimit+'</span>' : '\u2714 within '+charLimit+' char limit'}</div>\`
+        : '';
       const zone = document.createElement('div');
       zone.className = 'la-audit-zone';
-      zone.innerHTML = `
-        <div class="la-audit-zone-label">✦ Audit Findings</div>
-        ${note ? `<div class="la-audit-note">${note}</div>` : ''}
-        ${rewrite ? `<div class="la-audit-rewrite">
+      zone.innerHTML = \`
+        <div class="la-audit-zone-label">\u2726 Audit Findings</div>
+        \${note ? \`<div class="la-audit-note">\${note}</div>\` : ''}
+        \${rewrite ? \`<div class="la-audit-rewrite">
           <div class="la-audit-rewrite-label">Suggested Rewrite</div>
-          <button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('p').textContent)">Copy</button>
-          <p style="margin:0;">${rewrite}</p>
-          ${charInfo}
-        </div>` : ''}
-      `;
+          <button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
+          <p style="margin:0;">\${rewrite}</p>
+          \${charInfo}
+        </div>\` : ''}
+      \`;
       card.appendChild(zone);
     }
+
+    // Title
+    injectZone('Active Title', null, r.title_notes, r.title_rewrite, 75);
+
+    // Item Highlights
+    injectZone('Item Highlights', null, r.ih_notes, r.ih_rewrite, 125);
+
+    // Bullets — shared notes on bullet 1 card, individual rewrites on each bullet card
+    if (r.bullets_notes || r.bullet_1_rewrite) {
+      injectZone('Active Bullet Points', 'BULLET 1', r.bullets_notes, r.bullet_1_rewrite, 200);
+    }
+    if (r.bullet_2_rewrite) injectZone('Active Bullet Points', 'BULLET 2', '', r.bullet_2_rewrite, 200);
+    if (r.bullet_3_rewrite) injectZone('Active Bullet Points', 'BULLET 3', '', r.bullet_3_rewrite, 200);
+    if (r.bullet_4_rewrite) injectZone('Active Bullet Points', 'BULLET 4', '', r.bullet_4_rewrite, 200);
+    if (r.bullet_5_rewrite) injectZone('Active Bullet Points', 'BULLET 5', '', r.bullet_5_rewrite, 200);
+
+    // Description
+    injectZone('Active Product Description', null, r.desc_notes, r.desc_rewrite, 0);
+
+    // Backend
+    injectZone('Backend Keywords', null, r.backend_notes, r.backend_rewrite, 500);
   }
 }
 
@@ -5209,27 +5199,6 @@ function updateCard(pageEl, labelText, sublabelText, newValue) {
 
 // Auto-load on DOMContentLoaded (already have one listener — add to existing)
 
-// ── Save full audit results to listing audit sheet ────────────────
-async function saveAuditResultsToSheet(results) {
-  // Add sku_name to each result for the sheet
-  const enriched = results.map(r => {
-    const meta = EVOLIS_SKUS.find(s => s.sku === r.sku);
-    return Object.assign({}, r, { sku_name: meta ? meta.name : r.sku });
-  });
-  fetch('/api/write-listing-audit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      brand:   INSIGHTS_BRAND_TAB,
-      sheetId: LISTING_AUDIT_SHEET_ID,
-      gid:     LISTING_AUDIT_EVOLIS_GID,
-      date:    new Date().toISOString().slice(0, 10),
-      action:  'audit_run',
-      results: enriched
-    })
-  }).catch(err => console.warn('[listings] Could not save audit results:', err.message));
-}
-
 // ── Load most recent audit results from sheet and re-inject ───────
 async function loadAuditResultsFromSheet() {
   try {
@@ -5240,25 +5209,36 @@ async function loadAuditResultsFromSheet() {
     const rows = parseCsvToRows(await res.text());
     if (!rows.length) return;
 
-    // Find the most recent audit_run date
-    const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku'] && r['sku'] !== '_ALL_');
+    // Only use audit_run rows that have a sku
+    const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku']);
     if (!auditRows.length) return;
-    const latestDate = auditRows[0]['date']; // newest first (prepended)
+
+    // Find most recent audit date and keep only those rows
+    const latestDate = auditRows[0]['date'];
     const latest = auditRows.filter(r => r['date'] === latestDate);
 
-    // Reconstruct results array from flat columns
+    // Map flat sheet columns to the flat structure injectAuditResults expects
     const results = latest.map(r => ({
-      sku: r['sku'],
-      title:           { notes: r['title_notes'] || '',   rewrite: r['title_rewrite'] || ''   },
-      item_highlights: { notes: r['ih_notes'] || '',      rewrite: r['ih_rewrite'] || ''      },
-      bullets:         r['bullets_notes'] ? { notes: r['bullets_notes'], rewrite: r['bullets_rewrite'] || '' } : null,
-      description:     null,
-      backend:         { notes: r['backend_notes'] || '', rewrite: r['backend_rewrite'] || '' }
+      sku:              r['sku']              || '',
+      title_notes:      r['title_notes']      || '',
+      title_rewrite:    r['title_rewrite']    || '',
+      ih_notes:         r['ih_notes']         || '',
+      ih_rewrite:       r['ih_rewrite']       || '',
+      bullets_notes:    r['bullets_notes']    || '',
+      bullet_1_rewrite: r['bullet_1_rewrite'] || '',
+      bullet_2_rewrite: r['bullet_2_rewrite'] || '',
+      bullet_3_rewrite: r['bullet_3_rewrite'] || '',
+      bullet_4_rewrite: r['bullet_4_rewrite'] || '',
+      bullet_5_rewrite: r['bullet_5_rewrite'] || '',
+      desc_notes:       r['desc_notes']       || '',
+      desc_rewrite:     r['desc_rewrite']     || '',
+      backend_notes:    r['backend_notes']    || '',
+      backend_rewrite:  r['backend_rewrite']  || '',
     }));
 
     if (results.length) {
       injectAuditResults(results);
-      console.log('[listings] Restored', results.length, 'SKU audit results from', latestDate);
+      console.log('[listings] Loaded', results.length, 'SKU audit results from', latestDate);
     }
   } catch(err) {
     console.warn('[listings] Could not load audit results:', err.message);
