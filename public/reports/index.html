@@ -4948,6 +4948,8 @@ async function runListingAudit() {
 
     // ── Call 1: Full SKUs (11 SKUs — title, IH, all bullets, description, backend) ──
     st.textContent = 'Auditing full SKUs (1/2 — \u2248 30s)\u2026';
+    // Debug: log first SKU title to confirm cleanCopy is working
+    if (fullSkus.length) console.log('[audit] EVO0001 title sample:', fullSkus[0].title && fullSkus[0].title.slice(0,80));
     const res1 = await fetch('/api/run-listing-audit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
