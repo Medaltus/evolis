@@ -147,6 +147,9 @@ ${listingCtxTrimmed}`;
       });
     }
 
+    // Always override date with actual server date — Claude often hallucinates dates
+    insights.date = new Date().toISOString().slice(0, 10);
+
     return res.status(200).json({ ok: true, insights });
 
   } catch (err) {
