@@ -4312,7 +4312,7 @@ function initSns() {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// INSIGHTS ENGINE v2
+// INSIGHTS ENGINE v3 — 4 report types: KW Tracker, Business, H10 Ads, SQP
 // ═══════════════════════════════════════════════════════════════════
 
 const INSIGHTS_SHEET_ID   = '1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg';
@@ -4322,10 +4322,9 @@ const UPLOADS_EVOLIS_GID  = '1714211650';
 const INSIGHTS_BRAND_TAB  = 'evolis';
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
 
-function getListingSkill() {
-  try { return atob(LISTING_SKILL_B64); } catch(e) { return ''; }
-}
+function getListingSkill() { try { return atob(LISTING_SKILL_B64); } catch(e) { return ''; } }
 
+// Files dropped into the three slots — all types auto-detected
 const _upFiles = { kw: [], biz: [], ppc: [] };
 
 function upDragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('dragover'); }
@@ -4337,6 +4336,7 @@ function upHandleFiles(fl, type) {
   document.getElementById('files-'+type).innerHTML = _upFiles[type].map(f=>'📄 '+f.name).join('<br>');
 }
 
+// ── Parse file → raw text ─────────────────────────────────────────
 async function parseFile(file) {
   return new Promise(res => {
     const r = new FileReader();
@@ -4353,75 +4353,162 @@ async function parseFile(file) {
   });
 }
 
-function parseCsvToRows(text) {
-  const lines = text.trim().split('\n');
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(hdr => hdr.replace(/^"|"$/g,'').trim().toLowerCase());
-  return lines.slice(1).map(line => {
-    const vals = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || [];
-    const obj = {};
-    headers.forEach((hdr,i) => { obj[hdr] = (vals[i]||'').replace(/^"|"$/g,'').trim(); });
-    return obj;
-  }).filter(row => Object.values(row).some(v=>v));
+// ── Detect report type from filename + first line ─────────────────
+function detectReportType(filename, text) {
+  const name = filename.toLowerCase();
+  const fl = (text||'').split('\n')[0];
+  if (fl.includes('Brand=') || fl.includes('Reporting Range=')) return 'sqp';
+  if (fl.includes('"ASIN"') || fl.startsWith('"ASIN",')) return 'kw';
+  if (fl.startsWith('QUERY,') || fl.includes('QUERY,TITLE,SPEND')) return 'ads';
+  if (fl.includes('Sessions - Total') || fl.includes('Units Ordered')) return 'biz';
+  if (name.includes('businessreport') || name.includes('business_report') || name.includes('business-report')) return 'biz';
+  if (name.includes('-kt-') || name.includes('helium10-kt') || name.includes('h10-kt')) return 'kw';
+  if (name.includes('h10_ads') || name.includes('h10-ads') || (name.includes('ads') && name.includes('report'))) return 'ads';
+  if (name.includes('sqp') || name.includes('search_query')) return 'sqp';
+  return 'unknown';
 }
 
-function safeJson(s) { try { return JSON.parse(s||'[]'); } catch { return []; } }
-
-function extractKwSummary(files) {
-  const rows = [];
-  for (const f of files) {
-    for (const row of parseCsvToRows(f._parsed||'')) {
-      const kw   = row['keyword']||row['search term']||row['keywords']||'';
-      const rank = parseInt(row['rank']||row['organic rank']||row['position']||'0');
-      const prev = parseInt(row['prev rank']||row['previous rank']||'0');
-      const vol  = parseInt(row['search volume']||row['volume']||'0');
-      const conv = row['conversion rate']||row['aba conversion rate']||'';
-      if (kw && rank > 0) rows.push({ kw, rank, prev, vol, conv });
-    }
-  }
-  return rows.sort((a,b)=>a.rank-b.rank).slice(0,20);
+function parseNum(s) {
+  if (!s) return 0;
+  return parseFloat(String(s).replace(/[$,%>]/g,'').replace(/,/g,'').trim()) || 0;
 }
-
-function extractBizSummary(files) {
-  const rows = [];
-  for (const f of files) {
-    for (const row of parseCsvToRows(f._parsed||'')) {
-      const sku      = row['sku']||row['asin']||row['(child) asin']||row['child asin']||'';
-      const sessions = parseInt(row['sessions']||row['sessions - total']||'0');
-      const units    = parseInt(row['units ordered']||row['units']||'0');
-      const revenue  = parseFloat((row['ordered product sales']||row['revenue']||'0').replace(/[$,]/g,''));
-      const conv     = row['unit session percentage']||row['conversion rate']||'';
-      if (sku) rows.push({ sku, sessions, units, revenue: revenue.toFixed(2), conv });
-    }
-  }
-  return rows.slice(0,20);
+function rankToInt(s) {
+  s = String(s||'').replace(/[>,]/g,'').trim();
+  if (!s || s==='-' || s==='N/A') return 9999;
+  const n = parseInt(s); return isNaN(n) ? 9999 : n;
 }
-
-function extractPpcSummary(files) {
-  const rows = [];
-  for (const f of files) {
-    for (const row of parseCsvToRows(f._parsed||'')) {
-      const campaign = row['campaign name']||row['campaign']||'';
-      const spend    = parseFloat((row['spend']||row['cost']||'0').replace(/[$,]/g,''));
-      const sales    = parseFloat((row['sales']||row['7 day total sales']||row['attributed sales']||'0').replace(/[$,]/g,''));
-      const acos     = row['acos']||row['total acos']||(spend&&sales?((spend/sales)*100).toFixed(1)+'%':'—');
-      const impr     = parseInt((row['impressions']||'0').replace(/,/g,''));
-      const clicks   = parseInt((row['clicks']||'0').replace(/,/g,''));
-      if (campaign) rows.push({ campaign, spend: spend.toFixed(2), sales: sales.toFixed(2), acos, impr, clicks });
-    }
-  }
-  return rows.slice(0,15);
+function csvVals(line) {
+  return (line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g)||[]).map(v=>v.replace(/^"|"$/g,'').trim());
 }
 
 async function parseAllFiles() {
-  for (const type of ['kw','biz','ppc'])
-    for (const file of _upFiles[type])
-      if (!file._parsed) file._parsed = await parseFile(file);
+  for (const type of ['kw','biz','ppc']) {
+    for (const file of _upFiles[type]) {
+      if (!file._text) {
+        file._text = await parseFile(file);
+        file._rtype = detectReportType(file.name, file._text);
+      }
+    }
+  }
+}
+
+// ── Keyword Tracker (Helium 10 KT) ───────────────────────────────
+function extractKwSummary(files) {
+  const rows = [];
+  const allFiles = [...files, ..._upFiles.biz, ..._upFiles.ppc];
+  for (const f of allFiles) {
+    if ((f._rtype||detectReportType(f.name,f._text||'')) !== 'kw') continue;
+    const lines = (f._text||'').replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length < 2) continue;
+    const hdrs = csvVals(lines[0]).map(h=>h.toLowerCase());
+    const i = n => hdrs.findIndex(h=>h.includes(n));
+    const asinI=i('asin'), kwI=i('keyword'), volI=i('search volume');
+    const rankI=i('organic rank'), spI=i('sponsored position');
+    const clkI=hdrs.findIndex(h=>h.includes('aba total clicks'));
+    const cvI =hdrs.findIndex(h=>h.includes('aba total conver'));
+    for (let j=1;j<lines.length;j++) {
+      const v=csvVals(lines[j]);
+      const g=idx=>idx>=0?(v[idx]||''):'';
+      const kw=g(kwI); if (!kw) continue;
+      rows.push({asin:g(asinI),kw,rank:rankToInt(g(rankI)),sp:rankToInt(g(spI)),
+        vol:Math.round(parseNum(g(volI))),aba_click:g(clkI),aba_conv:g(cvI)});
+    }
+  }
+  return rows.sort((a,b)=>a.rank-b.rank).slice(0,30);
+}
+
+// ── Business Report ───────────────────────────────────────────────
+function extractBizSummary(files) {
+  const rows = [];
+  const allFiles = [...files, ..._upFiles.kw, ..._upFiles.ppc];
+  for (const f of allFiles) {
+    if ((f._rtype||detectReportType(f.name,f._text||'')) !== 'biz') continue;
+    const lines = (f._text||'').replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length < 2) continue;
+    const hdrs = csvVals(lines[0]).map(h=>h.toLowerCase());
+    const i = n => hdrs.findIndex(h=>h.includes(n));
+    const skuI=hdrs.indexOf('sku');
+    const sesI=i('sessions - total');
+    const uniI=hdrs.findIndex(h=>h==='units ordered');
+    const revI=hdrs.findIndex(h=>h.includes('ordered product sales')&&!h.includes('b2b'));
+    const cvI =hdrs.findIndex(h=>h.includes('unit session percentage')&&!h.includes('b2b'));
+    for (let j=1;j<lines.length;j++) {
+      const v=csvVals(lines[j]);
+      const g=idx=>idx>=0?(v[idx]||''):'';
+      const sku=g(skuI); if (!sku||sku==='SKU') continue;
+      rows.push({sku,sessions:Math.round(parseNum(g(sesI))),units:Math.round(parseNum(g(uniI))),
+        revenue:parseNum(g(revI)).toFixed(2),conv:g(cvI)});
+    }
+  }
+  return rows.sort((a,b)=>parseFloat(b.revenue)-parseFloat(a.revenue)).slice(0,20);
+}
+
+// ── H10 Ads Report (search term level) ───────────────────────────
+function extractPpcSummary(files) {
+  const rows = [];
+  const allFiles = [...files, ..._upFiles.kw, ..._upFiles.biz];
+  for (const f of allFiles) {
+    if ((f._rtype||detectReportType(f.name,f._text||'')) !== 'ads') continue;
+    const lines = (f._text||'').replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length < 2) continue;
+    const hdrs = csvVals(lines[0]).map(h=>h.toLowerCase());
+    const qI=hdrs.indexOf('query'), tI=hdrs.indexOf('title');
+    const spI=hdrs.indexOf('spend'), saI=hdrs.indexOf('sales');
+    const acI=hdrs.indexOf('acos'), roI=hdrs.indexOf('roas');
+    const clI=hdrs.indexOf('clicks'), orI=hdrs.indexOf('ppc_orders');
+    for (let j=1;j<lines.length;j++) {
+      const v=csvVals(lines[j]);
+      const g=idx=>idx>=0?(v[idx]||''):'';
+      const query=g(qI); const title=g(tI);
+      if (!query||title) continue; // skip ASIN-level aggregate rows
+      const spend=parseNum(g(spI)), sales=parseNum(g(saI));
+      if (spend>0||sales>0) rows.push({query,spend:spend.toFixed(2),sales:sales.toFixed(2),
+        acos:g(acI),roas:g(roI),clicks:Math.round(parseNum(g(clI))),orders:Math.round(parseNum(g(orI)))});
+    }
+  }
+  return rows.sort((a,b)=>parseFloat(b.spend)-parseFloat(a.spend)).slice(0,20);
+}
+
+// ── SQP (Amazon Search Query Performance) ────────────────────────
+function extractSqpSummary(files) {
+  const rows = [];
+  const allFiles = [..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc];
+  for (const f of allFiles) {
+    if ((f._rtype||detectReportType(f.name,f._text||'')) !== 'sqp') continue;
+    // Row 0 = metadata, Row 1 = headers, Row 2+ = data
+    const lines = (f._text||'').replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length < 3) continue;
+    const hdrs = csvVals(lines[1]).map(h=>h.toLowerCase());
+    const qI  = hdrs.indexOf('search query');
+    const volI = hdrs.indexOf('search query volume');
+    const scoreI = hdrs.indexOf('search query score');
+    const impI = hdrs.findIndex(h=>h==='impressions: brand share %');
+    const clkI = hdrs.findIndex(h=>h==='clicks: brand share %');
+    const purI = hdrs.findIndex(h=>h==='purchases: brand share %');
+    const purCntI = hdrs.findIndex(h=>h==='purchases: brand count');
+    for (let j=2;j<lines.length;j++) {
+      const v=csvVals(lines[j]);
+      const g=idx=>idx>=0?(v[idx]||''):'';
+      const query=g(qI); const vol=Math.round(parseNum(g(volI)));
+      if (!query||vol<=0) continue;
+      const imp_share=parseNum(g(impI)), clk_share=parseNum(g(clkI)), pur_share=parseNum(g(purI));
+      if (clk_share>0||pur_share>0||imp_share>0)
+        rows.push({query,vol,score:g(scoreI),imp_share,clk_share,pur_share,pur_count:Math.round(parseNum(g(purCntI)))});
+    }
+  }
+  return rows.sort((a,b)=>b.vol-a.vol).slice(0,25);
 }
 
 function buildSummaries() {
-  return { kw: extractKwSummary(_upFiles.kw), biz: extractBizSummary(_upFiles.biz), ppc: extractPpcSummary(_upFiles.ppc) };
+  return {
+    kw:  extractKwSummary(_upFiles.kw),
+    biz: extractBizSummary(_upFiles.biz),
+    ppc: extractPpcSummary(_upFiles.ppc),
+    sqp: extractSqpSummary([])
+  };
 }
+
+function safeJson(s) { try { return JSON.parse(s||'[]'); } catch { return []; } }
 
 async function fetchHistoricalSummaries(n) {
   n = n||4;
@@ -4429,85 +4516,98 @@ async function fetchHistoricalSummaries(n) {
     const url = 'https://docs.google.com/spreadsheets/d/'+UPLOADS_SHEET_ID+'/export?format=csv&gid='+UPLOADS_EVOLIS_GID+'&_cb='+Date.now();
     const res = await fetch(url);
     if (!res.ok) return [];
-    return parseCsvToRows(await res.text()).slice(0,n).map(r => ({
-      date: r['date']||'', week: r['week_label']||'',
-      kw: safeJson(r['kw_summary_json']), biz: safeJson(r['biz_summary_json']), ppc: safeJson(r['ppc_summary_json'])
-    }));
+    const lines = (await res.text()).replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length < 2) return [];
+    const hdrs = csvVals(lines[0]).map(h=>h.toLowerCase());
+    return lines.slice(1,n+1).map(line => {
+      const v=csvVals(line);
+      const g=n=>{ const i=hdrs.indexOf(n); return i>=0?(v[i]||''):''; };
+      return { date:g('date'), week:g('week_label'),
+        kw:safeJson(g('kw_summary_json')), biz:safeJson(g('biz_summary_json')),
+        ppc:safeJson(g('ppc_summary_json')), sqp:safeJson(g('sqp_summary_json')) };
+    });
   } catch(e) { return []; }
 }
 
 function formatHistoryForClaude(history) {
   if (!history.length) return 'No prior data — this is the first upload.';
   return history.map(w => {
-    const k = (w.kw||[]).slice(0,5).map(x=>x.kw+' rank='+x.rank+(x.prev?' prev='+x.prev:'')).join(', ');
-    const b = (w.biz||[]).slice(0,5).map(x=>x.sku+' sessions='+x.sessions+' units='+x.units).join(', ');
-    const p = (w.ppc||[]).slice(0,5).map(x=>x.campaign+' spend=$'+x.spend+' acos='+x.acos).join(', ');
-    return 'Week '+w.date+' ('+w.week+'):\nKW: '+k+'\nBiz: '+b+'\nPPC: '+p;
+    const k = (w.kw||[]).slice(0,5).map(x=>x.kw+' rank='+x.rank+(x.sp&&x.sp<9999?' sp='+x.sp:'')+(x.aba_conv?' conv='+x.aba_conv:'')).join(', ');
+    const b = (w.biz||[]).slice(0,5).map(x=>x.sku+' sessions='+x.sessions+' units='+x.units+' rev=$'+x.revenue+' conv='+x.conv).join(', ');
+    const p = (w.ppc||[]).slice(0,5).map(x=>x.query+' spend=$'+x.spend+' sales=$'+x.sales+' acos='+x.acos).join(', ');
+    const s = (w.sqp||[]).slice(0,3).map(x=>x.query+' vol='+x.vol+' clk%='+x.clk_share).join(', ');
+    return 'Week '+w.date+' ('+w.week+'):\nKW: '+k+'\nBiz: '+b+'\nPPC: '+p+(s?'\nSQP: '+s:'');
   }).join('\n\n');
 }
 
 function weekLabel() {
-  const now = new Date(), s = new Date(now), e = new Date(now);
+  const now=new Date(), s=new Date(now), e=new Date(now);
   s.setDate(now.getDate()-now.getDay()+1); e.setDate(s.getDate()+6);
-  const f = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   return f(s)+'\u2013'+f(e)+' '+now.getFullYear();
 }
 
 function buildListingContext() {
-  const items = [];
-  document.querySelectorAll('#la-activators .la-card').forEach(card => {
-    const label = card.querySelector('.la-card-label');
-    const copy  = card.querySelector('.la-copy-block');
-    if (label && copy) items.push(label.textContent.trim()+': '+copy.textContent.trim().slice(0,400));
+  const items=[];
+  document.querySelectorAll('#la-activators .la-card').forEach(card=>{
+    const label=card.querySelector('.la-card-label');
+    const copy=card.querySelector('.la-copy-block');
+    if (label&&copy) items.push(label.textContent.trim()+': '+copy.textContent.trim().slice(0,400));
   });
   return items.join('\n---\n').slice(0,6000);
 }
 
 async function runInsightAnalysis() {
-  const btn = document.getElementById('run-analysis-btn');
-  const st  = document.getElementById('upload-status');
-  if (!_upFiles.kw.length && !_upFiles.biz.length && !_upFiles.ppc.length) {
-    st.textContent = '\u26a0 Upload at least one report first.'; st.className = 'upload-status error'; return;
+  const btn=document.getElementById('run-analysis-btn');
+  const st=document.getElementById('upload-status');
+  if (!_upFiles.kw.length&&!_upFiles.biz.length&&!_upFiles.ppc.length) {
+    st.textContent='\u26a0 Upload at least one report first.'; st.className='upload-status error'; return;
   }
-  btn.classList.add('running'); btn.disabled = true;
+  btn.classList.add('running'); btn.disabled=true;
   try {
-    st.textContent = 'Parsing files\u2026'; st.className = 'upload-status';
+    st.textContent='Parsing files\u2026'; st.className='upload-status';
     await parseAllFiles();
-    const sum = buildSummaries();
-    st.textContent = 'Loading history\u2026';
-    const hist = await fetchHistoricalSummaries(4);
-    st.textContent = 'Running AI analysis\u2026';
-    const ins = await callClaudeForInsights(sum, formatHistoryForClaude(hist), buildListingContext());
-    st.textContent = 'Updating dashboard\u2026';
+    const sum=buildSummaries();
+    const fileCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].length;
+    const sqpCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].filter(f=>f._rtype==='sqp').length;
+    const kwCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].filter(f=>f._rtype==='kw').length;
+    st.textContent='Loading history\u2026';
+    const hist=await fetchHistoricalSummaries(4);
+    st.textContent='Running AI analysis\u2026';
+    const ins=await callClaudeForInsights(sum,formatHistoryForClaude(hist),buildListingContext());
+    st.textContent='Updating dashboard\u2026';
     injectInsights(ins);
-    st.textContent = 'Saving\u2026';
-    await saveUploadsToSheet(sum, ins);
+    st.textContent='Saving\u2026';
+    await saveUploadsToSheet(sum,ins);
     await writeInsightsToSheet(ins);
-    st.textContent = '\u2713 Done \u2014 '+new Date().toLocaleTimeString(); st.className = 'upload-status success';
+    st.textContent='\u2713 Done \u2014 '+fileCount+' files ('+kwCount+' KT'+( sqpCount?' + SQP':'')+') \u2014 '+new Date().toLocaleTimeString();
+    st.className='upload-status success';
   } catch(err) {
-    st.textContent = '\u2717 '+err.message; st.className = 'upload-status error';
-  } finally { btn.classList.remove('running'); btn.disabled = false; }
+    console.error(err);
+    st.textContent='\u2717 '+err.message; st.className='upload-status error';
+  } finally { btn.classList.remove('running'); btn.disabled=false; }
 }
 
 async function callClaudeForInsights(sum, histCtx, listingCtx) {
-  const skill = getListingSkill();
-  const sys = 'You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly data for \u00e9volis (EVO).\n\nListing compliance rules:\n'+skill+'\n\nRespond with valid JSON only. No markdown, no preamble.';
-  const usr = 'Analyze this week vs history. Return JSON: {date (YYYY-MM-DD), organic:{summary,wins[],actions[],keywords_to_watch[]}, ppc:{summary,wins[],actions[],opportunities[]}, listing:{summary,violations[],keyword_gaps[],rewrites_recommended[]}, log_summary}.\n\nCURRENT WEEK:\nKeywords: '+JSON.stringify(sum.kw)+'\n\nBusiness: '+JSON.stringify(sum.biz)+'\n\nPPC: '+JSON.stringify(sum.ppc)+'\n\nHISTORY:\n'+histCtx+'\n\nLISTING:\n'+listingCtx;
-  const res = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+  const skill=getListingSkill();
+  const sys='You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly data for \u00e9volis (EVO).\n\nListing compliance rules:\n'+skill+'\n\nRespond with valid JSON only. No markdown, no preamble.';
+  const sqpSection=sum.sqp&&sum.sqp.length?'\n\nSQP — Brand Search Query Performance (top queries with brand presence):\n'+JSON.stringify(sum.sqp):'';
+  const usr='Analyze this week vs history. Return JSON: {date (YYYY-MM-DD), organic:{summary,wins[],actions[],keywords_to_watch[]}, ppc:{summary,wins[],actions[],opportunities[]}, listing:{summary,violations[],keyword_gaps[],rewrites_recommended[]}, log_summary (4-6 sentence paragraph)}.\n\nCURRENT WEEK:\nKeyword Tracker (organic ranks + ABA):\n'+JSON.stringify(sum.kw)+'\n\nBusiness Report (per SKU):\n'+JSON.stringify(sum.biz)+'\n\nH10 Ads (search terms):\n'+JSON.stringify(sum.ppc)+sqpSection+'\n\nHISTORY (last 4 weeks):\n'+histCtx+'\n\nCURRENT LISTING COPY:\n'+listingCtx;
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,system:sys,messages:[{role:'user',content:usr}]})});
   if (!res.ok) throw new Error('Claude API '+res.status);
-  const data = await res.json();
-  const raw = data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+  const data=await res.json();
+  const raw=data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
   return JSON.parse(raw.replace(/^```json\n?/,'').replace(/\n?```$/,'').trim());
 }
 
-async function saveUploadsToSheet(sum, ins) {
-  const files = [..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].map(f=>f.name).join(', ');
+async function saveUploadsToSheet(sum,ins) {
+  const files=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].map(f=>f.name+'('+f._rtype+')').join(', ');
   await fetch('/api/write-uploads',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({brand:INSIGHTS_BRAND_TAB,sheetId:UPLOADS_SHEET_ID,gid:UPLOADS_EVOLIS_GID,
       date:ins.date||new Date().toISOString().slice(0,10),week_label:weekLabel(),
       kw_summary:JSON.stringify(sum.kw),biz_summary:JSON.stringify(sum.biz),
-      ppc_summary:JSON.stringify(sum.ppc),files_uploaded:files})});
+      ppc_summary:JSON.stringify(sum.ppc),sqp_summary:JSON.stringify(sum.sqp||[]),files_uploaded:files})});
 }
 
 async function writeInsightsToSheet(ins) {
@@ -4521,44 +4621,46 @@ async function writeInsightsToSheet(ins) {
 function makeList(arr) { return arr&&arr.length?'<ul>'+arr.map(x=>'<li>'+x+'</li>').join('')+'</ul>':''; }
 
 function injectInsights(ins) {
-  const date = ins.date||new Date().toISOString().slice(0,10);
-  const orgEl = document.getElementById('ai-organic-text');
-  if (orgEl && ins.organic) {
-    orgEl.innerHTML = '<strong>'+(ins.organic.summary||'')+'</strong>'+(ins.organic.wins&&ins.organic.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.organic.wins):'')+(ins.organic.actions&&ins.organic.actions.length?'<strong>Actions:</strong>'+makeList(ins.organic.actions):'')+(ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length?'<strong>Watch:</strong> '+ins.organic.keywords_to_watch.join(', '):'');
+  const date=ins.date||new Date().toISOString().slice(0,10);
+  const orgEl=document.getElementById('ai-organic-text');
+  if (orgEl&&ins.organic) {
+    orgEl.innerHTML='<strong>'+(ins.organic.summary||'')+'</strong>'+(ins.organic.wins&&ins.organic.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.organic.wins):'')+(ins.organic.actions&&ins.organic.actions.length?'<strong>Actions:</strong>'+makeList(ins.organic.actions):'')+(ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length?'<strong>Watch:</strong> '+ins.organic.keywords_to_watch.join(', '):'');
     document.getElementById('ai-organic-insight').style.display='block';
   }
-  const ppcEl = document.getElementById('ai-ppc-text');
-  if (ppcEl && ins.ppc) {
-    ppcEl.innerHTML = '<strong>'+(ins.ppc.summary||'')+'</strong>'+(ins.ppc.wins&&ins.ppc.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.ppc.wins):'')+(ins.ppc.actions&&ins.ppc.actions.length?'<strong>Actions:</strong>'+makeList(ins.ppc.actions):'')+(ins.ppc.opportunities&&ins.ppc.opportunities.length?'<strong>Opportunities:</strong>'+makeList(ins.ppc.opportunities):'');
+  const ppcEl=document.getElementById('ai-ppc-text');
+  if (ppcEl&&ins.ppc) {
+    ppcEl.innerHTML='<strong>'+(ins.ppc.summary||'')+'</strong>'+(ins.ppc.wins&&ins.ppc.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.ppc.wins):'')+(ins.ppc.actions&&ins.ppc.actions.length?'<strong>Actions:</strong>'+makeList(ins.ppc.actions):'')+(ins.ppc.opportunities&&ins.ppc.opportunities.length?'<strong>Opportunities:</strong>'+makeList(ins.ppc.opportunities):'');
     document.getElementById('ai-ppc-insight').style.display='block';
   }
-  const laEl = document.getElementById('ai-listing-text');
-  if (laEl && ins.listing) {
-    laEl.innerHTML = '<strong>'+(ins.listing.summary||'')+'</strong>'+(ins.listing.violations&&ins.listing.violations.length?'<br><br><strong style="color:var(--danger);">\u26a0 Compliance:</strong>'+makeList(ins.listing.violations):'')+(ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length?'<strong>Keyword Gaps:</strong>'+makeList(ins.listing.keyword_gaps):'')+(ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length?'<strong>Priority Rewrites:</strong>'+makeList(ins.listing.rewrites_recommended):'');
+  const laEl=document.getElementById('ai-listing-text');
+  if (laEl&&ins.listing) {
+    laEl.innerHTML='<strong>'+(ins.listing.summary||'')+'</strong>'+(ins.listing.violations&&ins.listing.violations.length?'<br><br><strong style="color:var(--danger);">\u26a0 Compliance:</strong>'+makeList(ins.listing.violations):'')+(ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length?'<strong>Keyword Gaps:</strong>'+makeList(ins.listing.keyword_gaps):'')+(ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length?'<strong>Priority Rewrites:</strong>'+makeList(ins.listing.rewrites_recommended):'');
     document.getElementById('ai-listing-insight').style.display='block';
   }
-  const logEl = document.getElementById('ai-log-entries');
-  if (logEl && ins.log_summary) {
-    const card = document.createElement('div');
-    card.className = 'ai-insight-card';
-    card.innerHTML = '<div class="ai-insight-card-hd"><span class="ai-insight-card-type">\u2726 AI Analysis \u2014 Organic \u00b7 PPC \u00b7 Listing</span><span class="ai-insight-card-date">'+date+'</span></div><div class="ai-insight-card-body"><p>'+ins.log_summary+'</p><details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown \u2193</summary><div style="margin-top:10px;line-height:1.7;"><strong>Organic:</strong> '+(ins.organic&&ins.organic.summary||'\u2014')+'<br><br><strong>PPC:</strong> '+(ins.ppc&&ins.ppc.summary||'\u2014')+'<br><br><strong>Listing:</strong> '+(ins.listing&&ins.listing.summary||'\u2014')+'</div></details></div>';
+  const logEl=document.getElementById('ai-log-entries');
+  if (logEl&&ins.log_summary) {
+    const card=document.createElement('div');
+    card.className='ai-insight-card';
+    card.innerHTML='<div class="ai-insight-card-hd"><span class="ai-insight-card-type">\u2726 AI Analysis \u2014 Organic \u00b7 PPC \u00b7 Listing</span><span class="ai-insight-card-date">'+date+'</span></div><div class="ai-insight-card-body"><p>'+ins.log_summary+'</p><details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown \u2193</summary><div style="margin-top:10px;line-height:1.7;"><strong>Organic:</strong> '+(ins.organic&&ins.organic.summary||'\u2014')+'<br><br><strong>PPC:</strong> '+(ins.ppc&&ins.ppc.summary||'\u2014')+'<br><br><strong>Listing:</strong> '+(ins.listing&&ins.listing.summary||'\u2014')+'</div></details></div>';
     logEl.prepend(card);
   }
 }
 
 async function loadInsightsFromSheet() {
   try {
-    const url = 'https://docs.google.com/spreadsheets/d/'+INSIGHTS_SHEET_ID+'/export?format=csv&gid='+INSIGHTS_EVOLIS_GID+'&_cb='+Date.now();
-    const res = await fetch(url);
+    const url='https://docs.google.com/spreadsheets/d/'+INSIGHTS_SHEET_ID+'/export?format=csv&gid='+INSIGHTS_EVOLIS_GID+'&_cb='+Date.now();
+    const res=await fetch(url);
     if (!res.ok) return;
-    const rows = parseCsvToRows(await res.text());
-    if (!rows.length) return;
-    const r = rows[0];
-    injectInsights({date:r['date'],organic:safeJson(r['organic_json']),ppc:safeJson(r['ppc_json']),listing:safeJson(r['listing_json']),log_summary:r['summary']});
-  } catch(e) { console.warn('Could not load insights:', e.message); }
+    const lines=(await res.text()).replace(/^\uFEFF/,'').trim().split('\n');
+    if (lines.length<2) return;
+    const hdrs=csvVals(lines[0]).map(h=>h.toLowerCase());
+    const v=csvVals(lines[1]);
+    const g=n=>{const i=hdrs.indexOf(n);return i>=0?(v[i]||''):''};
+    injectInsights({date:g('date'),organic:safeJson(g('organic_json')),ppc:safeJson(g('ppc_json')),listing:safeJson(g('listing_json')),log_summary:g('summary')});
+  } catch(e) { console.warn('Could not load insights:',e.message); }
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadInsightsFromSheet(); });
+document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); });
 </script>
 </body>
 </html>
