@@ -134,20 +134,34 @@ Description (excerpt): ${san(skuData.description, 300)}
 Backend: ${san(skuData.backend, 200)}`;
       }
 
-      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 600,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }]
-        })
-      });
+      // Retry loop — handles 429 rate limits with backoff
+      let claudeRes;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          const wait = attempt * 8000; // 8s, 16s backoff
+          console.log(`[audit] ${skuData.sku} retry ${attempt} after ${wait}ms`);
+          await new Promise(r => setTimeout(r, wait));
+        }
+        claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 600,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userPrompt }]
+          })
+        });
+        if (claudeRes.status !== 429) break;
+        console.log(`[audit] ${skuData.sku} Claude error 429 — will retry`);
+      }
+
+      // Sleep between SKUs to avoid rate limits (1 req/sec sustained)
+      await new Promise(r => setTimeout(r, 3000));
 
       if (!claudeRes.ok) {
         console.error(`[audit] ${skuData.sku} Claude error ${claudeRes.status}`);
-        results.push({ sku: skuData.sku, title_notes: 'API error', title_rewrite: '', ih_notes: '', ih_rewrite: '', bullets_notes: '', bullets_rewrite: '', desc_notes: '', backend_notes: '', backend_rewrite: '' });
+        results.push({ sku: skuData.sku, title_notes: 'API error ' + claudeRes.status, title_rewrite: '', ih_notes: '', ih_rewrite: '', bullets_notes: '', bullets_rewrite: '', desc_notes: '', backend_notes: '', backend_rewrite: '' });
         continue;
       }
 
@@ -161,8 +175,8 @@ Backend: ${san(skuData.backend, 200)}`;
         .replace(/[\u201C\u201D]/g,'"')
         .replace(/[\u2013\u2014]/g,'-')
         .replace(/\u2026/g,'...')
-        .replace(/\\'/g,"'")    // \' is invalid in JSON (valid in JS but not JSON)
-        .replace(/\\\//g,'/')   // \/ is technically valid but causes issues in some parsers
+        .replace(/\\'/g,"'")
+        .replace(/\\\//g,'/')
         .replace(/,\s*}/g,'}')
         .trim();
 
