@@ -4732,43 +4732,96 @@ async function writeInsightsToSheet(ins) {
 function makeList(arr) { return arr&&arr.length?'<ul>'+arr.map(x=>'<li>'+x+'</li>').join('')+'</ul>':''; }
 
 function injectInsights(ins) {
-  const date=ins.date||new Date().toISOString().slice(0,10);
-  const orgEl=document.getElementById('ai-organic-text');
-  if (orgEl&&ins.organic&&ins.organic.summary) {
-    orgEl.innerHTML='<strong>'+(ins.organic.summary||'')+'</strong>'+(ins.organic.wins&&ins.organic.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.organic.wins):'')+(ins.organic.actions&&ins.organic.actions.length?'<strong>Actions:</strong>'+makeList(ins.organic.actions):'')+(ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length?'<strong>Watch:</strong> '+ins.organic.keywords_to_watch.join(', '):'');
-    document.getElementById('ai-organic-insight').style.display='block';
-  }
-  const ppcEl=document.getElementById('ai-ppc-text');
-  if (ppcEl&&ins.ppc&&ins.ppc.summary) {
-    ppcEl.innerHTML='<strong>'+(ins.ppc.summary||'')+'</strong>'+(ins.ppc.wins&&ins.ppc.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.ppc.wins):'')+(ins.ppc.actions&&ins.ppc.actions.length?'<strong>Actions:</strong>'+makeList(ins.ppc.actions):'')+(ins.ppc.opportunities&&ins.ppc.opportunities.length?'<strong>Opportunities:</strong>'+makeList(ins.ppc.opportunities):'');
-    document.getElementById('ai-ppc-insight').style.display='block';
-  }
-  const laEl=document.getElementById('ai-listing-text');
-  if (laEl&&ins.listing&&ins.listing.summary) {
-    laEl.innerHTML='<strong>'+(ins.listing.summary||'')+'</strong>'+(ins.listing.violations&&ins.listing.violations.length?'<br><br><strong style="color:var(--danger);">\u26a0 Compliance:</strong>'+makeList(ins.listing.violations):'')+(ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length?'<strong>Keyword Gaps:</strong>'+makeList(ins.listing.keyword_gaps):'')+(ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length?'<strong>Priority Rewrites:</strong>'+makeList(ins.listing.rewrites_recommended):'');
-    document.getElementById('ai-listing-insight').style.display='block';
-  }
-  const logEl=document.getElementById('ai-log-entries');
-  if (logEl&&ins.log_summary&&ins.log_summary.length>5) {
-    const card=document.createElement('div');
-    card.className='ai-insight-card';
-    card.innerHTML='<div class="ai-insight-card-hd"><span class="ai-insight-card-type">\u2726 AI Analysis \u2014 Organic \u00b7 PPC \u00b7 Listing</span><span class="ai-insight-card-date">'+date+'</span></div><div class="ai-insight-card-body"><p>'+ins.log_summary+'</p><details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown \u2193</summary><div style="margin-top:10px;line-height:1.7;"><strong>Organic:</strong> '+(ins.organic&&ins.organic.summary||'\u2014')+'<br><br><strong>PPC:</strong> '+(ins.ppc&&ins.ppc.summary||'\u2014')+'<br><br><strong>Listing:</strong> '+(ins.listing&&ins.listing.summary||'\u2014')+'</div></details></div>';
-    logEl.prepend(card);
+  injectInsightsBoxes(ins);
+  const logEl = document.getElementById('ai-log-entries');
+  if (logEl && ins.log_summary && ins.log_summary.length > 5) {
+    appendLogCard(logEl, ins);
   }
 }
 
 async function loadInsightsFromSheet() {
   try {
-    const url='https://docs.google.com/spreadsheets/d/'+INSIGHTS_SHEET_ID+'/export?format=csv&gid='+INSIGHTS_EVOLIS_GID+'&_cb='+Date.now();
-    const res=await fetch(url);
+    const url = 'https://docs.google.com/spreadsheets/d/' + INSIGHTS_SHEET_ID +
+      '/export?format=csv&gid=' + INSIGHTS_EVOLIS_GID + '&_cb=' + Date.now();
+    const res = await fetch(url);
     if (!res.ok) return;
-    const lines=(await res.text()).replace(/^\uFEFF/,'').trim().split('\n');
-    if (lines.length<2) return;
-    const hdrs=csvVals(lines[0]).map(h=>h.toLowerCase());
-    const v=csvVals(lines[1]);
-    const g=n=>{const i=hdrs.indexOf(n);return i>=0?(v[i]||''):''};
-    injectInsights({date:g('date'),organic:safeJson(g('organic_json')),ppc:safeJson(g('ppc_json')),listing:safeJson(g('listing_json')),log_summary:g('summary')});
-  } catch(e) { console.warn('Could not load insights:',e.message); }
+    const rows = parseCsvToRows(await res.text());
+    if (!rows.length) return;
+
+    // ── Most recent row → populate organic/PPC/listing green boxes ──
+    const latest = rows[0];
+    const latestInsights = {
+      date:        latest['date'] || '',
+      organic:     safeJson(latest['organic_json']),
+      ppc:         safeJson(latest['ppc_json']),
+      listing:     safeJson(latest['listing_json']),
+      log_summary: latest['summary'] || ''
+    };
+    // Only inject organic/PPC/listing boxes (not the log card) from latest
+    injectInsightsBoxes(latestInsights);
+
+    // ── All rows → populate the insights log ──
+    const logEl = document.getElementById('ai-log-entries');
+    if (logEl) {
+      logEl.innerHTML = ''; // clear any existing cards
+      for (const row of rows) {
+        const ins = {
+          date:        row['date'] || '',
+          organic:     safeJson(row['organic_json']),
+          ppc:         safeJson(row['ppc_json']),
+          listing:     safeJson(row['listing_json']),
+          log_summary: row['summary'] || ''
+        };
+        if (!ins.log_summary) continue;
+        appendLogCard(logEl, ins);
+      }
+    }
+  } catch(e) { console.warn('Could not load insights:', e.message); }
+}
+
+// Inject only the organic/PPC/listing green boxes (not the log card)
+function injectInsightsBoxes(ins) {
+  const orgEl = document.getElementById('ai-organic-text');
+  if (orgEl && ins.organic && ins.organic.summary) {
+    orgEl.innerHTML = '<strong>' + (ins.organic.summary||'') + '</strong>' +
+      (ins.organic.wins&&ins.organic.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.organic.wins) : '') +
+      (ins.organic.actions&&ins.organic.actions.length ? '<strong>Actions:</strong>' + makeList(ins.organic.actions) : '') +
+      (ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length ? '<strong>Watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : '');
+    document.getElementById('ai-organic-insight').style.display = 'block';
+  }
+  const ppcEl = document.getElementById('ai-ppc-text');
+  if (ppcEl && ins.ppc && ins.ppc.summary) {
+    ppcEl.innerHTML = '<strong>' + (ins.ppc.summary||'') + '</strong>' +
+      (ins.ppc.wins&&ins.ppc.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.ppc.wins) : '') +
+      (ins.ppc.actions&&ins.ppc.actions.length ? '<strong>Actions:</strong>' + makeList(ins.ppc.actions) : '') +
+      (ins.ppc.opportunities&&ins.ppc.opportunities.length ? '<strong>Opportunities:</strong>' + makeList(ins.ppc.opportunities) : '');
+    document.getElementById('ai-ppc-insight').style.display = 'block';
+  }
+  const laEl = document.getElementById('ai-listing-text');
+  if (laEl && ins.listing && ins.listing.summary) {
+    laEl.innerHTML = '<strong>' + (ins.listing.summary||'') + '</strong>' +
+      (ins.listing.violations&&ins.listing.violations.length ? '<br><br><strong style="color:var(--danger);">⚠ Compliance:</strong>' + makeList(ins.listing.violations) : '') +
+      (ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length ? '<strong>Keyword Gaps:</strong>' + makeList(ins.listing.keyword_gaps) : '') +
+      (ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length ? '<strong>Priority Rewrites:</strong>' + makeList(ins.listing.rewrites_recommended) : '');
+    document.getElementById('ai-listing-insight').style.display = 'block';
+  }
+}
+
+// Append a single log card to the log element
+function appendLogCard(logEl, ins) {
+  const card = document.createElement('div');
+  card.className = 'ai-insight-card';
+  card.innerHTML = '<div class="ai-insight-card-hd">' +
+    '<span class="ai-insight-card-type">✦ AI Analysis — Organic · PPC · Listing</span>' +
+    '<span class="ai-insight-card-date">' + (ins.date||'') + '</span>' +
+    '</div><div class="ai-insight-card-body"><p>' + (ins.log_summary||'') + '</p>' +
+    '<details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown ↓</summary>' +
+    '<div style="margin-top:10px;line-height:1.7;">' +
+    '<strong>Organic:</strong> ' + (ins.organic&&ins.organic.summary||'—') + '<br><br>' +
+    '<strong>PPC:</strong> ' + (ins.ppc&&ins.ppc.summary||'—') + '<br><br>' +
+    '<strong>Listing:</strong> ' + (ins.listing&&ins.listing.summary||'—') +
+    '</div></details></div>';
+  logEl.appendChild(card);
 }
 
 document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); loadListingsFromSheet(false); loadAuditResultsFromSheet(); });
