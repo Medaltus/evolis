@@ -30,7 +30,7 @@ function fixJsonStrings(s) {
       } else {
         // Check what follows (skip whitespace) to determine if this closes the string
         let j = i + 1;
-        while (j < s.length && s[j] === ' ') j++;
+        while (j < s.length && ' \t\r\n'.includes(s[j])) j++;
         if (j >= s.length || ':,}]'.includes(s[j])) {
           inString = false;
           result.push(c);
