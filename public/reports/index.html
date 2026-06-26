@@ -5209,16 +5209,21 @@ async function loadAuditResultsFromSheet() {
     const rows = parseCsvToRows(await res.text());
     if (!rows.length) return;
 
-    // Only use audit_run rows that have a sku
+    // Only use audit_run rows with a SKU
     const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku']);
     if (!auditRows.length) return;
 
-    // Find most recent audit date and keep only those rows
-    const latestDate = auditRows[0]['date'];
-    const latest = auditRows.filter(r => r['date'] === latestDate);
+    // For each SKU, keep only the row with the most recent audited_at (col T)
+    const latestBySku = {};
+    for (const r of auditRows) {
+      const sku = r['sku'];
+      const ts  = r['audited_at'] || '';
+      if (!latestBySku[sku] || ts > latestBySku[sku]['audited_at']) {
+        latestBySku[sku] = r;
+      }
+    }
 
-    // Map flat sheet columns to the flat structure injectAuditResults expects
-    const results = latest.map(r => ({
+    const results = Object.values(latestBySku).map(r => ({
       sku:              r['sku']              || '',
       title_notes:      r['title_notes']      || '',
       title_rewrite:    r['title_rewrite']    || '',
@@ -5238,7 +5243,7 @@ async function loadAuditResultsFromSheet() {
 
     if (results.length) {
       injectAuditResults(results);
-      console.log('[listings] Loaded', results.length, 'SKU audit results from', latestDate);
+      console.log('[listings] Loaded audit results for', results.length, 'SKUs (most recent per SKU by audited_at)');
     }
   } catch(err) {
     console.warn('[listings] Could not load audit results:', err.message);
