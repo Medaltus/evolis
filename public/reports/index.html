@@ -4828,7 +4828,11 @@ function appendLogCard(logEl, ins) {
   logEl.appendChild(card);
 }
 
-document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); loadListingsFromSheet(false); loadAuditResultsFromSheet(); });
+document.addEventListener('DOMContentLoaded', async () => {
+  loadInsightsFromSheet();
+  await loadListingsFromSheet(false);
+  await loadAuditResultsFromSheet();
+});
 
 
 // ═══════════════════════════════════════════════════════════════════
