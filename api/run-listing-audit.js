@@ -1,13 +1,6 @@
 /**
  * api/run-listing-audit.js
  * POST /api/run-listing-audit
- *
- * Runs a full listing audit across all active SKUs for a brand.
- * Calls Claude with the listing audit skill + all SKU copy.
- * Returns per-field audit notes + rewrites for every SKU.
- *
- * Body: { brand, catalog: [{sku, name, travel, title, item_highlights, bullets[], description, backend}], skillB64 }
- * Returns: { ok: true, results: [{sku, title:{notes,rewrite}, item_highlights:{notes,rewrite}, bullets:{notes,rewrite}, ...}] }
  */
 
 export default async function handler(req, res) {
@@ -25,67 +18,71 @@ export default async function handler(req, res) {
 
   let skill = '';
   if (skillB64) {
-    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 5000); } catch(e) {}
+    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 4000); } catch(e) {}
   }
 
-  // Separate full SKUs from travel variations
-  const fullSkus    = catalog.filter(s => !s.travel);
-  const travelSkus  = catalog.filter(s => s.travel);
+  const isTravel = catalog.every(s => s.travel);
 
-  const systemPrompt = `You are an expert Amazon listing compliance auditor for Medaltus working on the evolis hair care brand.
+  // Sanitize copy text — remove HTML entities, smart quotes, em dashes
+  function sanitize(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&amp;/g, 'and')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&[a-z]+;/g, ' ')
+      .replace(/[\u2018\u2019]/g, "'")   // smart single quotes -> straight
+      .replace(/[\u201C\u201D]/g, '"')   // smart double quotes -> straight
+      .replace(/[\u2013\u2014]/g, '-')   // en/em dashes -> hyphen
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 400);
+  }
 
-${skill ? 'Apply these listing compliance and optimization rules:\n' + skill + '\n\n' : ''}Key rules to enforce:
-- Title: max 75 characters (hard limit as of July 27 2026)
-- Item Highlights: max 125 characters (new required field, indexed — MUST be generated if missing)
-- No prohibited words (brightening, heals, anti-inflammatory, etc.)
-- No promotional language (best, #1, guaranteed, etc.)
-- FGF5 mechanism must be explained in plain English before using the term
-- All T1 keywords should appear across title, IH, or bullets
+  const systemPrompt = `You are an Amazon listing compliance auditor for Medaltus / evolis hair care brand.
 
-For travel/size variations: provide a lighter audit — note the size difference, check title compliance only, flag if Item Highlights is missing. No full bullet rewrite needed.
+${skill ? 'Compliance rules:\n' + skill + '\n\n' : ''}Rules:
+- Title: max 75 chars (hard limit July 27 2026)
+- Item Highlights: max 125 chars (new required field - generate if missing)
+- No prohibited words: brightening, heals, anti-inflammatory, eliminates, cures, guaranteed, best, #1
+- FGF5: explain in plain English before using the term
+- No apostrophes in your JSON string values - use "does not" not "don't"
+- No em dashes or smart quotes in your JSON output
+- Keep all string values under 250 characters
 
-CRITICAL: Respond with valid JSON only. No markdown. No preamble. No text after the closing bracket.
-All string values must avoid apostrophes — use "does not" not "doesn't".`;
+CRITICAL OUTPUT RULES:
+1. Output ONLY a valid JSON array. Nothing before or after the array.
+2. No markdown code fences.
+3. Every string value must use only plain ASCII characters.
+4. No newlines inside string values - use spaces instead.
+5. Maximum 2 items in wins/actions arrays.`;
 
-  // Build catalog text — full SKUs get full audit, travel get light audit
   const catalogText = catalog.map(s => {
+    const title = sanitize(s.title);
+    const ih    = sanitize(s.item_highlights);
+    const back  = sanitize(s.backend);
+
     if (s.travel) {
-      return `SKU: ${s.sku} | ${s.name} [TRAVEL/SIZE VARIATION]
-Title: ${s.title || 'MISSING'}
-Item Highlights: ${s.item_highlights || 'MISSING'}
-Backend: ${s.backend || ''}`;
+      return `SKU:${s.sku}|${s.name}[TRAVEL]|Title:${title}|IH:${ih||'MISSING'}|Backend:${back}`;
     }
-    return `SKU: ${s.sku} | ${s.name}
-Title: ${s.title || 'MISSING'}
-Item Highlights: ${s.item_highlights || 'MISSING — MUST GENERATE'}
-Bullets: ${(s.bullets || []).map((b,i) => `B${i+1}: ${b}`).join(' | ')}
-Description: ${(s.description || '').slice(0, 300)}
-Backend: ${(s.backend || '').slice(0, 200)}`;
-  }).join('\n\n---\n\n');
+    const bullets = (s.bullets || []).map((b,i) => `B${i+1}:${sanitize(b)}`).join('|');
+    const desc = sanitize(s.description);
+    return `SKU:${s.sku}|${s.name}|Title:${title}|IH:${ih||'MISSING-GENERATE'}|${bullets}|Desc:${desc}|Backend:${back}`;
+  }).join('\n\n');
 
-  const userPrompt = `Audit all evolis listings below. Return a JSON array where each element covers one SKU.
+  const schemaExample = isTravel
+    ? `[{"sku":"EVO0014","title":{"notes":"note","rewrite":"rewrite under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":null,"description":null,"backend":{"notes":"note","rewrite":""}}]`
+    : `[{"sku":"EVO0001","title":{"notes":"note","rewrite":"rewrite under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":{"notes":"issues summary","rewrite":"B1 rewrite only"},"description":{"notes":"brief note","rewrite":""},"backend":{"notes":"note","rewrite":"cleaned keywords"}}]`;
 
-For FULL SKUs return this structure per SKU:
-{
-  "sku": "EVO0001",
-  "title": { "notes": "what is wrong or confirm compliant", "rewrite": "compliant rewrite under 75 chars" },
-  "item_highlights": { "notes": "compliance note", "rewrite": "new IH under 125 chars — generate if missing" },
-  "bullets": { "notes": "key issues across all 5 bullets", "rewrite": "rewrite bullet 1 only as example" },
-  "description": { "notes": "brief note", "rewrite": "" },
-  "backend": { "notes": "any prohibited terms or gaps", "rewrite": "cleaned backend string" }
-}
+  const userPrompt = `Audit these evolis SKUs. Return a JSON array matching this exact schema:
+${schemaExample}
 
-For TRAVEL SKUs return lighter structure:
-{
-  "sku": "EVO0014",
-  "title": { "notes": "compliance check only", "rewrite": "compliant title if needed" },
-  "item_highlights": { "notes": "generate if missing", "rewrite": "IH under 125 chars" },
-  "bullets": null,
-  "description": null,
-  "backend": { "notes": "brief check", "rewrite": "" }
-}
-
-Keep all string values under 300 characters. No apostrophes.
+Rules for your response:
+- Use only plain ASCII in all strings
+- No apostrophes - write "does not" not "don't", "it is" not "it's"
+- No em dashes - use hyphens
+- Keep every string value under 250 characters
+- For missing Item Highlights: generate a compliant one under 125 chars
+- For travel SKUs: audit title + generate IH only, set bullets/description to null
 
 CATALOG:
 ${catalogText}`;
@@ -114,7 +111,7 @@ ${catalogText}`;
     const data = await claudeRes.json();
 
     if (data.stop_reason === 'max_tokens') {
-      console.warn('run-listing-audit: response truncated — consider batching');
+      console.warn('run-listing-audit: truncated by max_tokens');
     }
 
     const raw = (data.content || [])
@@ -122,20 +119,37 @@ ${catalogText}`;
       .map(b => b.text)
       .join('');
 
-    const clean = raw
+    // Strip markdown fences
+    let clean = raw
       .replace(/^```json\s*/i, '')
-      .replace(/\s*```\s*$/, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
       .trim();
+
+    // Must start with [ and end with ]
+    const arrStart = clean.indexOf('[');
+    const arrEnd   = clean.lastIndexOf(']');
+    if (arrStart >= 0 && arrEnd > arrStart) {
+      clean = clean.slice(arrStart, arrEnd + 1);
+    }
+
+    // Replace any remaining smart quotes and em dashes that Claude snuck in
+    clean = clean
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-');
 
     let results;
     try {
       results = JSON.parse(clean);
     } catch(parseErr) {
-      console.error('run-listing-audit parse error:', parseErr.message);
-      console.error('Raw length:', raw.length, '| First 300:', clean.slice(0, 300));
+      console.error('parse error:', parseErr.message, '| raw length:', raw.length);
+      console.error('clean first 500:', clean.slice(0, 500));
+      console.error('clean last 500:', clean.slice(-500));
       return res.status(500).json({
         error: 'Could not parse audit response: ' + parseErr.message,
-        hint: 'Check Vercel logs'
+        rawLength: raw.length,
+        hint: 'Check Vercel logs for full response'
       });
     }
 
