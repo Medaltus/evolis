@@ -4605,7 +4605,13 @@ function buildSummaries() {
   };
 }
 
-function safeJson(s) { try { return JSON.parse(s||'[]'); } catch { return []; } }
+function safeJson(s) {
+  if (!s || s === '[]' || s === '{}') return null;
+  try {
+    const p = JSON.parse(s);
+    return (p && typeof p === 'object' && !Array.isArray(p)) ? p : null;
+  } catch(e) { return null; }
+}
 
 async function fetchHistoricalSummaries(n) {
   n = n||4;
@@ -4728,22 +4734,22 @@ function makeList(arr) { return arr&&arr.length?'<ul>'+arr.map(x=>'<li>'+x+'</li
 function injectInsights(ins) {
   const date=ins.date||new Date().toISOString().slice(0,10);
   const orgEl=document.getElementById('ai-organic-text');
-  if (orgEl&&ins.organic) {
+  if (orgEl&&ins.organic&&ins.organic.summary) {
     orgEl.innerHTML='<strong>'+(ins.organic.summary||'')+'</strong>'+(ins.organic.wins&&ins.organic.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.organic.wins):'')+(ins.organic.actions&&ins.organic.actions.length?'<strong>Actions:</strong>'+makeList(ins.organic.actions):'')+(ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length?'<strong>Watch:</strong> '+ins.organic.keywords_to_watch.join(', '):'');
     document.getElementById('ai-organic-insight').style.display='block';
   }
   const ppcEl=document.getElementById('ai-ppc-text');
-  if (ppcEl&&ins.ppc) {
+  if (ppcEl&&ins.ppc&&ins.ppc.summary) {
     ppcEl.innerHTML='<strong>'+(ins.ppc.summary||'')+'</strong>'+(ins.ppc.wins&&ins.ppc.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.ppc.wins):'')+(ins.ppc.actions&&ins.ppc.actions.length?'<strong>Actions:</strong>'+makeList(ins.ppc.actions):'')+(ins.ppc.opportunities&&ins.ppc.opportunities.length?'<strong>Opportunities:</strong>'+makeList(ins.ppc.opportunities):'');
     document.getElementById('ai-ppc-insight').style.display='block';
   }
   const laEl=document.getElementById('ai-listing-text');
-  if (laEl&&ins.listing) {
+  if (laEl&&ins.listing&&ins.listing.summary) {
     laEl.innerHTML='<strong>'+(ins.listing.summary||'')+'</strong>'+(ins.listing.violations&&ins.listing.violations.length?'<br><br><strong style="color:var(--danger);">\u26a0 Compliance:</strong>'+makeList(ins.listing.violations):'')+(ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length?'<strong>Keyword Gaps:</strong>'+makeList(ins.listing.keyword_gaps):'')+(ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length?'<strong>Priority Rewrites:</strong>'+makeList(ins.listing.rewrites_recommended):'');
     document.getElementById('ai-listing-insight').style.display='block';
   }
   const logEl=document.getElementById('ai-log-entries');
-  if (logEl&&ins.log_summary) {
+  if (logEl&&ins.log_summary&&ins.log_summary.length>5) {
     const card=document.createElement('div');
     card.className='ai-insight-card';
     card.innerHTML='<div class="ai-insight-card-hd"><span class="ai-insight-card-type">\u2726 AI Analysis \u2014 Organic \u00b7 PPC \u00b7 Listing</span><span class="ai-insight-card-date">'+date+'</span></div><div class="ai-insight-card-body"><p>'+ins.log_summary+'</p><details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown \u2193</summary><div style="margin-top:10px;line-height:1.7;"><strong>Organic:</strong> '+(ins.organic&&ins.organic.summary||'\u2014')+'<br><br><strong>PPC:</strong> '+(ins.ppc&&ins.ppc.summary||'\u2014')+'<br><br><strong>Listing:</strong> '+(ins.listing&&ins.listing.summary||'\u2014')+'</div></details></div>';
