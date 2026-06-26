@@ -478,7 +478,8 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .la-audit-zone.clean .la-audit-zone-label{color:#1db88a;}
 
 /* Per-SKU updated/feedback bar */
-.la-update-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(36,233,163,.06);border:1px solid rgba(36,233,163,.2);border-radius:var(--radius-sm);margin-top:16px;flex-wrap:wrap;}
+.la-update-bar{display:none;align-items:center;gap:8px;padding:10px 16px;background:rgba(36,233,163,.06);border:1px solid rgba(36,233,163,.2);border-radius:var(--radius-sm);margin-top:16px;flex-wrap:wrap;}
+.la-update-bar[data-audit-ready]{display:flex;}
 .la-update-bar-label{font-size:11px;font-weight:600;color:var(--navy);flex-shrink:0;}
 .la-update-btn{background:var(--green);color:var(--navy);border:none;border-radius:var(--radius-sm);padding:6px 14px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--font);}
 .la-update-btn:hover{background:#1dd494;}
@@ -5023,9 +5024,9 @@ function injectAuditResults(results) {
     const el = document.getElementById(pageId);
     if (!el) continue;
 
-    // Show the update bar for this SKU
+    // Mark update bar as having audit results — CSS will show it via sub-page visibility
     const updateBar = document.getElementById('update-bar-' + pageId);
-    if (updateBar) updateBar.style.display = 'flex';
+    if (updateBar) updateBar.setAttribute('data-audit-ready', '1');
 
     // Helper: inject an audit zone below a specific la-card
     function injectZone(labelText, sublabelText, note, rewrite, charLimit) {
