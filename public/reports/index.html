@@ -5223,8 +5223,12 @@ async function loadAuditResultsFromSheet() {
     const rows = parseCsvToRows(await res.text());
     if (!rows.length) return;
 
+    console.log('[audit-debug] total rows from sheet:', rows.length);
+    console.log('[audit-debug] first row keys:', rows.length ? Object.keys(rows[0]) : 'none');
+    console.log('[audit-debug] first row action:', rows.length ? rows[0]['action'] : 'none');
     // Only use audit_run rows with a SKU
     const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku']);
+    console.log('[audit-debug] auditRows found:', auditRows.length);
     if (!auditRows.length) return;
 
     // For each SKU, keep only the row with the most recent audited_at (col T)
@@ -5256,6 +5260,9 @@ async function loadAuditResultsFromSheet() {
     }));
 
     if (results.length) {
+      console.log('[audit-debug] results[0]:', JSON.stringify(results[0]));
+      console.log('[audit-debug] SKU_TO_PAGE_ID keys:', Object.keys(SKU_TO_PAGE_ID));
+      console.log('[audit-debug] el for EVO0001:', document.getElementById(SKU_TO_PAGE_ID['EVO0001']));
       injectAuditResults(results);
       console.log('[listings] Loaded audit results for', results.length, 'SKUs (most recent per SKU by audited_at)');
     }
