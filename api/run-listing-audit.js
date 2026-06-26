@@ -151,6 +151,8 @@ Backend: ${san(skuData.backend, 200)}`;
         .replace(/[\u201C\u201D]/g,'"')
         .replace(/[\u2013\u2014]/g,'-')
         .replace(/\u2026/g,'...')
+        .replace(/\\'/g,"'")    // \' is invalid in JSON (valid in JS but not JSON)
+        .replace(/\\\//g,'/')   // \/ is technically valid but causes issues in some parsers
         .replace(/,\s*}/g,'}')
         .trim();
 
