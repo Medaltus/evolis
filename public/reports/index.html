@@ -1415,7 +1415,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           📊 Weekly Report Upload
           <span class="up-badge">AI Analysis</span>
         </div>
-        <div class="upload-drop-grid">
+        <div class="upload-drop-grid" style="grid-template-columns:repeat(4,1fr);">
           <label class="upload-drop" id="drop-kw" ondragover="upDragOver(event,'drop-kw')" ondragleave="upDragLeave('drop-kw')" ondrop="upDrop(event,'kw')">
             <input type="file" id="file-kw" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'kw')">
             <div class="upload-drop-icon">🔍</div>
@@ -1436,6 +1436,13 @@ As inventory availability improves, the current sales mix provides a strong foun
             <div class="upload-drop-label">PPC Report</div>
             <div class="upload-drop-sub">Campaign performance · CSV or XLSX</div>
             <div class="upload-drop-files" id="files-ppc"></div>
+          </label>
+          <label class="upload-drop" id="drop-sqp" ondragover="upDragOver(event,'drop-sqp')" ondragleave="upDragLeave('drop-sqp')" ondrop="upDrop(event,'sqp')">
+            <input type="file" id="file-sqp" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'sqp')">
+            <div class="upload-drop-icon">🔎</div>
+            <div class="upload-drop-label">SQP Report</div>
+            <div class="upload-drop-sub">Search Query Performance · CSV</div>
+            <div class="upload-drop-files" id="files-sqp"></div>
           </label>
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -4394,13 +4401,14 @@ const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2l
 function getListingSkill() { try { return atob(LISTING_SKILL_B64); } catch(e) { return ''; } }
 
 // Files dropped into the three slots — all types auto-detected
-const _upFiles = { kw: [], biz: [], ppc: [] };
+const _upFiles = { kw: [], biz: [], ppc: [], sqp: [] };
 
 function upDragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('dragover'); }
 function upDragLeave(id)   { document.getElementById(id).classList.remove('dragover'); }
 function upDrop(e, type)   { e.preventDefault(); upDragLeave('drop-'+type); upHandleFiles(e.dataTransfer.files, type); }
 function upSelect(el, type){ upHandleFiles(el.files, type); }
 function upHandleFiles(fl, type) {
+  if (!_upFiles[type]) _upFiles[type] = [];
   _upFiles[type] = _upFiles[type].concat(Array.from(fl));
   document.getElementById('files-'+type).innerHTML = _upFiles[type].map(f=>'📄 '+f.name).join('<br>');
 }
@@ -4451,8 +4459,8 @@ function csvVals(line) {
 }
 
 async function parseAllFiles() {
-  for (const type of ['kw','biz','ppc']) {
-    for (const file of _upFiles[type]) {
+  for (const type of ['kw','biz','ppc','sqp']) {
+    for (const file of (_upFiles[type]||[])) {
       if (!file._text) {
         file._text = await parseFile(file);
         file._rtype = detectReportType(file.name, file._text);
@@ -4541,7 +4549,8 @@ function extractPpcSummary(files) {
 // ── SQP (Amazon Search Query Performance) ────────────────────────
 function extractSqpSummary(files) {
   const rows = [];
-  const allFiles = [..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc];
+  // Use dedicated sqp bucket first, fall back to auto-detected across all buckets
+  const allFiles = files && files.length ? files : [..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc,...(_upFiles.sqp||[])];
   for (const f of allFiles) {
     if ((f._rtype||detectReportType(f.name,f._text||'')) !== 'sqp') continue;
     // Row 0 = metadata, Row 1 = headers, Row 2+ = data
@@ -4573,7 +4582,7 @@ function buildSummaries() {
     kw:  extractKwSummary(_upFiles.kw),
     biz: extractBizSummary(_upFiles.biz),
     ppc: extractPpcSummary(_upFiles.ppc),
-    sqp: extractSqpSummary([])
+    sqp: extractSqpSummary(_upFiles.sqp||[])
   };
 }
 
@@ -4629,7 +4638,7 @@ function buildListingContext() {
 async function runInsightAnalysis() {
   const btn=document.getElementById('run-analysis-btn');
   const st=document.getElementById('upload-status');
-  if (!_upFiles.kw.length&&!_upFiles.biz.length&&!_upFiles.ppc.length) {
+  if (!_upFiles.kw.length&&!_upFiles.biz.length&&!_upFiles.ppc.length&&!(_upFiles.sqp||[]).length) {
     st.textContent='\u26a0 Upload at least one report first.'; st.className='upload-status error'; return;
   }
   btn.classList.add('running'); btn.disabled=true;
@@ -4637,9 +4646,9 @@ async function runInsightAnalysis() {
     st.textContent='Parsing files\u2026'; st.className='upload-status';
     await parseAllFiles();
     const sum=buildSummaries();
-    const fileCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].length;
-    const sqpCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].filter(f=>f._rtype==='sqp').length;
-    const kwCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].filter(f=>f._rtype==='kw').length;
+    const fileCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc,...(_upFiles.sqp||[])].length;
+    const sqpCount=(_upFiles.sqp||[]).length;
+    const kwCount=_upFiles.kw.length;
     st.textContent='Loading history\u2026';
     const hist=await fetchHistoricalSummaries(4);
     st.textContent='Running AI analysis\u2026';
@@ -4679,7 +4688,7 @@ async function callClaudeForInsights(sum, histCtx, listingCtx) {
 }
 
 async function saveUploadsToSheet(sum,ins) {
-  const files=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].map(f=>f.name+'('+f._rtype+')').join(', ');
+  const files=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc,...(_upFiles.sqp||[])].map(f=>f.name+'('+f._rtype+')').join(', ');
   await fetch('/api/write-uploads',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({brand:INSIGHTS_BRAND_TAB,sheetId:UPLOADS_SHEET_ID,gid:UPLOADS_EVOLIS_GID,
       date:ins.date||new Date().toISOString().slice(0,10),week_label:weekLabel(),
