@@ -4589,16 +4589,24 @@ async function runInsightAnalysis() {
 }
 
 async function callClaudeForInsights(sum, histCtx, listingCtx) {
-  const skill=getListingSkill();
-  const sys='You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly data for \u00e9volis (EVO).\n\nListing compliance rules:\n'+skill+'\n\nRespond with valid JSON only. No markdown, no preamble.';
-  const sqpSection=sum.sqp&&sum.sqp.length?'\n\nSQP — Brand Search Query Performance (top queries with brand presence):\n'+JSON.stringify(sum.sqp):'';
-  const usr='Analyze this week vs history. Return JSON: {date (YYYY-MM-DD), organic:{summary,wins[],actions[],keywords_to_watch[]}, ppc:{summary,wins[],actions[],opportunities[]}, listing:{summary,violations[],keyword_gaps[],rewrites_recommended[]}, log_summary (4-6 sentence paragraph)}.\n\nCURRENT WEEK:\nKeyword Tracker (organic ranks + ABA):\n'+JSON.stringify(sum.kw)+'\n\nBusiness Report (per SKU):\n'+JSON.stringify(sum.biz)+'\n\nH10 Ads (search terms):\n'+JSON.stringify(sum.ppc)+sqpSection+'\n\nHISTORY (last 4 weeks):\n'+histCtx+'\n\nCURRENT LISTING COPY:\n'+listingCtx;
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,system:sys,messages:[{role:'user',content:usr}]})});
-  if (!res.ok) throw new Error('Claude API '+res.status);
-  const data=await res.json();
-  const raw=data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-  return JSON.parse(raw.replace(/^```json\n?/,'').replace(/\n?```$/,'').trim());
+  const res = await fetch('/api/run-analysis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      brand:        INSIGHTS_BRAND_TAB,
+      summaries:    sum,
+      historicalCtx: histCtx,
+      listingCtx:   listingCtx,
+      skillB64:     LISTING_SKILL_B64
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'run-analysis API error ' + res.status);
+  }
+  const data = await res.json();
+  if (!data.ok || !data.insights) throw new Error('Invalid response from run-analysis');
+  return data.insights;
 }
 
 async function saveUploadsToSheet(sum,ins) {
