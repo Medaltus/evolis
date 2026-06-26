@@ -18,71 +18,52 @@ export default async function handler(req, res) {
 
   let skill = '';
   if (skillB64) {
-    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 4000); } catch(e) {}
+    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 3000); } catch(e) {}
   }
 
   const isTravel = catalog.every(s => s.travel);
 
-  // Sanitize copy text — remove HTML entities, smart quotes, em dashes
   function sanitize(s) {
     if (!s) return '';
     return String(s)
-      .replace(/&amp;/g, 'and')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&[a-z]+;/g, ' ')
-      .replace(/[\u2018\u2019]/g, "'")   // smart single quotes -> straight
-      .replace(/[\u201C\u201D]/g, '"')   // smart double quotes -> straight
-      .replace(/[\u2013\u2014]/g, '-')   // en/em dashes -> hyphen
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 400);
+      .replace(/&amp;/g, 'and').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/g, ' ')
+      .replace(/[\u2018\u2019\u0060\u00b4]/g, '')  // remove all apostrophe variants
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\s+/g, ' ').trim().slice(0, 350);
   }
 
-  const systemPrompt = `You are an Amazon listing compliance auditor for Medaltus / evolis hair care brand.
+  const systemPrompt = `You are an Amazon listing compliance auditor for Medaltus / evolis hair care.
 
-${skill ? 'Compliance rules:\n' + skill + '\n\n' : ''}Rules:
-- Title: max 75 chars (hard limit July 27 2026)
-- Item Highlights: max 125 chars (new required field - generate if missing)
-- No prohibited words: brightening, heals, anti-inflammatory, eliminates, cures, guaranteed, best, #1
-- FGF5: explain in plain English before using the term
-- No apostrophes in your JSON string values - use "does not" not "don't"
-- No em dashes or smart quotes in your JSON output
-- Keep all string values under 250 characters
-
-CRITICAL OUTPUT RULES:
-1. Output ONLY a valid JSON array. Nothing before or after the array.
-2. No markdown code fences.
-3. Every string value must use only plain ASCII characters.
-4. No newlines inside string values - use spaces instead.
-5. Maximum 2 items in wins/actions arrays.`;
+${skill ? 'Key compliance rules:\n' + skill + '\n\n' : ''}STRICT OUTPUT RULES - violations will cause system failure:
+1. Output ONLY a raw JSON array. Zero text before or after the array.
+2. No markdown fences of any kind.
+3. No apostrophes anywhere - write "does not" not "don't", "it is" not "it's", "hair that is" not "hair that's"
+4. No smart quotes - use only straight double quotes " for JSON
+5. No em dashes or en dashes - use hyphen - only
+6. No ellipsis character - write "..." as three separate periods
+7. Every string value must be on a single line - no newlines inside string values
+8. Max 200 characters per string value
+9. Title max 75 chars, Item Highlights max 125 chars`;
 
   const catalogText = catalog.map(s => {
-    const title = sanitize(s.title);
-    const ih    = sanitize(s.item_highlights);
-    const back  = sanitize(s.backend);
-
     if (s.travel) {
-      return `SKU:${s.sku}|${s.name}[TRAVEL]|Title:${title}|IH:${ih||'MISSING'}|Backend:${back}`;
+      return `SKU:${s.sku}|${s.name}[TRAVEL]|Title:${sanitize(s.title)}|IH:${sanitize(s.item_highlights)||'MISSING'}`;
     }
-    const bullets = (s.bullets || []).map((b,i) => `B${i+1}:${sanitize(b)}`).join('|');
-    const desc = sanitize(s.description);
-    return `SKU:${s.sku}|${s.name}|Title:${title}|IH:${ih||'MISSING-GENERATE'}|${bullets}|Desc:${desc}|Backend:${back}`;
+    const bullets = (s.bullets||[]).slice(0,5).map((b,i)=>`B${i+1}:${sanitize(b)}`).join('|');
+    return `SKU:${s.sku}|${s.name}|Title:${sanitize(s.title)}|IH:${sanitize(s.item_highlights)||'MISSING-GENERATE'}|${bullets}|Backend:${sanitize(s.backend)}`;
   }).join('\n\n');
 
-  const schemaExample = isTravel
-    ? `[{"sku":"EVO0014","title":{"notes":"note","rewrite":"rewrite under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":null,"description":null,"backend":{"notes":"note","rewrite":""}}]`
-    : `[{"sku":"EVO0001","title":{"notes":"note","rewrite":"rewrite under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":{"notes":"issues summary","rewrite":"B1 rewrite only"},"description":{"notes":"brief note","rewrite":""},"backend":{"notes":"note","rewrite":"cleaned keywords"}}]`;
+  const schema = isTravel
+    ? `[{"sku":"EVO0014","title":{"notes":"note under 150 chars","rewrite":"title under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":null,"description":null,"backend":{"notes":"note","rewrite":""}}]`
+    : `[{"sku":"EVO0001","title":{"notes":"note under 150 chars","rewrite":"title under 75 chars"},"item_highlights":{"notes":"note","rewrite":"IH under 125 chars"},"bullets":{"notes":"issues summary under 150 chars","rewrite":"B1 rewrite under 200 chars"},"description":{"notes":"note under 150 chars","rewrite":""},"backend":{"notes":"note under 150 chars","rewrite":"cleaned keywords under 200 chars"}}]`;
 
-  const userPrompt = `Audit these evolis SKUs. Return a JSON array matching this exact schema:
-${schemaExample}
+  const userPrompt = `Audit these evolis SKUs. Return ONLY a JSON array matching this schema:
+${schema}
 
-Rules for your response:
-- Use only plain ASCII in all strings
-- No apostrophes - write "does not" not "don't", "it is" not "it's"
-- No em dashes - use hyphens
-- Keep every string value under 250 characters
-- For missing Item Highlights: generate a compliant one under 125 chars
-- For travel SKUs: audit title + generate IH only, set bullets/description to null
+Critical: no apostrophes, no em dashes, no smart quotes, no newlines in strings, all values under 200 chars.
+For missing Item Highlights: generate one under 125 chars.
+For travel SKUs: set bullets and description to null.
 
 CATALOG:
 ${catalogText}`;
@@ -90,17 +71,8 @@ ${catalogText}`;
   try {
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
     });
 
     if (!claudeRes.ok) {
@@ -109,48 +81,56 @@ ${catalogText}`;
     }
 
     const data = await claudeRes.json();
+    if (data.stop_reason === 'max_tokens') console.warn('run-listing-audit: truncated');
 
-    if (data.stop_reason === 'max_tokens') {
-      console.warn('run-listing-audit: truncated by max_tokens');
-    }
+    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 
-    const raw = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
-
-    // Strip markdown fences
+    // ── Aggressive sanitization of Claude's raw output ──────────────
     let clean = raw
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```\s*$/i, '')
+      .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```\s*$/i, '')
       .trim();
 
-    // Must start with [ and end with ]
+    // Extract just the array
     const arrStart = clean.indexOf('[');
     const arrEnd   = clean.lastIndexOf(']');
-    if (arrStart >= 0 && arrEnd > arrStart) {
-      clean = clean.slice(arrStart, arrEnd + 1);
-    }
+    if (arrStart >= 0 && arrEnd > arrStart) clean = clean.slice(arrStart, arrEnd + 1);
 
-    // Replace any remaining smart quotes and em dashes that Claude snuck in
+    // Fix common Claude output issues
     clean = clean
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2013\u2014]/g, '-');
+      .replace(/[\u2018\u2019\u0060\u00b4]/g, '')           // remove apostrophes
+      .replace(/[\u201C\u201D]/g, '"')                        // smart double → straight
+      .replace(/[\u2013\u2014]/g, '-')                        // dashes → hyphen
+      .replace(/\u2026/g, '...')                              // ellipsis
+      .replace(/\\n/g, ' ')                                   // escaped newlines in strings
+      .replace(/\r?\n/g, ' ')                                 // literal newlines
+      .replace(/\t/g, ' ')                                    // tabs
+      .replace(/,\s*}/g, '}')                                 // trailing commas in objects
+      .replace(/,\s*]/g, ']');                                // trailing commas in arrays
+
+    // Fix unescaped double quotes inside string values — common Claude mistake
+    // Pattern: find ": "...string with "quotes" inside..."
+    // This is the trickiest issue. Try a targeted fix for known patterns.
+    clean = clean.replace(/"notes"\s*:\s*"([^"]*)"([^"]*)"([^"]*)"/g, (m, a, b, c) => {
+      return `"notes":"${a}${b}${c}"`;
+    });
 
     let results;
     try {
       results = JSON.parse(clean);
     } catch(parseErr) {
-      console.error('parse error:', parseErr.message, '| raw length:', raw.length);
-      console.error('clean first 500:', clean.slice(0, 500));
-      console.error('clean last 500:', clean.slice(-500));
-      return res.status(500).json({
-        error: 'Could not parse audit response: ' + parseErr.message,
-        rawLength: raw.length,
-        hint: 'Check Vercel logs for full response'
-      });
+      console.error('parse error:', parseErr.message, '| pos:', parseErr.message.match(/\d+/)?.[0]);
+      console.error('Around error:', clean.slice(Math.max(0, (parseInt(parseErr.message.match(/\d+/)?.[0]||0)) - 50), (parseInt(parseErr.message.match(/\d+/)?.[0]||0)) + 50));
+
+      // Last resort: try to build a partial result from what parsed successfully
+      const partialMatch = clean.match(/(\{[^{}]*"sku"\s*:\s*"[^"]+"/g);
+      if (partialMatch && partialMatch.length > 0) {
+        return res.status(500).json({
+          error: 'Could not parse full audit response: ' + parseErr.message,
+          partialCount: partialMatch.length,
+          hint: 'Claude output contained characters that broke JSON parsing. Check Vercel logs.'
+        });
+      }
+      return res.status(500).json({ error: 'Could not parse audit response: ' + parseErr.message });
     }
 
     return res.status(200).json({ ok: true, results, skuCount: results.length });
