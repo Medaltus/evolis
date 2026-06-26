@@ -462,16 +462,20 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 /* ═══════════════════════════════════
    LISTING AUDIT ENGINE
    ═══════════════════════════════════ */
-.la-audit-zone{background:rgba(200,125,47,.05);border:1px solid rgba(200,125,47,.2);border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px;}
-.la-audit-zone-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--warn);margin-bottom:8px;}
-.la-audit-note{font-size:12px;color:var(--navy);line-height:1.6;margin-bottom:8px;}
+.la-audit-zone{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-top:10px;overflow:hidden;border-left:4px solid var(--warn);}
+.la-audit-zone-hd{padding:10px 14px 8px;background:var(--bg);border-bottom:1px solid var(--border);}
+.la-audit-zone-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--warn);margin-bottom:3px;}
+.la-audit-zone-field{font-size:12.5px;font-weight:700;color:var(--navy);}
+.la-audit-note{font-size:12.5px;color:var(--navy);line-height:1.65;padding:10px 14px;}
 .la-audit-note strong{color:var(--danger);}
-.la-audit-rewrite{background:#fff;border:1px solid rgba(36,233,163,.3);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--navy);line-height:1.6;position:relative;}
-.la-audit-rewrite-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1db88a;margin-bottom:6px;}
-.la-audit-copy-btn{position:absolute;top:8px;right:8px;background:none;border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;cursor:pointer;color:var(--muted);}
-.la-audit-copy-btn:hover{background:var(--bg);}
-.la-audit-chars{font-size:10px;color:var(--muted);margin-top:6px;}
+.la-audit-rewrite{padding:10px 14px 12px;font-size:12.5px;color:var(--navy);line-height:1.65;background:rgba(36,233,163,.05);border-top:1px solid rgba(36,233,163,.15);position:relative;}
+.la-audit-rewrite-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#1db88a;margin-bottom:4px;}
+.la-audit-copy-btn{position:absolute;top:10px;right:12px;background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--muted);}
+.la-audit-copy-btn:hover{background:var(--white);}
+.la-audit-chars{font-size:10px;color:var(--muted);margin-top:5px;}
 .la-audit-chars .over{color:var(--danger);font-weight:600;}
+.la-audit-zone.clean{border-left-color:#1db88a;}
+.la-audit-zone.clean .la-audit-zone-label{color:#1db88a;}
 
 /* Per-SKU updated/feedback bar */
 .la-update-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:12px;margin-bottom:4px;flex-wrap:wrap;}
@@ -5003,21 +5007,27 @@ function injectAuditResults(results) {
       if (!card) return;
       if (!note && !rewrite) return;
       const chars = rewrite ? rewrite.length : 0;
+      const isClean = !note || note.toLowerCase().startsWith('no violation');
       const charInfo = (charLimit > 0 && rewrite)
-        ? \`<div class="la-audit-chars">\${chars} chars \${chars > charLimit ? '<span class="over">OVER limit of '+charLimit+'</span>' : '\u2714 within '+charLimit+' char limit'}</div>\`
+        ? '<div class="la-audit-chars">' + chars + ' chars ' + (chars > charLimit ? '<span class="over">OVER limit of ' + charLimit + '</span>' : '\u2714 within ' + charLimit + ' char limit') + '</div>'
         : '';
+      const fieldLabel = sublabelText ? sublabelText : labelText;
       const zone = document.createElement('div');
-      zone.className = 'la-audit-zone';
-      zone.innerHTML = \`
-        <div class="la-audit-zone-label">\u2726 Audit Findings</div>
-        \${note ? \`<div class="la-audit-note">\${note}</div>\` : ''}
-        \${rewrite ? \`<div class="la-audit-rewrite">
-          <div class="la-audit-rewrite-label">Suggested Rewrite</div>
-          <button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
-          <p style="margin:0;">\${rewrite}</p>
-          \${charInfo}
-        </div>\` : ''}
-      \`;
+      zone.className = 'la-audit-zone' + (isClean ? ' clean' : '');
+      zone.innerHTML =
+        '<div class="la-audit-zone-hd">' +
+          '<div class="la-audit-zone-label">' + (isClean ? '\u2714 Compliant' : '\u26a0 Audit Findings') + '</div>' +
+          '<div class="la-audit-zone-field">' + fieldLabel + '</div>' +
+        '</div>' +
+        (note ? '<div class="la-audit-note">' + note + '</div>' : '') +
+        (rewrite
+          ? '<div class="la-audit-rewrite">' +
+              '<div class="la-audit-rewrite-label">\u2192 Suggested Rewrite</div>' +
+              '<button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('p').textContent)">Copy</button>' +
+              '<p style="margin:0;">' + rewrite + '</p>' +
+              charInfo +
+            '</div>'
+          : '');
       card.appendChild(zone);
     }
 
