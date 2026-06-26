@@ -4312,296 +4312,253 @@ function initSns() {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// INSIGHTS ENGINE — File parsing, Claude API, Sheet write, Injection
+// INSIGHTS ENGINE v2
 // ═══════════════════════════════════════════════════════════════════
 
-const INSIGHTS_SHEET_ID = '1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg';
-const INSIGHTS_BRAND_TAB = 'evolis';   // tab name in the insights sheet — one per brand
+const INSIGHTS_SHEET_ID   = '1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg';
+const INSIGHTS_EVOLIS_GID = '1069613491';
+const UPLOADS_SHEET_ID    = '1FWpevQar1-v-C60xJeWL1i9cll7y4PvzJxgd3et0-cQ';
+const UPLOADS_EVOLIS_GID  = '1714211650';
+const INSIGHTS_BRAND_TAB  = 'evolis';
+const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
 
-// ── Stored parsed file data ──────────────────────────────────────
+function getListingSkill() {
+  try { return atob(LISTING_SKILL_B64); } catch(e) { return ''; }
+}
+
 const _upFiles = { kw: [], biz: [], ppc: [] };
 
-// ── Drag-and-drop helpers ────────────────────────────────────────
-function upDragOver(e, dropId) {
-  e.preventDefault();
-  document.getElementById(dropId).classList.add('dragover');
-}
-function upDragLeave(dropId) {
-  document.getElementById(dropId).classList.remove('dragover');
-}
-function upDrop(e, type) {
-  e.preventDefault();
-  const dropId = 'drop-' + type;
-  document.getElementById(dropId).classList.remove('dragover');
-  upHandleFiles(e.dataTransfer.files, type);
-}
-function upSelect(input, type) {
-  upHandleFiles(input.files, type);
+function upDragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('dragover'); }
+function upDragLeave(id)   { document.getElementById(id).classList.remove('dragover'); }
+function upDrop(e, type)   { e.preventDefault(); upDragLeave('drop-'+type); upHandleFiles(e.dataTransfer.files, type); }
+function upSelect(el, type){ upHandleFiles(el.files, type); }
+function upHandleFiles(fl, type) {
+  _upFiles[type] = _upFiles[type].concat(Array.from(fl));
+  document.getElementById('files-'+type).innerHTML = _upFiles[type].map(f=>'📄 '+f.name).join('<br>');
 }
 
-function upHandleFiles(fileList, type) {
-  const files = Array.from(fileList);
-  _upFiles[type] = _upFiles[type].concat(files);
-  const el = document.getElementById('files-' + type);
-  el.innerHTML = _upFiles[type].map(f => '📄 ' + f.name).join('<br>');
-}
-
-// ── Parse a single file → plain text rows ────────────────────────
 async function parseFile(file) {
-  return new Promise((resolve) => {
-    const name = file.name.toLowerCase();
-    const reader = new FileReader();
-
-    if (name.endsWith('.csv')) {
-      reader.onload = e => resolve(e.target.result.slice(0, 40000)); // cap at 40k chars
-      reader.readAsText(file);
+  return new Promise(res => {
+    const r = new FileReader();
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      r.onload = e => res(e.target.result);
+      r.readAsText(file);
     } else {
-      // XLSX — use SheetJS (loaded below)
-      reader.onload = e => {
-        try {
-          const wb = XLSX.read(e.target.result, { type: 'array' });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const csv = XLSX.utils.sheet_to_csv(ws);
-          resolve(csv.slice(0, 40000));
-        } catch(err) {
-          resolve('(parse error: ' + err.message + ')');
-        }
+      r.onload = e => {
+        try { const wb = XLSX.read(e.target.result,{type:'array'}); res(XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])); }
+        catch(err) { res(''); }
       };
-      reader.readAsArrayBuffer(file);
+      r.readAsArrayBuffer(file);
     }
   });
 }
 
-// ── Gather all parsed data into report blocks ────────────────────
-async function buildReportBlocks() {
-  const blocks = [];
-
-  for (const [type, label] of [['kw','Keyword Tracker'],['biz','Business Report'],['ppc','PPC Report']]) {
-    if (_upFiles[type].length === 0) continue;
-    for (const file of _upFiles[type]) {
-      const content = await parseFile(file);
-      blocks.push(`=== ${label}: ${file.name} ===\n${content}\n`);
-    }
-  }
-
-  return blocks.join('\n\n');
+function parseCsvToRows(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(hdr => hdr.replace(/^"|"$/g,'').trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const vals = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || [];
+    const obj = {};
+    headers.forEach((hdr,i) => { obj[hdr] = (vals[i]||'').replace(/^"|"$/g,'').trim(); });
+    return obj;
+  }).filter(row => Object.values(row).some(v=>v));
 }
 
-// ── Build the listing context from the current page ───────────────
+function safeJson(s) { try { return JSON.parse(s||'[]'); } catch { return []; } }
+
+function extractKwSummary(files) {
+  const rows = [];
+  for (const f of files) {
+    for (const row of parseCsvToRows(f._parsed||'')) {
+      const kw   = row['keyword']||row['search term']||row['keywords']||'';
+      const rank = parseInt(row['rank']||row['organic rank']||row['position']||'0');
+      const prev = parseInt(row['prev rank']||row['previous rank']||'0');
+      const vol  = parseInt(row['search volume']||row['volume']||'0');
+      const conv = row['conversion rate']||row['aba conversion rate']||'';
+      if (kw && rank > 0) rows.push({ kw, rank, prev, vol, conv });
+    }
+  }
+  return rows.sort((a,b)=>a.rank-b.rank).slice(0,20);
+}
+
+function extractBizSummary(files) {
+  const rows = [];
+  for (const f of files) {
+    for (const row of parseCsvToRows(f._parsed||'')) {
+      const sku      = row['sku']||row['asin']||row['(child) asin']||row['child asin']||'';
+      const sessions = parseInt(row['sessions']||row['sessions - total']||'0');
+      const units    = parseInt(row['units ordered']||row['units']||'0');
+      const revenue  = parseFloat((row['ordered product sales']||row['revenue']||'0').replace(/[$,]/g,''));
+      const conv     = row['unit session percentage']||row['conversion rate']||'';
+      if (sku) rows.push({ sku, sessions, units, revenue: revenue.toFixed(2), conv });
+    }
+  }
+  return rows.slice(0,20);
+}
+
+function extractPpcSummary(files) {
+  const rows = [];
+  for (const f of files) {
+    for (const row of parseCsvToRows(f._parsed||'')) {
+      const campaign = row['campaign name']||row['campaign']||'';
+      const spend    = parseFloat((row['spend']||row['cost']||'0').replace(/[$,]/g,''));
+      const sales    = parseFloat((row['sales']||row['7 day total sales']||row['attributed sales']||'0').replace(/[$,]/g,''));
+      const acos     = row['acos']||row['total acos']||(spend&&sales?((spend/sales)*100).toFixed(1)+'%':'—');
+      const impr     = parseInt((row['impressions']||'0').replace(/,/g,''));
+      const clicks   = parseInt((row['clicks']||'0').replace(/,/g,''));
+      if (campaign) rows.push({ campaign, spend: spend.toFixed(2), sales: sales.toFixed(2), acos, impr, clicks });
+    }
+  }
+  return rows.slice(0,15);
+}
+
+async function parseAllFiles() {
+  for (const type of ['kw','biz','ppc'])
+    for (const file of _upFiles[type])
+      if (!file._parsed) file._parsed = await parseFile(file);
+}
+
+function buildSummaries() {
+  return { kw: extractKwSummary(_upFiles.kw), biz: extractBizSummary(_upFiles.biz), ppc: extractPpcSummary(_upFiles.ppc) };
+}
+
+async function fetchHistoricalSummaries(n) {
+  n = n||4;
+  try {
+    const url = 'https://docs.google.com/spreadsheets/d/'+UPLOADS_SHEET_ID+'/export?format=csv&gid='+UPLOADS_EVOLIS_GID+'&_cb='+Date.now();
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return parseCsvToRows(await res.text()).slice(0,n).map(r => ({
+      date: r['date']||'', week: r['week_label']||'',
+      kw: safeJson(r['kw_summary_json']), biz: safeJson(r['biz_summary_json']), ppc: safeJson(r['ppc_summary_json'])
+    }));
+  } catch(e) { return []; }
+}
+
+function formatHistoryForClaude(history) {
+  if (!history.length) return 'No prior data — this is the first upload.';
+  return history.map(w => {
+    const k = (w.kw||[]).slice(0,5).map(x=>x.kw+' rank='+x.rank+(x.prev?' prev='+x.prev:'')).join(', ');
+    const b = (w.biz||[]).slice(0,5).map(x=>x.sku+' sessions='+x.sessions+' units='+x.units).join(', ');
+    const p = (w.ppc||[]).slice(0,5).map(x=>x.campaign+' spend=$'+x.spend+' acos='+x.acos).join(', ');
+    return 'Week '+w.date+' ('+w.week+'):\nKW: '+k+'\nBiz: '+b+'\nPPC: '+p;
+  }).join('\n\n');
+}
+
+function weekLabel() {
+  const now = new Date(), s = new Date(now), e = new Date(now);
+  s.setDate(now.getDate()-now.getDay()+1); e.setDate(s.getDate()+6);
+  const f = d => d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return f(s)+'\u2013'+f(e)+' '+now.getFullYear();
+}
+
 function buildListingContext() {
-  const titles = [];
-  // Grab visible la-card label + copy-block text from listing audit
+  const items = [];
   document.querySelectorAll('#la-activators .la-card').forEach(card => {
     const label = card.querySelector('.la-card-label');
-    const copy = card.querySelector('.la-copy-block');
-    if (label && copy) {
-      titles.push(label.textContent.trim() + ':\n' + copy.textContent.trim().slice(0, 500));
-    }
+    const copy  = card.querySelector('.la-copy-block');
+    if (label && copy) items.push(label.textContent.trim()+': '+copy.textContent.trim().slice(0,400));
   });
-  return titles.join('\n\n---\n\n').slice(0, 8000);
+  return items.join('\n---\n').slice(0,6000);
 }
 
-// ── Main analysis runner ─────────────────────────────────────────
 async function runInsightAnalysis() {
   const btn = document.getElementById('run-analysis-btn');
-  const statusEl = document.getElementById('upload-status');
-
-  const hasFiles = _upFiles.kw.length + _upFiles.biz.length + _upFiles.ppc.length;
-  if (!hasFiles) {
-    statusEl.textContent = '⚠ Upload at least one report file first.';
-    statusEl.className = 'upload-status error';
-    return;
+  const st  = document.getElementById('upload-status');
+  if (!_upFiles.kw.length && !_upFiles.biz.length && !_upFiles.ppc.length) {
+    st.textContent = '\u26a0 Upload at least one report first.'; st.className = 'upload-status error'; return;
   }
-
-  btn.classList.add('running');
-  btn.disabled = true;
-  statusEl.textContent = 'Parsing files…';
-  statusEl.className = 'upload-status';
-
+  btn.classList.add('running'); btn.disabled = true;
   try {
-    const reportData = await buildReportBlocks();
-    const listingContext = buildListingContext();
-
-    statusEl.textContent = 'Sending to Claude…';
-
-    const LISTING_AUDIT_SKILL = "# Amazon Listing Audit & Build — Skill\n\nProduces a complete, compliant, keyword-optimized Amazon listing for a single product SKU. Covers: Title, Item Highlights, Bullets 1–5, Product Description, and Backend Keywords. Applies all Medaltus compliance rules automatically — no prompting required.\n\n---\n\n## Inputs Required\n\nThe skill accepts any combination of the following. Work with whatever is provided.\n\n| Input | Source | Required? |\n|-------|--------|-----------|\n| Product name + format | User, brand workbook, or dashboard | ✓ Required |\n| Full INCI ingredient list | Brand workbook (Col N or O), product page, or user paste | ✓ Required |\n| Product size / format / price | Brand workbook or user | ✓ Required |\n| Fragrance status | Brand workbook Col R or INCI | ✓ Required |\n| Clean standard claims | Brand workbook Col Q or user | Recommended |\n| Existing listing copy | Dashboard, Seller Central, or user paste | Optional — for audit mode |\n| Keyword Tracker / Cerebro tiers | Dashboard Keyword Tracker tab, or Cerebro skill output | Strongly recommended |\n| Skin type / target consumer | Brand workbook or user | Recommended |\n| Competitor bullets (VOC research) | Brand workbook Reviews tab or competitor audit output | Optional — improves bullet framing |\n\nIf no keyword tiers are provided, derive keywords from the product's ingredient list, format, and category using the same four-gate filter defined in the `amazon-keyword-strategy` skill.\n\n---\n\n## Two Modes\n\n### Mode A — Build (new listing or no copy exists)\nWrite all five elements from scratch using the product profile and keyword targets.\n\n### Mode B — Audit (existing copy provided)\n1. Run the existing copy through all compliance gates and flag every violation with the exact word, rule breached, and compliant replacement.\n2. Rewrite each flagged element with the violation corrected.\n3. Score keyword coverage: which T1 and T2 targets are present, which are missing.\n4. Produce a revised full listing with all fixes applied.\n\nAlways complete the full rewrite even in Audit mode — never deliver a violation report without also delivering corrected copy.\n\n---\n\n## Phase 1 — Build the Product Profile\n\nBefore writing a single word of copy, compile a product fact sheet. This is mandatory — copy written without it will fail Gate checks.\n\n```\nPRODUCT FACT SHEET\n──────────────────────────────────────────────────────\nBrand:           [brand name]\nSKU ID:          [e.g. SSS0001]\nProduct name:    [full name]\nFormat:          [serum / cream / cleanser / essence / toner / mask / etc.]\nSize:            [X fl oz / X ml]\nPrice:           [$X.XX]\nPrice/oz:        [$X.XX]\n\nHero ingredients (top 3–5 actives):  [list]\nFull INCI:       [complete list]\n\nFragrance:       [YES — describe / NO — confirmed fragrance-free]\nClean claims:    [silicone-free / paraben-free / sulfate-free / etc.]\nSkin type:       [oily / dry / combination / sensitive / all / etc.]\nTarget consumer: [description]\n\nT1 keywords:     [from Keyword Tracker or derived]\nT2 keywords:     [from Keyword Tracker or derived]\nT3 keywords:     [track only — do not place in copy]\n```\n\nIf fragrance status is unclear from the inputs, check the INCI for: Parfum, Fragrance, any essential oil (lavender oil, rosemary oil, etc.), linalool, limonene, citronellol, geraniol, eugenol, benzyl alcohol. If any are present → treat as HAS FRAGRANCE. Never claim fragrance-free without INCI confirmation.\n\n---\n\n## Phase 2 — Compliance Gate Check\n\nRun ALL copy through every gate before writing. In Audit mode, run the existing copy through these gates first and flag violations before rewriting.\n\n### Gate 1 — Prohibited Health & Efficacy Words\n\n**Hard substitutions — mandatory replacements:**\n\n| ❌ Never use | ✅ Use instead |\n|-------------|---------------|\n| brightening / brightens / brightened / brightener | illuminate, restore radiance, healthy-looking glow, refreshed complexion, luminous |\n| brighten (any form) | same as above |\n| dark spot / dark spot corrector | uneven skin tone, skin tone, radiance |\n| discoloration correcting / corrects discoloration | uneven skin tone, even-looking complexion |\n| skin lightening / skin lightener | (remove entirely — do not replace) |\n| anti-inflammatory | irritation, redness, puffiness, swelling appearance |\n| inflammation | irritation, redness |\n| heals / healing | repairs, supports, restores |\n| cures | (remove — do not replace) |\n| eliminates (as a cure/treatment claim) | helps reduce, helps minimize the appearance of |\n| prevents (disease context) | helps support, helps maintain |\n| relieves ___ | helps alleviate the appearance/symptoms of ___ |\n| pain relief / pain reducing | helps alleviate the pain associated with ___ |\n| acne-fighting / treats acne / treat acne | supports clearer-looking skin, helps with the appearance of blemishes |\n| kills bacteria / anti-bacterial | helps remove dirt, grime, oil, and surface buildup |\n| antimicrobial / antifungal | helps eliminate [specific issue] |\n| fragrance-free (if product HAS fragrance) | do not reference fragrance — or use \"light, fresh scent\" |\n| non-toxic / all-natural / BPA free | only with certification documentation |\n| eco-friendly / biodegradable / recyclable / compostable | only with certification documentation |\n| third-party tested | anything tested, science-backed |\n| neurogenic / neurological / cardiovascular / blood pressure | remove entirely — do not reference |\n| intimate / intimacy (skincare context) | wellness, self-care, personal care |\n| free from [X] framed as health risk | \"free from [X], for those who prefer [X]\" — tie to preference, not safety |\n| hydroquinone | do not reference at all |\n| CBD | do not reference at all |\n| pesticide / pesticidal | do not reference at all |\n| sex / sexual / sexy / lust / sensual / arousal / stimulate | do not reference at all |\n| \"harmful to your health\" (implying other i";
-
-    const systemPrompt = "You are an expert Amazon brand strategist and listing compliance auditor for Medaltus, a marketing agency. You are analyzing weekly performance reports for the \u00e9volis hair care brand (brand code: EVO).\n\nLISTING AUDIT SKILL — apply these compliance rules to all listing analysis:\n" + LISTING_AUDIT_SKILL + "\n\nAlways respond with valid JSON only. No markdown fences, no preamble.";
-
-    const userPrompt = "Analyze the following \u00e9volis brand reports and current listing copy. Return a JSON object with exactly these keys:\n\n{\n  \"date\": \"YYYY-MM-DD\",\n  \"organic\": {\n    \"summary\": \"2-3 sentence summary of organic keyword performance\",\n    \"wins\": [\"up to 3 ranking wins or positive signals\"],\n    \"actions\": [\"up to 3 specific keyword or listing actions to improve organic rank\"],\n    \"keywords_to_watch\": [\"up to 5 keywords with notable movement\"]\n  },\n  \"ppc\": {\n    \"summary\": \"2-3 sentence summary of PPC performance\",\n    \"wins\": [\"up to 3 campaign wins\"],\n    \"actions\": [\"up to 3 specific campaign optimizations\"],\n    \"opportunities\": [\"up to 3 new keyword or targeting opportunities\"]\n  },\n  \"listing\": {\n    \"summary\": \"2-3 sentence compliance and keyword coverage summary\",\n    \"violations\": [\"any compliance violations found — use the listing audit skill rules\"],\n    \"keyword_gaps\": [\"T1/T2 keywords missing from current copy\"],\n    \"rewrites_recommended\": [\"specific elements to rewrite with priority\"]\n  },\n  \"log_summary\": \"One paragraph 4-6 sentences summarizing all three areas for the insights log.\"\n}\n\nCURRENT LISTING COPY (\u00e9volis activators):\n" + listingContext + "\n\nREPORT DATA:\n" + reportData;
-
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
-
-    if (!response.ok) throw new Error('API error: ' + response.status);
-
-    const data = await response.json();
-    const raw = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-
-    // Strip any accidental markdown fences
-    const clean = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-    const insights = JSON.parse(clean);
-
-    statusEl.textContent = 'Injecting insights…';
-
-    // Inject into sections
-    injectInsights(insights);
-
-    // Write to Google Sheet
-    statusEl.textContent = 'Saving to sheet…';
-    await writeInsightsToSheet(insights, reportData);
-
-    statusEl.textContent = '✓ Analysis complete — ' + new Date().toLocaleTimeString();
-    statusEl.className = 'upload-status success';
-
+    st.textContent = 'Parsing files\u2026'; st.className = 'upload-status';
+    await parseAllFiles();
+    const sum = buildSummaries();
+    st.textContent = 'Loading history\u2026';
+    const hist = await fetchHistoricalSummaries(4);
+    st.textContent = 'Running AI analysis\u2026';
+    const ins = await callClaudeForInsights(sum, formatHistoryForClaude(hist), buildListingContext());
+    st.textContent = 'Updating dashboard\u2026';
+    injectInsights(ins);
+    st.textContent = 'Saving\u2026';
+    await saveUploadsToSheet(sum, ins);
+    await writeInsightsToSheet(ins);
+    st.textContent = '\u2713 Done \u2014 '+new Date().toLocaleTimeString(); st.className = 'upload-status success';
   } catch(err) {
-    console.error('Insight analysis error:', err);
-    statusEl.textContent = '✗ Error: ' + err.message;
-    statusEl.className = 'upload-status error';
-  } finally {
-    btn.classList.remove('running');
-    btn.disabled = false;
-  }
+    st.textContent = '\u2717 '+err.message; st.className = 'upload-status error';
+  } finally { btn.classList.remove('running'); btn.disabled = false; }
 }
 
-// ── Inject results into the dashboard ───────────────────────────
+async function callClaudeForInsights(sum, histCtx, listingCtx) {
+  const skill = getListingSkill();
+  const sys = 'You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly data for \u00e9volis (EVO).\n\nListing compliance rules:\n'+skill+'\n\nRespond with valid JSON only. No markdown, no preamble.';
+  const usr = 'Analyze this week vs history. Return JSON: {date (YYYY-MM-DD), organic:{summary,wins[],actions[],keywords_to_watch[]}, ppc:{summary,wins[],actions[],opportunities[]}, listing:{summary,violations[],keyword_gaps[],rewrites_recommended[]}, log_summary}.\n\nCURRENT WEEK:\nKeywords: '+JSON.stringify(sum.kw)+'\n\nBusiness: '+JSON.stringify(sum.biz)+'\n\nPPC: '+JSON.stringify(sum.ppc)+'\n\nHISTORY:\n'+histCtx+'\n\nLISTING:\n'+listingCtx;
+  const res = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,system:sys,messages:[{role:'user',content:usr}]})});
+  if (!res.ok) throw new Error('Claude API '+res.status);
+  const data = await res.json();
+  const raw = data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+  return JSON.parse(raw.replace(/^```json\n?/,'').replace(/\n?```$/,'').trim());
+}
+
+async function saveUploadsToSheet(sum, ins) {
+  const files = [..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc].map(f=>f.name).join(', ');
+  await fetch('/api/write-uploads',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({brand:INSIGHTS_BRAND_TAB,sheetId:UPLOADS_SHEET_ID,gid:UPLOADS_EVOLIS_GID,
+      date:ins.date||new Date().toISOString().slice(0,10),week_label:weekLabel(),
+      kw_summary:JSON.stringify(sum.kw),biz_summary:JSON.stringify(sum.biz),
+      ppc_summary:JSON.stringify(sum.ppc),files_uploaded:files})});
+}
+
+async function writeInsightsToSheet(ins) {
+  await fetch('/api/write-insights',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({brand:INSIGHTS_BRAND_TAB,sheetId:INSIGHTS_SHEET_ID,gid:INSIGHTS_EVOLIS_GID,
+      date:ins.date||new Date().toISOString().slice(0,10),
+      organic:JSON.stringify(ins.organic),ppc:JSON.stringify(ins.ppc),
+      listing:JSON.stringify(ins.listing),summary:ins.log_summary})});
+}
+
+function makeList(arr) { return arr&&arr.length?'<ul>'+arr.map(x=>'<li>'+x+'</li>').join('')+'</ul>':''; }
+
 function injectInsights(ins) {
-  const date = ins.date || new Date().toISOString().slice(0,10);
-
-  // ── Organic page ──
+  const date = ins.date||new Date().toISOString().slice(0,10);
   const orgEl = document.getElementById('ai-organic-text');
-  const orgCard = document.getElementById('ai-organic-insight');
   if (orgEl && ins.organic) {
-    orgEl.innerHTML = `
-      <strong>${ins.organic.summary}</strong>
-      ${ins.organic.wins?.length ? '<br><br><strong>Wins:</strong><ul>' + ins.organic.wins.map(w=>`<li>${w}</li>`).join('') + '</ul>' : ''}
-      ${ins.organic.actions?.length ? '<strong>Actions:</strong><ul>' + ins.organic.actions.map(a=>`<li>${a}</li>`).join('') + '</ul>' : ''}
-      ${ins.organic.keywords_to_watch?.length ? '<strong>Keywords to watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : ''}
-    `;
-    orgCard.style.display = 'block';
+    orgEl.innerHTML = '<strong>'+(ins.organic.summary||'')+'</strong>'+(ins.organic.wins&&ins.organic.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.organic.wins):'')+(ins.organic.actions&&ins.organic.actions.length?'<strong>Actions:</strong>'+makeList(ins.organic.actions):'')+(ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length?'<strong>Watch:</strong> '+ins.organic.keywords_to_watch.join(', '):'');
+    document.getElementById('ai-organic-insight').style.display='block';
   }
-
-  // ── PPC page ──
   const ppcEl = document.getElementById('ai-ppc-text');
-  const ppcCard = document.getElementById('ai-ppc-insight');
   if (ppcEl && ins.ppc) {
-    ppcEl.innerHTML = `
-      <strong>${ins.ppc.summary}</strong>
-      ${ins.ppc.wins?.length ? '<br><br><strong>Wins:</strong><ul>' + ins.ppc.wins.map(w=>`<li>${w}</li>`).join('') + '</ul>' : ''}
-      ${ins.ppc.actions?.length ? '<strong>Actions:</strong><ul>' + ins.ppc.actions.map(a=>`<li>${a}</li>`).join('') + '</ul>' : ''}
-      ${ins.ppc.opportunities?.length ? '<strong>Opportunities:</strong><ul>' + ins.ppc.opportunities.map(o=>`<li>${o}</li>`).join('') + '</ul>' : ''}
-    `;
-    ppcCard.style.display = 'block';
+    ppcEl.innerHTML = '<strong>'+(ins.ppc.summary||'')+'</strong>'+(ins.ppc.wins&&ins.ppc.wins.length?'<br><br><strong>Wins:</strong>'+makeList(ins.ppc.wins):'')+(ins.ppc.actions&&ins.ppc.actions.length?'<strong>Actions:</strong>'+makeList(ins.ppc.actions):'')+(ins.ppc.opportunities&&ins.ppc.opportunities.length?'<strong>Opportunities:</strong>'+makeList(ins.ppc.opportunities):'');
+    document.getElementById('ai-ppc-insight').style.display='block';
   }
-
-  // ── Listing Audit page ──
   const laEl = document.getElementById('ai-listing-text');
-  const laCard = document.getElementById('ai-listing-insight');
   if (laEl && ins.listing) {
-    laEl.innerHTML = `
-      <strong>${ins.listing.summary}</strong>
-      ${ins.listing.violations?.length ? '<br><br><strong style="color:var(--danger);">⚠ Compliance Issues:</strong><ul>' + ins.listing.violations.map(v=>`<li>${v}</li>`).join('') + '</ul>' : ''}
-      ${ins.listing.keyword_gaps?.length ? '<strong>Keyword Gaps:</strong><ul>' + ins.listing.keyword_gaps.map(k=>`<li>${k}</li>`).join('') + '</ul>' : ''}
-      ${ins.listing.rewrites_recommended?.length ? '<strong>Priority Rewrites:</strong><ul>' + ins.listing.rewrites_recommended.map(r=>`<li>${r}</li>`).join('') + '</ul>' : ''}
-    `;
-    laCard.style.display = 'block';
+    laEl.innerHTML = '<strong>'+(ins.listing.summary||'')+'</strong>'+(ins.listing.violations&&ins.listing.violations.length?'<br><br><strong style="color:var(--danger);">\u26a0 Compliance:</strong>'+makeList(ins.listing.violations):'')+(ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length?'<strong>Keyword Gaps:</strong>'+makeList(ins.listing.keyword_gaps):'')+(ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length?'<strong>Priority Rewrites:</strong>'+makeList(ins.listing.rewrites_recommended):'');
+    document.getElementById('ai-listing-insight').style.display='block';
   }
-
-  // ── Insights Log ──
-  const logContainer = document.getElementById('ai-log-entries');
-  if (logContainer && ins.log_summary) {
+  const logEl = document.getElementById('ai-log-entries');
+  if (logEl && ins.log_summary) {
     const card = document.createElement('div');
     card.className = 'ai-insight-card';
-    card.innerHTML = `
-      <div class="ai-insight-card-hd">
-        <span class="ai-insight-card-type">✦ AI Analysis — Organic · PPC · Listing</span>
-        <span class="ai-insight-card-date">${date}</span>
-      </div>
-      <div class="ai-insight-card-body">
-        <p>${ins.log_summary}</p>
-        <details style="margin-top:10px;font-size:11.5px;color:var(--muted);">
-          <summary style="cursor:pointer;font-weight:600;color:var(--navy);">View full breakdown ↓</summary>
-          <div style="margin-top:10px;">
-            <strong>Organic:</strong> ${ins.organic?.summary || '—'}<br><br>
-            <strong>PPC:</strong> ${ins.ppc?.summary || '—'}<br><br>
-            <strong>Listing:</strong> ${ins.listing?.summary || '—'}
-          </div>
-        </details>
-      </div>
-    `;
-    logContainer.prepend(card);
+    card.innerHTML = '<div class="ai-insight-card-hd"><span class="ai-insight-card-type">\u2726 AI Analysis \u2014 Organic \u00b7 PPC \u00b7 Listing</span><span class="ai-insight-card-date">'+date+'</span></div><div class="ai-insight-card-body"><p>'+ins.log_summary+'</p><details style="margin-top:10px;font-size:11.5px;"><summary style="cursor:pointer;font-weight:600;color:var(--navy);">Full breakdown \u2193</summary><div style="margin-top:10px;line-height:1.7;"><strong>Organic:</strong> '+(ins.organic&&ins.organic.summary||'\u2014')+'<br><br><strong>PPC:</strong> '+(ins.ppc&&ins.ppc.summary||'\u2014')+'<br><br><strong>Listing:</strong> '+(ins.listing&&ins.listing.summary||'\u2014')+'</div></details></div>';
+    logEl.prepend(card);
   }
 }
 
-// ── Write to Google Sheets via a Vercel API function ─────────────
-async function writeInsightsToSheet(insights, rawData) {
-  try {
-    await fetch('/api/write-insights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        brand: INSIGHTS_BRAND_TAB,
-        date: insights.date || new Date().toISOString().slice(0,10),
-        organic: JSON.stringify(insights.organic),
-        ppc: JSON.stringify(insights.ppc),
-        listing: JSON.stringify(insights.listing),
-        summary: insights.log_summary,
-        sheetId: INSIGHTS_SHEET_ID
-      })
-    });
-  } catch(err) {
-    console.warn('Sheet write failed (non-fatal):', err.message);
-  }
-}
-
-// ── Load most recent insights from sheet on page load ────────────
 async function loadInsightsFromSheet() {
   try {
-    // Fetch the evolis tab as CSV — newest row at top (we write newest-first)
-    // Tab name must match INSIGHTS_BRAND_TAB
-    // We use gid lookup by tab name approach via export URL
-    const url = `https://docs.google.com/spreadsheets/d/${INSIGHTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${INSIGHTS_BRAND_TAB}&_cb=${Date.now()}`;
+    const url = 'https://docs.google.com/spreadsheets/d/'+INSIGHTS_SHEET_ID+'/export?format=csv&gid='+INSIGHTS_EVOLIS_GID+'&_cb='+Date.now();
     const res = await fetch(url);
     if (!res.ok) return;
-    const csv = await res.text();
-    const rows = csv.trim().split('\n').slice(1); // skip header
-    if (!rows.length || !rows[0].trim()) return;
-
-    // Parse first (most recent) row
-    // Columns: date, organic_json, ppc_json, listing_json, summary
-    const cols = rows[0].match(/(".*?"|[^,]+)(?=,|$)/g) || [];
-    const clean = s => (s || '').replace(/^"|"$/g, '').replace(/""/g, '"');
-    const [date, orgStr, ppcStr, laStr, summary] = cols.map(clean);
-
-    if (!summary) return;
-
-    const insights = {
-      date,
-      organic: JSON.parse(orgStr || '{}'),
-      ppc: JSON.parse(ppcStr || '{}'),
-      listing: JSON.parse(laStr || '{}'),
-      log_summary: summary
-    };
-
-    injectInsights(insights);
-  } catch(err) {
-    console.warn('Could not load insights from sheet:', err.message);
-  }
+    const rows = parseCsvToRows(await res.text());
+    if (!rows.length) return;
+    const r = rows[0];
+    injectInsights({date:r['date'],organic:safeJson(r['organic_json']),ppc:safeJson(r['ppc_json']),listing:safeJson(r['listing_json']),log_summary:r['summary']});
+  } catch(e) { console.warn('Could not load insights:', e.message); }
 }
 
-// Load on DOMContentLoaded (appended to existing listener)
-document.addEventListener('DOMContentLoaded', () => {
-  loadInsightsFromSheet();
-});
-
+document.addEventListener('DOMContentLoaded', () => { loadInsightsFromSheet(); });
 </script>
 </body>
 </html>
