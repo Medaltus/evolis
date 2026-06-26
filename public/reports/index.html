@@ -5090,39 +5090,56 @@ async function runListingAudit() {
   const btn = document.getElementById('run-audit-btn');
   const st  = document.getElementById('upload-status');
   btn.classList.add('running'); btn.disabled = true;
-  st.textContent = 'Extracting listing copy…'; st.className = 'upload-status';
+  st.textContent = 'Extracting listing copy\u2026'; st.className = 'upload-status';
 
   try {
     const catalog = extractAllListingCopy();
-    st.textContent = 'Running listing audit (≈ 30-45s)…';
+    const fullSkus   = catalog.filter(s => !s.travel);
+    const travelSkus = catalog.filter(s => s.travel);
+    const allResults = [];
 
-    const res = await fetch('/api/run-listing-audit', {
+    // ── Call 1: Full SKUs (11 SKUs — title, IH, all bullets, description, backend) ──
+    st.textContent = 'Auditing full SKUs (1/2 — \u2248 30s)\u2026';
+    const res1 = await fetch('/api/run-listing-audit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog, skillB64: LISTING_SKILL_B64 })
+      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: fullSkus, skillB64: LISTING_SKILL_B64 })
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'run-listing-audit error ' + res.status);
+    if (!res1.ok) {
+      const err = await res1.json().catch(() => ({}));
+      throw new Error(err.error || 'run-listing-audit error ' + res1.status);
     }
+    const data1 = await res1.json();
+    if (data1.results) allResults.push(...data1.results);
 
-    const data = await res.json();
-    if (!data.ok || !data.results) throw new Error('Invalid response from audit');
+    // ── Call 2: Travel SKUs (7 SKUs — light audit) ──
+    st.textContent = 'Auditing travel SKUs (2/2 — \u2248 15s)\u2026';
+    const res2 = await fetch('/api/run-listing-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: travelSkus, skillB64: LISTING_SKILL_B64 })
+    });
+    if (!res2.ok) {
+      const err = await res2.json().catch(() => ({}));
+      throw new Error(err.error || 'run-listing-audit (travel) error ' + res2.status);
+    }
+    const data2 = await res2.json();
+    if (data2.results) allResults.push(...data2.results);
 
-    st.textContent = 'Injecting audit results…';
-    injectAuditResults(data.results);
+    st.textContent = 'Injecting audit results\u2026';
+    injectAuditResults(allResults);
 
-    st.textContent = '✓ Listing audit complete — ' + data.results.length + ' SKUs reviewed — ' + new Date().toLocaleTimeString();
+    st.textContent = '\u2713 Listing audit complete \u2014 ' + allResults.length + ' SKUs reviewed \u2014 ' + new Date().toLocaleTimeString();
     st.className = 'upload-status success';
 
   } catch(err) {
     console.error('Listing audit error:', err);
-    st.textContent = '✗ ' + err.message; st.className = 'upload-status error';
+    st.textContent = '\u2717 ' + err.message; st.className = 'upload-status error';
   } finally {
     btn.classList.remove('running'); btn.disabled = false;
   }
 }
+
 
 // ── Inject audit results below each la-card ───────────────────────
 function injectAuditResults(results) {
