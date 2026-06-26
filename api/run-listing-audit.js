@@ -57,6 +57,16 @@ module.exports = async function handler(req, res) {
   const { brand, catalog, skillB64 } = req.body || {};
   if (!catalog || !catalog.length) return res.status(400).json({ error: 'Missing catalog' });
 
+  // Test mode: ?sku=EVO0001 limits the run to just that SKU
+  const testSku = req.query && req.query.sku;
+  const skusToAudit = testSku
+    ? catalog.filter(s => s.sku === testSku)
+    : catalog;
+
+  if (testSku && !skusToAudit.length) {
+    return res.status(400).json({ error: `SKU ${testSku} not found in catalog` });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
 
@@ -100,7 +110,7 @@ Return exactly this structure:
 
   const results = [];
 
-  for (const skuData of catalog) {
+  for (const skuData of skusToAudit) {
     try {
       let userPrompt;
       if (skuData.travel) {
