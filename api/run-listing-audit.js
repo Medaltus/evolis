@@ -179,7 +179,12 @@ Backend: ${san(skuData.backend, 200)}`;
       try {
         parsed = JSON.parse(clean);
       } catch(e) {
-        console.error(`[audit] ${skuData.sku} parse error: ${e.message} | raw: ${clean.slice(0,200)}`);
+        // Return raw Claude output when ?rawDebug=1 is passed
+        if (req.query && req.query.rawDebug) {
+          return res.status(200).json({ debug: true, sku: skuData.sku, parseError: e.message, raw, clean });
+        }
+        console.error(`[audit] ${skuData.sku} parse error: ${e.message}`);
+        console.error(`[audit] clean (full): ${clean}`);
         // Build a minimal result so the SKU isn't skipped entirely
         parsed = {
           sku: skuData.sku,
