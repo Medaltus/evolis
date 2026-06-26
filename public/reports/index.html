@@ -1506,7 +1506,7 @@ As inventory availability improves, the current sales mix provides a strong foun
 
     <!-- ── ACTIVATORS ── -->
     <div class="channel-page active" id="la-activators">
-      <div class="ai-section-injected" id="ai-listing-insight" style="display:none;">
+      <div class="ai-section-injected" id="ai-listing-insight">
         <div class="ai-section-injected-label">✦ AI Listing Audit Insights — Last Upload</div>
         <div id="ai-listing-text"></div>
       </div>
@@ -2311,9 +2311,9 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ── DATA-INFORMED OPPORTUNITIES ── -->
     <div class="channel-page" id="ppc-opportunities">
-      <div class="ai-section-injected" id="ai-ppc-insight" style="display:none;">
+      <div class="ai-section-injected" id="ai-ppc-insight">
         <div class="ai-section-injected-label">✦ AI PPC Insights — Last Upload</div>
-        <div id="ai-ppc-text"></div>
+        <div id="ai-ppc-text" style="color:var(--muted);font-size:12px;">Loading insights…</div>
       </div>
 
       <div class="ppc-alert">
@@ -2418,9 +2418,9 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ══ ACTIVATORS ══ -->
     <div class="channel-page active" id="org-activators">
-      <div class="ai-section-injected" id="ai-organic-insight" style="display:none;">
+      <div class="ai-section-injected" id="ai-organic-insight">
         <div class="ai-section-injected-label">✦ AI Organic Insights — Last Upload</div>
-        <div id="ai-organic-text"></div>
+        <div id="ai-organic-text" style="color:var(--muted);font-size:12px;">Loading insights…</div>
       </div>
 
       <!-- Fastest Path to Page 1 -->
@@ -4787,7 +4787,7 @@ function injectInsightsBoxes(ins) {
       (ins.organic.wins&&ins.organic.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.organic.wins) : '') +
       (ins.organic.actions&&ins.organic.actions.length ? '<strong>Actions:</strong>' + makeList(ins.organic.actions) : '') +
       (ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length ? '<strong>Watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : '');
-    document.getElementById('ai-organic-insight').style.display = 'block';
+    
   }
   const ppcEl = document.getElementById('ai-ppc-text');
   if (ppcEl && ins.ppc && ins.ppc.summary) {
@@ -4795,7 +4795,7 @@ function injectInsightsBoxes(ins) {
       (ins.ppc.wins&&ins.ppc.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.ppc.wins) : '') +
       (ins.ppc.actions&&ins.ppc.actions.length ? '<strong>Actions:</strong>' + makeList(ins.ppc.actions) : '') +
       (ins.ppc.opportunities&&ins.ppc.opportunities.length ? '<strong>Opportunities:</strong>' + makeList(ins.ppc.opportunities) : '');
-    document.getElementById('ai-ppc-insight').style.display = 'block';
+    
   }
   const laEl = document.getElementById('ai-listing-text');
   if (laEl && ins.listing && ins.listing.summary) {
@@ -4803,7 +4803,7 @@ function injectInsightsBoxes(ins) {
       (ins.listing.violations&&ins.listing.violations.length ? '<br><br><strong style="color:var(--danger);">⚠ Compliance:</strong>' + makeList(ins.listing.violations) : '') +
       (ins.listing.keyword_gaps&&ins.listing.keyword_gaps.length ? '<strong>Keyword Gaps:</strong>' + makeList(ins.listing.keyword_gaps) : '') +
       (ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length ? '<strong>Priority Rewrites:</strong>' + makeList(ins.listing.rewrites_recommended) : '');
-    document.getElementById('ai-listing-insight').style.display = 'block';
+    
   }
 }
 
