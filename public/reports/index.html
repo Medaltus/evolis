@@ -1488,6 +1488,10 @@ As inventory availability improves, the current sales mix provides a strong foun
 
     <div class="page-hd">
       <div><div class="page-title">Listing Audit</div><div class="page-sub">Live listing copy · Title · Item Highlights · Bullets 1–5 · Description · Backend Keywords</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="listings-sync-badge" style="font-size:10px;color:var(--muted);font-family:var(--mono);"></span>
+        <button class="btn-edit" style="padding:6px 12px;font-size:11px;" onclick="loadListingsFromSheet(true)">↻ Refresh</button>
+      </div>
     </div>
 
     <!-- Product type tabs -->
@@ -4395,6 +4399,8 @@ const UPLOADS_SHEET_ID    = '1FWpevQar1-v-C60xJeWL1i9cll7y4PvzJxgd3et0-cQ';
 const UPLOADS_EVOLIS_GID  = '1714211650';
 const INSIGHTS_BRAND_TAB  = 'evolis';
 const LISTING_AUDIT_SHEET_ID  = '1NrCQPR7vuuHKgG6nVnh3hGnHGHD6txjXGdhrIn63w-M';
+const SHEET_LISTINGS_ID       = '142l0fEr7TnNCLfqbxfK3PoS4gREaoqfXevqjB1_dB-M';
+const SHEET_LISTINGS_GID      = '1253931757';
 const LISTING_AUDIT_EVOLIS_GID = '2075287627';
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
 
@@ -4746,7 +4752,7 @@ async function loadInsightsFromSheet() {
   } catch(e) { console.warn('Could not load insights:',e.message); }
 }
 
-document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); });
+document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); loadListingsFromSheet(false); loadAuditResultsFromSheet(); });
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4884,6 +4890,9 @@ async function runListingAudit() {
     st.textContent = 'Injecting audit results\u2026';
     injectAuditResults(allResults);
 
+    st.textContent = 'Saving audit results\u2026';
+    await saveAuditResultsToSheet(allResults);
+
     st.textContent = '\u2713 Listing audit complete \u2014 ' + allResults.length + ' SKUs reviewed \u2014 ' + new Date().toLocaleTimeString();
     st.className = 'upload-status success';
 
@@ -5015,6 +5024,200 @@ async function logSkipReason(subId, sku, name) {
     statusEl.textContent = '✓ Skip logged — ' + reason.replace(/-/g,' ');
     statusEl.className = 'la-update-status saved';
   } catch(err) { statusEl.textContent = 'Error: ' + err.message; statusEl.className = 'la-update-status'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LIVE LISTING CONTENT — reads from SHEET_LISTINGS (weekly cron)
+// ═══════════════════════════════════════════════════════════════════
+
+// Maps SKU → sub-page id
+const SKU_TO_PAGE_ID = {
+  'EVO0001':'la-evo0001', 'EVO0005':'la-evo0005', 'EVO0009':'la-evo0009',
+  'EVO0002':'la-evo0002', 'EVO0006':'la-evo0006', 'EVO0010':'la-evo0010',
+  'EVO0014':'la-evo0014', 'EVO0016':'la-evo0016',
+  'EVO0003':'la-cond-evo0003', 'EVO0007':'la-cond-evo0007', 'EVO0011':'la-cond-evo0011',
+  'EVO0015':'la-cond-evo0015', 'EVO0017':'la-cond-evo0017',
+  'EVO0004':'la-mask-evo0004', 'EVO0008':'la-mask-evo0008',
+  'EVO0018':'la-mask-evo0018', 'EVO0019':'la-mask-evo0019',
+  'EVO0012':'la-dryshampoo'
+};
+
+async function loadListingsFromSheet(forceRefresh) {
+  const badge = document.getElementById('listings-sync-badge');
+  try {
+    if (badge) badge.textContent = 'Loading live copy...';
+    const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_LISTINGS_ID +
+      '/export?format=csv&gid=' + SHEET_LISTINGS_GID + '&_cb=' + Date.now();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Sheet fetch failed: ' + res.status);
+    const text = await res.text();
+    const rows = parseCsvToRows(text);
+    if (!rows.length) throw new Error('No data in listings sheet');
+
+    let updated = 0;
+    let lastSynced = '';
+
+    for (const row of rows) {
+      const sku = (row['sku'] || '').trim();
+      if (!sku) continue;
+      const pageId = SKU_TO_PAGE_ID[sku];
+      if (!pageId) continue;
+      const el = document.getElementById(pageId);
+      if (!el) continue;
+
+      // Update title
+      if (row['title']) updateCard(el, 'Active Title', null, row['title']);
+
+      // Update Item Highlights (only if sheet has a value — cron leaves blank)
+      if (row['item_highlights']) updateCard(el, 'Item Highlights', null, row['item_highlights']);
+
+      // Update bullets 1–5
+      for (let i = 1; i <= 5; i++) {
+        const val = row['bullet_' + i];
+        if (val) updateCard(el, 'Active Bullet Points', 'BULLET ' + i, val);
+      }
+
+      // Update description
+      if (row['description']) updateCard(el, 'Active Product Description', null, row['description']);
+
+      // Update backend keywords
+      if (row['backend_keywords']) {
+        const bk = el.querySelector('.la-backend-block');
+        if (bk) bk.textContent = row['backend_keywords'];
+      }
+
+      // Update char pills
+      el.querySelectorAll('.la-char-info').forEach(info => {
+        const card = info.closest('.la-card');
+        if (!card) return;
+        const copy = card.querySelector('.la-copy-block');
+        const pill = info.querySelector('.char-pill');
+        if (!copy || !pill) return;
+        const len = copy.textContent.trim().length;
+        const limitMatch = info.textContent.match(/≤(\d+)/);
+        if (!limitMatch) return;
+        const limit = parseInt(limitMatch[1]);
+        pill.textContent = len + ' chars used';
+        pill.className = 'char-pill ' + (len > limit ? 'error' : len > limit * 0.85 ? 'warn' : 'ok');
+      });
+
+      if (row['last_synced'] && (!lastSynced || row['last_synced'] > lastSynced)) {
+        lastSynced = row['last_synced'];
+      }
+      updated++;
+    }
+
+    const syncTime = lastSynced ? new Date(lastSynced).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'unknown';
+    if (badge) badge.textContent = '✓ Live copy — synced ' + syncTime + ' · ' + updated + ' SKUs';
+
+  } catch(err) {
+    console.warn('[listings] Could not load live copy:', err.message);
+    if (badge) badge.textContent = 'Could not load live copy';
+  }
+}
+
+// Update a specific la-card's copy block
+function updateCard(pageEl, labelText, sublabelText, newValue) {
+  const cards = pageEl.querySelectorAll('.la-card');
+  for (const card of cards) {
+    const label = card.querySelector('.la-card-label');
+    if (!label || !label.textContent.includes(labelText)) continue;
+    if (sublabelText) {
+      const sub = card.querySelector('.la-card-sublabel');
+      if (!sub || !sub.textContent.includes(sublabelText)) continue;
+    }
+    const copy = card.querySelector('.la-copy-block');
+    if (copy) {
+      copy.textContent = newValue;
+      // Reset status class — audit will re-evaluate on next run
+      copy.className = 'la-copy-block ok';
+    }
+    break;
+  }
+}
+
+// Auto-load on DOMContentLoaded (already have one listener — add to existing)
+
+// ── Save full audit results to listing audit sheet ────────────────
+async function saveAuditResultsToSheet(results) {
+  try {
+    await fetch('/api/write-listing-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brand:    INSIGHTS_BRAND_TAB,
+        sheetId:  LISTING_AUDIT_SHEET_ID,
+        gid:      LISTING_AUDIT_EVOLIS_GID,
+        date:     new Date().toISOString().slice(0, 10),
+        sku:      '_ALL_',
+        sku_name: 'Full Audit',
+        action:   'audit_run',
+        suggestions: results.map(r => ({
+          field:      r.sku,
+          issue:      '',
+          suggestion: JSON.stringify(r)
+        }))
+      })
+    });
+  } catch(err) {
+    console.warn('[listings] Could not save audit results:', err.message);
+  }
+}
+
+// ── Load most recent audit results from sheet and re-inject ───────
+async function loadAuditResultsFromSheet() {
+  try {
+    const url = 'https://docs.google.com/spreadsheets/d/' + LISTING_AUDIT_SHEET_ID +
+      '/export?format=csv&gid=' + LISTING_AUDIT_EVOLIS_GID + '&_cb=' + Date.now();
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const rows = parseCsvToRows(await res.text());
+    if (!rows.length) return;
+
+    // Find the most recent _ALL_ audit_run row
+    const auditRow = rows.find(r => r['sku'] === '_ALL_' && r['action'] === 'audit_run');
+    if (!auditRow) return;
+
+    // Each suggestion.field is a SKU, suggestion.suggestion is the JSON result
+    // Parse them back and re-inject
+    const suggestions = safeJson(auditRow['suggestion'] || '[]');
+    if (!suggestions.length) return;
+
+    // suggestions is an array of {field: sku, suggestion: '{"sku":...}' }
+    // But we stored them as the flat suggestions array — need to reconstruct
+    // Actually write-listing-audit stores each as a row, so we need to
+    // read ALL rows from this audit date and reconstruct per-SKU results
+
+    // Better approach: find all rows with action=audit_run from same date
+    const auditDate = auditRow['date'];
+    const auditRows = rows.filter(r => r['date'] === auditDate && r['action'] === 'audit_run' && r['sku'] === '_ALL_');
+
+    if (!auditRows.length) return;
+
+    // Reconstruct results array from suggestion column
+    const results = [];
+    const firstRow = auditRows[0];
+    // The suggestion column contains JSON of the full result per SKU
+    // Parse each suggestion entry
+    try {
+      const rawSuggestions = safeJson(firstRow['suggestion'] || '[]');
+      for (const s of rawSuggestions) {
+        if (s.suggestion) {
+          try {
+            results.push(JSON.parse(s.suggestion));
+          } catch(e) { /* skip malformed */ }
+        }
+      }
+    } catch(e) { return; }
+
+    if (results.length) {
+      injectAuditResults(results);
+      console.log('[listings] Restored audit results for', results.length, 'SKUs from', auditDate);
+    }
+
+  } catch(err) {
+    console.warn('[listings] Could not load audit results:', err.message);
+  }
 }
 </script>
 </body>
