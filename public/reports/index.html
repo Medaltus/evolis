@@ -5018,20 +5018,42 @@ function injectAuditResults(results) {
       const fieldLabel = sublabelText ? sublabelText : labelText;
       const zone = document.createElement('div');
       zone.className = 'la-audit-zone' + (isClean ? ' clean' : '');
-      zone.innerHTML =
-        '<div class="la-audit-zone-hd">' +
-          '<div class="la-audit-zone-label">' + (isClean ? '\u2714 Compliant' : '\u26a0 Audit Findings') + '</div>' +
-          '<div class="la-audit-zone-field">' + fieldLabel + '</div>' +
-        '</div>' +
-        (note ? '<div class="la-audit-note">' + note + '</div>' : '') +
-        (rewrite
-          ? '<div class="la-audit-rewrite">' +
-              '<div class="la-audit-rewrite-label">\u2192 Suggested Rewrite</div>' +
-              '<button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('p').textContent)">Copy</button>' +
-              '<p style="margin:0;">' + rewrite + '</p>' +
-              charInfo +
-            '</div>'
-          : '');
+      // Build header
+      const hd = document.createElement('div');
+      hd.className = 'la-audit-zone-hd';
+      hd.innerHTML = '<div class="la-audit-zone-label">' + (isClean ? '\u2714 Compliant' : '\u26a0 Audit Findings') + '</div><div class="la-audit-zone-field">' + fieldLabel + '</div>';
+      zone.appendChild(hd);
+      // Notes body
+      if (note) {
+        const nb = document.createElement('div');
+        nb.className = 'la-audit-note';
+        nb.textContent = note;
+        zone.appendChild(nb);
+      }
+      // Rewrite section
+      if (rewrite) {
+        const rw = document.createElement('div');
+        rw.className = 'la-audit-rewrite';
+        const rl = document.createElement('div');
+        rl.className = 'la-audit-rewrite-label';
+        rl.textContent = '\u2192 Suggested Rewrite';
+        rw.appendChild(rl);
+        const cp = document.createElement('button');
+        cp.className = 'la-audit-copy-btn';
+        cp.textContent = 'Copy';
+        cp.addEventListener('click', function() { navigator.clipboard.writeText(rewrite); });
+        rw.appendChild(cp);
+        const p = document.createElement('p');
+        p.style.margin = '0';
+        p.textContent = rewrite;
+        rw.appendChild(p);
+        if (charInfo) {
+          const ci = document.createElement('div');
+          ci.innerHTML = charInfo;
+          rw.appendChild(ci);
+        }
+        zone.appendChild(rw);
+      }
       card.appendChild(zone);
     }
 
