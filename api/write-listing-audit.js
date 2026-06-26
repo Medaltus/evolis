@@ -54,7 +54,7 @@ module.exports = async function handler(req, res) {
       sku,
       sku_name || '',
       action || 'pending',
-      '', '', '', '', '', '', '', '', // notes/rewrite columns — empty for manual actions
+      '', '', '', '', '', '', '', '', '', '', '', '', '', '', // notes/rewrite columns — empty for manual actions
       skip_reason || '',
       now
     ];
@@ -82,7 +82,7 @@ module.exports = async function handler(req, res) {
 
 async function ensureHeaders(sheetId, tabName, token) {
   const checkRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:N1')}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:T1')}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!checkRes.ok) return;
@@ -99,7 +99,9 @@ async function ensureHeaders(sheetId, tabName, token) {
           'date', 'sku', 'sku_name', 'action',
           'title_notes', 'title_rewrite',
           'ih_notes', 'ih_rewrite',
-          'bullets_notes', 'bullets_rewrite',
+          'bullets_notes',
+          'bullet_1_rewrite', 'bullet_2_rewrite', 'bullet_3_rewrite', 'bullet_4_rewrite', 'bullet_5_rewrite',
+          'desc_notes', 'desc_rewrite',
           'backend_notes', 'backend_rewrite',
           'skip_reason', 'audited_at'
         ]]
