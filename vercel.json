@@ -60,6 +60,10 @@
     {
       "path": "/api/cron/sync-google-ads",
       "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-listings",
+      "schedule": "0 2 * * 0"
     }
   ],
   "functions": {
@@ -146,6 +150,9 @@
     },
     "api/write-listing-audit.js": {
       "maxDuration": 30
+    },
+    "api/cron/sync-listings.js": {
+      "maxDuration": 300
     }
   },
   "routes": [
