@@ -5002,34 +5002,17 @@ function injectAuditResults(results) {
 // ── Mark listing as updated ───────────────────────────────────────
 
 // ── Collect audit suggestions from DOM for a SKU ─────────────────
-function collectAuditSuggestions(subId) {
-  const el = document.getElementById(subId);
-  const suggestions = [];
-  if (!el) return suggestions;
-  el.querySelectorAll('.la-audit-zone').forEach(zone => {
-    const card = zone.closest('.la-card');
-    const label = card ? card.querySelector('.la-card-label') : null;
-    const rewrite = zone.querySelector('.la-audit-rewrite p');
-    const note = zone.querySelector('.la-audit-note');
-    if (label) suggestions.push({
-      field: label.textContent.replace('NEW · JUL 27','').trim(),
-      issue: note ? note.textContent.trim().slice(0,300) : '',
-      suggestion: rewrite ? rewrite.textContent.trim().slice(0,300) : ''
-    });
-  });
-  return suggestions;
-}
+
 
 async function markListingUpdated(subId, sku, name) {
   const statusEl = document.getElementById('update-status-' + subId);
   statusEl.textContent = 'Saving…'; statusEl.className = 'la-update-status pending';
   try {
-    const suggestions = collectAuditSuggestions(subId);
     await fetch('/api/write-listing-audit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, sheetId: LISTING_AUDIT_SHEET_ID,
         gid: LISTING_AUDIT_EVOLIS_GID, date: new Date().toISOString().slice(0,10),
-        sku, sku_name: name, action: 'updated', suggestions })
+        action: 'updated', sku, sku_name: name })
     });
     statusEl.textContent = '✓ Logged ' + new Date().toLocaleDateString();
     statusEl.className = 'la-update-status saved';
@@ -5048,12 +5031,11 @@ async function logSkipReason(subId, sku, name) {
   const statusEl = document.getElementById('update-status-' + subId);
   statusEl.textContent = 'Saving…'; statusEl.className = 'la-update-status pending';
   try {
-    const suggestions = collectAuditSuggestions(subId);
     await fetch('/api/write-listing-audit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, sheetId: LISTING_AUDIT_SHEET_ID,
         gid: LISTING_AUDIT_EVOLIS_GID, date: new Date().toISOString().slice(0,10),
-        sku, sku_name: name, action: 'skipped', skip_reason: reason, suggestions })
+        action: 'skipped', sku, sku_name: name, skip_reason: reason })
     });
     statusEl.textContent = '✓ Skip logged — ' + reason.replace(/-/g,' ');
     statusEl.className = 'la-update-status saved';
@@ -5174,23 +5156,21 @@ function updateCard(pageEl, labelText, sublabelText, newValue) {
 
 // ── Save full audit results to listing audit sheet ────────────────
 async function saveAuditResultsToSheet(results) {
-  // Fire-and-forget — never surface errors to the main status bar
+  // Add sku_name to each result for the sheet
+  const enriched = results.map(r => {
+    const meta = EVOLIS_SKUS.find(s => s.sku === r.sku);
+    return Object.assign({}, r, { sku_name: meta ? meta.name : r.sku });
+  });
   fetch('/api/write-listing-audit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      brand:    INSIGHTS_BRAND_TAB,
-      sheetId:  LISTING_AUDIT_SHEET_ID,
-      gid:      LISTING_AUDIT_EVOLIS_GID,
-      date:     new Date().toISOString().slice(0, 10),
-      sku:      '_ALL_',
-      sku_name: 'Full Audit',
-      action:   'audit_run',
-      suggestions: results.map(r => ({
-        field:      r.sku,
-        issue:      '',
-        suggestion: JSON.stringify(r)
-      }))
+      brand:   INSIGHTS_BRAND_TAB,
+      sheetId: LISTING_AUDIT_SHEET_ID,
+      gid:     LISTING_AUDIT_EVOLIS_GID,
+      date:    new Date().toISOString().slice(0, 10),
+      action:  'audit_run',
+      results: enriched
     })
   }).catch(err => console.warn('[listings] Could not save audit results:', err.message));
 }
@@ -5205,47 +5185,26 @@ async function loadAuditResultsFromSheet() {
     const rows = parseCsvToRows(await res.text());
     if (!rows.length) return;
 
-    // Find the most recent _ALL_ audit_run row
-    const auditRow = rows.find(r => r['sku'] === '_ALL_' && r['action'] === 'audit_run');
-    if (!auditRow) return;
-
-    // Each suggestion.field is a SKU, suggestion.suggestion is the JSON result
-    // Parse them back and re-inject
-    const suggestions = safeJson(auditRow['suggestion'] || '[]');
-    if (!suggestions.length) return;
-
-    // suggestions is an array of {field: sku, suggestion: '{"sku":...}' }
-    // But we stored them as the flat suggestions array — need to reconstruct
-    // Actually write-listing-audit stores each as a row, so we need to
-    // read ALL rows from this audit date and reconstruct per-SKU results
-
-    // Better approach: find all rows with action=audit_run from same date
-    const auditDate = auditRow['date'];
-    const auditRows = rows.filter(r => r['date'] === auditDate && r['action'] === 'audit_run' && r['sku'] === '_ALL_');
-
+    // Find the most recent audit_run date
+    const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku'] && r['sku'] !== '_ALL_');
     if (!auditRows.length) return;
+    const latestDate = auditRows[0]['date']; // newest first (prepended)
+    const latest = auditRows.filter(r => r['date'] === latestDate);
 
-    // Reconstruct results array from suggestion column
-    const results = [];
-    const firstRow = auditRows[0];
-    // The suggestion column contains JSON of the full result per SKU
-    // Parse each suggestion entry
-    try {
-      const rawSuggestions = safeJson(firstRow['suggestion'] || '[]');
-      for (const s of rawSuggestions) {
-        if (s.suggestion) {
-          try {
-            results.push(JSON.parse(s.suggestion));
-          } catch(e) { /* skip malformed */ }
-        }
-      }
-    } catch(e) { return; }
+    // Reconstruct results array from flat columns
+    const results = latest.map(r => ({
+      sku: r['sku'],
+      title:           { notes: r['title_notes'] || '',   rewrite: r['title_rewrite'] || ''   },
+      item_highlights: { notes: r['ih_notes'] || '',      rewrite: r['ih_rewrite'] || ''      },
+      bullets:         r['bullets_notes'] ? { notes: r['bullets_notes'], rewrite: r['bullets_rewrite'] || '' } : null,
+      description:     null,
+      backend:         { notes: r['backend_notes'] || '', rewrite: r['backend_rewrite'] || '' }
+    }));
 
     if (results.length) {
       injectAuditResults(results);
-      console.log('[listings] Restored audit results for', results.length, 'SKUs from', auditDate);
+      console.log('[listings] Restored', results.length, 'SKU audit results from', latestDate);
     }
-
   } catch(err) {
     console.warn('[listings] Could not load audit results:', err.message);
   }
