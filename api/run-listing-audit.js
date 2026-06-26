@@ -173,7 +173,8 @@ module.exports = async function handler(req, res) {
   }
 
   // Fetch all rows (skip header row 1)
-  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/A2:O?majorDimension=ROWS`;
+  const tabName = brand; // e.g. "evolis"
+  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:O')}?majorDimension=ROWS`;
   const sourceRes = await fetch(sourceUrl, {
     headers: { Authorization: `Bearer ${token}` }
   });
