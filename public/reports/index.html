@@ -421,8 +421,46 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .org-sqp-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:14px;}
 .org-sqp-badge{font-size:10px;font-weight:500;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-left:8px;}
 
+
+/* ═══════════════════════════════════
+   INSIGHTS ENGINE — Upload + AI
+   ═══════════════════════════════════ */
+.upload-panel{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:20px;}
+.upload-panel-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.upload-panel-title .up-badge{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:rgba(36,233,163,.12);color:#1db88a;border:1px solid rgba(36,233,163,.2);border-radius:10px;padding:2px 8px;}
+.upload-drop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
+.upload-drop{border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg);}
+.upload-drop:hover,.upload-drop.dragover{border-color:var(--green);background:rgba(36,233,163,.05);}
+.upload-drop input{display:none;}
+.upload-drop-icon{font-size:20px;margin-bottom:6px;}
+.upload-drop-label{font-size:11.5px;font-weight:600;color:var(--navy);margin-bottom:3px;}
+.upload-drop-sub{font-size:10px;color:var(--muted);}
+.upload-drop-files{margin-top:8px;font-size:10px;color:#1db88a;line-height:1.6;}
+.upload-run-btn{display:flex;align-items:center;gap:8px;background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 20px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;}
+.upload-run-btn:hover{background:#0a2d7a;}
+.upload-run-btn:disabled{background:var(--muted);cursor:not-allowed;}
+.upload-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
+.upload-run-btn.running .spinner{display:block;}
+.upload-run-btn.running .btn-label{opacity:.7;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.upload-status{font-size:11.5px;color:var(--muted);margin-left:12px;font-style:italic;}
+.upload-status.error{color:var(--danger);}
+.upload-status.success{color:#1db88a;}
+
+/* AI-generated insight cards */
+.ai-insight-card{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden;}
+.ai-insight-card-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);}
+.ai-insight-card-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
+.ai-insight-card-date{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.ai-insight-card-body{padding:14px 16px;font-size:12.5px;color:var(--navy);line-height:1.7;}
+.ai-insight-card-body ul{margin:8px 0 0 0;padding-left:18px;}
+.ai-insight-card-body li{margin-bottom:4px;}
+.ai-section-injected{background:rgba(36,233,163,.05);border:1px solid rgba(36,233,163,.15);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12.5px;color:var(--navy);line-height:1.7;}
+.ai-section-injected-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#1db88a;margin-bottom:6px;}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1336,19 +1374,55 @@ As inventory availability improves, the current sales mix provides a strong foun
     </div><!-- /ins-reviews -->
 
     <div class="channel-page" id="ins-log">
-      <div class="page-hd" style="margin-bottom:16px;">
-        <div><div style="font-size:14px;font-weight:600;color:var(--navy);">Insights Log</div><div class="page-sub" style="margin-top:2px;">Track all approved and staged insights across the dashboard</div></div>
-        <button class="btn-edit" style="padding:7px 14px;font-size:11.5px;" onclick="alert('Opens new insight entry form')">+ New Insight</button>
+
+      <!-- ── UPLOAD PANEL ── -->
+      <div class="upload-panel">
+        <div class="upload-panel-title">
+          📊 Weekly Report Upload
+          <span class="up-badge">AI Analysis</span>
+        </div>
+        <div class="upload-drop-grid">
+          <label class="upload-drop" id="drop-kw" ondragover="upDragOver(event,'drop-kw')" ondragleave="upDragLeave('drop-kw')" ondrop="upDrop(event,'kw')">
+            <input type="file" id="file-kw" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'kw')">
+            <div class="upload-drop-icon">🔍</div>
+            <div class="upload-drop-label">Keyword Tracker</div>
+            <div class="upload-drop-sub">CSV or XLSX · multiple OK</div>
+            <div class="upload-drop-files" id="files-kw"></div>
+          </label>
+          <label class="upload-drop" id="drop-biz" ondragover="upDragOver(event,'drop-biz')" ondragleave="upDragLeave('drop-biz')" ondrop="upDrop(event,'biz')">
+            <input type="file" id="file-biz" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'biz')">
+            <div class="upload-drop-icon">📦</div>
+            <div class="upload-drop-label">Business Report</div>
+            <div class="upload-drop-sub">Amazon Business Report · CSV or XLSX</div>
+            <div class="upload-drop-files" id="files-biz"></div>
+          </label>
+          <label class="upload-drop" id="drop-ppc" ondragover="upDragOver(event,'drop-ppc')" ondragleave="upDragLeave('drop-ppc')" ondrop="upDrop(event,'ppc')">
+            <input type="file" id="file-ppc" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'ppc')">
+            <div class="upload-drop-icon">📈</div>
+            <div class="upload-drop-label">PPC Report</div>
+            <div class="upload-drop-sub">Campaign performance · CSV or XLSX</div>
+            <div class="upload-drop-files" id="files-ppc"></div>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="upload-run-btn" id="run-analysis-btn" onclick="runInsightAnalysis()">
+            <div class="spinner"></div>
+            <span class="btn-label">✦ Run Analysis</span>
+          </button>
+          <span class="upload-status" id="upload-status"></span>
+        </div>
       </div>
 
-      <div style="background:rgba(200,125,47,0.08);border:1px solid rgba(200,125,47,0.20);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--warn);">
-        <strong>Staging Review Required:</strong> 1 insight is pending leadership approval before going live to the partner dashboard.
+      <!-- ── AI-GENERATED LOG ── -->
+      <div id="ai-log-entries">
+        <!-- Populated by runInsightAnalysis() and loadInsightsFromSheet() -->
       </div>
 
+      <!-- ── STATIC LEGACY LOG ── -->
       <div class="log-entry">
         <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Amazon</span><span class="log-status-staging">◎ In Staging</span></div>
         <div class="log-text">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</div>
-        <div class="log-actions"><button class="btn-edit">✏️ Edit</button><button class="btn-approve" onclick="openApproveModal('log-amazon')">Approve → Live</button></div>
+        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
       </div>
       <div class="log-entry">
         <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Overview</span><span class="log-status-live">● Live</span></div>
@@ -1382,6 +1456,10 @@ As inventory availability improves, the current sales mix provides a strong foun
 
     <!-- ── ACTIVATORS ── -->
     <div class="channel-page active" id="la-activators">
+      <div class="ai-section-injected" id="ai-listing-insight" style="display:none;">
+        <div class="ai-section-injected-label">✦ AI Listing Audit Insights — Last Upload</div>
+        <div id="ai-listing-text"></div>
+      </div>
       <div class="sub-tabs">
         <button class="sub-tab active" onclick="showSubTab('la-activators','la-evo0001',this)">Reverse (EVO0001)</button>
         <button class="sub-tab" onclick="showSubTab('la-activators','la-evo0005',this)">Promote (EVO0005)</button>
@@ -2154,6 +2232,10 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ── DATA-INFORMED OPPORTUNITIES ── -->
     <div class="channel-page" id="ppc-opportunities">
+      <div class="ai-section-injected" id="ai-ppc-insight" style="display:none;">
+        <div class="ai-section-injected-label">✦ AI PPC Insights — Last Upload</div>
+        <div id="ai-ppc-text"></div>
+      </div>
 
       <div class="ppc-alert">
         <span class="ppc-alert-icon">💡</span>
@@ -2257,6 +2339,10 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ══ ACTIVATORS ══ -->
     <div class="channel-page active" id="org-activators">
+      <div class="ai-section-injected" id="ai-organic-insight" style="display:none;">
+        <div class="ai-section-injected-label">✦ AI Organic Insights — Last Upload</div>
+        <div id="ai-organic-text"></div>
+      </div>
 
       <!-- Fastest Path to Page 1 -->
       <div class="org-section-title">Fastest Path to Page 1 — Activators</div>
@@ -4223,6 +4309,299 @@ function initSns() {
     });
   });
 })();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INSIGHTS ENGINE — File parsing, Claude API, Sheet write, Injection
+// ═══════════════════════════════════════════════════════════════════
+
+const INSIGHTS_SHEET_ID = '1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg';
+const INSIGHTS_BRAND_TAB = 'evolis';   // tab name in the insights sheet — one per brand
+
+// ── Stored parsed file data ──────────────────────────────────────
+const _upFiles = { kw: [], biz: [], ppc: [] };
+
+// ── Drag-and-drop helpers ────────────────────────────────────────
+function upDragOver(e, dropId) {
+  e.preventDefault();
+  document.getElementById(dropId).classList.add('dragover');
+}
+function upDragLeave(dropId) {
+  document.getElementById(dropId).classList.remove('dragover');
+}
+function upDrop(e, type) {
+  e.preventDefault();
+  const dropId = 'drop-' + type;
+  document.getElementById(dropId).classList.remove('dragover');
+  upHandleFiles(e.dataTransfer.files, type);
+}
+function upSelect(input, type) {
+  upHandleFiles(input.files, type);
+}
+
+function upHandleFiles(fileList, type) {
+  const files = Array.from(fileList);
+  _upFiles[type] = _upFiles[type].concat(files);
+  const el = document.getElementById('files-' + type);
+  el.innerHTML = _upFiles[type].map(f => '📄 ' + f.name).join('<br>');
+}
+
+// ── Parse a single file → plain text rows ────────────────────────
+async function parseFile(file) {
+  return new Promise((resolve) => {
+    const name = file.name.toLowerCase();
+    const reader = new FileReader();
+
+    if (name.endsWith('.csv')) {
+      reader.onload = e => resolve(e.target.result.slice(0, 40000)); // cap at 40k chars
+      reader.readAsText(file);
+    } else {
+      // XLSX — use SheetJS (loaded below)
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(e.target.result, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const csv = XLSX.utils.sheet_to_csv(ws);
+          resolve(csv.slice(0, 40000));
+        } catch(err) {
+          resolve('(parse error: ' + err.message + ')');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}
+
+// ── Gather all parsed data into report blocks ────────────────────
+async function buildReportBlocks() {
+  const blocks = [];
+
+  for (const [type, label] of [['kw','Keyword Tracker'],['biz','Business Report'],['ppc','PPC Report']]) {
+    if (_upFiles[type].length === 0) continue;
+    for (const file of _upFiles[type]) {
+      const content = await parseFile(file);
+      blocks.push(`=== ${label}: ${file.name} ===\n${content}\n`);
+    }
+  }
+
+  return blocks.join('\n\n');
+}
+
+// ── Build the listing context from the current page ───────────────
+function buildListingContext() {
+  const titles = [];
+  // Grab visible la-card label + copy-block text from listing audit
+  document.querySelectorAll('#la-activators .la-card').forEach(card => {
+    const label = card.querySelector('.la-card-label');
+    const copy = card.querySelector('.la-copy-block');
+    if (label && copy) {
+      titles.push(label.textContent.trim() + ':\n' + copy.textContent.trim().slice(0, 500));
+    }
+  });
+  return titles.join('\n\n---\n\n').slice(0, 8000);
+}
+
+// ── Main analysis runner ─────────────────────────────────────────
+async function runInsightAnalysis() {
+  const btn = document.getElementById('run-analysis-btn');
+  const statusEl = document.getElementById('upload-status');
+
+  const hasFiles = _upFiles.kw.length + _upFiles.biz.length + _upFiles.ppc.length;
+  if (!hasFiles) {
+    statusEl.textContent = '⚠ Upload at least one report file first.';
+    statusEl.className = 'upload-status error';
+    return;
+  }
+
+  btn.classList.add('running');
+  btn.disabled = true;
+  statusEl.textContent = 'Parsing files…';
+  statusEl.className = 'upload-status';
+
+  try {
+    const reportData = await buildReportBlocks();
+    const listingContext = buildListingContext();
+
+    statusEl.textContent = 'Sending to Claude…';
+
+    const LISTING_AUDIT_SKILL = "# Amazon Listing Audit & Build — Skill\n\nProduces a complete, compliant, keyword-optimized Amazon listing for a single product SKU. Covers: Title, Item Highlights, Bullets 1–5, Product Description, and Backend Keywords. Applies all Medaltus compliance rules automatically — no prompting required.\n\n---\n\n## Inputs Required\n\nThe skill accepts any combination of the following. Work with whatever is provided.\n\n| Input | Source | Required? |\n|-------|--------|-----------|\n| Product name + format | User, brand workbook, or dashboard | ✓ Required |\n| Full INCI ingredient list | Brand workbook (Col N or O), product page, or user paste | ✓ Required |\n| Product size / format / price | Brand workbook or user | ✓ Required |\n| Fragrance status | Brand workbook Col R or INCI | ✓ Required |\n| Clean standard claims | Brand workbook Col Q or user | Recommended |\n| Existing listing copy | Dashboard, Seller Central, or user paste | Optional — for audit mode |\n| Keyword Tracker / Cerebro tiers | Dashboard Keyword Tracker tab, or Cerebro skill output | Strongly recommended |\n| Skin type / target consumer | Brand workbook or user | Recommended |\n| Competitor bullets (VOC research) | Brand workbook Reviews tab or competitor audit output | Optional — improves bullet framing |\n\nIf no keyword tiers are provided, derive keywords from the product's ingredient list, format, and category using the same four-gate filter defined in the `amazon-keyword-strategy` skill.\n\n---\n\n## Two Modes\n\n### Mode A — Build (new listing or no copy exists)\nWrite all five elements from scratch using the product profile and keyword targets.\n\n### Mode B — Audit (existing copy provided)\n1. Run the existing copy through all compliance gates and flag every violation with the exact word, rule breached, and compliant replacement.\n2. Rewrite each flagged element with the violation corrected.\n3. Score keyword coverage: which T1 and T2 targets are present, which are missing.\n4. Produce a revised full listing with all fixes applied.\n\nAlways complete the full rewrite even in Audit mode — never deliver a violation report without also delivering corrected copy.\n\n---\n\n## Phase 1 — Build the Product Profile\n\nBefore writing a single word of copy, compile a product fact sheet. This is mandatory — copy written without it will fail Gate checks.\n\n```\nPRODUCT FACT SHEET\n──────────────────────────────────────────────────────\nBrand:           [brand name]\nSKU ID:          [e.g. SSS0001]\nProduct name:    [full name]\nFormat:          [serum / cream / cleanser / essence / toner / mask / etc.]\nSize:            [X fl oz / X ml]\nPrice:           [$X.XX]\nPrice/oz:        [$X.XX]\n\nHero ingredients (top 3–5 actives):  [list]\nFull INCI:       [complete list]\n\nFragrance:       [YES — describe / NO — confirmed fragrance-free]\nClean claims:    [silicone-free / paraben-free / sulfate-free / etc.]\nSkin type:       [oily / dry / combination / sensitive / all / etc.]\nTarget consumer: [description]\n\nT1 keywords:     [from Keyword Tracker or derived]\nT2 keywords:     [from Keyword Tracker or derived]\nT3 keywords:     [track only — do not place in copy]\n```\n\nIf fragrance status is unclear from the inputs, check the INCI for: Parfum, Fragrance, any essential oil (lavender oil, rosemary oil, etc.), linalool, limonene, citronellol, geraniol, eugenol, benzyl alcohol. If any are present → treat as HAS FRAGRANCE. Never claim fragrance-free without INCI confirmation.\n\n---\n\n## Phase 2 — Compliance Gate Check\n\nRun ALL copy through every gate before writing. In Audit mode, run the existing copy through these gates first and flag violations before rewriting.\n\n### Gate 1 — Prohibited Health & Efficacy Words\n\n**Hard substitutions — mandatory replacements:**\n\n| ❌ Never use | ✅ Use instead |\n|-------------|---------------|\n| brightening / brightens / brightened / brightener | illuminate, restore radiance, healthy-looking glow, refreshed complexion, luminous |\n| brighten (any form) | same as above |\n| dark spot / dark spot corrector | uneven skin tone, skin tone, radiance |\n| discoloration correcting / corrects discoloration | uneven skin tone, even-looking complexion |\n| skin lightening / skin lightener | (remove entirely — do not replace) |\n| anti-inflammatory | irritation, redness, puffiness, swelling appearance |\n| inflammation | irritation, redness |\n| heals / healing | repairs, supports, restores |\n| cures | (remove — do not replace) |\n| eliminates (as a cure/treatment claim) | helps reduce, helps minimize the appearance of |\n| prevents (disease context) | helps support, helps maintain |\n| relieves ___ | helps alleviate the appearance/symptoms of ___ |\n| pain relief / pain reducing | helps alleviate the pain associated with ___ |\n| acne-fighting / treats acne / treat acne | supports clearer-looking skin, helps with the appearance of blemishes |\n| kills bacteria / anti-bacterial | helps remove dirt, grime, oil, and surface buildup |\n| antimicrobial / antifungal | helps eliminate [specific issue] |\n| fragrance-free (if product HAS fragrance) | do not reference fragrance — or use \"light, fresh scent\" |\n| non-toxic / all-natural / BPA free | only with certification documentation |\n| eco-friendly / biodegradable / recyclable / compostable | only with certification documentation |\n| third-party tested | anything tested, science-backed |\n| neurogenic / neurological / cardiovascular / blood pressure | remove entirely — do not reference |\n| intimate / intimacy (skincare context) | wellness, self-care, personal care |\n| free from [X] framed as health risk | \"free from [X], for those who prefer [X]\" — tie to preference, not safety |\n| hydroquinone | do not reference at all |\n| CBD | do not reference at all |\n| pesticide / pesticidal | do not reference at all |\n| sex / sexual / sexy / lust / sensual / arousal / stimulate | do not reference at all |\n| \"harmful to your health\" (implying other i";
+
+    const systemPrompt = "You are an expert Amazon brand strategist and listing compliance auditor for Medaltus, a marketing agency. You are analyzing weekly performance reports for the \u00e9volis hair care brand (brand code: EVO).\n\nLISTING AUDIT SKILL — apply these compliance rules to all listing analysis:\n" + LISTING_AUDIT_SKILL + "\n\nAlways respond with valid JSON only. No markdown fences, no preamble.";
+
+    const userPrompt = "Analyze the following \u00e9volis brand reports and current listing copy. Return a JSON object with exactly these keys:\n\n{\n  \"date\": \"YYYY-MM-DD\",\n  \"organic\": {\n    \"summary\": \"2-3 sentence summary of organic keyword performance\",\n    \"wins\": [\"up to 3 ranking wins or positive signals\"],\n    \"actions\": [\"up to 3 specific keyword or listing actions to improve organic rank\"],\n    \"keywords_to_watch\": [\"up to 5 keywords with notable movement\"]\n  },\n  \"ppc\": {\n    \"summary\": \"2-3 sentence summary of PPC performance\",\n    \"wins\": [\"up to 3 campaign wins\"],\n    \"actions\": [\"up to 3 specific campaign optimizations\"],\n    \"opportunities\": [\"up to 3 new keyword or targeting opportunities\"]\n  },\n  \"listing\": {\n    \"summary\": \"2-3 sentence compliance and keyword coverage summary\",\n    \"violations\": [\"any compliance violations found — use the listing audit skill rules\"],\n    \"keyword_gaps\": [\"T1/T2 keywords missing from current copy\"],\n    \"rewrites_recommended\": [\"specific elements to rewrite with priority\"]\n  },\n  \"log_summary\": \"One paragraph 4-6 sentences summarizing all three areas for the insights log.\"\n}\n\nCURRENT LISTING COPY (\u00e9volis activators):\n" + listingContext + "\n\nREPORT DATA:\n" + reportData;
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+
+    if (!response.ok) throw new Error('API error: ' + response.status);
+
+    const data = await response.json();
+    const raw = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+
+    // Strip any accidental markdown fences
+    const clean = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+    const insights = JSON.parse(clean);
+
+    statusEl.textContent = 'Injecting insights…';
+
+    // Inject into sections
+    injectInsights(insights);
+
+    // Write to Google Sheet
+    statusEl.textContent = 'Saving to sheet…';
+    await writeInsightsToSheet(insights, reportData);
+
+    statusEl.textContent = '✓ Analysis complete — ' + new Date().toLocaleTimeString();
+    statusEl.className = 'upload-status success';
+
+  } catch(err) {
+    console.error('Insight analysis error:', err);
+    statusEl.textContent = '✗ Error: ' + err.message;
+    statusEl.className = 'upload-status error';
+  } finally {
+    btn.classList.remove('running');
+    btn.disabled = false;
+  }
+}
+
+// ── Inject results into the dashboard ───────────────────────────
+function injectInsights(ins) {
+  const date = ins.date || new Date().toISOString().slice(0,10);
+
+  // ── Organic page ──
+  const orgEl = document.getElementById('ai-organic-text');
+  const orgCard = document.getElementById('ai-organic-insight');
+  if (orgEl && ins.organic) {
+    orgEl.innerHTML = `
+      <strong>${ins.organic.summary}</strong>
+      ${ins.organic.wins?.length ? '<br><br><strong>Wins:</strong><ul>' + ins.organic.wins.map(w=>`<li>${w}</li>`).join('') + '</ul>' : ''}
+      ${ins.organic.actions?.length ? '<strong>Actions:</strong><ul>' + ins.organic.actions.map(a=>`<li>${a}</li>`).join('') + '</ul>' : ''}
+      ${ins.organic.keywords_to_watch?.length ? '<strong>Keywords to watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : ''}
+    `;
+    orgCard.style.display = 'block';
+  }
+
+  // ── PPC page ──
+  const ppcEl = document.getElementById('ai-ppc-text');
+  const ppcCard = document.getElementById('ai-ppc-insight');
+  if (ppcEl && ins.ppc) {
+    ppcEl.innerHTML = `
+      <strong>${ins.ppc.summary}</strong>
+      ${ins.ppc.wins?.length ? '<br><br><strong>Wins:</strong><ul>' + ins.ppc.wins.map(w=>`<li>${w}</li>`).join('') + '</ul>' : ''}
+      ${ins.ppc.actions?.length ? '<strong>Actions:</strong><ul>' + ins.ppc.actions.map(a=>`<li>${a}</li>`).join('') + '</ul>' : ''}
+      ${ins.ppc.opportunities?.length ? '<strong>Opportunities:</strong><ul>' + ins.ppc.opportunities.map(o=>`<li>${o}</li>`).join('') + '</ul>' : ''}
+    `;
+    ppcCard.style.display = 'block';
+  }
+
+  // ── Listing Audit page ──
+  const laEl = document.getElementById('ai-listing-text');
+  const laCard = document.getElementById('ai-listing-insight');
+  if (laEl && ins.listing) {
+    laEl.innerHTML = `
+      <strong>${ins.listing.summary}</strong>
+      ${ins.listing.violations?.length ? '<br><br><strong style="color:var(--danger);">⚠ Compliance Issues:</strong><ul>' + ins.listing.violations.map(v=>`<li>${v}</li>`).join('') + '</ul>' : ''}
+      ${ins.listing.keyword_gaps?.length ? '<strong>Keyword Gaps:</strong><ul>' + ins.listing.keyword_gaps.map(k=>`<li>${k}</li>`).join('') + '</ul>' : ''}
+      ${ins.listing.rewrites_recommended?.length ? '<strong>Priority Rewrites:</strong><ul>' + ins.listing.rewrites_recommended.map(r=>`<li>${r}</li>`).join('') + '</ul>' : ''}
+    `;
+    laCard.style.display = 'block';
+  }
+
+  // ── Insights Log ──
+  const logContainer = document.getElementById('ai-log-entries');
+  if (logContainer && ins.log_summary) {
+    const card = document.createElement('div');
+    card.className = 'ai-insight-card';
+    card.innerHTML = `
+      <div class="ai-insight-card-hd">
+        <span class="ai-insight-card-type">✦ AI Analysis — Organic · PPC · Listing</span>
+        <span class="ai-insight-card-date">${date}</span>
+      </div>
+      <div class="ai-insight-card-body">
+        <p>${ins.log_summary}</p>
+        <details style="margin-top:10px;font-size:11.5px;color:var(--muted);">
+          <summary style="cursor:pointer;font-weight:600;color:var(--navy);">View full breakdown ↓</summary>
+          <div style="margin-top:10px;">
+            <strong>Organic:</strong> ${ins.organic?.summary || '—'}<br><br>
+            <strong>PPC:</strong> ${ins.ppc?.summary || '—'}<br><br>
+            <strong>Listing:</strong> ${ins.listing?.summary || '—'}
+          </div>
+        </details>
+      </div>
+    `;
+    logContainer.prepend(card);
+  }
+}
+
+// ── Write to Google Sheets via a Vercel API function ─────────────
+async function writeInsightsToSheet(insights, rawData) {
+  try {
+    await fetch('/api/write-insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brand: INSIGHTS_BRAND_TAB,
+        date: insights.date || new Date().toISOString().slice(0,10),
+        organic: JSON.stringify(insights.organic),
+        ppc: JSON.stringify(insights.ppc),
+        listing: JSON.stringify(insights.listing),
+        summary: insights.log_summary,
+        sheetId: INSIGHTS_SHEET_ID
+      })
+    });
+  } catch(err) {
+    console.warn('Sheet write failed (non-fatal):', err.message);
+  }
+}
+
+// ── Load most recent insights from sheet on page load ────────────
+async function loadInsightsFromSheet() {
+  try {
+    // Fetch the evolis tab as CSV — newest row at top (we write newest-first)
+    // Tab name must match INSIGHTS_BRAND_TAB
+    // We use gid lookup by tab name approach via export URL
+    const url = `https://docs.google.com/spreadsheets/d/${INSIGHTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${INSIGHTS_BRAND_TAB}&_cb=${Date.now()}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const csv = await res.text();
+    const rows = csv.trim().split('\n').slice(1); // skip header
+    if (!rows.length || !rows[0].trim()) return;
+
+    // Parse first (most recent) row
+    // Columns: date, organic_json, ppc_json, listing_json, summary
+    const cols = rows[0].match(/(".*?"|[^,]+)(?=,|$)/g) || [];
+    const clean = s => (s || '').replace(/^"|"$/g, '').replace(/""/g, '"');
+    const [date, orgStr, ppcStr, laStr, summary] = cols.map(clean);
+
+    if (!summary) return;
+
+    const insights = {
+      date,
+      organic: JSON.parse(orgStr || '{}'),
+      ppc: JSON.parse(ppcStr || '{}'),
+      listing: JSON.parse(laStr || '{}'),
+      log_summary: summary
+    };
+
+    injectInsights(insights);
+  } catch(err) {
+    console.warn('Could not load insights from sheet:', err.message);
+  }
+}
+
+// Load on DOMContentLoaded (appended to existing listener)
+document.addEventListener('DOMContentLoaded', () => {
+  loadInsightsFromSheet();
+});
+
 </script>
 </body>
 </html>
