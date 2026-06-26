@@ -61,12 +61,9 @@ const EVOLIS_SKUS = [
   { sku: 'EVO0012', asin: 'B08BGCRKTV', name: 'Dry Shampoo' },
 ];
 
-// Item Highlights field names to try in order (varies by category)
-const IH_FIELD_CANDIDATES = [
-  'item_overview',
-  'product_overview',
-  'item_type_keyword',
-];
+// Item Highlights is NOT returned by the SP-API Listings Items endpoint
+// for this product type (TOPICAL_HAIR_REGROWTH_TREATMENT).
+// The field will be left blank — populated via the listing audit process instead.
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -115,7 +112,9 @@ module.exports = async (req, res) => {
       const bullets     = getBullets(attrs);
       const description = getAttr(attrs, 'product_description');
       const backend     = getAttr(attrs, 'generic_keyword');
-      const status      = summary.status || 'UNKNOWN';
+      const status      = Array.isArray(summary.status)
+        ? summary.status.join(', ')
+        : (summary.status || 'UNKNOWN');
       const issuesList  = (data.issues || []).map(i => i.message).join(' | ').slice(0, 500);
 
       rows.push([
@@ -195,16 +194,9 @@ function getAttr(attrs, fieldName) {
 }
 
 function getItemHighlights(attrs) {
-  for (const candidate of IH_FIELD_CANDIDATES) {
-    const val = attrs[candidate];
-    if (!val) continue;
-    if (Array.isArray(val) && val.length > 0) {
-      // Some fields return array of {value} objects, others return strings
-      const joined = val.map(v => (v && v.value) ? v.value : String(v)).join(' · ');
-      if (joined.trim()) return joined.trim();
-    }
-    if (typeof val === 'string' && val.trim()) return val.trim();
-  }
+  // Item Highlights is not returned by the SP-API Listings Items endpoint
+  // for TOPICAL_HAIR_REGROWTH_TREATMENT product type.
+  // Return empty — populated via listing audit process.
   return '';
 }
 
