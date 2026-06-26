@@ -2,17 +2,15 @@
  * api/write-uploads.js
  * POST /api/write-uploads
  * Prepends a summary row to the brand tab in the uploads history sheet.
- * Newest row always at top (row 2) so the dashboard reads history newest-first.
  *
  * Body: { brand, sheetId, gid, date, week_label,
- *         kw_summary, biz_summary, ppc_summary, files_uploaded }
- *
- * Columns: date | week_label | kw_summary_json | biz_summary_json | ppc_summary_json | files_uploaded | uploaded_at
+ *         kw_summary, biz_summary, ppc_summary, sqp_summary, files_uploaded }
+ * Columns: date | week_label | kw_summary_json | biz_summary_json | ppc_summary_json | sqp_summary_json | files_uploaded | uploaded_at
  */
 
 const { google } = require('googleapis');
 
-const HEADERS = ['date','week_label','kw_summary_json','biz_summary_json','ppc_summary_json','files_uploaded','uploaded_at'];
+const HEADERS = ['date', 'week_label', 'kw_summary_json', 'biz_summary_json', 'ppc_summary_json', 'sqp_summary_json', 'files_uploaded', 'uploaded_at'];
 
 async function getAuthToken() {
   const auth = new google.auth.GoogleAuth({
@@ -26,62 +24,80 @@ async function getAuthToken() {
 }
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { brand, sheetId, gid, date, week_label,
-          kw_summary, biz_summary, ppc_summary, files_uploaded } = req.body || {};
+  const { brand, sheetId, date, week_label,
+          kw_summary, biz_summary, ppc_summary, sqp_summary, files_uploaded } = req.body || {};
 
-  if (!sheetId || !brand) return res.status(400).json({ error: 'Missing sheetId or brand' });
+  if (!sheetId || !brand) {
+    return res.status(400).json({ error: 'Missing: brand or sheetId' });
+  }
 
-  const token = await getAuthToken();
+  if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    console.error('write-uploads: missing Google credentials env vars');
+    return res.status(500).json({ error: 'Google credentials not configured' });
+  }
 
-  // Ensure header row exists — append if sheet is empty
-  await ensureHeaders(sheetId, brand, token);
+  try {
+    const token = await getAuthToken();
 
-  // Prepend new summary row at row 2
-  const row = [
-    date || new Date().toISOString().slice(0, 10),
-    week_label || '',
-    kw_summary  || '[]',
-    biz_summary || '[]',
-    ppc_summary || '[]',
-    files_uploaded || '',
-    new Date().toISOString()
-  ];
+    // Ensure header row exists
+    await ensureHeaders(sheetId, brand, token);
 
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(brand + '!A2')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-    {
+    // Prepend row at row 2 (newest-first)
+    const row = [
+      date           || new Date().toISOString().slice(0, 10),
+      week_label     || '',
+      kw_summary     || '[]',
+      biz_summary    || '[]',
+      ppc_summary    || '[]',
+      sqp_summary    || '[]',
+      files_uploaded || '',
+      new Date().toISOString()
+    ];
+
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(brand + '!A2')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    const appendRes = await fetch(appendUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ values: [row] })
-    }
-  );
+    });
 
-  return res.status(200).json({ ok: true, brand, date });
+    if (!appendRes.ok) {
+      const err = await appendRes.text();
+      console.error('write-uploads append failed:', appendRes.status, err.slice(0, 300));
+      return res.status(502).json({ error: 'Sheets append failed', status: appendRes.status, detail: err.slice(0, 200) });
+    }
+
+    return res.status(200).json({ ok: true, brand, date });
+
+  } catch (err) {
+    console.error('write-uploads error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 }
 
 async function ensureHeaders(sheetId, tabName, token) {
-  // Check if row 1 is already written
-  const checkRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:H1')}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const data = await checkRes.json();
-  if (data.values && data.values[0] && data.values[0].length > 0) return; // headers exist
+  const checkUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:H1')}`;
+  const checkRes = await fetch(checkUrl, { headers: { Authorization: `Bearer ${token}` } });
 
-  // Write headers to row 1
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1')}?valueInputOption=RAW`,
-    {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: [HEADERS] })
-    }
-  );
+  if (!checkRes.ok) {
+    console.error('write-uploads: could not check headers, status', checkRes.status);
+    return;
+  }
+
+  const data = await checkRes.json();
+  if (data.values && data.values[0] && data.values[0].length > 0) return;
+
+  // Write headers
+  const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1')}?valueInputOption=RAW`;
+  await fetch(putUrl, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [HEADERS] })
+  });
 }
