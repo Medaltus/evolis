@@ -4465,18 +4465,48 @@ function rankToInt(s) {
   if (!s || s==='-' || s==='N/A') return 9999;
   const n = parseInt(s); return isNaN(n) ? 9999 : n;
 }
+// Proper CSV parser — handles quoted fields with embedded newlines and escaped quotes
+function parseCsvFull(text) {
+  text = (text || '').replace(/^\uFEFF/, ''); // strip BOM
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; } // escaped quote
+        inQuotes = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ',') { row.push(field.trim()); field = ''; i++; continue; }
+    if (ch === '\r' && text[i + 1] === '\n') {
+      row.push(field.trim()); rows.push(row); row = []; field = ''; i += 2; continue;
+    }
+    if (ch === '\n') {
+      row.push(field.trim()); rows.push(row); row = []; field = ''; i++; continue;
+    }
+    field += ch; i++;
+  }
+  if (field || row.length) { row.push(field.trim()); rows.push(row); }
+  return rows.filter(r => r.some(v => v));
+}
+
 function csvVals(line) {
   return (line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g)||[]).map(v=>v.replace(/^"|"$/g,'').trim());
 }
 
 function parseCsvToRows(text) {
-  const lines = (text||'').replace(/^﻿/,'').trim().split('\n');
-  if (lines.length < 2) return [];
-  const headers = csvVals(lines[0]).map(h => h.toLowerCase());
-  return lines.slice(1).map(line => {
-    const vals = csvVals(line);
+  const all = parseCsvFull(text);
+  if (all.length < 2) return [];
+  const headers = all[0].map(h => h.toLowerCase());
+  return all.slice(1).map(vals => {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
+    headers.forEach((h, i) => { obj[h] = (vals[i] || ''); });
     return obj;
   }).filter(row => Object.values(row).some(v => v));
 }
