@@ -64,7 +64,7 @@ export default async function handler(req, res) {
 async function ensureHeaders(sheetId, tabName, token) {
   // Check if row 1 is already written
   const checkRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:G1')}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:H1')}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await checkRes.json();
