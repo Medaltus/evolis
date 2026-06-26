@@ -2,19 +2,10 @@
  * api/run-analysis.js
  * POST /api/run-analysis
  *
- * Acts as a server-side proxy for the Claude API call.
- * Receives parsed report summaries + context from the dashboard,
- * calls api.anthropic.com server-side (no CORS issues, API key stays secret),
- * returns structured insights JSON.
+ * Server-side proxy for Claude API — avoids CORS and keeps API key secret.
+ * Receives parsed report summaries from the dashboard, calls Claude, returns insights JSON.
  *
- * Body: {
- *   brand,           // 'evolis' | 'skinuva' | etc.
- *   summaries,       // { kw[], biz[], ppc[], sqp[] }
- *   historicalCtx,   // formatted string from formatHistoryForClaude()
- *   listingCtx,      // current listing copy text
- *   skillB64         // base64-encoded listing audit skill (client sends it)
- * }
- *
+ * Body: { brand, summaries, historicalCtx, listingCtx, skillB64 }
  * Returns: { ok: true, insights: { date, organic, ppc, listing, log_summary } }
  */
 
@@ -25,7 +16,6 @@ const BRAND_DESCRIPTIONS = {
 };
 
 export default async function handler(req, res) {
-  // CORS headers — allow requests from Vercel preview + production URLs
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -33,7 +23,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { brand, summaries, historicalCtx, listingCtx, skillB64 } = req.body || {};
-
   if (!summaries) return res.status(400).json({ error: 'Missing summaries' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -41,62 +30,53 @@ export default async function handler(req, res) {
 
   const brandDesc = BRAND_DESCRIPTIONS[brand] || BRAND_DESCRIPTIONS.default;
 
-  // Decode listing audit skill from base64 (sent by client to keep HTML self-contained)
   let skill = '';
   if (skillB64) {
-    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8'); } catch(e) {}
+    try { skill = Buffer.from(skillB64, 'base64').toString('utf-8').slice(0, 4000); } catch(e) {}
   }
+
+  // Keep listing context tight to avoid response truncation
+  const listingCtxTrimmed = (listingCtx || '').slice(0, 3000);
 
   const systemPrompt = `You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly performance data for ${brandDesc}.
 
-${skill ? 'Listing compliance rules to apply:\n' + skill + '\n' : ''}
-Respond with valid JSON only. No markdown fences, no preamble.`;
+${skill ? 'Key listing compliance rules:\n' + skill + '\n' : ''}
+CRITICAL: Respond with a single valid JSON object only. No markdown fences, no preamble, no trailing text after the closing brace. All string values must use escaped quotes if they contain apostrophes or special characters.`;
 
   const sqpSection = summaries.sqp && summaries.sqp.length
-    ? '\n\nSQP — Brand Search Query Performance (top queries with brand presence):\n' + JSON.stringify(summaries.sqp)
+    ? '\n\nSQP Brand Search Query Performance (top queries):\n' + JSON.stringify(summaries.sqp.slice(0, 15))
     : '';
 
-  const userPrompt = `Analyze this week's data vs historical context. Return a JSON object with exactly these keys:
+  // Trim summaries to keep prompt size manageable
+  const kwTrimmed  = (summaries.kw  || []).slice(0, 20);
+  const bizTrimmed = (summaries.biz || []).slice(0, 15);
+  const ppcTrimmed = (summaries.ppc || []).slice(0, 15);
 
-{
-  "date": "YYYY-MM-DD",
-  "organic": {
-    "summary": "2-3 sentence summary of organic keyword performance",
-    "wins": ["up to 3 ranking wins or positive signals"],
-    "actions": ["up to 3 specific actions to improve organic rank"],
-    "keywords_to_watch": ["up to 5 keywords with notable movement"]
-  },
-  "ppc": {
-    "summary": "2-3 sentence summary of PPC performance",
-    "wins": ["up to 3 campaign wins"],
-    "actions": ["up to 3 specific campaign optimizations"],
-    "opportunities": ["up to 3 new keyword or targeting opportunities"]
-  },
-  "listing": {
-    "summary": "2-3 sentence compliance and keyword coverage summary",
-    "violations": ["any compliance violations found"],
-    "keyword_gaps": ["T1/T2 keywords missing from current copy"],
-    "rewrites_recommended": ["specific elements to rewrite with priority"]
-  },
-  "log_summary": "One paragraph (4-6 sentences) summarizing all three areas for the internal Medaltus team."
-}
+  const userPrompt = `Analyze this week vs history. Return ONLY this JSON structure, nothing else:
 
-CURRENT WEEK:
+{"date":"YYYY-MM-DD","organic":{"summary":"string","wins":["string"],"actions":["string"],"keywords_to_watch":["string"]},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"]},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
 
-Keyword Tracker (organic ranks + ABA data):
-${JSON.stringify(summaries.kw || [])}
+Rules for the response:
+- date: today's date in YYYY-MM-DD format
+- All arrays: maximum 3 items each
+- log_summary: 3-4 sentences maximum
+- No apostrophes in string values — use "does not" not "doesn't", etc.
+- Keep all string values under 200 characters
 
-Business Report (per SKU — sessions, units, revenue, conversion):
-${JSON.stringify(summaries.biz || [])}
+KEYWORD TRACKER (organic ranks):
+${JSON.stringify(kwTrimmed)}
 
-H10 Ads Report (search terms — spend, sales, ACoS):
-${JSON.stringify(summaries.ppc || [])}${sqpSection}
+BUSINESS REPORT (sessions/units/revenue):
+${JSON.stringify(bizTrimmed)}
 
-HISTORICAL CONTEXT (last 4 weeks):
-${historicalCtx || 'No prior data — this is the first upload.'}
+H10 ADS (search terms):
+${JSON.stringify(ppcTrimmed)}${sqpSection}
 
-CURRENT LISTING COPY:
-${listingCtx || 'Not available.'}`;
+HISTORY (last 4 weeks):
+${(historicalCtx || 'First upload — no prior data.').slice(0, 2000)}
+
+CURRENT LISTING:
+${listingCtxTrimmed}`;
 
   try {
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -108,7 +88,7 @@ ${listingCtx || 'Not available.'}`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        max_tokens: 3000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }]
       })
@@ -116,17 +96,56 @@ ${listingCtx || 'Not available.'}`;
 
     if (!claudeRes.ok) {
       const err = await claudeRes.text();
-      return res.status(502).json({ error: 'Claude API error', detail: err.slice(0, 200) });
+      return res.status(502).json({ error: 'Claude API error ' + claudeRes.status, detail: err.slice(0, 300) });
     }
 
     const data = await claudeRes.json();
+
+    // Check for Claude-level errors (e.g. max_tokens exceeded)
+    if (data.stop_reason === 'max_tokens') {
+      console.warn('run-analysis: response truncated by max_tokens');
+    }
+
     const raw = (data.content || [])
       .filter(b => b.type === 'text')
       .map(b => b.text)
       .join('');
 
-    const clean = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-    const insights = JSON.parse(clean);
+    // Strip markdown fences if present
+    let clean = raw
+      .replace(/^```json\s*/i, '')
+      .replace(/\s*```\s*$/, '')
+      .trim();
+
+    // If response is truncated mid-JSON, attempt to close it gracefully
+    if (!clean.endsWith('}')) {
+      console.warn('run-analysis: response may be truncated, attempting repair');
+      // Find the last complete top-level key and close the object
+      const lastBrace = clean.lastIndexOf('"log_summary"');
+      if (lastBrace > 0) {
+        // Truncate to before log_summary and add a safe fallback
+        clean = clean.slice(0, lastBrace) + '"log_summary":"Analysis complete — see organic, PPC and listing sections above."}';
+      } else {
+        // Can't repair — find last valid } and close
+        const lastClose = clean.lastIndexOf('}');
+        if (lastClose > 0) clean = clean.slice(0, lastClose + 1);
+      }
+    }
+
+    let insights;
+    try {
+      insights = JSON.parse(clean);
+    } catch (parseErr) {
+      // Last resort: log raw for debugging and return a structured error
+      console.error('run-analysis JSON parse failed. Raw response length:', raw.length);
+      console.error('Parse error:', parseErr.message);
+      console.error('Clean (first 500):', clean.slice(0, 500));
+      return res.status(500).json({
+        error: 'Could not parse Claude response as JSON: ' + parseErr.message,
+        rawLength: raw.length,
+        hint: 'Check Vercel logs for the full response'
+      });
+    }
 
     return res.status(200).json({ ok: true, insights });
 
