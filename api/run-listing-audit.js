@@ -7,6 +7,46 @@
  * that's easy to parse reliably.
  */
 
+// Fix unescaped double quotes inside JSON string values.
+// Claude often writes: "notes": "Use "clinically tested" carefully" which breaks JSON.parse.
+// This walks char-by-char and escapes inner quotes.
+function fixJsonStrings(s) {
+  const result = [];
+  let inString = false;
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '\\' && inString) {
+      result.push(c);
+      i++;
+      if (i < s.length) result.push(s[i]);
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      if (!inString) {
+        inString = true;
+        result.push(c);
+      } else {
+        // Check what follows (skip whitespace) to determine if this closes the string
+        let j = i + 1;
+        while (j < s.length && s[j] === ' ') j++;
+        if (j >= s.length || ':,}]'.includes(s[j])) {
+          inString = false;
+          result.push(c);
+        } else {
+          // Unescaped quote inside string value — escape it
+          result.push('\\"');
+        }
+      }
+    } else {
+      result.push(c);
+    }
+    i++;
+  }
+  return result.join('');
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -107,7 +147,7 @@ Backend: ${san(skuData.backend, 200)}`;
       // Sanitize and parse
       let clean = raw
         .replace(/^```json\s*/i,'').replace(/^```\s*/i,'').replace(/\s*```\s*$/i,'')
-        .replace(/[\u2018\u2019\u0060\u00b4]/g,'')
+        .replace(/[\u2018\u2019\u0060\u00b4]/g,"'")
         .replace(/[\u201C\u201D]/g,'"')
         .replace(/[\u2013\u2014]/g,'-')
         .replace(/\u2026/g,'...')
@@ -118,6 +158,10 @@ Backend: ${san(skuData.backend, 200)}`;
       const objStart = clean.indexOf('{');
       const objEnd   = clean.lastIndexOf('}');
       if (objStart >= 0 && objEnd > objStart) clean = clean.slice(objStart, objEnd+1);
+
+      // Fix unescaped double quotes inside JSON string values
+      // e.g. Claude writes: "notes": "Use "clinically tested" carefully" → breaks parse
+      clean = fixJsonStrings(clean);
 
       let parsed;
       try {
