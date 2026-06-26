@@ -458,6 +458,40 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ai-section-injected{background:rgba(36,233,163,.05);border:1px solid rgba(36,233,163,.15);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12.5px;color:var(--navy);line-height:1.7;}
 .ai-section-injected-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#1db88a;margin-bottom:6px;}
 
+
+/* ═══════════════════════════════════
+   LISTING AUDIT ENGINE
+   ═══════════════════════════════════ */
+.la-audit-zone{background:rgba(200,125,47,.05);border:1px solid rgba(200,125,47,.2);border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px;}
+.la-audit-zone-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--warn);margin-bottom:8px;}
+.la-audit-note{font-size:12px;color:var(--navy);line-height:1.6;margin-bottom:8px;}
+.la-audit-note strong{color:var(--danger);}
+.la-audit-rewrite{background:#fff;border:1px solid rgba(36,233,163,.3);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--navy);line-height:1.6;position:relative;}
+.la-audit-rewrite-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1db88a;margin-bottom:6px;}
+.la-audit-copy-btn{position:absolute;top:8px;right:8px;background:none;border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:10px;cursor:pointer;color:var(--muted);}
+.la-audit-copy-btn:hover{background:var(--bg);}
+.la-audit-chars{font-size:10px;color:var(--muted);margin-top:6px;}
+.la-audit-chars .over{color:var(--danger);font-weight:600;}
+
+/* Per-SKU updated/feedback bar */
+.la-update-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:12px;margin-bottom:4px;flex-wrap:wrap;}
+.la-update-bar-label{font-size:11px;color:var(--muted);flex-shrink:0;}
+.la-update-btn{background:var(--green);color:var(--navy);border:none;border-radius:var(--radius-sm);padding:6px 14px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:var(--font);}
+.la-update-btn:hover{background:#1dd494;}
+.la-update-btn:disabled{background:var(--muted);color:#fff;cursor:not-allowed;}
+.la-skip-select{font-size:11px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;background:#fff;color:var(--navy);font-family:var(--font);cursor:pointer;}
+.la-update-status{font-size:11px;font-style:italic;}
+.la-update-status.saved{color:#1db88a;}
+.la-update-status.pending{color:var(--warn);}
+
+/* Audit buttons in the upload panel */
+.audit-run-btn{display:flex;align-items:center;gap:8px;background:rgba(0,31,96,.08);color:var(--navy);border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);padding:10px 18px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;}
+.audit-run-btn:hover{background:rgba(0,31,96,.15);}
+.audit-run-btn:disabled{opacity:.5;cursor:not-allowed;}
+.audit-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(0,31,96,.2);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;display:none;}
+.audit-run-btn.running .spinner{display:block;}
+.audit-run-btn.running .btn-label{opacity:.6;}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1404,10 +1438,14 @@ As inventory availability improves, the current sales mix provides a strong foun
             <div class="upload-drop-files" id="files-ppc"></div>
           </label>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <button class="upload-run-btn" id="run-analysis-btn" onclick="runInsightAnalysis()">
             <div class="spinner"></div>
             <span class="btn-label">✦ Run Analysis</span>
+          </button>
+          <button class="audit-run-btn" id="run-audit-btn" onclick="runListingAudit()">
+            <div class="spinner"></div>
+            <span class="btn-label">📋 Run Listing Audit</span>
           </button>
           <span class="upload-status" id="upload-status"></span>
         </div>
@@ -1568,6 +1606,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       </div>
 
       <!-- EVO0005 Promote Activator -->
+      
+      <!-- ── EVO0001 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0001" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0001','EVO0001','Reverse Activator')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0001">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0001','EVO0001','Reverse Activator')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0001"></span>
+      </div>
       <div class="sub-page" id="la-evo0005">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1667,6 +1721,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       </div>
 
       <!-- EVO0009 Prevent Activator -->
+      
+      <!-- ── EVO0005 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0005" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0005','EVO0005','Promote Activator')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0005">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0005','EVO0005','Promote Activator')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0005"></span>
+      </div>
       <div class="sub-page" id="la-evo0009">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1767,7 +1837,23 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div>
       </div>
 
-    </div><!-- /la-activators -->
+    </div>
+      <!-- ── EVO0009 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0009" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0009','EVO0009','Prevent Activator')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0009">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0009','EVO0009','Prevent Activator')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0009"></span>
+      </div>
+      <!-- /la-activators -->
 
     <!-- ── SHAMPOOS ── -->
     <div class="channel-page" id="la-shampoos">
@@ -1793,6 +1879,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">122 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Reverse Thickening Shampoo for Hair Growth - Keratin Treatment for Thinning Hair and Hair Loss - Volumizing Shampoo (8.5 fl oz)</div></div><div class="la-note">Core keywords present. "Hair growth shampoo" not in title — consider adding. <span class="kw-coverage-tag hit">keratin hair treatment</span> <span class="kw-coverage-tag hit">thinning hair</span> <span class="kw-coverage-tag hit">volumizing shampoo</span> <span class="kw-coverage-tag">hair growth shampoo</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">125 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Reverse the hair loss cycle with FGF5-blocking botanicals. Keratin-infused, sulfate-free volumizing shampoo for thinning hair. Clinically tested — 95% noticing thicker hair in 90 days.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Reverse the hair loss cycle</strong> – Reverse thickening shampoo helps those experiencing hair thinning, postpartum shedding, or aging hair. Infused with a hair growth serum, this rich-lathering formula gently cleanses the scalp while boosting volume and density.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">thinning hair</span> <span class="kw-coverage-tag hit">postpartum shedding</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Keratin Hair Treatment</strong> – Formulated with keratin and wheat proteins, this sulfate free shampoo helps strengthen fragile strands while improving overall hair resilience. Designed as a thickening shampoo with rosemary oil for hair growth, it leaves hair looking visibly fuller, stronger, and more voluminous.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">keratin hair treatment</span> <span class="kw-coverage-tag hit">sulfate-free</span> <span class="kw-coverage-tag hit">rosemary oil for hair growth</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block warn"><strong>Proprietary Blend</strong> – A powerful hair growth shampoo with a unique blend of botanical actives and antioxidants to inhibit FGF5, a protein linked to hair aging and thinning. Extending the growth cycle, this shampoo works to nourish the scalp and support hair growth for men and women.</div></div><div class="la-note">⚠ FGF5 mentioned but not explained. Recommend pairing with plain-language note as used in Activator listings. </div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by hair biologists</strong> - Free of parabens, sulfates, silicones, and phthalates, this volumizing shampoo is scientifically designed to restore scalp health and support stronger, healthier hair growth. Safe, cruelty-free, and recommended by hair stylists.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> – Clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. For best results, use with Reverse Conditioner and Reverse Activator.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth shampoo hair growth shampoo for men hair regrowth shampoos shampoo for hair growth shampoo hair loss shampoo for thinning hair evolis cruelty free shampoo sulfate free shampoo thickening shampoo Hair thickening products for women Hair growth serum Hair loss shampoo hair oils for hair growth hair growth products hair growth oil</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0002 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0002" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0002','EVO0002','Reverse Shampoo')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0002">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0002','EVO0002','Reverse Shampoo')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0002"></span>
+      </div>
       <div class="sub-page" id="la-evo0006">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1808,6 +1910,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">86 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Promote Nourishing Shampoo for Hair Growth – Strengthening Treatment for Longer, Stronger Hair (8.5 fl oz)</div></div><div class="la-note">2024 People.com Lengthening Award not in title — consider adding for social proof. <span class="kw-coverage-tag hit">hair growth shampoo</span> <span class="kw-coverage-tag hit">strengthening treatment</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">115 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Sulfate-free shampoo for longer, stronger hair. Baobab + keratin + FGF5-blocking botanicals. Voted Best Lengthening Shampoo by People.com 2024.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Support Hair Growth &amp; Strengthen Strands</strong> – Promote hair growth shampoo is a professional shampoo for dry, brittle hair designed to cleanse the scalp, fortify fragile strands, and support longer, stronger, more resilient hair. This advanced hair loss shampoo helps extend the growth phase while preventing breakage and premature shedding.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Gentle Cleansing with Baobab &amp; Keratin</strong> – Infused with Baobab, nature's moisture miracle, keratin, and a proprietary blend of botanicals, this sulfate-free shampoo removes buildup while replenishing moisture and enhancing shine. Perfect for those looking for hair growth shampoos, it leaves hair feeling clean, soft, and voluminous.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">sulfate-free</span> <span class="kw-coverage-tag hit">baobab</span> <span class="kw-coverage-tag hit">keratin</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Proprietary Blend of Growth-Boosting Botanicals</strong> – This lengthening shampoo is enriched with FGF5-blocking botanicals (Sanguisorba officinalis, Rosa multiflora, and Swertia chirata) to help extend the hair's natural growth cycle. Combined with rosemary oil for hair growth, this scalp treatment nourishes the roots, reduces shedding, and promotes longer, stronger hair over time.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by Hair Biologists &amp; Trusted by Stylists</strong> – Formulated by experts in hair science, this cruelty-free shampoo is free from parabens, sulfates, silicones, and phthalates. Color-safe and stylist-recommended, it supports scalp health while strengthening strands for improved hair resilience and length.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> – Clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. For best results, pair with Promote Conditioner and Promote Activator for a complete hair growth products routine.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth shampoo hair growth shampoo for men hair regrowth shampoos shampoo for hair growth shampoo hair loss shampoo for thinning hair evolis cruelty free shampoo sulfate free shampoo thickening shampoo Hair thickening products for women Hair growth serum Hair loss shampoo hair oils for hair growth hair growth products hair growth oil</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0006 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0006" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0006','EVO0006','Promote Shampoo')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0006">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0006','EVO0006','Promote Shampoo')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0006"></span>
+      </div>
       <div class="sub-page" id="la-evo0010">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1823,6 +1941,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">100 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Prevent Anti-Aging Shampoo for Hair Growth – Antioxidant-Rich Formula for Scalp Health &amp; Stronger Hair (8.5 fl oz)</div></div><div class="la-note">Good. "Anti-aging" differentiates. "Antioxidant-Rich" supported by Green Tea, Mangosteen, Vitamin E in INCI. <span class="kw-coverage-tag hit">hair growth shampoo</span> <span class="kw-coverage-tag hit">scalp health</span> <span class="kw-coverage-tag hit">antioxidant</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill error">140 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block warn">Antioxidant-rich, sulfate-free shampoo that soothes sensitive scalps and protects against premature thinning with FGF5-blocking botanicals. Clinically tested.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Soothe &amp; Protect Your Scalp</strong> - Prevent anti-aging shampoo is a hair growth shampoo designed to support scalp health and preserves the hair you have. Ideal for those with sensitive, dry, or irritated scalps, this gentle, sulfate-free formula soothes irritation, supports stronger strands, and promotes an optimal environment for healthy hair growth.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Antioxidant-Rich Hair &amp; Scalp Treatment</strong> - Enriched with Mangosteen, Green Tea, and Rosemary oil, this sulfate-free shampoo provides protection against environmental stressors while helping to hydrate and fortify strands for thicker, healthier-looking hair.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">mangosteen</span> <span class="kw-coverage-tag hit">green tea</span> <span class="kw-coverage-tag hit">rosemary oil</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Powered by Science &amp; Proven Botanicals</strong> - A proactive approach to scalp health. By blocking FGF5—a protein responsible for hair shedding—this advanced formula helps maintain stronger, longer-lasting hair, ensuring your strands stay in their natural growth phase for longer.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by Hair Biologists &amp; Trusted by Stylists</strong> - Free from parabens, sulfates, silicones, and phthalates, this cruelty-free shampoo gently cleanses while restoring scalp balance —perfect for those experiencing thinning hair, dryness, or scalp irritation.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> - Clinically tested, with 95% of users noticing a healthier scalp within 90 days and 97% experiencing reduced scalp discomfort and improved hair resilience by 120 days. For best results, use with Prevent Conditioner and Prevent Activator as part of a complete scalp and hair care routine.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">210 chars used</span></div><div class="la-backend-block">hair growth shampoo hair growth shampoo for men shampoo for hair growth shampoo hair loss shampoo for thinning hair evolis cruelty free shampoo sulfate free shampoo thickening shampoo Hair thickening products for women Hair growth serum Hair loss shampoo hair oils for hair growth hair growth products hair growth oil</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0010 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0010" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0010','EVO0010','Prevent Shampoo')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0010">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0010','EVO0010','Prevent Shampoo')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0010"></span>
+      </div>
       <div class="sub-page" id="la-evo0014">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1838,6 +1972,22 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">162 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block warn">EVOLIS Reverse Thickening Shampoo for Thinning Hair and Hair Regrowth, Treating Hair Loss, Created with Botanical Actives for Noticeably Thicker, Fuller Hair - Travel Size (2 fl.oz)</div></div><div class="la-note">⚠ "hair growth shampoo" missing from title. "Travel Size" present. Title is long — consider shortening. <span class="kw-coverage-tag hit">thinning hair</span> <span class="kw-coverage-tag hit">travel size</span> <span class="kw-coverage-tag hit">hair regrowth</span> <span class="kw-coverage-tag">hair growth shampoo</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">110 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Sulfate-free travel shampoo for thinning hair. Same clinically tested formula as full-size Reverse Shampoo. TSA-approved 2 fl oz.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">170 chars used</span></div><div class="la-backend-block">hair growth shampoo shampoo for hair growth shampoo for thinning hair evolis sulfate free shampoo thickening shampoo Hair thickening products for women Hair loss shampoo travel size shampoo travel shampoo tsa approved shampoo mini shampoo</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0014 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0014" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0014','EVO0014','Reverse Shampoo Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0014">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0014','EVO0014','Reverse Shampoo Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0014"></span>
+      </div>
       <div class="sub-page" id="la-evo0016">
 <div class="la-hero">
           <div class="la-hero-left">
@@ -1853,7 +2003,23 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">91 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Promote Nourishing Shampoo – Strengthening Treatment for Longer, Healthier-Looking Hair - Travel Size (2 fl oz)</div></div><div class="la-note">Good. 2024 People.com Lengthening Award featured in Bullet 1. "Hair growth shampoo" not in title — opportunity. <span class="kw-coverage-tag hit">travel size</span> <span class="kw-coverage-tag hit">strengthening treatment</span> <span class="kw-coverage-tag">hair growth shampoo</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">120 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Award-winning travel shampoo for longer, stronger hair. Baobab + keratin + FGF5-blocking botanicals. 2024 People.com Best Lengthening Shampoo.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">175 chars used</span></div><div class="la-backend-block">hair growth shampoo shampoo for hair growth shampoo for thinning hair evolis sulfate free shampoo thickening shampoo Hair thickening products for women Hair loss shampoo travel size shampoo travel shampoo tsa approved shampoo mini shampoo baobab shampoo</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
-    </div><!-- /la-shampoos -->
+    </div>
+      <!-- ── EVO0016 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-evo0016" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-evo0016','EVO0016','Promote Shampoo Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-evo0016">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-evo0016','EVO0016','Promote Shampoo Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-evo0016"></span>
+      </div>
+      <!-- /la-shampoos -->
 
     <!-- ── CONDITIONERS ── -->
     <div class="channel-page" id="la-conditioners">
@@ -1868,23 +2034,103 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0003 &nbsp;·&nbsp; ASIN B07S7RLBVV &nbsp;·&nbsp; Hair Growth Conditioners</div><div class="la-hero-title">Reverse Thickening Conditioner</div><div class="la-hero-tags"><span class="la-hero-tag">Thinning Hair</span><span class="la-hero-tag">Volumizing</span><span class="la-hero-tag">Postpartum</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Keratin · Hydrolyzed Wheat Protein<br>Rosmarinus Officinalis (Rosemary) Leaf Oil<br>Panthenol · Antioxidant Complex<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">122 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Reverse Thickening Conditioner for Hair Growth - Keratin Treatment for Thinning Hair and Hair Loss - Volumizing Conditioner (8.5 fl oz)</div></div><div class="la-note">Mirrors shampoo title structure — consistent branding. <span class="kw-coverage-tag hit">hair growth conditioner</span> <span class="kw-coverage-tag hit">keratin hair treatment</span> <span class="kw-coverage-tag hit">thinning hair</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill error">130 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block warn">Keratin-infused, sulfate-free conditioner that reverses thinning and boosts volume. FGF5-blocking botanicals extend the growth phase. Clinically tested.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Reverse the hair loss cycle</strong> – Reverse thickening conditioner helps those experiencing hair thinning, postpartum shedding, or aging hair. Infused with a hair growth serum, this lightweight yet deeply nourishing formula hydrates the scalp while boosting volume and density.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Keratin Hair Treatment</strong> – Formulated with keratin and wheat proteins, this sulfate free conditioner helps strengthen fragile strands while improving overall hair resilience. Designed as a thickening conditioner with rosemary oil for hair growth, it leaves hair looking visibly fuller, stronger, and more voluminous.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Proprietary blend</strong> – a powerful hair growth conditioner with a unique blend of botanical actives and antioxidants to inhibit FGF5, a protein linked to hair aging and thinning. Extending the growth cycle, this conditioner works to nourish the scalp, detangle strands, and support hair growth for men and women.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by hair biologists</strong> – free of parabens, sulfates, silicones, and phthalates, this volumizing conditioner is scientifically designed to restore scalp health and support stronger, healthier hair growth. Safe, cruelty-free, and recommended by hair stylists.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible results in 90 days</strong> – clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. For best results, use with Reverse Activator and shampoo.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">200 chars used</span></div><div class="la-backend-block">hair growth conditioner hair growth conditioner for men hair regrowth conditioners conditioner for hair growth conditioner for hair loss conditioner for thinning hair evolis cruelty-free conditioner sulfate-free conditioner thickening conditioner Hair thickening products for women hair growth serum hair loss conditioner hair oil for hair growth hair growth products</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0003 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-cond-evo0003" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-cond-evo0003','EVO0003','Reverse Conditioner')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-cond-evo0003">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-cond-evo0003','EVO0003','Reverse Conditioner')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-cond-evo0003"></span>
+      </div>
       <div class="sub-page" id="la-cond-evo0007">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0007 &nbsp;·&nbsp; ASIN B07SBWSJXP &nbsp;·&nbsp; Hair Growth Conditioners</div><div class="la-hero-title">Promote Nourishing Conditioner</div><div class="la-hero-tags"><span class="la-hero-tag">Longer Stronger Hair</span><span class="la-hero-tag">Baobab</span><span class="la-hero-tag">2024 People.com Award</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Baobab Oil (Adansonia Digitata) — deep hydration<br>Keratin · Hydrolyzed Wheat Protein<br>Rosmarinus Officinalis (Rosemary) Leaf Oil<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">101 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Promote Nourishing Conditioner for Hair Growth – Deep Conditioning Hair Treatment for Longer, Stronger Hair (8.5 fl oz)</div></div><div class="la-note">Good. "Deep Conditioning Hair Treatment" adds premium feel. <span class="kw-coverage-tag hit">hair growth conditioner</span> <span class="kw-coverage-tag hit">deep conditioning</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill error">128 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block warn">Deep conditioning, sulfate-free conditioner for longer, stronger hair. Baobab + FGF5 botanicals + keratin. Voted Best Lengthening by People.com 2024.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Support Hair Growth &amp; Strengthen Strands</strong> – Promote hair growth conditioner is a professional conditioner for thinning hair designed to nourish the scalp, fortify fragile strands, and support longer, stronger hair. This advanced hair loss conditioner helps extend the growth phase while preventing breakage and premature shedding.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Deep Hydration with Baobab</strong> – Formulated with Baobab, nature's moisture miracle, and a proprietary blend of botanicals, this deep conditioning hair treatment replenishes moisture, enhances softness, and protects against damage. It leaves strands stronger, healthier, and shinier.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Proprietary Blend of Growth-Boosting Botanicals</strong> – This lengthening conditioner is enriched with FGF5-blocking botanicals (Sanguisorba officinalis, Rosa multiflora, and Swertia chirata) to help extend the hair's natural growth cycle. Combined with rosemary oil for hair growth, this sulfate-free conditioner deeply nourishes strands while helping to reduce shedding and promote longer, thicker hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by Hair Biologists</strong> – Formulated by experts in hair science, this cruelty-free conditioner is free from parabens, sulfates, silicones, and phthalates. Color-safe and stylist-recommended, it supports scalp health while strengthening strands for improved hair resilience and length.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> – Clinically tested, with 95% of users noticing increased hair thickness within 90 days and 97% experiencing reduced hair loss by 120 days. For best results, pair with Promote Shampoo and Promote Activator for a complete hair growth products routine.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">200 chars used</span></div><div class="la-backend-block">hair growth conditioner hair growth conditioner for men hair regrowth conditioners conditioner for hair growth conditioner for hair loss conditioner for thinning hair evolis cruelty-free conditioner sulfate-free conditioner thickening conditioner Hair thickening products for women hair growth serum hair loss conditioner hair oil for hair growth hair growth products</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0007 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-cond-evo0007" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-cond-evo0007','EVO0007','Promote Conditioner')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-cond-evo0007">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-cond-evo0007','EVO0007','Promote Conditioner')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-cond-evo0007"></span>
+      </div>
       <div class="sub-page" id="la-cond-evo0011">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0011 &nbsp;·&nbsp; ASIN B07SBWS4BS &nbsp;·&nbsp; Hair Growth Conditioners</div><div class="la-hero-title">Prevent Anti-Aging Conditioner</div><div class="la-hero-tags"><span class="la-hero-tag">Sensitive Scalp</span><span class="la-hero-tag">Anti-Aging</span><span class="la-hero-tag">Antioxidant-Rich</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Garcinia Mangostana (Mangosteen) Extract<br>Camellia Sinensis (Green Tea) Leaf Extract<br>Rosmarinus Officinalis (Rosemary) Leaf Oil<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">106 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block warn">EVOLIS Prevent Anti-Aging Conditioner for Fuller-Looking Hair – Antioxidant-Rich Formula for Scalp Health &amp; Stronger Hair (8.5 fl oz)</div></div><div class="la-note">⚠ CRITICAL: xlsx data shows "Conditiner" (typo) — verify if this is live on Amazon and fix immediately. <span class="kw-coverage-tag hit">anti-aging conditioner</span> <span class="kw-coverage-tag hit">antioxidant</span> <span class="kw-coverage-tag hit">scalp health</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">120 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Antioxidant-rich, sulfate-free conditioner for sensitive scalps. Mangosteen + green tea + FGF5-blocking botanicals preserve the hair you have.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Soothe &amp; Protect Your Scalp</strong> - Prevent anti-aging conditioner is a scientifically formulated thickening conditioner designed to support scalp health and hair vitality. Ideal for those with sensitive, dry, or irritated scalps, this gentle, sulfate-free formula helps maintain a balanced scalp while preserving the hair you have.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Antioxidant-rich hair &amp; scalp treatment</strong> - Enriched with Mangosteen, Green Tea, and Rosemary oil, this sulfate-free conditioner provides targeted protection against environmental stressors while helping to calm the scalp. These natural botanicals work to soothe and hydrate the scalp, and fortify strands for thicker, healthier-looking hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Powered by Science &amp; Proven Botanicals</strong> - A proactive approach to scalp health, the Prevent Conditioner is formulated with FGF5-inhibiting botanicals, including Swertia Chirata and Sanguisorba Officinalis, to help extend the hair's natural growth cycle. By blocking FGF5, this advanced formula helps maintain stronger, healthier hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by Hair Biologists &amp; Trusted by Stylists</strong> - Free from parabens, sulfates, silicones, and phthalates, this cruelty-free conditioner is scientifically crafted to support scalp health and stronger, fuller-looking hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> - Clinically tested, with 95% of users noticing a healthier scalp within 90 days and 97% experiencing reduced scalp discomfort and improved hair resilience by 120 days. For best results, use with Prevent Shampoo and Prevent Activator.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill ok">200 chars used</span></div><div class="la-backend-block">hair growth conditioner hair growth conditioner for men hair regrowth conditioners conditioner for hair growth conditioner for hair loss conditioner for thinning hair evolis cruelty-free conditioner sulfate-free conditioner thickening conditioner Hair thickening products for women hair growth serum hair loss conditioner hair oil for hair growth hair growth products</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0011 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-cond-evo0011" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-cond-evo0011','EVO0011','Prevent Conditioner')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-cond-evo0011">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-cond-evo0011','EVO0011','Prevent Conditioner')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-cond-evo0011"></span>
+      </div>
       <div class="sub-page" id="la-cond-evo0015">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0015 &nbsp;·&nbsp; ASIN B0C633C5MS &nbsp;·&nbsp; Hair Growth Conditioners</div><div class="la-hero-title">Reverse Thickening Conditioner — Travel Size</div><div class="la-hero-tags"><span class="la-hero-tag">Thinning Hair</span><span class="la-hero-tag">Travel Size</span><span class="la-hero-tag">TSA Approved</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Keratin · Hydrolyzed Wheat Protein<br>Same formula as EVO0003 full-size<br>Rosmarinus Officinalis (Rosemary) Leaf Oil<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">108 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Reverse Thickening Conditioner for Fuller-Looking Hair – Keratin Treatment &amp; Formula for Thinning Hair - Travel Size (2 fl oz)</div></div><div class="la-note">Good. Travel Size callout present. <span class="kw-coverage-tag hit">thinning hair</span> <span class="kw-coverage-tag hit">keratin treatment</span> <span class="kw-coverage-tag hit">travel size</span></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth conditioner hair growth conditioner for men hair regrowth conditioners conditioner for hair growth conditioner for hair loss conditioner for thinning hair evolis cruelty-free conditioner sulfate-free conditioner thickening conditioner Hair thickening products for women hair growth serum hair loss conditioner hair oil for hair growth hair growth products travel size conditioner travel conditioner tsa approved conditioner mini conditioner</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0015 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-cond-evo0015" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-cond-evo0015','EVO0015','Reverse Conditioner Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-cond-evo0015">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-cond-evo0015','EVO0015','Reverse Conditioner Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-cond-evo0015"></span>
+      </div>
       <div class="sub-page" id="la-cond-evo0017">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0017 &nbsp;·&nbsp; ASIN B0C63177RS &nbsp;·&nbsp; Hair Growth Conditioners</div><div class="la-hero-title">Promote Nourishing Conditioner — Travel Size</div><div class="la-hero-tags"><span class="la-hero-tag">Longer Stronger Hair</span><span class="la-hero-tag">Travel Size</span><span class="la-hero-tag">2024 People.com Award</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Baobab Oil (Adansonia Digitata)<br>Same formula as EVO0007 full-size<br>Rosmarinus Officinalis (Rosemary) Leaf Oil<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">97 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Promote Nourishing Conditioner – Deep Conditioning Hair Treatment for Longer, Healthier-Looking Hair - Travel Size (2 oz)</div></div><div class="la-note">Good. 2024 People.com award in Bullet 1. <span class="kw-coverage-tag hit">deep conditioning</span> <span class="kw-coverage-tag hit">travel size</span></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth conditioner hair growth conditioner for men hair regrowth conditioners conditioner for hair growth conditioner for hair loss conditioner for thinning hair evolis cruelty-free conditioner sulfate-free conditioner thickening conditioner Hair thickening products for women hair growth serum hair loss conditioner hair oil for hair growth hair growth products travel size conditioner travel conditioner tsa approved conditioner mini conditioner baobab conditioner</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
-    </div><!-- /la-conditioners -->
+    </div>
+      <!-- ── EVO0017 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-cond-evo0017" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-cond-evo0017','EVO0017','Promote Conditioner Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-cond-evo0017">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-cond-evo0017','EVO0017','Promote Conditioner Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-cond-evo0017"></span>
+      </div>
+      <!-- /la-conditioners -->
 
     <!-- ── HAIR MASKS ── -->
     <div class="channel-page" id="la-masks">
@@ -1898,19 +2144,83 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0004 &nbsp;·&nbsp; ASIN B07S7RLM1R &nbsp;·&nbsp; Hair Treatment Masks</div><div class="la-hero-title">Reverse Repairing Hair Mask</div><div class="la-hero-tags"><span class="la-hero-tag">Thinning Hair</span><span class="la-hero-tag">Damage Repair</span><span class="la-hero-tag">Deep Conditioning</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Hydrolyzed Keratin · Collagen Complex<br>Hydrolyzed Wheat Protein · Panthenol<br>Leave on 10–15 min or overnight<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">134 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Reverse Repairing Hair Mask - Deep Conditioning Hair Mask for Hair Growth &amp; Damage Repair - Hydrating Hair Mask for Dry, Damaged Hair (8 fl oz)</div></div><div class="la-note">All key category terms present. "Hair Growth" + "Damage Repair" + "Deep Conditioning" covers search intent. <span class="kw-coverage-tag hit">deep conditioning hair mask</span> <span class="kw-coverage-tag hit">hair growth</span> <span class="kw-coverage-tag hit">damage repair</span> <span class="kw-coverage-tag hit">hydrating hair mask</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">125 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Deep conditioning hair mask for growth and damage repair. Keratin + collagen + FGF5-blocking botanicals. Leave on 10–15 min or overnight for best results.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Restores &amp; Strengthens Hair</strong> – Reverse Hair Mask is a deeply conditioning hair mask designed to restore moisture, repair damage, and promote healthier, stronger hair. Ideal for those experiencing hair thinning, aging hair, or damage from styling and color treatments.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Keratin Hair Treatment</strong> – This deep conditioning hair mask provides intense moisture to dry, brittle strands, helping to reduce frizz, enhance softness, and restore shine. Infused with hair oils for hair growth, it nourishes from root to tip while supporting stronger, healthier hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Powerful Ingredients for Hair Repair</strong> – Formulated with a proprietary blend of natural actives and antioxidants, including keratin, collagen, and botanical FGF5 blockers, this protein hair mask helps strengthen weak strands, minimize split ends, and extend the growth phase for visibly healthier, more resilient hair.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">protein hair mask</span> <span class="kw-coverage-tag hit">FGF5</span> <span class="kw-coverage-tag hit">collagen</span> <span class="kw-coverage-tag hit">keratin</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by hair biologists</strong> – Free of parabens, sulfates, silicones, and phthalates, this hydrating hair mask is safe for color-treated hair and is cruelty-free. Scientifically crafted to improve scalp and hair health, created by hair biologists and trusted by hair stylists.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> – Clinically tested, with 95% of users noticing improved hair texture and increased shine. For best results, use with the Reverse Activator as part of a complete hair growth and repair routine.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth products hair mask hair care deep conditioning hair mask hair oils for hair growth hair mask for dry damaged hair growth serum hair growth deep conditioner for dry damaged hair collagen hair mask hydrating hair mask hair conditioning mask protein hair mask hair repair mask</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0004 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-mask-evo0004" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-mask-evo0004','EVO0004','Reverse Mask')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-mask-evo0004">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-mask-evo0004','EVO0004','Reverse Mask')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-mask-evo0004"></span>
+      </div>
       <div class="sub-page" id="la-mask-evo0008">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0008 &nbsp;·&nbsp; ASIN B07S7RKMZC &nbsp;·&nbsp; Hair Treatment Masks</div><div class="la-hero-title">Promote Nourishing Hair Mask</div><div class="la-hero-tags"><span class="la-hero-tag">Longer Stronger Hair</span><span class="la-hero-tag">Baobab Hydration</span><span class="la-hero-tag">Deep Conditioning</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Baobab Oil (Adansonia Digitata) — moisture miracle<br>Hydrolyzed Keratin · Panthenol<br>Leave on 10–15 min or overnight<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">120 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block warn">Promote Nourishing Hair Mask - Deep Conditioning Hair Mask for Hair Growth &amp; Damage Repair - Hydrating Hair Mask for Dry, Damaged Hair (8 fl oz)</div></div><div class="la-note">⚠ Missing "EVOLIS" brand prefix — fix for brand consistency. All other titles include "EVOLIS". Baobab (hero active) not in title. <span class="kw-coverage-tag hit">deep conditioning hair mask</span> <span class="kw-coverage-tag hit">hair growth</span> <span class="kw-coverage-tag">EVOLIS prefix</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">118 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Deep conditioning hair mask for longer, stronger hair. Baobab moisture miracle + FGF5 botanicals + keratin. Leave on 10–15 min or overnight.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Nourish &amp; Strengthen for Longer, Healthier Hair</strong> - a deep conditioning hair mask designed to fortify, repair, and deeply hydrate damaged strands. Perfect for those struggling to grow out their hair, it helps prevent breakage, lock in moisture, and support longer, stronger, healthier hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Deep Hydration &amp; Damage Repair</strong> - Infused with Baobab, nature's moisture miracle, this hydrating hair mask replenishes lost hydration, smooths frizz, and strengthens strands from root to tip. Rich in conditioning botanicals, it enhances elasticity and shine.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">baobab</span> <span class="kw-coverage-tag hit">deep hydration</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block ok"><strong>Proprietary Blend</strong> - Formulated with a patented blend of FGF5-inhibiting botanicals, including Sanguisorba officinalis, Rosa multiflora, and Swertia chirata, this hair repair mask helps extend the hair's natural growth cycle. By blocking FGF5, this Keratin hair mask supports longer, healthier hair.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Developed by Hair Biologists &amp; Trusted by Stylists</strong> - Scientifically crafted and free of parabens, sulfates, silicones, and phthalates, this cruelty-free hair conditioning mask is color-safe and recommended by hair stylists.</div></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Visible Results in 90 Days</strong> - Clinically tested, with 95% of users noticing improved hair texture and shine. For best results, use this protein hair mask alongside the Promote Shampoo and Promote Activator as part of a complete hair growth and repair routine.</div></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">220 chars used</span></div><div class="la-backend-block">hair growth products hair mask hair care deep conditioning hair mask hair oils for hair growth hair mask for dry damaged hair growth serum hair growth deep conditioner for dry damaged hair collagen hair mask hydrating hair mask hair conditioning mask protein hair mask hair repair mask</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0008 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-mask-evo0008" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-mask-evo0008','EVO0008','Promote Mask')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-mask-evo0008">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-mask-evo0008','EVO0008','Promote Mask')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-mask-evo0008"></span>
+      </div>
       <div class="sub-page" id="la-mask-evo0018">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0018 &nbsp;·&nbsp; ASIN B0C62QRGVX &nbsp;·&nbsp; Hair Treatment Masks</div><div class="la-hero-title">Promote Nourishing Hair Mask — Travel Size</div><div class="la-hero-tags"><span class="la-hero-tag">Longer Stronger Hair</span><span class="la-hero-tag">Travel Size</span><span class="la-hero-tag">Baobab</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Baobab Oil — same formula as EVO0008 full-size<br>Hydrolyzed Keratin · Panthenol<br>1 fl oz travel size<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">148 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Promote Nourishing Treatment Mask - Deep Conditioning Hair Mask to Support Hair Growth - Hydrating Hair Mask for Dry, Damaged Hair - Travel Size (1 fl oz)</div></div><div class="la-note">Good. All core keywords present. <span class="kw-coverage-tag hit">deep conditioning hair mask</span> <span class="kw-coverage-tag hit">hair growth</span> <span class="kw-coverage-tag hit">travel size</span></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">230 chars used</span></div><div class="la-backend-block">hair growth products hair mask hair care deep conditioning hair mask hair oils for hair growth hair mask for dry damaged hair growth serum hair growth deep conditioner for dry damaged hair collagen hair mask hydrating hair mask hair conditioning mask protein hair mask hair repair mask travel size hair mask travel hair mask mini hair mask tsa approved hair mask</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
+      
+      <!-- ── EVO0018 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-mask-evo0018" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-mask-evo0018','EVO0018','Promote Mask Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-mask-evo0018">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-mask-evo0018','EVO0018','Promote Mask Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-mask-evo0018"></span>
+      </div>
       <div class="sub-page" id="la-mask-evo0019">
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0019 &nbsp;·&nbsp; ASIN B0C63BJKBF &nbsp;·&nbsp; Hair Treatment Masks</div><div class="la-hero-title">Reverse Repairing Hair Mask — Travel Size</div><div class="la-hero-tags"><span class="la-hero-tag">Thinning Hair</span><span class="la-hero-tag">Damage Repair</span><span class="la-hero-tag">Travel Size</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Sanguisorba Officinalis, Swertia Chirata Extract &amp; Rosa Multiflora Extract (FGF5 Inhibitors)</div><div class="la-hero-actives-rest">Hydrolyzed Keratin · Collagen Complex — same formula as EVO0004<br>Hydrolyzed Wheat Protein · Panthenol<br>1 fl oz travel size<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">146 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Reverse Repairing Treatment Mask - Deep Conditioning Hair Mask to Support Hair Growth - Hydrating Hair Mask for Dry, Damaged Hair - Travel Size (1 fl oz)</div></div><div class="la-note">Good. Mirrors Promote Travel Mask for consistency. <span class="kw-coverage-tag hit">deep conditioning hair mask</span> <span class="kw-coverage-tag hit">hair growth</span> <span class="kw-coverage-tag hit">travel size</span></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">230 chars used</span></div><div class="la-backend-block">hair growth products hair mask hair care deep conditioning hair mask hair oils for hair growth hair mask for dry damaged hair growth serum hair growth deep conditioner for dry damaged hair collagen hair mask hydrating hair mask hair conditioning mask protein hair mask hair repair mask travel size hair mask travel hair mask mini hair mask tsa approved hair mask reverse hair mask</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
 
-    </div><!-- /la-masks -->
+    </div>
+      <!-- ── EVO0019 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-mask-evo0019" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-mask-evo0019','EVO0019','Reverse Mask Travel')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-mask-evo0019">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-mask-evo0019','EVO0019','Reverse Mask Travel')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-mask-evo0019"></span>
+      </div>
+      <!-- /la-masks -->
 
     <!-- ── DRY SHAMPOO ── -->
     <div class="channel-page" id="la-dryshampoo">
@@ -1918,7 +2228,23 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       <div>
 <div class="la-hero"><div class="la-hero-left"><div class="la-hero-meta">EVO0012 &nbsp;·&nbsp; ASIN B08BGCRKTV &nbsp;·&nbsp; Dry Shampoos / Styling</div><div class="la-hero-title">Style + Treat Dry Shampoo</div><div class="la-hero-tags"><span class="la-hero-tag">All Hair Types</span><span class="la-hero-tag">FGF5 Botanicals</span><span class="la-hero-tag">Non-Comedogenic</span><span class="la-hero-tag bsr">BSR —</span></div></div><div class="la-hero-actives"><div class="la-hero-actives-lbl">Hero Actives</div><div class="la-hero-actives-primary">Rosemary Extract · Green Tea Extract · Mangosteen Extract (FGF5-Inhibiting Antioxidant Botanicals)</div><div class="la-hero-actives-rest">No chalky residue · Works on dark hair<br>Non-comedogenic · Residue-free<br>5.2 oz spray · Styling + scalp health dual benefit<br></div></div></div><div class="la-card"><div class="la-card-label">Active Title</div><div class="la-char-info">≤200 chars &nbsp;·&nbsp; <span class="char-pill ok">162 chars used</span></div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">EVOLIS Style &amp; Treat Dry Shampoo for Volume and Texture – Lightweight Texture Powder for Oily Hair – Clean Hair Care and Volumizing Hair Products for All Hair Types (5.2 oz)</div></div><div class="la-note">Good. "Style & Treat" dual-use positioning clear. "Volumizing Hair Products" keyword present. <span class="kw-coverage-tag hit">dry shampoo</span> <span class="kw-coverage-tag hit">volumizing hair products</span> <span class="kw-coverage-tag hit">texture powder</span> <span class="kw-coverage-tag hit">clean hair care</span></div></div><div class="la-card"><div class="la-card-label">Item Highlights<span class="la-badge new">NEW · JUL 27</span></div><div class="la-card-sublabel">≤125 CHARS · SEARCHABLE · VISIBLE IN SEARCH RESULTS & PDPS</div><div class="la-char-info">≤125 chars &nbsp;·&nbsp; <span class="char-pill warn">118 chars used</span></div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok">Dry shampoo spray that absorbs oil, adds volume, and supports scalp health. FGF5-inhibiting botanicals. Non-comedogenic, residue-free — no chalk on dark hair.</div></div></div><div class="la-card"><div class="la-card-label">Active Bullet Points</div><div class="la-card-sublabel">BULLET 1</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok"><strong>Revives Hair with Volume and Texture</strong> – EVOLIS Style Treat dry shampoo and multi-use styling spray instantly absorbs excess oil and odor while delivering root lift, touchable texture, and weightless volume—no chalky residue, even on dark hair.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">dry shampoo</span> <span class="kw-coverage-tag hit">volume</span> <span class="kw-coverage-tag hit">root lift</span> <span class="kw-coverage-tag hit">dark hair</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 2</div><div class="la-copy-row"><div class="la-num">2</div><div class="la-copy-block ok"><strong>Supports Scalp Health and Fuller-Looking Hair</strong> – Developed for all hair types, including those with thinning hair, shedding, or scalp sensitivity, this dry shampoo for women and men uses a blend of natural extracts and antioxidants to support scalp vitality and maintain healthy-looking strands. Ideal for extending time between washes while caring for the scalp.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">scalp health</span> <span class="kw-coverage-tag hit">thinning hair</span> <span class="kw-coverage-tag hit">dry shampoo for women</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 3</div><div class="la-copy-row"><div class="la-num">3</div><div class="la-copy-block warn"><strong>Powered by Antioxidants and FGF5-Inhibiting Botanicals</strong> – Infused with a proprietary blend of rosemary, green tea, and mangosteen, this natural dry shampoo supports the scalp's natural barrier and helps defend against FGF5, a protein linked to hair thinning. It's a powerful addition to any volumizing hair products or hair care routine.</div></div><div class="la-note">⚠ FGF5 mention may confuse buyers new to the brand. Consider simplifying to "antioxidant botanicals that support scalp health" and saving FGF5 language for the activators. </div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 4</div><div class="la-copy-row"><div class="la-num">4</div><div class="la-copy-block ok"><strong>Non-Comedogenic and Residue-Free</strong> – This clean formula is non-comedogenic and free from sulfates, parabens, phthalates, and silicones. It won't clog follicles or leave behind powdery buildup, making it suitable for all hair types, including color-treated and keratin-treated hair.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">non-comedogenic</span> <span class="kw-coverage-tag hit">sulfate-free</span> <span class="kw-coverage-tag hit">paraben-free</span></div></div><div class="la-card"><div class="la-card-label"></div><div class="la-card-sublabel">BULLET 5</div><div class="la-copy-row"><div class="la-num">5</div><div class="la-copy-block ok"><strong>Formulated by Hair Biologists, Recommended by Stylists</strong> – Like all EVOLIS hair products, this dry shampoo spray is backed by science and crafted for performance. Whether you're styling limp, oily hair or looking to boost volume on the go, it acts as a versatile volume powder, hair volumizer, and hair texture spray.</div></div><div class="la-note"> <span class="kw-coverage-tag hit">volume powder</span> <span class="kw-coverage-tag hit">hair volumizer</span> <span class="kw-coverage-tag hit">hair texture spray</span></div></div><div class="la-card"><div class="la-card-label">Backend Keywords — Spaces Only</div><div class="la-char-info">≤250 chars &nbsp;·&nbsp; <span class="char-pill warn">245 chars used</span></div><div class="la-backend-block">dry shampoo dry shampoo for women texture powder dry shampoo for dark hair travel dry shampoo volumizing hair products powder dry shampoo volume spray root lifter hair products hair texture spray hair volumizer hair products for women brunette dry shampoo volume powder non aerosol dry shampoo volumizing spray hair root touch up powder</div><button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button></div>
       </div>
-    <!-- /la-dryshampoo -->
+    
+      <!-- ── EVO0012 Update Bar ── -->
+      <div class="la-update-bar" id="update-bar-la-dryshampoo" style="display:none;">
+        <span class="la-update-bar-label">📋 Audit complete —</span>
+        <button class="la-update-btn" onclick="markListingUpdated('la-dryshampoo','EVO0012','Dry Shampoo')">✓ Mark Updated</button>
+        <select class="la-skip-select" id="skip-reason-la-dryshampoo">
+          <option value="">— or select skip reason —</option>
+          <option value="waiting-approval">Waiting on brand approval</option>
+          <option value="disagree">Disagree with suggestion</option>
+          <option value="not-priority">Not a priority this week</option>
+          <option value="already-live">Already live / in review</option>
+          <option value="travel-sku">Travel SKU — defer to full-size</option>
+        </select>
+        <button class="la-update-btn" style="background:var(--muted);color:#fff;" onclick="logSkipReason('la-dryshampoo','EVO0012','Dry Shampoo')">Log Skip</button>
+        <span class="la-update-status" id="update-status-la-dryshampoo"></span>
+      </div>
+      <!-- /la-dryshampoo -->
 
   </div>
 
@@ -4669,6 +4995,258 @@ async function loadInsightsFromSheet() {
 }
 
 document.addEventListener('DOMContentLoaded',()=>{ loadInsightsFromSheet(); });
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LISTING AUDIT ENGINE
+// ═══════════════════════════════════════════════════════════════════
+
+const EVOLIS_SKUS = [
+  {id:'la-evo0001',   sku:'EVO0001', name:'Reverse Activator',           travel:false},
+  {id:'la-evo0005',   sku:'EVO0005', name:'Promote Activator',           travel:false},
+  {id:'la-evo0009',   sku:'EVO0009', name:'Prevent Activator',           travel:false},
+  {id:'la-evo0002',   sku:'EVO0002', name:'Reverse Shampoo',             travel:false},
+  {id:'la-evo0006',   sku:'EVO0006', name:'Promote Shampoo',             travel:false},
+  {id:'la-evo0010',   sku:'EVO0010', name:'Prevent Shampoo',             travel:false},
+  {id:'la-evo0014',   sku:'EVO0014', name:'Reverse Shampoo Travel',      travel:true},
+  {id:'la-evo0016',   sku:'EVO0016', name:'Promote Shampoo Travel',      travel:true},
+  {id:'la-cond-evo0003', sku:'EVO0003', name:'Reverse Conditioner',      travel:false},
+  {id:'la-cond-evo0007', sku:'EVO0007', name:'Promote Conditioner',      travel:false},
+  {id:'la-cond-evo0011', sku:'EVO0011', name:'Prevent Conditioner',      travel:false},
+  {id:'la-cond-evo0015', sku:'EVO0015', name:'Reverse Conditioner Travel',travel:true},
+  {id:'la-cond-evo0017', sku:'EVO0017', name:'Promote Conditioner Travel',travel:true},
+  {id:'la-mask-evo0004', sku:'EVO0004', name:'Reverse Mask',             travel:false},
+  {id:'la-mask-evo0008', sku:'EVO0008', name:'Promote Mask',             travel:false},
+  {id:'la-mask-evo0018', sku:'EVO0018', name:'Promote Mask Travel',      travel:true},
+  {id:'la-mask-evo0019', sku:'EVO0019', name:'Reverse Mask Travel',      travel:true},
+  {id:'la-dryshampoo',   sku:'EVO0012', name:'Dry Shampoo',              travel:false},
+];
+
+// ── Extract all listing copy from the DOM ─────────────────────────
+function extractAllListingCopy() {
+  const catalog = [];
+  for (const skuMeta of EVOLIS_SKUS) {
+    const el = document.getElementById(skuMeta.id);
+    if (!el) continue;
+    const copy = { sku: skuMeta.sku, name: skuMeta.name, travel: skuMeta.travel };
+
+    // Title
+    const titleCard = [...el.querySelectorAll('.la-card')].find(c => {
+      const lbl = c.querySelector('.la-card-label');
+      return lbl && lbl.textContent.includes('Active Title');
+    });
+    if (titleCard) {
+      const block = titleCard.querySelector('.la-copy-block');
+      copy.title = block ? block.textContent.trim() : '';
+    }
+
+    // Item Highlights
+    const ihCard = [...el.querySelectorAll('.la-card')].find(c => {
+      const lbl = c.querySelector('.la-card-label');
+      return lbl && lbl.textContent.includes('Item Highlights');
+    });
+    if (ihCard) {
+      const block = ihCard.querySelector('.la-copy-block');
+      copy.item_highlights = block ? block.textContent.trim() : '';
+    }
+
+    // Bullets 1-5
+    const bulletCards = [...el.querySelectorAll('.la-card')].filter(c => {
+      const sub = c.querySelector('.la-card-sublabel');
+      return sub && /BULLET \d/.test(sub.textContent);
+    });
+    copy.bullets = bulletCards.map(c => {
+      const block = c.querySelector('.la-copy-block');
+      return block ? block.textContent.trim() : '';
+    }).filter(Boolean);
+
+    // Description
+    const descCard = [...el.querySelectorAll('.la-card')].find(c => {
+      const lbl = c.querySelector('.la-card-label');
+      return lbl && lbl.textContent.includes('Product Description');
+    });
+    if (descCard) {
+      const block = descCard.querySelector('.la-copy-block');
+      copy.description = block ? block.textContent.trim().slice(0, 600) : '';
+    }
+
+    // Backend keywords
+    const bkCard = [...el.querySelectorAll('.la-card')].find(c => {
+      const lbl = c.querySelector('.la-card-label');
+      return lbl && lbl.textContent.includes('Backend Keywords');
+    });
+    if (bkCard) {
+      const block = bkCard.querySelector('.la-backend-block');
+      copy.backend = block ? block.textContent.trim() : '';
+    }
+
+    catalog.push(copy);
+  }
+  return catalog;
+}
+
+// ── Main listing audit runner ─────────────────────────────────────
+async function runListingAudit() {
+  const btn = document.getElementById('run-audit-btn');
+  const st  = document.getElementById('upload-status');
+  btn.classList.add('running'); btn.disabled = true;
+  st.textContent = 'Extracting listing copy…'; st.className = 'upload-status';
+
+  try {
+    const catalog = extractAllListingCopy();
+    st.textContent = 'Running listing audit (≈ 30-45s)…';
+
+    const res = await fetch('/api/run-listing-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog, skillB64: LISTING_SKILL_B64 })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'run-listing-audit error ' + res.status);
+    }
+
+    const data = await res.json();
+    if (!data.ok || !data.results) throw new Error('Invalid response from audit');
+
+    st.textContent = 'Injecting audit results…';
+    injectAuditResults(data.results);
+
+    st.textContent = '✓ Listing audit complete — ' + data.results.length + ' SKUs reviewed — ' + new Date().toLocaleTimeString();
+    st.className = 'upload-status success';
+
+  } catch(err) {
+    console.error('Listing audit error:', err);
+    st.textContent = '✗ ' + err.message; st.className = 'upload-status error';
+  } finally {
+    btn.classList.remove('running'); btn.disabled = false;
+  }
+}
+
+// ── Inject audit results below each la-card ───────────────────────
+function injectAuditResults(results) {
+  // Clear any previous audit zones
+  document.querySelectorAll('.la-audit-zone').forEach(z => z.remove());
+
+  for (const result of results) {
+    const skuMeta = EVOLIS_SKUS.find(s => s.sku === result.sku);
+    if (!skuMeta) continue;
+    const el = document.getElementById(skuMeta.id);
+    if (!el) continue;
+
+    // Show the update bar for this SKU
+    const updateBar = document.getElementById('update-bar-' + skuMeta.id);
+    if (updateBar) updateBar.style.display = 'flex';
+
+    // Inject below each field card
+    const fieldMap = [
+      { label: 'Active Title',          auditKey: 'title'           },
+      { label: 'Item Highlights',       auditKey: 'item_highlights' },
+      { label: 'Active Bullet Points',  auditKey: 'bullets'         },
+      { label: 'Active Product Description', auditKey: 'description'},
+      { label: 'Backend Keywords',      auditKey: 'backend'         },
+    ];
+
+    for (const { label, auditKey } of fieldMap) {
+      const auditData = result[auditKey];
+      if (!auditData) continue;
+
+      // Find the la-card with this label
+      const card = [...el.querySelectorAll('.la-card')].find(c => {
+        const lbl = c.querySelector('.la-card-label');
+        return lbl && lbl.textContent.includes(label);
+      });
+      if (!card) continue;
+
+      // Build audit zone HTML
+      const note   = Array.isArray(auditData.notes) ? auditData.notes.join(' ') : (auditData.notes || '');
+      const rewrite = auditData.rewrite || '';
+      const chars  = rewrite.length;
+      const limit  = auditKey === 'title' ? 75 : auditKey === 'item_highlights' ? 125 : auditKey === 'backend' ? 500 : 0;
+      const charInfo = limit > 0 ? `<div class="la-audit-chars">${chars} chars ${chars > limit ? '<span class="over">OVER limit of '+limit+'</span>' : '✔ within '+limit+' char limit'}</div>` : '';
+
+      const zone = document.createElement('div');
+      zone.className = 'la-audit-zone';
+      zone.innerHTML = `
+        <div class="la-audit-zone-label">✦ Audit Findings</div>
+        ${note ? `<div class="la-audit-note">${note}</div>` : ''}
+        ${rewrite ? `<div class="la-audit-rewrite">
+          <div class="la-audit-rewrite-label">Suggested Rewrite</div>
+          <button class="la-audit-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('p').textContent)">Copy</button>
+          <p style="margin:0;">${rewrite}</p>
+          ${charInfo}
+        </div>` : ''}
+      `;
+      card.appendChild(zone);
+    }
+  }
+}
+
+// ── Mark listing as updated ───────────────────────────────────────
+async function markListingUpdated(subId, sku, name) {
+  const statusEl = document.getElementById('update-status-' + subId);
+  statusEl.textContent = 'Saving…'; statusEl.className = 'la-update-status pending';
+
+  try {
+    await fetch('/api/write-uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brand: INSIGHTS_BRAND_TAB,
+        sheetId: UPLOADS_SHEET_ID,
+        gid: UPLOADS_EVOLIS_GID,
+        date: new Date().toISOString().slice(0, 10),
+        week_label: weekLabel(),
+        kw_summary: '[]', biz_summary: '[]', ppc_summary: '[]', sqp_summary: '[]',
+        files_uploaded: 'LISTING_UPDATE: ' + sku + ' ' + name
+      })
+    });
+    statusEl.textContent = '✓ Logged ' + new Date().toLocaleDateString();
+    statusEl.className = 'la-update-status saved';
+    // Hide the update bar after a moment
+    setTimeout(() => {
+      const bar = document.getElementById('update-bar-' + subId);
+      if (bar) bar.style.background = 'rgba(36,233,163,.05)';
+    }, 1000);
+  } catch(err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.className = 'la-update-status';
+  }
+}
+
+// ── Log skip reason ───────────────────────────────────────────────
+async function logSkipReason(subId, sku, name) {
+  const select = document.getElementById('skip-reason-' + subId);
+  const reason = select ? select.value : '';
+  if (!reason) {
+    const statusEl = document.getElementById('update-status-' + subId);
+    statusEl.textContent = 'Select a skip reason first.'; return;
+  }
+  const statusEl = document.getElementById('update-status-' + subId);
+  statusEl.textContent = 'Saving…'; statusEl.className = 'la-update-status pending';
+
+  try {
+    await fetch('/api/write-uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brand: INSIGHTS_BRAND_TAB,
+        sheetId: UPLOADS_SHEET_ID,
+        gid: UPLOADS_EVOLIS_GID,
+        date: new Date().toISOString().slice(0, 10),
+        week_label: weekLabel(),
+        kw_summary: '[]', biz_summary: '[]', ppc_summary: '[]', sqp_summary: '[]',
+        files_uploaded: 'LISTING_SKIP: ' + sku + ' ' + name + ' | reason: ' + reason
+      })
+    });
+    statusEl.textContent = '✓ Skip logged — ' + reason.replace(/-/g,' ');
+    statusEl.className = 'la-update-status saved';
+  } catch(err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.className = 'la-update-status';
+  }
+}
 </script>
 </body>
 </html>
