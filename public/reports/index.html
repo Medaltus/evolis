@@ -4803,6 +4803,21 @@ const EVOLIS_SKUS = [
 ];
 
 // ── Extract all listing copy from the DOM ─────────────────────────
+function cleanCopy(s) {
+  if (!s) return '';
+  return s
+    .replace(/&amp;/g, 'and')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&[a-z]+;/g, ' ')
+    .replace(/[‘’`´]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractAllListingCopy() {
   const catalog = [];
   for (const skuMeta of EVOLIS_SKUS) {
@@ -4817,7 +4832,7 @@ function extractAllListingCopy() {
     });
     if (titleCard) {
       const block = titleCard.querySelector('.la-copy-block');
-      copy.title = block ? block.textContent.trim() : '';
+      copy.title = cleanCopy(block ? block.textContent : '');
     }
 
     // Item Highlights
@@ -4827,7 +4842,7 @@ function extractAllListingCopy() {
     });
     if (ihCard) {
       const block = ihCard.querySelector('.la-copy-block');
-      copy.item_highlights = block ? block.textContent.trim() : '';
+      copy.item_highlights = cleanCopy(block ? block.textContent : '');
     }
 
     // Bullets 1-5
@@ -4837,7 +4852,7 @@ function extractAllListingCopy() {
     });
     copy.bullets = bulletCards.map(c => {
       const block = c.querySelector('.la-copy-block');
-      return block ? block.textContent.trim() : '';
+      return cleanCopy(block ? block.textContent : '');
     }).filter(Boolean);
 
     // Description
@@ -4847,7 +4862,7 @@ function extractAllListingCopy() {
     });
     if (descCard) {
       const block = descCard.querySelector('.la-copy-block');
-      copy.description = block ? block.textContent.trim().slice(0, 600) : '';
+      copy.description = cleanCopy(block ? block.textContent.slice(0, 600) : '');
     }
 
     // Backend keywords
@@ -4857,7 +4872,7 @@ function extractAllListingCopy() {
     });
     if (bkCard) {
       const block = bkCard.querySelector('.la-backend-block');
-      copy.backend = block ? block.textContent.trim() : '';
+      copy.backend = cleanCopy(block ? block.textContent : '');
     }
 
     catalog.push(copy);
