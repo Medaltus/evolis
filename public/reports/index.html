@@ -4464,6 +4464,18 @@ function csvVals(line) {
   return (line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g)||[]).map(v=>v.replace(/^"|"$/g,'').trim());
 }
 
+function parseCsvToRows(text) {
+  const lines = (text||'').replace(/^﻿/,'').trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = csvVals(lines[0]).map(h => h.toLowerCase());
+  return lines.slice(1).map(line => {
+    const vals = csvVals(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
+    return obj;
+  }).filter(row => Object.values(row).some(v => v));
+}
+
 async function parseAllFiles() {
   for (const type of ['kw','biz','ppc','sqp']) {
     for (const file of (_upFiles[type]||[])) {
@@ -4867,8 +4879,8 @@ async function runListingAudit() {
       body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: fullSkus, skillB64: LISTING_SKILL_B64 })
     });
     if (!res1.ok) {
-      const err = await res1.json().catch(() => ({}));
-      throw new Error(err.error || 'run-listing-audit error ' + res1.status);
+      const errBody = await res1.json().catch(() => ({}));
+      throw new Error('Listing audit API error ' + res1.status + ': ' + (errBody.error || errBody.detail || JSON.stringify(errBody)));
     }
     const data1 = await res1.json();
     if (data1.results) allResults.push(...data1.results);
@@ -4881,8 +4893,8 @@ async function runListingAudit() {
       body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB, catalog: travelSkus, skillB64: LISTING_SKILL_B64 })
     });
     if (!res2.ok) {
-      const err = await res2.json().catch(() => ({}));
-      throw new Error(err.error || 'run-listing-audit (travel) error ' + res2.status);
+      const errBody2 = await res2.json().catch(() => ({}));
+      throw new Error('Listing audit API error (travel) ' + res2.status + ': ' + (errBody2.error || JSON.stringify(errBody2)));
     }
     const data2 = await res2.json();
     if (data2.results) allResults.push(...data2.results);
@@ -5140,28 +5152,25 @@ function updateCard(pageEl, labelText, sublabelText, newValue) {
 
 // ── Save full audit results to listing audit sheet ────────────────
 async function saveAuditResultsToSheet(results) {
-  try {
-    await fetch('/api/write-listing-audit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        brand:    INSIGHTS_BRAND_TAB,
-        sheetId:  LISTING_AUDIT_SHEET_ID,
-        gid:      LISTING_AUDIT_EVOLIS_GID,
-        date:     new Date().toISOString().slice(0, 10),
-        sku:      '_ALL_',
-        sku_name: 'Full Audit',
-        action:   'audit_run',
-        suggestions: results.map(r => ({
-          field:      r.sku,
-          issue:      '',
-          suggestion: JSON.stringify(r)
-        }))
-      })
-    });
-  } catch(err) {
-    console.warn('[listings] Could not save audit results:', err.message);
-  }
+  // Fire-and-forget — never surface errors to the main status bar
+  fetch('/api/write-listing-audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      brand:    INSIGHTS_BRAND_TAB,
+      sheetId:  LISTING_AUDIT_SHEET_ID,
+      gid:      LISTING_AUDIT_EVOLIS_GID,
+      date:     new Date().toISOString().slice(0, 10),
+      sku:      '_ALL_',
+      sku_name: 'Full Audit',
+      action:   'audit_run',
+      suggestions: results.map(r => ({
+        field:      r.sku,
+        issue:      '',
+        suggestion: JSON.stringify(r)
+      }))
+    })
+  }).catch(err => console.warn('[listings] Could not save audit results:', err.message));
 }
 
 // ── Load most recent audit results from sheet and re-inject ───────
