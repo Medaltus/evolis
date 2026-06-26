@@ -26,7 +26,7 @@ async function getAuthToken() {
   return auth.getAccessToken();
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -53,24 +53,24 @@ export default async function handler(req, res) {
     // Ensure headers
     await ensureHeaders(sheetId, tabName, token);
 
-    // Write one row per field suggestion
+    // For audit_run: write a single row with full results as JSON
+    // For updated/skipped: write one row per field
     const rows = [];
-    if (suggestions && suggestions.length) {
+    if (action === 'audit_run') {
+      rows.push([
+        auditDate, sku, sku_name || '', 'audit_run', '', 
+        JSON.stringify(suggestions || []),
+        'audit_run', '', now
+      ]);
+    } else if (suggestions && suggestions.length) {
       for (const s of suggestions) {
         rows.push([
-          auditDate,
-          sku,
-          sku_name || '',
-          s.field || '',
-          s.issue || '',
-          s.suggestion || '',
-          action || 'pending',
-          skip_reason || '',
-          now
+          auditDate, sku, sku_name || '',
+          s.field || '', s.issue || '', s.suggestion || '',
+          action || 'pending', skip_reason || '', now
         ]);
       }
     } else {
-      // No suggestions — just log the action
       rows.push([auditDate, sku, sku_name || '', 'all', '', '', action || 'pending', skip_reason || '', now]);
     }
 
