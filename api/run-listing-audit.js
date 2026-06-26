@@ -55,7 +55,9 @@ const AUDIT_HEADERS = [
   'date', 'sku', 'sku_name', 'action',
   'title_notes', 'title_rewrite',
   'ih_notes', 'ih_rewrite',
-  'bullets_notes', 'bullets_rewrite',
+  'bullets_notes',
+  'bullet_1_rewrite', 'bullet_2_rewrite', 'bullet_3_rewrite', 'bullet_4_rewrite', 'bullet_5_rewrite',
+  'desc_notes', 'desc_rewrite',
   'backend_notes', 'backend_rewrite',
   'skip_reason', 'audited_at'
 ];
@@ -97,13 +99,12 @@ function parseDelimited(text) {
   const keys = [
     'TITLE_NOTES', 'TITLE_REWRITE',
     'IH_NOTES', 'IH_REWRITE',
-    'BULLETS_NOTES', 'BULLETS_REWRITE',
+    'BULLETS_NOTES',
+    'BULLET_1_REWRITE', 'BULLET_2_REWRITE', 'BULLET_3_REWRITE', 'BULLET_4_REWRITE', 'BULLET_5_REWRITE',
+    'DESC_NOTES', 'DESC_REWRITE',
     'BACKEND_NOTES', 'BACKEND_REWRITE',
   ];
 
-  // Build a map of label → value by scanning line by line.
-  // A line that starts with a known LABEL: takes the rest of that line as the value.
-  // Continuation lines (no known label) are appended to the previous value.
   const result = {};
   let currentKey = null;
 
@@ -119,20 +120,25 @@ function parseDelimited(text) {
       }
     }
     if (!matched && currentKey && line.trim()) {
-      // Continuation of previous value — append with a space
       result[currentKey] += ' ' + line.trim();
     }
   }
 
   return {
-    title_notes:    result['TITLE_NOTES']    || '',
-    title_rewrite:  result['TITLE_REWRITE']  || '',
-    ih_notes:       result['IH_NOTES']       || '',
-    ih_rewrite:     result['IH_REWRITE']     || '',
-    bullets_notes:  result['BULLETS_NOTES']  || '',
-    bullets_rewrite:result['BULLETS_REWRITE']|| '',
-    backend_notes:  result['BACKEND_NOTES']  || '',
-    backend_rewrite:result['BACKEND_REWRITE']|| '',
+    title_notes:      result['TITLE_NOTES']      || '',
+    title_rewrite:    result['TITLE_REWRITE']    || '',
+    ih_notes:         result['IH_NOTES']         || '',
+    ih_rewrite:       result['IH_REWRITE']       || '',
+    bullets_notes:    result['BULLETS_NOTES']    || '',
+    bullet_1_rewrite: result['BULLET_1_REWRITE'] || '',
+    bullet_2_rewrite: result['BULLET_2_REWRITE'] || '',
+    bullet_3_rewrite: result['BULLET_3_REWRITE'] || '',
+    bullet_4_rewrite: result['BULLET_4_REWRITE'] || '',
+    bullet_5_rewrite: result['BULLET_5_REWRITE'] || '',
+    desc_notes:       result['DESC_NOTES']       || '',
+    desc_rewrite:     result['DESC_REWRITE']     || '',
+    backend_notes:    result['BACKEND_NOTES']    || '',
+    backend_rewrite:  result['BACKEND_REWRITE']  || '',
   };
 }
 
@@ -233,8 +239,14 @@ TITLE_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
 TITLE_REWRITE: [compliant rewrite, max 75 chars. If clean, repeat original trimmed to 75.]
 IH_NOTES: [violations found, or generated if missing. Max 300 chars.]
 IH_REWRITE: [compliant rewrite or new copy, max 125 chars.]
-BULLETS_NOTES: [key violations across all bullets. Max 400 chars. Empty string if travel SKU.]
-BULLETS_REWRITE: [rewrite of bullet 1 only as example, max 200 chars. Empty string if travel SKU.]
+BULLETS_NOTES: [key violations across all bullets, noted by bullet number. Max 500 chars. Empty string if travel SKU.]
+BULLET_1_REWRITE: [compliant rewrite of bullet 1, max 200 chars. Empty string if travel SKU.]
+BULLET_2_REWRITE: [compliant rewrite of bullet 2, max 200 chars. Empty string if travel SKU.]
+BULLET_3_REWRITE: [compliant rewrite of bullet 3, max 200 chars. Empty string if travel SKU.]
+BULLET_4_REWRITE: [compliant rewrite of bullet 4, max 200 chars. Empty string if travel SKU.]
+BULLET_5_REWRITE: [compliant rewrite of bullet 5, max 200 chars. Empty string if travel SKU.]
+DESC_NOTES: [violations found in description, or "No violations" if clean. Max 300 chars. Empty string if travel SKU.]
+DESC_REWRITE: [compliant rewrite of description, max 400 chars, plain sentences no bullets. Empty string if travel SKU.]
 BACKEND_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
 BACKEND_REWRITE: [compliant backend keywords, max 200 chars, spaces only no commas.]
 
@@ -298,7 +310,7 @@ Backend: ${backend}`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 1200,
+            max_tokens: 2500,
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }]
           })
@@ -336,7 +348,13 @@ Backend: ${backend}`;
         parsed.ih_notes,
         parsed.ih_rewrite,
         travel ? '' : parsed.bullets_notes,
-        travel ? '' : parsed.bullets_rewrite,
+        travel ? '' : parsed.bullet_1_rewrite,
+        travel ? '' : parsed.bullet_2_rewrite,
+        travel ? '' : parsed.bullet_3_rewrite,
+        travel ? '' : parsed.bullet_4_rewrite,
+        travel ? '' : parsed.bullet_5_rewrite,
+        travel ? '' : parsed.desc_notes,
+        travel ? '' : parsed.desc_rewrite,
         parsed.backend_notes,
         parsed.backend_rewrite,
         '',   // skip_reason
@@ -380,19 +398,18 @@ Backend: ${backend}`;
 function buildErrorRow(date, sku, name, errorMsg, now) {
   return [
     date, sku, name, 'error',
-    errorMsg.slice(0, 300), '', '', '', '', '', '', '',
+    errorMsg.slice(0, 300), '', '', '', '', '', '', '', '', '', '', '', '', '',
     '', now
   ];
 }
 
 async function ensureAuditHeaders(sheetId, tabName, token) {
   const checkRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:N1')}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:T1')}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!checkRes.ok) return;
   const data = await checkRes.json();
-  // If row 1 already has data, headers are in place
   if (data.values && data.values[0] && data.values[0].length > 0) return;
 
   await fetch(
@@ -405,7 +422,9 @@ async function ensureAuditHeaders(sheetId, tabName, token) {
           'date', 'sku', 'sku_name', 'action',
           'title_notes', 'title_rewrite',
           'ih_notes', 'ih_rewrite',
-          'bullets_notes', 'bullets_rewrite',
+          'bullets_notes',
+          'bullet_1_rewrite', 'bullet_2_rewrite', 'bullet_3_rewrite', 'bullet_4_rewrite', 'bullet_5_rewrite',
+          'desc_notes', 'desc_rewrite',
           'backend_notes', 'backend_rewrite',
           'skip_reason', 'audited_at'
         ]]
