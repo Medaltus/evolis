@@ -1,62 +1,171 @@
 {
   "version": 2,
   "crons": [
-    { "path": "/api/cron/sync-orders",               "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-walmart-orders",       "schedule": "0 6 * * *"   },
-    { "path": "/api/cron/sync-walmart-revenue",      "schedule": "0 4 * * *"   },
-    { "path": "/api/cron/sync-orders-backfill",      "schedule": "0 4 5 * *"   },
-    { "path": "/api/cron/sync-products",             "schedule": "30 2 * * *"  },
-    { "path": "/api/cron/sync-advertising-request",  "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/sync-advertising-process",  "schedule": "15 3 * * *"  },
-    { "path": "/api/cron/sync-subscriptions",        "schedule": "30 3 * * *"  },
-    { "path": "/api/cron/trim-orders",               "schedule": "0 3 * * *"   },
-    { "path": "/api/cron/reconcile-orders",          "schedule": "0 8 * * *"   },
-    { "path": "/api/cron/sync-revenue-request",      "schedule": "0 5 * * *"   },
-    { "path": "/api/cron/sync-revenue-process",      "schedule": "15 5 * * *"  },
-    { "path": "/api/cron/sync-shopify-orders",       "schedule": "0 7 * * *"   },
-    { "path": "/api/cron/sync-shopify-revenue",      "schedule": "5 7 * * *"   },
-    { "path": "/api/cron/sync-google-ads",           "schedule": "15 7 * * *"  }
+    {
+      "path": "/api/cron/sync-orders",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-walmart-orders",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-walmart-revenue",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-orders-backfill",
+      "schedule": "0 4 5 * *"
+    },
+    {
+      "path": "/api/cron/sync-products",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-advertising-request",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-advertising-process",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-subscriptions",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/trim-orders",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-orders",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-revenue-request",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/sync-revenue-process",
+      "schedule": "15 5 * * *"
+    },
+    {
+      "path": "/api/cron/sync-shopify-orders",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-shopify-revenue",
+      "schedule": "5 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-google-ads",
+      "schedule": "15 7 * * *"
+    }
   ],
   "functions": {
-    "api/sales.js":                                  { "maxDuration": 30  },
-    "api/products.js":                               { "maxDuration": 30  },
-    "api/advertising.js":                            { "maxDuration": 30  },
-    "api/subscriptions.js":                          { "maxDuration": 30  },
-    "api/run-analysis.js":                           { "maxDuration": 60  },
-    "api/write-insights.js":                         { "maxDuration": 30  },
-    "api/write-uploads.js":                          { "maxDuration": 30  },
-    "api/test-ad-connection.js":                     { "maxDuration": 300 },
-    "api/test-ad-summary.js":                        { "maxDuration": 300 },
-    "api/test-walmart.js":                           { "maxDuration": 30  },
-    "api/cron/sync-orders.js":                       { "maxDuration": 300 },
-    "api/cron/sync-walmart-orders.js":               { "maxDuration": 300 },
-    "api/cron/sync-walmart-revenue.js":              { "maxDuration": 300 },
-    "api/cron/sync-orders-backfill.js":              { "maxDuration": 300 },
-    "api/cron/sync-products.js":                     { "maxDuration": 300 },
-    "api/cron/sync-advertising-request.js":          { "maxDuration": 300 },
-    "api/cron/sync-advertising-process.js":          { "maxDuration": 300 },
-    "api/cron/sync-advertising-backfill.js":         { "maxDuration": 300 },
-    "api/cron/sync-subscriptions.js":                { "maxDuration": 300 },
-    "api/cron/trim-orders.js":                       { "maxDuration": 300 },
-    "api/cron/reconcile-orders.js":                  { "maxDuration": 300 },
-    "api/cron/sync-revenue-request.js":              { "maxDuration": 30  },
-    "api/cron/sync-revenue-process.js":              { "maxDuration": 300 },
-    "api/cron/sync-shopify-orders.js":               { "maxDuration": 300 },
-    "api/cron/sync-shopify-revenue.js":              { "maxDuration": 300 },
-    "api/cron/sync-google-ads.js":                   { "maxDuration": 300 }
+    "api/sales.js": {
+      "maxDuration": 30
+    },
+    "api/products.js": {
+      "maxDuration": 30
+    },
+    "api/advertising.js": {
+      "maxDuration": 30
+    },
+    "api/subscriptions.js": {
+      "maxDuration": 30
+    },
+    "api/run-analysis.js": {
+      "maxDuration": 60
+    },
+    "api/write-insights.js": {
+      "maxDuration": 30
+    },
+    "api/write-uploads.js": {
+      "maxDuration": 30
+    },
+    "api/test-ad-connection.js": {
+      "maxDuration": 300
+    },
+    "api/test-ad-summary.js": {
+      "maxDuration": 300
+    },
+    "api/test-walmart.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-orders.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-walmart-orders.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-walmart-revenue.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-orders-backfill.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-products.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-advertising-request.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-advertising-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-advertising-backfill.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-subscriptions.js": {
+      "maxDuration": 300
+    },
+    "api/cron/trim-orders.js": {
+      "maxDuration": 300
+    },
+    "api/cron/reconcile-orders.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-revenue-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-revenue-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-shopify-orders.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-shopify-revenue.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-google-ads.js": {
+      "maxDuration": 300
+    },
+    "api/run-listing-audit.js": {
+      "maxDuration": 60
+    }
   },
   "routes": [
     {
       "src": "/api/(.*)",
       "headers": {
-        "Access-Control-Allow-Origin":  "*",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
       },
       "continue": true
     },
-    { "src": "/reports/dazzle-dry", "dest": "/reports/dazzle-dry/index.html" },
-    { "src": "/reports",            "dest": "/reports/index.html"             },
-    { "src": "/",                   "dest": "/reports/index.html"             }
+    {
+      "src": "/reports/dazzle-dry",
+      "dest": "/reports/dazzle-dry/index.html"
+    },
+    {
+      "src": "/reports",
+      "dest": "/reports/index.html"
+    },
+    {
+      "src": "/",
+      "dest": "/reports/index.html"
+    }
   ]
 }
