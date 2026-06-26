@@ -5030,13 +5030,14 @@ function injectAuditResults(results) {
     // Helper: inject an audit zone below a specific la-card
     function injectZone(labelText, sublabelText, note, rewrite, charLimit) {
       const card = [...el.querySelectorAll('.la-card')].find(c => {
-        const lbl = c.querySelector('.la-card-label');
-        if (!lbl || !lbl.textContent.includes(labelText)) return false;
+        // If sublabelText provided, match on sublabel alone — handles bullets 2-5
+        // whose la-card-label is empty
         if (sublabelText) {
           const sub = c.querySelector('.la-card-sublabel');
-          return sub && sub.textContent.includes(sublabelText);
+          return sub && sub.textContent.trim() === sublabelText;
         }
-        return true;
+        const lbl = c.querySelector('.la-card-label');
+        return lbl && lbl.textContent.includes(labelText);
       });
       if (!card) return;
       if (!note && !rewrite) return;
