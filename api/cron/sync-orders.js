@@ -41,7 +41,7 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
-const REPORT_POLL_TIMEOUT_MS  = 25_000;
+const REPORT_POLL_TIMEOUT_MS  = 240_000;
 const REPORT_POLL_INTERVAL_MS = 3_000;
 
 module.exports = async (req, res) => {
