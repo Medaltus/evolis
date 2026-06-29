@@ -26,7 +26,6 @@
  *   week      — explicit ?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
  * Sheet: amazon-orders  |  One tab per brand, auto-created on first run.
- * Schedule: every 2 hours ("0 */2 * * *") — 2.5h window gives 30min overlap.
  */
 
 const zlib                                    = require('zlib');
