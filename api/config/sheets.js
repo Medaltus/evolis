@@ -1,7 +1,7 @@
 /**
  * api/config/sheets.js
  * Google Sheet IDs for each data type.
- * Add new sheet IDs here as env vars â€” never hardcode them.
+ * Add new sheet IDs here as env vars — never hardcode them.
  */
 
 module.exports = {
@@ -10,5 +10,5 @@ module.exports = {
   products:         process.env.SHEET_PRODUCTS,
   advertising:      process.env.SHEET_ADVERTISING,
   subscriptions:    process.env.SHEET_SUBSCRIPTIONS,
-  revenue:          process.env.SHEET_REVENUE,           // amazon-revenue (monthly totals)
+  revenue:          process.env.SHEET_REVENUE,
 };
