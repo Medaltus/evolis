@@ -41,7 +41,7 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
-const REPORT_POLL_TIMEOUT_MS  = 240_000;
+const REPORT_POLL_TIMEOUT_MS  = 25_000;
 const REPORT_POLL_INTERVAL_MS = 3_000;
 
 module.exports = async (req, res) => {
@@ -141,14 +141,14 @@ module.exports = async (req, res) => {
   for (const brand of brands.filter(b => b.active)) {
     try {
       // Brand is determined by SKU prefix — never by Amazon's brand field
+      // NOTE: we intentionally do NOT filter out cancelled/pending orders here.
+      // All orders are captured regardless of status; reconcile-orders.js
+      // updates status later as orders move through their lifecycle.
       const brandRows = rows.filter(row => {
         const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
-        const status = (row['order-status'] || '').toLowerCase();
         const promo  = (row['promotion-ids'] || '').toLowerCase();
 
         return sku.startsWith(brand.skuPrefix.toUpperCase())
-          && status !== 'cancelled'
-          && status !== 'pending'
           && !promo.includes('vine');
       });
 
