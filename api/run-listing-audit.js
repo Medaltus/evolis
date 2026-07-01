@@ -488,7 +488,7 @@ Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 2500,
+            max_tokens: travel ? 600 : 2500,
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }]
           })
@@ -497,8 +497,8 @@ Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}`;
         console.log(`[listing-audit] ${sku} 429 rate limit — will retry`);
       }
 
-      // 3s sleep between SKUs regardless of outcome — keeps rate limit clear
-      await new Promise(r => setTimeout(r, 3000));
+      // Sleep between SKUs — shorter for travel SKUs (title+IH only = faster response)
+      await new Promise(r => setTimeout(r, travel ? 500 : 1500));
 
       if (!claudeRes.ok) {
         const errText = await claudeRes.text().catch(() => '');
