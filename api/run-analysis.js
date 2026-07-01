@@ -58,7 +58,9 @@ CRITICAL: Respond with a single valid JSON object only. No markdown fences, no p
 
 Rules for the response:
 - date: today's date in YYYY-MM-DD format
-- All arrays: maximum 3 items each
+- organic.wins: 3-4 items. organic.actions: 4-6 items. organic.keywords_to_watch: 4-6 items
+- ppc.wins: 3-4 items. ppc.actions: 4-6 items. ppc.opportunities: 4-6 items
+- listing.violations: 1-2 items. listing.keyword_gaps: 1-2 items. listing.rewrites_recommended: 1-2 items
 - log_summary: 3-4 sentences maximum
 - No apostrophes in string values — use "does not" not "doesn't", etc.
 - Keep all string values under 200 characters
@@ -88,7 +90,7 @@ ${listingCtxTrimmed}`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 3000,
+        max_tokens: 5000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }]
       })
