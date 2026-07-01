@@ -46,9 +46,23 @@ const COL = {
   bullet_5:         10,
   description:      11,
   backend_keywords: 12,
-  issues:           13,
-  last_synced:      14,
+  ingredients:      13,
+  issues:           14,
+  last_synced:      15,
 };
+
+// ─── keyword strategy sheet ─────────────────────────────────────────────────
+// Sheet ID passed in POST body as keywordSheetId (optional).
+// SKU-to-GID map: when a tab exists for a SKU, fetch keywords from it.
+// If no tab exists for this SKU, keyword coverage is skipped.
+// Tab headers live in row 2; keyword columns found by searching for header text.
+// Each keyword cell contains up to 20 newline-separated keywords in one cell.
+
+// ─── uploads log sheet ───────────────────────────────────────────────────────
+// Sheet ID passed in POST body as uploadsSheetId (optional).
+// Tab name = brand (e.g. "evolis"). Columns: date, week_label, kw_summary_json, ...
+// kw_summary_json is a JSON array: [{asin, kw, rank, vl, aba_click, aba_conv}, ...]
+// We read the most recent row and build a rank lookup: keyword → rank
 
 // ─── audit sheet headers (must match write-listing-audit.js) ────────────────
 const AUDIT_HEADERS = [
@@ -158,7 +172,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { brand, sourceSheetId, auditSheetId, auditGid, sku: testSku } = req.body || {};
+  const { brand, sourceSheetId, auditSheetId, auditGid, sku: testSku, keywordSheetId, skuGidMap, uploadsSheetId, uploadsGid } = req.body || {};
 
   if (!brand)         return res.status(400).json({ error: 'Missing: brand' });
   if (!sourceSheetId) return res.status(400).json({ error: 'Missing: sourceSheetId' });
@@ -168,6 +182,112 @@ module.exports = async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
     return res.status(500).json({ error: 'Google credentials not configured' });
+  }
+
+  // ── 0. Pre-fetch keyword targets and recent rankings (optional) ─────────────
+  // These are fetched once for all SKUs, then looked up per-SKU in the loop.
+  let kwRankings = {};      // keyword (lowercase) → rank number
+  let skuKeywordMap = {};   // sku → { top20, opportunity, reach }
+
+  if (uploadsSheetId && uploadsGid) {
+    try {
+      const uploadsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${uploadsSheetId}/values/${encodeURIComponent(brand + '!A:F')}?majorDimension=ROWS`;
+      const uploadsRes = await fetch(uploadsUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (uploadsRes.ok) {
+        const uploadsData = await uploadsRes.json();
+        const uploadsRows = (uploadsData.values || []).slice(1); // skip header
+        // Find most recent row with kw_summary_json (col index 2)
+        for (let i = uploadsRows.length - 1; i >= 0; i--) {
+          const kwJson = uploadsRows[i][2];
+          if (kwJson) {
+            try {
+              const kwArr = JSON.parse(kwJson);
+              for (const entry of kwArr) {
+                if (entry.kw && entry.rank) {
+                  kwRankings[entry.kw.toLowerCase().trim()] = parseInt(entry.rank) || 999;
+                }
+              }
+              console.log(`[listing-audit] Loaded ${Object.keys(kwRankings).length} keyword rankings from uploads log`);
+            } catch(e) {
+              console.warn('[listing-audit] Could not parse kw_summary_json:', e.message);
+            }
+            break;
+          }
+        }
+      }
+    } catch(e) {
+      console.warn('[listing-audit] Could not fetch uploads rankings:', e.message);
+    }
+  }
+
+  if (keywordSheetId && skuGidMap) {
+    // Fetch keyword targets for each SKU that has a GID mapping
+    for (const [sku, gid] of Object.entries(skuGidMap)) {
+      try {
+        const kwUrl = `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}/values/${encodeURIComponent('A2:AZ2')}?sheetId=${gid}`;
+        // Use sheetId to fetch header row 2 by GID
+        const kwHeaderRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}?ranges=A2:AZ2&includeGridData=true&fields=sheets(data,properties)`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!kwHeaderRes.ok) continue;
+        const kwSheetData = await kwHeaderRes.json();
+        // Find the sheet matching this GID
+        const sheet = (kwSheetData.sheets || []).find(s => String(s.properties.sheetId) === String(gid));
+        if (!sheet) continue;
+        const rowData = (sheet.data || [])[0];
+        if (!rowData) continue;
+        const headerRow = (rowData.rowData || [])[0];
+        if (!headerRow) continue;
+        const headerCells = (headerRow.values || []).map(c => (c.formattedValue || '').trim());
+
+        // Find column indices by header text
+        const top20Idx      = headerCells.findIndex(h => h === 'Top 20 Keywords');
+        const oppIdx        = headerCells.findIndex(h => h === 'Top 20 Opportunity Keywords');
+        const reachIdx      = headerCells.findIndex(h => h === 'Top 20 Reach for the stars keywords');
+
+        if (top20Idx < 0) continue; // no keyword columns found
+
+        // Now fetch the data rows to get the keyword cell values
+        // Keywords are in the first data row below row 2 headers, or scattered down
+        // Fetch rows 3 onward and collect non-empty values from those columns
+        const dataRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}?ranges=A3:AZ100&includeGridData=true&fields=sheets(data,properties)`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!dataRes.ok) continue;
+        const dataSheet = await dataRes.json();
+        const dataSheetObj = (dataSheet.sheets || []).find(s => String(s.properties.sheetId) === String(gid));
+        if (!dataSheetObj) continue;
+        const dataRows = ((dataSheetObj.data || [])[0] || {}).rowData || [];
+
+        function colKeywords(colIdx) {
+          if (colIdx < 0) return [];
+          const kws = [];
+          for (const dr of dataRows) {
+            const cell = (dr.values || [])[colIdx];
+            const val = cell && cell.formattedValue ? cell.formattedValue.trim() : '';
+            if (val) {
+              // Could be one cell with newlines, or one keyword per row
+              const lines = val.split(/
+|,/).map(k => k.trim()).filter(Boolean);
+              kws.push(...lines);
+            }
+          }
+          return [...new Set(kws)].slice(0, 20);
+        }
+
+        skuKeywordMap[sku] = {
+          top20:       colKeywords(top20Idx),
+          opportunity: colKeywords(oppIdx),
+          reach:       colKeywords(reachIdx),
+        };
+        console.log(`[listing-audit] Loaded ${skuKeywordMap[sku].top20.length} top20 keywords for ${sku}`);
+
+      } catch(e) {
+        console.warn(`[listing-audit] Could not fetch keywords for ${sku}:`, e.message);
+      }
+    }
   }
 
   // ── 1. Read source sheet ──────────────────────────────────────────────────
@@ -180,7 +300,7 @@ module.exports = async function handler(req, res) {
 
   // Fetch all rows (skip header row 1)
   const tabName = brand; // e.g. "evolis"
-  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:O')}?majorDimension=ROWS`;
+  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:P')}?majorDimension=ROWS`;
   const sourceRes = await fetch(sourceUrl, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -233,6 +353,24 @@ CRITICAL RULES:
 - Stats (95% of users etc) require qualifier: "in a consumer perception study"
 - FGF5-blocking is mechanistic language — permissible as descriptor, not disease claim
 - Backend keywords: spaces only, no commas, no drug-claim terms
+- Timeline claims (e.g. "in 90 days", "in 3 months") require a consumer perception study qualifier. Unqualified timeline claims are a violation. Safe form: "In a consumer perception study, X% of users reported [benefit] in [timeframe]." Timeline claims in Item Highlights are especially risky due to 125-char limit — recommend removing from IH and moving to bullets with full qualifier.
+- Item Highlights must not contain unqualified efficacy timelines.
+- INGREDIENT QA: When ingredients are provided, cross-check every specific ingredient named in bullets and description against the actual ingredient list. If a bullet claims an ingredient (e.g. "keratin", "rosemary oil", "hyaluronic acid", "vitamin C") that does NOT appear in the ingredient list, flag it as a violation: "Ingredient '[X]' listed in bullet [N] not found in actual ingredient list — remove or verify." Only flag ingredients that are definitively absent. Common ingredient aliases are acceptable (e.g. "Rosmarinus Officinalis" = rosemary oil). If a timeline claim is present in IH without qualifier, flag it and rewrite removing the timeline or moving it to a bullet.
+
+KEYWORD COVERAGE RULES:
+- When keyword targets are provided, check that Tier 1 keywords appear in the listing (title, bullets, backend, or description). Flag any Tier 1 keyword that is completely absent from all copy fields.
+- Prioritize flagging keywords that are NOT ranking (shown as "not ranking") — these need copy placement most urgently.
+- For opportunity keywords (Tier 2) with rank > 50 or not ranking: recommend specific placement in bullets 3-5 or backend.
+- Do NOT recommend adding drug-claim keywords or any keyword that violates compliance rules.
+- In BACKEND_NOTES: flag missing Tier 1 keywords not covered by other fields. In BACKEND_REWRITE: ensure all Tier 1 keywords not in title/bullets are in the backend.
+- In BULLETS_NOTES: flag the 2-3 highest-priority keyword gaps with specific placement recommendations.
+
+BULLET FORMATTING RULES (apply to all bullet rewrites):
+- Every bullet must open with an ALL-CAPS phrase (3-6 words) followed by a colon, then sentence-case detail. Example: "CLINICALLY TESTED HAIR GROWTH SERUM: In 3 independent studies, 95% of users reported visibly thicker hair."
+- Flag any bullet that does NOT follow this ALL-CAPS header: detail format as a violation.
+- Across the catalog, align parallel bullets by position where products are related: B1 = hero claim/clinical proof, B2 = science/mechanism, B3 = key ingredients, B4 = who it is for/hair types, B5 = brand credentials/clean formula. Rewrites should follow this structure consistently.
+- Within a single SKU, bullet headers should not repeat the same keyword root — vary to maximize keyword coverage.
+- Bullet rewrites must be max 200 chars including the ALL-CAPS header.
 
 OUTPUT FORMAT — use exactly these labels, one per line, no JSON, no markdown:
 TITLE_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
@@ -266,7 +404,8 @@ Write nothing else. No preamble. No explanation after the last line. Start immed
       const b4        = san(row[COL.bullet_4], 300);
       const b5        = san(row[COL.bullet_5], 300);
       const desc      = san(row[COL.description], 400);
-      const backend   = san(row[COL.backend_keywords], 300);
+      const backend      = san(row[COL.backend_keywords], 300);
+      const ingredients  = san(row[COL.ingredients], 600);
 
       let userPrompt;
       if (travel) {
@@ -278,10 +417,61 @@ Title: ${title}
 Item Highlights: ${ih}
 Backend: ${backend}`;
       } else {
+        // Pass sibling SKU names for cross-catalog bullet alignment
+        const siblings = rows
+          .filter(r => (r[COL.sku] || '').trim() !== sku && !isTravel(r))
+          .map(r => (r[COL.name] || '').trim())
+          .filter(Boolean)
+          .slice(0, 8)
+          .join(', ');
+
+        // Build keyword coverage context
+        const asin = (row[COL.asin] || '').trim();
+        const skuKws = skuKeywordMap[sku] || null;
+        let kwContext = '';
+        if (skuKws && skuKws.top20.length) {
+          // Annotate each keyword with current rank from uploads log
+          function kwWithRank(kw) {
+            const rank = kwRankings[kw.toLowerCase().trim()];
+            return rank ? `${kw} (rank #${rank})` : `${kw} (not ranking)`;
+          }
+          const t1 = skuKws.top20.map(kwWithRank).join(', ');
+          const opp = skuKws.opportunity.length
+            ? skuKws.opportunity.map(kwWithRank).filter(k => {
+                // Only include opportunity keywords not already ranking well (rank > 50 or not ranking)
+                const r = kwRankings[k.replace(/ \(.*\)/, '').toLowerCase().trim()];
+                return !r || r > 50;
+              }).slice(0, 10).join(', ')
+            : '';
+          kwContext = `
+KEYWORD TARGETS (Tier 1 — must appear in title, bullets, or backend):
+${t1}
+${opp ? `OPPORTUNITY KEYWORDS (Tier 2 — high ABA, low competition — prioritize in bullets 3-5 and backend):
+${opp}` : ''}`;
+        } else if (Object.keys(kwRankings).length > 0) {
+          // No strategy sheet tab for this SKU — use top ranking keywords from upload as proxy
+          const ranked = Object.entries(kwRankings)
+            .filter(([kw]) => {
+              // Basic relevance filter — must contain a word from the product name
+              const nameParts = name.toLowerCase().split(' ');
+              return nameParts.some(p => p.length > 3 && kw.includes(p));
+            })
+            .sort(([,a],[,b]) => a - b)
+            .slice(0, 15)
+            .map(([kw, rank]) => `${kw} (rank #${rank})`);
+          if (ranked.length) {
+            kwContext = `
+KEYWORD RANKINGS FROM TRACKER (use these to identify coverage gaps):
+${ranked.join(', ')}`;
+          }
+        }
+
         userPrompt = `Audit this full listing SKU.
 
 SKU: ${sku}
 Name: ${name}
+ASIN: ${asin}
+Related SKUs in this catalog: ${siblings || 'none'}
 Title: ${title}
 Item Highlights: ${ih}
 Bullet 1: ${b1}
@@ -290,7 +480,8 @@ Bullet 3: ${b3}
 Bullet 4: ${b4}
 Bullet 5: ${b5}
 Description (excerpt): ${desc}
-Backend: ${backend}`;
+Backend: ${backend}
+Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}`;
       }
 
       // Call Claude — retry once on 429
