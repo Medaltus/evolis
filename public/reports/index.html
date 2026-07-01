@@ -4982,39 +4982,98 @@ async function runListingAudit() {
   const btn = document.getElementById('run-audit-btn');
   const st  = document.getElementById('upload-status');
   btn.classList.add('running'); btn.disabled = true;
-  st.textContent = 'Running listing audit — reads source sheet, writes to audit sheet. This takes 5–6 minutes…';
   st.className = 'upload-status';
 
   try {
-    const res = await fetch('/api/run-listing-audit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        brand:         INSIGHTS_BRAND_TAB,
-        sourceSheetId: SHEET_LISTINGS_ID,
-        auditSheetId:  LISTING_AUDIT_SHEET_ID,
-        keywordSheetId: KEYWORD_STRATEGY_SHEET_ID,
-        skuGidMap:      SKU_KW_GID_MAP,
-        uploadsSheetId: UPLOADS_SHEET_ID,
-        uploadsGid:     UPLOADS_EVOLIS_GID
-      })
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error('Listing audit error ' + res.status + ': ' + (errBody.error || JSON.stringify(errBody)));
-    }
-    const data = await res.json();
-    st.textContent = '\u2713 Audit complete \u2014 ' + (data.skuCount || 0) + ' SKUs written to audit sheet \u2014 ' + new Date().toLocaleTimeString();
-    st.className = 'upload-status success';
+    // ── Step 1: Read source sheet to group SKUs by item_type_keyword ──────────
+    st.textContent = 'Reading listing sheet…';
+    const srcUrl = 'https://docs.google.com/spreadsheets/d/' + SHEET_LISTINGS_ID +
+      '/export?format=csv&id=' + SHEET_LISTINGS_ID +
+      '&gid=' + SHEET_LISTINGS_GID + '&_cb=' + Date.now();
+    const srcRes = await fetch(srcUrl);
+    if (!srcRes.ok) throw new Error('Could not read source listings sheet');
+    const srcRows = parseCsvToRows(await srcRes.text());
 
-    // Auto-reload audit results into the page
-    st.textContent += ' \u2014 Loading results\u2026';
+    // Group SKUs by item_type_keyword (col 14 = index 14, 0-based)
+    // Travel SKUs grouped with their parent type by stripping "travel" from name
+    const groups = {};
+    for (const row of srcRows) {
+      const sku  = (row['sku'] || '').trim();
+      const name = (row['name'] || '').trim().toLowerCase();
+      if (!sku) continue;
+      // Determine group key — use item_type_keyword, fall back to name-based guess
+      let groupKey = (row['item_type_keyword'] || '').trim();
+      if (!groupKey) {
+        // Fallback: derive from name
+        if (name.includes('shampoo'))     groupKey = 'shampoo';
+        else if (name.includes('conditioner')) groupKey = 'conditioner';
+        else if (name.includes('mask'))   groupKey = 'mask';
+        else if (name.includes('dry'))    groupKey = 'dry-shampoo';
+        else                              groupKey = 'activator';
+      }
+      // Normalize travel SKUs to same group as full size
+      groupKey = groupKey.replace(/[-_\s]?(travel|size|mini)/gi, '').trim() || groupKey;
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(sku);
+    }
+
+    const groupList = Object.entries(groups);
+    console.log('[listing-audit] Groups:', groupList.map(([k,v]) => k + '(' + v.length + ')').join(', '));
+
+    // ── Step 2: Run one API call per group ────────────────────────────────────
+    let totalSkus = 0;
+    let failedGroups = [];
+
+    for (let i = 0; i < groupList.length; i++) {
+      const [groupKey, skuList] = groupList[i];
+      st.textContent = '▶ Auditing ' + groupKey + ' (' + (i+1) + '/' + groupList.length + ') — ' + skuList.length + ' SKUs…';
+
+      try {
+        const res = await fetch('/api/run-listing-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand:          INSIGHTS_BRAND_TAB,
+            sourceSheetId:  SHEET_LISTINGS_ID,
+            auditSheetId:   LISTING_AUDIT_SHEET_ID,
+            keywordSheetId: KEYWORD_STRATEGY_SHEET_ID,
+            skuGidMap:      SKU_KW_GID_MAP,
+            uploadsSheetId: UPLOADS_SHEET_ID,
+            uploadsGid:     UPLOADS_EVOLIS_GID,
+            skuFilter:      skuList   // NEW: only audit these SKUs
+          })
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error('HTTP ' + res.status + ': ' + (errBody.error || JSON.stringify(errBody)));
+        }
+        const data = await res.json();
+        totalSkus += (data.skuCount || 0);
+        st.textContent = '✓ ' + groupKey + ' done (' + (i+1) + '/' + groupList.length + ') — ' + totalSkus + ' SKUs complete so far…';
+      } catch(err) {
+        console.error('[listing-audit] Group ' + groupKey + ' failed:', err.message);
+        failedGroups.push(groupKey + ': ' + err.message);
+      }
+    }
+
+    // ── Step 3: Reload results ────────────────────────────────────────────────
+    st.textContent = '✓ Audit complete — ' + totalSkus + ' SKUs' +
+      (failedGroups.length ? ' (⚠ ' + failedGroups.length + ' groups failed)' : '') +
+      ' — Loading results…';
     await loadAuditResultsFromSheet();
-    st.textContent = '\u2713 Audit complete \u2014 ' + (data.skuCount || 0) + ' SKUs \u2014 results loaded \u2014 ' + new Date().toLocaleTimeString();
+
+    if (failedGroups.length) {
+      st.textContent = '⚠ Partial audit — ' + totalSkus + ' SKUs complete, failed: ' + failedGroups.join('; ');
+      st.className = 'upload-status';
+    } else {
+      st.textContent = '✓ Audit complete — ' + totalSkus + ' SKUs — results loaded — ' + new Date().toLocaleTimeString();
+      st.className = 'upload-status success';
+    }
 
   } catch(err) {
     console.error('Listing audit error:', err);
-    st.textContent = '\u2717 ' + err.message; st.className = 'upload-status error';
+    st.textContent = '✗ ' + err.message;
+    st.className = 'upload-status error';
   } finally {
     btn.classList.remove('running'); btn.disabled = false;
   }
