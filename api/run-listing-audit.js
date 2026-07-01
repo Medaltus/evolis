@@ -46,9 +46,10 @@ const COL = {
   bullet_5:         10,
   description:      11,
   backend_keywords: 12,
-  ingredients:      13,
-  issues:           14,
-  last_synced:      15,
+  ingredients:       13,
+  item_type_keyword: 14,
+  issues:            15,
+  last_synced:       16,
 };
 
 // ─── keyword strategy sheet ─────────────────────────────────────────────────
@@ -187,7 +188,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { brand, sourceSheetId, auditSheetId, auditGid, sku: testSku, keywordSheetId, skuGidMap, uploadsSheetId, uploadsGid } = req.body || {};
+  const { brand, sourceSheetId, auditSheetId, auditGid, sku: testSku, keywordSheetId, skuGidMap, uploadsSheetId, uploadsGid, skuFilter } = req.body || {};
 
   if (!brand)         return res.status(400).json({ error: 'Missing: brand' });
   if (!sourceSheetId) return res.status(400).json({ error: 'Missing: sourceSheetId' });
@@ -215,7 +216,7 @@ module.exports = async function handler(req, res) {
 
   // Fetch all rows (skip header row 1)
   const tabName = brand; // e.g. "evolis"
-  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:P')}?majorDimension=ROWS`;
+  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:Q')}?majorDimension=ROWS`;
   const sourceRes = await fetch(sourceUrl, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -230,11 +231,14 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, message: 'No rows found in source sheet', skuCount: 0 });
   }
 
-  // Filter to testSku if provided, otherwise process all rows with a SKU value
+  // Filter rows: testSku (single), skuFilter (array from batch), or all
   const rows = allRows.filter(row => {
     const sku = (row[COL.sku] || '').trim();
     if (!sku) return false;
-    if (testSku) return sku === testSku;
+    if (testSku)   return sku === testSku;
+    if (skuFilter && Array.isArray(skuFilter) && skuFilter.length) {
+      return skuFilter.includes(sku);
+    }
     return true;
   });
 
