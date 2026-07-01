@@ -63,7 +63,7 @@
     },
     {
       "path": "/api/cron/sync-listings",
-      "schedule": "0 2 * * 0"
+      "schedule": "0 2 */2 * *"
     }
   ],
   "functions": {
@@ -80,7 +80,7 @@
       "maxDuration": 30
     },
     "api/run-analysis.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/write-insights.js": {
       "maxDuration": 30
