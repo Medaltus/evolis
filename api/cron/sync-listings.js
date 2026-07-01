@@ -36,7 +36,7 @@ const HEADERS = [
   'title', 'item_highlights',
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords',
-  'issues', 'last_synced'
+  'ingredients', 'issues', 'last_synced'
 ];
 
 // All active évolis SKUs — SKU must match exactly what's in Seller Central
@@ -110,7 +110,8 @@ module.exports = async (req, res) => {
       const title       = getAttr(attrs, 'item_name');
       const ih          = getItemHighlights(attrs);
       const bullets     = getBullets(attrs);
-      const description = getAttr(attrs, 'product_description');
+      const description  = getAttr(attrs, 'product_description');
+      const ingredients  = getAttr(attrs, 'ingredients');
       const backend     = getAttr(attrs, 'generic_keyword');
       const status      = Array.isArray(summary.status)
         ? summary.status.join(', ')
@@ -131,6 +132,7 @@ module.exports = async (req, res) => {
         bullets[4] || '',
         description,
         backend,
+        ingredients,
         issuesList,
         now,
       ]);
@@ -146,7 +148,7 @@ module.exports = async (req, res) => {
       // Still write a row with what we know so the sheet stays complete
       rows.push([
         skuMeta.sku, skuMeta.asin, skuMeta.name,
-        'ERROR', '', '', '', '', '', '', '', '', '',
+        'ERROR', '', '', '', '', '', '', '', '', '', '',
         err.message.slice(0, 200), now
       ]);
     }
