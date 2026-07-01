@@ -156,6 +156,21 @@ function parseDelimited(text) {
   };
 }
 
+// Simple CSV line parser — handles quoted fields
+function parseSimpleCsv(line) {
+  const result = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (ch === ',' && !inQuotes) { result.push(field); field = ''; continue; }
+    field += ch;
+  }
+  result.push(field);
+  return result;
+}
+
 // Detect travel SKUs by name or status containing "travel" (case-insensitive)
 function isTravel(row) {
   const name   = (row[COL.name]   || '').toLowerCase();
@@ -185,112 +200,12 @@ module.exports = async function handler(req, res) {
   }
 
   // ── 0. Pre-fetch keyword targets and recent rankings (optional) ─────────────
-  // These are fetched once for all SKUs, then looked up per-SKU in the loop.
-  let kwRankings = {};      // keyword (lowercase) → rank number
-  let skuKeywordMap = {};   // sku → { top20, opportunity, reach }
+  // Runs AFTER getToken() — token is available from step 1 below.
+  // Declared here as empty; populated after token is obtained.
+  let kwRankings = {};    // keyword (lowercase) → rank number
+  let skuKeywordMap = {}; // sku → { top20, opportunity, reach }
 
-  if (uploadsSheetId && uploadsGid) {
-    try {
-      const uploadsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${uploadsSheetId}/values/${encodeURIComponent(brand + '!A:F')}?majorDimension=ROWS`;
-      const uploadsRes = await fetch(uploadsUrl, { headers: { Authorization: `Bearer ${token}` } });
-      if (uploadsRes.ok) {
-        const uploadsData = await uploadsRes.json();
-        const uploadsRows = (uploadsData.values || []).slice(1); // skip header
-        // Find most recent row with kw_summary_json (col index 2)
-        for (let i = uploadsRows.length - 1; i >= 0; i--) {
-          const kwJson = uploadsRows[i][2];
-          if (kwJson) {
-            try {
-              const kwArr = JSON.parse(kwJson);
-              for (const entry of kwArr) {
-                if (entry.kw && entry.rank) {
-                  kwRankings[entry.kw.toLowerCase().trim()] = parseInt(entry.rank) || 999;
-                }
-              }
-              console.log(`[listing-audit] Loaded ${Object.keys(kwRankings).length} keyword rankings from uploads log`);
-            } catch(e) {
-              console.warn('[listing-audit] Could not parse kw_summary_json:', e.message);
-            }
-            break;
-          }
-        }
-      }
-    } catch(e) {
-      console.warn('[listing-audit] Could not fetch uploads rankings:', e.message);
-    }
-  }
-
-  if (keywordSheetId && skuGidMap) {
-    // Fetch keyword targets for each SKU that has a GID mapping
-    for (const [sku, gid] of Object.entries(skuGidMap)) {
-      try {
-        const kwUrl = `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}/values/${encodeURIComponent('A2:AZ2')}?sheetId=${gid}`;
-        // Use sheetId to fetch header row 2 by GID
-        const kwHeaderRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}?ranges=A2:AZ2&includeGridData=true&fields=sheets(data,properties)`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!kwHeaderRes.ok) continue;
-        const kwSheetData = await kwHeaderRes.json();
-        // Find the sheet matching this GID
-        const sheet = (kwSheetData.sheets || []).find(s => String(s.properties.sheetId) === String(gid));
-        if (!sheet) continue;
-        const rowData = (sheet.data || [])[0];
-        if (!rowData) continue;
-        const headerRow = (rowData.rowData || [])[0];
-        if (!headerRow) continue;
-        const headerCells = (headerRow.values || []).map(c => (c.formattedValue || '').trim());
-
-        // Find column indices by header text
-        const top20Idx      = headerCells.findIndex(h => h === 'Top 20 Keywords');
-        const oppIdx        = headerCells.findIndex(h => h === 'Top 20 Opportunity Keywords');
-        const reachIdx      = headerCells.findIndex(h => h === 'Top 20 Reach for the stars keywords');
-
-        if (top20Idx < 0) continue; // no keyword columns found
-
-        // Now fetch the data rows to get the keyword cell values
-        // Keywords are in the first data row below row 2 headers, or scattered down
-        // Fetch rows 3 onward and collect non-empty values from those columns
-        const dataRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${keywordSheetId}?ranges=A3:AZ100&includeGridData=true&fields=sheets(data,properties)`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!dataRes.ok) continue;
-        const dataSheet = await dataRes.json();
-        const dataSheetObj = (dataSheet.sheets || []).find(s => String(s.properties.sheetId) === String(gid));
-        if (!dataSheetObj) continue;
-        const dataRows = ((dataSheetObj.data || [])[0] || {}).rowData || [];
-
-        function colKeywords(colIdx) {
-          if (colIdx < 0) return [];
-          const kws = [];
-          for (const dr of dataRows) {
-            const cell = (dr.values || [])[colIdx];
-            const val = cell && cell.formattedValue ? cell.formattedValue.trim() : '';
-            if (val) {
-              // Could be one cell with newlines, or one keyword per row
-              const lines = val.split(/
-|,/).map(k => k.trim()).filter(Boolean);
-              kws.push(...lines);
-            }
-          }
-          return [...new Set(kws)].slice(0, 20);
-        }
-
-        skuKeywordMap[sku] = {
-          top20:       colKeywords(top20Idx),
-          opportunity: colKeywords(oppIdx),
-          reach:       colKeywords(reachIdx),
-        };
-        console.log(`[listing-audit] Loaded ${skuKeywordMap[sku].top20.length} top20 keywords for ${sku}`);
-
-      } catch(e) {
-        console.warn(`[listing-audit] Could not fetch keywords for ${sku}:`, e.message);
-      }
-    }
-  }
-
-  // ── 1. Read source sheet ──────────────────────────────────────────────────
+    // ── 1. Read source sheet ──────────────────────────────────────────────────
   let token;
   try {
     token = await getToken();
@@ -325,6 +240,78 @@ module.exports = async function handler(req, res) {
 
   if (testSku && !rows.length) {
     return res.status(400).json({ error: `SKU ${testSku} not found in source sheet` });
+  }
+
+  // ── 0b. Now fetch keyword data (token is available) ─────────────────────────
+  if (uploadsSheetId) {
+    try {
+      const uploadsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${uploadsSheetId}/values/${encodeURIComponent(brand + '!A:F')}?majorDimension=ROWS`;
+      const uploadsRes = await fetch(uploadsUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (uploadsRes.ok) {
+        const uploadsData = await uploadsRes.json();
+        const uploadsRows = (uploadsData.values || []).slice(1);
+        for (let i = uploadsRows.length - 1; i >= 0; i--) {
+          const kwJson = uploadsRows[i][2];
+          if (kwJson) {
+            try {
+              const kwArr = JSON.parse(kwJson);
+              for (const entry of kwArr) {
+                if (entry.kw && entry.rank) {
+                  kwRankings[entry.kw.toLowerCase().trim()] = parseInt(entry.rank) || 999;
+                }
+              }
+              console.log(`[listing-audit] Loaded ${Object.keys(kwRankings).length} keyword rankings`);
+            } catch(e) { console.warn('[listing-audit] kw_summary_json parse error:', e.message); }
+            break;
+          }
+        }
+      }
+    } catch(e) { console.warn('[listing-audit] Could not fetch upload rankings:', e.message); }
+  }
+
+  if (keywordSheetId && skuGidMap) {
+    for (const [skuKey, gid] of Object.entries(skuGidMap)) {
+      try {
+        // Fetch the tab as CSV using export URL with gid parameter
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${keywordSheetId}/export?format=csv&gid=${gid}`;
+        const csvRes = await fetch(csvUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!csvRes.ok) { console.warn(`[listing-audit] KW sheet fetch failed for ${skuKey}: ${csvRes.status}`); continue; }
+        const csvText = await csvRes.text();
+        const csvLines = csvText.split('\n').map(l => l.trim());
+
+        // Find row 2 (index 1) as headers — keywords headers are in row 2
+        // Row 1 is row index 0, row 2 is index 1
+        const headerLine = csvLines[1] || csvLines[0] || '';
+        const headers = parseSimpleCsv(headerLine);
+
+        const top20Idx = headers.findIndex(h => h.trim() === 'Top 20 Keywords');
+        const oppIdx   = headers.findIndex(h => h.trim() === 'Top 20 Opportunity Keywords');
+        const reachIdx = headers.findIndex(h => h.trim() === 'Top 20 Reach for the stars keywords');
+
+        if (top20Idx < 0) { console.warn(`[listing-audit] No keyword headers found for ${skuKey}`); continue; }
+
+        // Collect keywords from all data rows for those columns
+        function colKws(colIdx) {
+          if (colIdx < 0) return [];
+          const kws = [];
+          for (let r = 2; r < csvLines.length; r++) {
+            const cells = parseSimpleCsv(csvLines[r]);
+            const val = (cells[colIdx] || '').trim();
+            if (val) {
+              val.split(/\n|\r|,/).map(k => k.trim()).filter(Boolean).forEach(k => kws.push(k));
+            }
+          }
+          return [...new Set(kws)].slice(0, 20);
+        }
+
+        skuKeywordMap[skuKey] = {
+          top20:       colKws(top20Idx),
+          opportunity: colKws(oppIdx),
+          reach:       colKws(reachIdx),
+        };
+        console.log(`[listing-audit] ${skuKey}: ${skuKeywordMap[skuKey].top20.length} top20 keywords loaded`);
+      } catch(e) { console.warn(`[listing-audit] KW fetch error for ${skuKey}:`, e.message); }
+    }
   }
 
   console.log(`[listing-audit] Starting audit: ${rows.length} SKUs (brand: ${brand})`);
