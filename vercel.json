@@ -2,8 +2,12 @@
   "version": 2,
   "crons": [
     {
-      "path": "/api/cron/sync-orders",
+      "path": "/api/cron/sync-orders-request",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-orders-process",
+      "schedule": "15 */2 * * *"
     },
     {
       "path": "/api/cron/sync-walmart-orders",
@@ -97,7 +101,10 @@
     "api/test-walmart.js": {
       "maxDuration": 30
     },
-    "api/cron/sync-orders.js": {
+    "api/cron/sync-orders-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-orders-process.js": {
       "maxDuration": 300
     },
     "api/cron/sync-walmart-orders.js": {
