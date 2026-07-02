@@ -867,11 +867,11 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <div class="section-label">Key Performance Metrics</div>
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">5%</div></div>
-        <div class="kpi-card"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">$613.86</div></div>
-        <div class="kpi-card"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">26%</div></div>
-        <div class="kpi-card"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">272</div><div class="kpi-mom flat">0% MOM</div></div>
-        <div class="kpi-card"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">85K</div><div class="kpi-mom dn">▼ 38% MOM</div></div>
+        <div class="kpi-card" id="kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">5%</div></div>
+        <div class="kpi-card" id="kpi-amazon-fees"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">$613.86</div></div>
+        <div class="kpi-card" id="kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">26%</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">272</div><div class="kpi-mom flat">0% MOM</div></div>
+        <div class="kpi-card" id="kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">85K</div><div class="kpi-mom dn">▼ 38% MOM</div></div>
       </div>
 
       <div class="two-col" style="margin-bottom:20px;">
@@ -2757,7 +2757,7 @@ function showPage(id, btn) {
     if (cid==='s-amazon'        && !window._amazonLiveInit)  initAmazonLive();
     if (cid==='s-website'       && !window._webLiveInit)     initWebLive();
     if (cid==='s-walmart'       && !window._walmartLiveInit) initWalmartLive();
-    if (cid==='m-stewardship'   && !window._investChart)     initStewardship();
+    if (cid==='m-stewardship'   && !window._stewardshipLiveInit)  window.initStewardshipLive();
     if (cid==='m-opportunities' && !window._snsChart)        initSns();
   }
 }
@@ -2773,7 +2773,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-amazon'        && !window._amazonLiveInit) initAmazonLive();
     if (channelId === 's-website'       && !window._webLiveInit)    initWebLive();
     if (channelId === 's-walmart'       && !window._walmartLiveInit)initWalmartLive();
-    if (channelId === 'm-stewardship'   && !window._investChart)    initStewardship();
+    if (channelId === 'm-stewardship'   && !window._stewardshipLiveInit)    window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart)       initSns();
   }
 
@@ -2872,15 +2872,20 @@ function lineChart(id, datasets, yFmt) {
 // initAmazon() replaced by initAmazonLive() — see SP-API integration below
 function initWeb() {} // stub — replaced by initWebLive below
 function initWalmart() {} // stub — replaced by initWalmartLive below
-function initStewardship() {
+// renderStewardshipCharts() draws the two Brand Stewardship charts from whatever
+// data it's handed. It no longer owns the numbers itself — window.initStewardshipLive()
+// (defined in the Évolis data IIFE below) fetches/merges live + fallback data and
+// calls this to render. Kept as a separate function so a render can be re-triggered
+// without re-fetching if ever needed.
+function renderStewardshipCharts(investData, impressData) {
   window._investChart = new Chart(document.getElementById('chart-invest'), {
     type:'bar',
     data:{
-      labels:['May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],
+      labels: investData.labels,
       datasets:[
-        { label:'Ads', data:[2600,2100,2500,1400,2000,2700,1100,1000,800,700,500,400,500], backgroundColor:'#001f60', stack:'a' },
-        { label:'Vine', data:[0,0,0,0,0,200,200,0,0,0,0,0,0], backgroundColor:'#f4dfd0', stack:'a' },
-        { label:'Promos', data:[200,150,100,0,100,100,0,0,100,100,0,100,50], backgroundColor:'#ccd3d5', stack:'a' },
+        { label:'Ads', data: investData.ads, backgroundColor:'#001f60', stack:'a' },
+        { label:'Vine', data: investData.vine, backgroundColor:'#f4dfd0', stack:'a' },
+        { label:'Promos', data: investData.promos, backgroundColor:'#ccd3d5', stack:'a' },
       ]
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ stacked:true, grid:{display:false} }, y:{ stacked:true, grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v>=1000?(v/1000)+'K':v } } } }
@@ -2888,10 +2893,10 @@ function initStewardship() {
   window._impressChart = new Chart(document.getElementById('chart-impressions'), {
     type:'line',
     data:{
-      labels:['Jan','Mar','May','Jul','Sep','Nov'],
+      labels: impressData.labels,
       datasets:[
-        { label:'2026', data:[140000,160000,85000,null,null,null], borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.1)', borderWidth:2, pointRadius:2, tension:0.3, fill:true },
-        { label:'2025', data:[130000,145000,520000,210000,170000,175000], borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3 },
+        { label: impressData.currYearLabel, data: impressData.curr, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.1)', borderWidth:2, pointRadius:2, tension:0.3, fill:true },
+        { label: impressData.prevYearLabel, data: impressData.prev, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3 },
       ]
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>(v/1000).toFixed(0)+'K' } } } }
@@ -3871,6 +3876,250 @@ function initSns() {
     if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">${msg}</td></tr>`;
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // GOOGLE SHEETS DATA — Brand Stewardship page (Marketing > Brand Stewardship)
+  // ════════════════════════════════════════════════════════════════════════
+  // Reuses this IIFE's existing SYNC/HISTORICAL order sheets (for promotion_discount
+  // + total units) and AD_SUMMARY sheet (for ads spend/impressions/clicks/ad_units).
+  // Adds one new sheet: the "Vine" tab on the master SKU/ASIN sheet, where Vine
+  // enrollments are logged one row per SKU (Brand, SKU, ASIN, Date Enrolled).
+  // Each enrollment costs a flat $200 recognized in the month enrolled.
+  //
+  // FALLBACK DATA: any month not yet covered by a live sheet (older than the
+  // sheet's retention window, or before a source existed) falls back to the
+  // values below. These were the hand-verified numbers as of this build —
+  // update them here if you re-verify a month, or delete an entry once the
+  // live sheet actually covers it.
+  // ────────────────────────────────────────────────────────────────────────
+
+  const VINE_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const VINE_GID      = '846524361'; // "Vine" tab
+  const VINE_COST_PER_ENROLLMENT = 200;
+
+  // Investments chart fallback — keyed 'YYYY-MM'. Ported from the original
+  // hardcoded 13-month series (assumed to end May 2026 based on the prior label order).
+  const STEWARDSHIP_INVEST_FALLBACK = {
+    '2025-05': { ads: 2600, vine: 0,   promos: 200 },
+    '2025-06': { ads: 2100, vine: 0,   promos: 150 },
+    '2025-07': { ads: 2500, vine: 0,   promos: 100 },
+    '2025-08': { ads: 1400, vine: 0,   promos: 0   },
+    '2025-09': { ads: 2000, vine: 0,   promos: 100 },
+    '2025-10': { ads: 2700, vine: 200, promos: 100 },
+    '2025-11': { ads: 1100, vine: 200, promos: 0   },
+    '2025-12': { ads: 1000, vine: 0,   promos: 0   },
+    '2026-01': { ads: 800,  vine: 0,   promos: 100 },
+    '2026-02': { ads: 700,  vine: 0,   promos: 100 },
+    '2026-03': { ads: 500,  vine: 0,   promos: 0   },
+    '2026-04': { ads: 400,  vine: 0,   promos: 100 },
+    '2026-05': { ads: 500,  vine: 0,   promos: 50  },
+  };
+
+  // Ad Impressions chart fallback — keyed 'YYYY-MM'. The 2025 comparison line has
+  // no live sheet coverage at all yet, so it will always come from here.
+  const STEWARDSHIP_IMPRESSIONS_FALLBACK = {
+    '2025-01': 130000, '2025-03': 145000, '2025-05': 520000,
+    '2025-07': 210000, '2025-09': 170000, '2025-11': 175000,
+    '2026-01': 140000, '2026-03': 160000, '2026-05': 85000,
+  };
+
+  function monthKey(y, m) { return `${y}-${String(m).padStart(2, '0')}`; }
+
+  function trailingMonths(year, month, count) {
+    const out = [];
+    let y = year, m = month;
+    for (let i = 0; i < count; i++) {
+      out.unshift({ year: y, month: m });
+      m--; if (m === 0) { m = 12; y--; }
+    }
+    return out;
+  }
+
+  function findAdRow(rows, year, month) {
+    return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+  }
+
+  // Sums promotion_discount + total units for a brand-filtered order-row set in a
+  // given month. Mirrors aggregateMonth() above but also carries promo discount,
+  // which aggregateMonth doesn't track.
+  function aggregateStewardshipMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const filtered = rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix);
+    const totalUnits    = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const promoDiscount = filtered.reduce((s, r) => s + parseAmt(r.promotion_discount), 0);
+    return { totalUnits, promoDiscount, hasData: filtered.length > 0 };
+  }
+
+  // Vine tab: one row per enrolled SKU. Sums (Units Enrolled × $200) into the
+  // month it was enrolled. Sheet headers are "Brand", "SKU", "ASIN",
+  // "Units Enrolled", "Date Enrolled (MM/DD/YY)".
+  function vineMonthlyCost(vineRows) {
+    const map = {};
+    vineRows.forEach(r => {
+      const raw = (r['Date Enrolled (MM/DD/YY)'] || '').trim();
+      if (!raw) return;
+      const parts = raw.split('/');
+      if (parts.length !== 3) return;
+      const mm = parts[0].padStart(2, '0');
+      let yy = parts[2].trim();
+      if (yy.length === 2) yy = '20' + yy;
+      const key = `${yy}-${mm}`;
+      const units = parseInt(r['Units Enrolled'], 10) || 1; // default to 1 if blank
+      map[key] = (map[key] || 0) + (units * VINE_COST_PER_ENROLLMENT);
+    });
+    return map;
+  }
+
+  // Looks up a single month's revenue from the same Revenue History sheet
+  // buildRevenueChart() uses, for the % Revenue Invested KPI's denominator.
+  function getMonthRevenue(csv, year, month) {
+    if (!isCsv(csv)) return null;
+    const lines = csv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toUpperCase());
+    const monthIdx = headers.indexOf('MONTH'), yearIdx = headers.indexOf('YEAR'), revIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revIdx < 0) return null;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
+      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+      if (yy === year && mm === month) {
+        return parseFloat((cols[revIdx] || '').replace(/^"|"$/g, '').replace(/[$,]/g, '')) || 0;
+      }
+    }
+    return null;
+  }
+
+  function setKpiVal(id, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = el.querySelector('.kpi-value');
+    if (v) v.textContent = text;
+  }
+
+  function setKpiMom(id, pctVal, label = 'MOM') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector('.kpi-mom');
+    if (!badge) return;
+    if (pctVal == null) { badge.className = 'kpi-mom flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    const arrow = pctVal > 0 ? '▲ ' : pctVal < 0 ? '▼ ' : '';
+    badge.className = 'kpi-mom ' + cls;
+    badge.textContent = `${arrow}${Math.abs(pctVal)}% ${label}`;
+  }
+
+  window.initStewardshipLive = async function () {
+    if (window._stewardshipLiveInit) return;
+    window._stewardshipLiveInit = true;
+    console.log('[Evolis] initStewardshipLive() called');
+
+    const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const { year, month } = getLastFullMonth();
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    const SYNC_GID = '1163928587';
+    const HIST_GID = '1249281379';
+
+    try {
+      const [syncCsv, histCsv, adSummaryCsv, vineCsv, revCsv] = await Promise.all([
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(VINE_SHEET_ID, VINE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(REVENUE_SHEET_ID, REVENUE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      ]);
+
+      const syncRows      = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
+      const histRows       = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
+      const allOrderRows   = [...syncRows, ...histRows];
+      const adRows         = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv).filter(r => (r.brand || '').toLowerCase().trim() === BRAND) : [];
+      const vineRows       = isCsv(vineCsv) ? parseCsv(vineCsv).filter(r => {
+        const b = (r.Brand || r.brand || '').toLowerCase().trim();
+        return b === BRAND || b.endsWith('volis');
+      }) : [];
+      const vineMap = vineMonthlyCost(vineRows);
+
+      // ── Investments chart (13 trailing months) ──────────────────────────
+      const invMonths = trailingMonths(year, month, 13);
+      const investLabels = [], adsData = [], vineData = [], promosData = [];
+      invMonths.forEach(({ year: y, month: m }) => {
+        const key = monthKey(y, m);
+        investLabels.push(monthAbbr[m - 1]);
+        const adRow = findAdRow(adRows, y, m);
+        const ordersAgg = aggregateStewardshipMonth(allOrderRows, y, m);
+        const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
+        adsData.push(adRow ? parseAmt(adRow.spend) : fallback.ads);
+        vineData.push(key in vineMap ? vineMap[key] : fallback.vine);
+        promosData.push(ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos);
+      });
+
+      // ── Ad Impressions chart (bi-monthly, this year vs last year) ───────
+      const impMonthNums = [1, 3, 5, 7, 9, 11];
+      const impLabels = impMonthNums.map(m => monthAbbr[m - 1]);
+      const impCurr = [], impPrev = [];
+      impMonthNums.forEach(m => {
+        if (m > month) { impCurr.push(null); }
+        else {
+          const row = findAdRow(adRows, year, m);
+          const key = monthKey(year, m);
+          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : (STEWARDSHIP_IMPRESSIONS_FALLBACK[key] ?? null));
+        }
+        const prevRow = findAdRow(adRows, year - 1, m);
+        const prevKey = monthKey(year - 1, m);
+        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : (STEWARDSHIP_IMPRESSIONS_FALLBACK[prevKey] ?? null));
+      });
+
+      renderStewardshipCharts(
+        { labels: investLabels, ads: adsData, vine: vineData, promos: promosData },
+        { labels: impLabels, curr: impCurr, prev: impPrev, currYearLabel: String(year), prevYearLabel: String(year - 1) }
+      );
+
+      // ── KPIs ─────────────────────────────────────────────────────────────
+      const adCurr = findAdRow(adRows, year, month);
+      const adPrev = findAdRow(adRows, prevYear, prevMonth);
+      const clicksCurr      = adCurr ? (parseInt(adCurr.clicks, 10) || 0) : null;
+      const clicksPrev      = adPrev ? (parseInt(adPrev.clicks, 10) || 0) : null;
+      const impressionsCurr = adCurr ? (parseInt(adCurr.impressions, 10) || 0) : null;
+      const impressionsPrev = adPrev ? (parseInt(adPrev.impressions, 10) || 0) : null;
+      const adUnitsCurr     = adCurr ? (parseInt(adCurr.ad_units, 10) || 0) : 0;
+      const adUnitsPrev     = adPrev ? (parseInt(adPrev.ad_units, 10) || 0) : 0;
+
+      const ordersAggCurr = aggregateStewardshipMonth(allOrderRows, year, month);
+      const ordersAggPrev = aggregateStewardshipMonth(allOrderRows, prevYear, prevMonth);
+
+      const pctUnitsAdsCurr = ordersAggCurr.totalUnits > 0 ? Math.round((adUnitsCurr / ordersAggCurr.totalUnits) * 100) : null;
+      const pctUnitsAdsPrev = ordersAggPrev.totalUnits > 0 ? Math.round((adUnitsPrev / ordersAggPrev.totalUnits) * 100) : null;
+
+      const fmt  = n => (n ?? 0).toLocaleString();
+      const fmtK = n => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n ?? 0);
+
+      if (clicksCurr != null) setKpiVal('kpi-ad-clicks', fmt(clicksCurr));
+      setKpiMom('kpi-ad-clicks', pct(clicksCurr, clicksPrev));
+
+      if (impressionsCurr != null) setKpiVal('kpi-ad-impressions', fmtK(impressionsCurr));
+      setKpiMom('kpi-ad-impressions', pct(impressionsCurr, impressionsPrev));
+
+      if (pctUnitsAdsCurr != null) setKpiVal('kpi-pct-units-ads', pctUnitsAdsCurr + '%');
+      setKpiMom('kpi-pct-units-ads', (pctUnitsAdsCurr != null && pctUnitsAdsPrev != null) ? (pctUnitsAdsCurr - pctUnitsAdsPrev) : null, 'pp');
+
+      // % Revenue Invested — (Ads + Vine + Promos this month) ÷ Revenue this month
+      const currInvestTotal = (adCurr ? parseAmt(adCurr.spend) : 0)
+        + (vineMap[monthKey(year, month)] || 0)
+        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount : 0);
+      const currRevenue = getMonthRevenue(revCsv, year, month);
+      if (currRevenue) {
+        const pctRevenueInvested = Math.round((currInvestTotal / currRevenue) * 100);
+        setKpiVal('kpi-pct-revenue-invested', pctRevenueInvested + '%');
+      }
+      // Amazon Fees KPI intentionally left as-is — pending a Finances/Product Fees
+      // API sync (net-new backend job), same shape as AD_SUMMARY. Do not overwrite
+      // with a guess in the meantime.
+
+    } catch (err) {
+      console.warn('[Evolis] initStewardshipLive failed, charts/KPIs remain at last rendered values:', err.message);
+    }
+  };
+
 })();
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -4328,7 +4577,7 @@ function initSns() {
     if (typeof window.initWebLive     === 'function') window.initWebLive();
     if (typeof window.initWalmartLive === 'function') window.initWalmartLive();
     // Stewardship and SNS are plain functions defined at script scope
-    if (typeof initStewardship === 'function') initStewardship();
+    if (typeof window.initStewardshipLive === 'function') window.initStewardshipLive();
     if (typeof initSns         === 'function') initSns();
     // Insights overview — units per month bar chart (solid, all channels combined)
     (function() {
