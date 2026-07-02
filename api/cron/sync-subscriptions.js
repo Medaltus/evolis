@@ -3,21 +3,57 @@
  * Nightly cron — syncs Subscribe & Save metrics to Google Sheets.
  * Runs at 3:30 AM UTC.
  *
+ * REWRITTEN to use the Replenishment API's getSellingPartnerMetrics
+ * endpoint instead of the old GET_FBA_SNS_PERFORMANCE_DATA report flow.
+ *
+ * Why the old version timed out:
+ *   It requested a brand-new Amazon REPORT for each of 15 months,
+ *   sequentially — each report has its own async generate-then-poll cycle
+ *   (up to 90s), plus a mandatory 3s sleep between iterations. Worst case
+ *   that's 15 report cycles in one function call — well past any
+ *   serverless timeout, and fragile even when it happened to finish in time.
+ *
+ * Why this version doesn't:
+ *   getSellingPartnerMetrics is a direct, synchronous POST — no report
+ *   queue, no polling, no waiting on Amazon to generate a file. One call,
+ *   with aggregationFrequency=MONTH over a 13-month window, returns all
+ *   13 monthly ACTIVE_SUBSCRIPTIONS values (plus SUBSCRIBER_RETENTION) in
+ *   a single response. Rate limit on this endpoint is 1 req/sec burst 1 —
+ *   trivial to respect when you only need one call per brand.
+ *
+ * IMPORTANT — verify before relying on this in production:
+ *   Amazon's public reference for getSellingPartnerMetrics doesn't expose
+ *   a full example response body, so the exact field names in
+ *   extractMetricSeries() below are a best-effort guess based on the
+ *   documented request shape (metricType, values, interval.startDate).
+ *   The first real run logs the raw response — if extractMetricSeries()
+ *   comes back empty, check that log and adjust the field names to match
+ *   what Amazon actually sends back.
+ *
+ * OPEN QUESTION — brand scoping:
+ *   Unlike sync-orders.js (which filters by SKU prefix), this endpoint has
+ *   no documented per-brand/SKU filter. If this SP-API connection's seller
+ *   account covers more than just this brand, these numbers may need a
+ *   different scoping approach (offer-level listOfferMetrics filtered by
+ *   ASIN/SKU, e.g.) rather than the seller-level metrics used here.
+ *
  * Sheet: amazon-subscriptions
  * Columns: year, month, active_subscriptions, retention_90_day,
  *          brand, last_updated
  */
 
-const { spRequest }                              = require('../_spauth');
-const { ensureTab, replaceRows, getSheetsToken } = require('../config/_sheets_client');
-const brands                                     = require('../config/brands');
-const sheets                                     = require('../config/sheets');
-const https                                      = require('https');
+const { spRequest }              = require('../_spauth');
+const { ensureTab, replaceRows } = require('../config/_sheets_client');
+const brands                     = require('../config/brands');
+const sheets                     = require('../config/sheets');
 
 const HEADERS = [
   'year', 'month', 'active_subscriptions',
   'retention_90_day', 'brand', 'last_updated',
 ];
+
+const MONTHS_OF_HISTORY   = 13; // matches the dashboard's 13-month trailing chart
+const REPLENISHMENT_BASE  = '/replenishment/2022-11-07';
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -26,11 +62,12 @@ module.exports = async (req, res) => {
   }
 
   const results = [];
+  const now = new Date().toISOString();
 
   for (const brand of brands.filter(b => b.active)) {
     try {
       console.log(`[sync-subscriptions] starting ${brand.id}`);
-      const rows  = await fetchSubscriptionRows(brand);
+      const rows  = await fetchSubscriptionRows(brand, now);
       const token = await ensureTab(sheets.subscriptions, brand.tabName, HEADERS);
       await replaceRows(sheets.subscriptions, brand.tabName, HEADERS, rows, token);
       results.push({ brand: brand.id, status: 'ok', rows: rows.length });
@@ -41,105 +78,92 @@ module.exports = async (req, res) => {
     }
   }
 
-  res.status(200).json({ synced: results, timestamp: new Date().toISOString() });
+  res.status(200).json({ synced: results, timestamp: now });
 };
 
-async function fetchSubscriptionRows(brand) {
-  const months = rollingMonths(15); // 15 months for 90-day retention calc
-  const rows   = [];
-  const counts = [];
-  const now    = new Date().toISOString();
+async function fetchSubscriptionRows(brand, now) {
+  const { startDate, endDate } = trailingMonthRange(MONTHS_OF_HISTORY);
 
-  for (const { year, month, start, end } of months) {
-    try {
-      const count = await fetchSnapshotCount(year, month, start, end);
-      counts.push({ year, month, count });
-    } catch (err) {
-      console.warn(`[sync-subscriptions] ${brand.id} ${year}-${month} failed:`, err.message);
-      counts.push({ year, month, count: null });
-    }
-    await sleep(3000); // SNS reports have low rate limits
+  const body = {
+    aggregationFrequency: 'MONTH',
+    timeInterval: { startDate, endDate },
+    metrics: ['ACTIVE_SUBSCRIPTIONS', 'SUBSCRIBER_RETENTION'],
+    timePeriodType: 'PERFORMANCE',
+    marketplaceId: process.env.SP_MARKETPLACE_ID,
+    programTypes: ['SUBSCRIBE_AND_SAVE'],
+  };
+
+  const resp = await spRequest(
+    'POST',
+    `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`,
+    {},
+    body
+  );
+
+  // Log the raw shape on every run (truncated) until the parser below is
+  // confirmed correct against a real response — cheap insurance.
+  console.log(`[sync-subscriptions] ${brand.id} raw response sample:`, JSON.stringify(resp).slice(0, 800));
+
+  const activeSeries    = extractMetricSeries(resp, 'ACTIVE_SUBSCRIPTIONS');
+  const retentionSeries = extractMetricSeries(resp, 'SUBSCRIBER_RETENTION');
+
+  if (activeSeries.length === 0) {
+    throw new Error('No ACTIVE_SUBSCRIPTIONS data returned — check the raw response log and adjust extractMetricSeries()');
   }
 
-  // Build rows with 90-day retention (compare to count 3 months ago)
-  counts.forEach(({ year, month, count }, idx) => {
-    const threeMonthsAgo = counts[idx - 3];
-    const retention = (threeMonthsAgo?.count && count != null)
-      ? round2((count / threeMonthsAgo.count) * 100)
-      : null;
-
-    rows.push([year, month, count, retention, brand.id, now]);
+  const retentionByMonth = {};
+  retentionSeries.forEach(({ year, month, value }) => {
+    retentionByMonth[`${year}-${month}`] = value;
   });
 
-  return rows;
+  return activeSeries.map(({ year, month, value }) => [
+    year,
+    month,
+    value,
+    retentionByMonth[`${year}-${month}`] ?? null,
+    brand.id,
+    now,
+  ]);
 }
 
-async function fetchSnapshotCount(year, month, start, end) {
-  const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-    reportType:      'GET_FBA_SNS_PERFORMANCE_DATA',
-    dataStartTime:   start,
-    dataEndTime:     end,
-    marketplaceIds:  [process.env.SP_MARKETPLACE_ID],
-  });
+/**
+ * Normalizes one metric's time series out of the getSellingPartnerMetrics
+ * response into [{ year, month, value }, ...].
+ *
+ * See the IMPORTANT note at the top of this file — these field names are
+ * a best-effort guess pending a confirmed real response. Adjust here if
+ * the first live run's logged raw response uses different key names.
+ */
+function extractMetricSeries(resp, metricType) {
+  const metricsArray = resp?.metrics || resp?.payload?.metrics || [];
+  const match = metricsArray.find(m => m.metricType === metricType || m.metric === metricType);
+  if (!match) return [];
 
-  if (!createResp.reportId) throw new Error('No reportId from SNS report');
-
-  const meta    = await pollReport(createResp.reportId, 90_000);
-  const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${meta.reportDocumentId}`);
-  const text    = await downloadText(docResp.url);
-
-  // TSV — sum all "Active Subscriptions" / "Total Subscriptions" rows
-  const lines   = text.trim().split('\n');
-  if (lines.length < 2) return 0;
-  const headers = lines[0].split('\t').map(h => h.trim());
-  let total     = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split('\t');
-    const row  = Object.fromEntries(headers.map((h, j) => [h, cols[j]]));
-    total += parseInt(
-      row['Total Subscriptions'] || row['Active Subscriptions'] || row['Subscriber Count'] || 0
-    );
-  }
-  return total;
+  const values = match.values || match.dataPoints || [];
+  return values
+    .map(v => {
+      const dateStr = v.interval?.startDate || v.startDate || v.date;
+      const d = new Date(dateStr);
+      return {
+        year:  d.getUTCFullYear(),
+        month: d.getUTCMonth() + 1,
+        value: v.value ?? v.metricValue ?? null,
+      };
+    })
+    .filter(v => !isNaN(v.year));
 }
 
-async function pollReport(reportId, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
-    if (resp.processingStatus === 'DONE') return resp;
-    if (['FATAL', 'CANCELLED'].includes(resp.processingStatus)) {
-      throw new Error(`Report ${reportId} ${resp.processingStatus}`);
-    }
-    await sleep(6000);
-  }
-  throw new Error(`Report ${reportId} timed out`);
-}
+// Builds a { startDate, endDate } window covering the last `monthsBack`
+// full calendar months, ending at the start of the current (incomplete)
+// month — matching the "13 trailing months" the dashboard chart wants.
+function trailingMonthRange(monthsBack) {
+  const now         = new Date();
+  const endOfWindow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const startOfWindow = new Date(Date.UTC(endOfWindow.getUTCFullYear(), endOfWindow.getUTCMonth() - (monthsBack - 1), 1));
 
-function downloadText(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
-    }).on('error', reject);
-  });
+  return {
+    startDate: startOfWindow.toISOString().slice(0, 19) + 'Z',
+    // 10-minute safety buffer, matching the pattern used elsewhere in this codebase
+    endDate: new Date(Date.now() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z',
+  };
 }
-
-function rollingMonths(n) {
-  const months = [];
-  const now    = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    const d       = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year    = d.getFullYear();
-    const month   = d.getMonth() + 1;
-    const pad     = x => String(x).padStart(2, '0');
-    const lastDay = new Date(year, month, 0).getDate();
-    months.push({ year, month, start: `${year}-${pad(month)}-01T00:00:00Z`, end: `${year}-${pad(month)}-${pad(lastDay)}T23:59:59Z` });
-  }
-  return months;
-}
-
-const sleep  = ms => new Promise(r => setTimeout(r, ms));
-const round2 = n  => Math.round(n * 100) / 100;
