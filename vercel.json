@@ -42,10 +42,6 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/reconcile-orders",
-      "schedule": "0 8 * * *"
-    },
-    {
       "path": "/api/cron/sync-revenue-request",
       "schedule": "0 5 * * *"
     },
@@ -132,9 +128,6 @@
       "maxDuration": 300
     },
     "api/cron/trim-orders.js": {
-      "maxDuration": 300
-    },
-    "api/cron/reconcile-orders.js": {
       "maxDuration": 300
     },
     "api/cron/sync-revenue-request.js": {
