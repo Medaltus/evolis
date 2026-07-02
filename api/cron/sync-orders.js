@@ -39,6 +39,7 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
+  'estimated_fees', // Amazon Product Fees API estimate, line-item total (see getFeesEstimate below)
 ];
 
 const REPORT_POLL_TIMEOUT_MS  = 25_000;
@@ -138,6 +139,12 @@ module.exports = async (req, res) => {
   const nowEst  = toEstIso(new Date());
   const results = [];
 
+  // Fees cache — Product Fees API is priced-per-call (1 call per unique
+  // ASIN + unit price combo), so we dedupe across the whole run rather than
+  // calling once per line item. Same ASIN at the same price only ever costs
+  // one API call no matter how many order rows reference it this run.
+  const feesCache = new Map(); // key: `${asin}|${unitPrice}` -> fee per unit (number) or null
+
   for (const brand of brands.filter(b => b.active)) {
     try {
       // Brand is determined by SKU prefix — never by Amazon's brand field
@@ -158,35 +165,9 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      // One sheet row per flat-file line item — no aggregation
-      const newRows = brandRows.map(row => {
-        const orderId = row['amazon-order-id'] || row['order-id'] || '';
-        const sku     = row['sku'] || row['seller-sku'] || '';
-        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
-        const qtyShip = parseInt(row['quantity-shipped'] || '0', 10);
-        const price   = parseFloat(row['item-price'] || '0');
-        const disc    = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
-
-        return [
-          orderId,                                  // order_id
-          (row['purchase-date'] || '').slice(0, 10), // date
-          row['order-status'] || '',                 // status
-          round2(price),                             // order_total (line item total)
-          row['promotion-ids'] || '',                // promotion_ids
-          'FALSE',                                   // is_premium_order (not in flat file)
-          round2(disc),                              // promotion_discount
-          round2(price),                             // item_price
-          qty,                                       // quantity_ordered
-          qtyShip,                                   // quantity_shipped
-          qty,                                       // unit_count
-          sku,                                       // sku (used for brand ID; kept for traceability)
-          row['asin'] || '',                         // asin (column L)
-          brand.id,                                  // brand
-          nowEst,                                    // last_updated (EST)
-        ];
-      }).filter(row => row[0]);
-
-      // Dedup — composite key: order_id + sku
+      // Read existing keys FIRST so we skip fee lookups on rows that are
+      // duplicates anyway — Product Fees API calls aren't free, no reason to
+      // spend them on rows we're about to throw away.
       const token        = await ensureTab(sheets.orders, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.orders, brand.tabName);
       const existingKeys = new Set(
@@ -195,11 +176,56 @@ module.exports = async (req, res) => {
           .filter(k => k !== '||')
       );
 
-      const dedupedRows = newRows.filter(row => !existingKeys.has(`${row[0]}||${row[11]}`));
-      const dupCount    = newRows.length - dedupedRows.length;
+      // Build the base (fee-less) row data first, filtering out dupes
+      const candidateRows = brandRows.map(row => {
+        const orderId = row['amazon-order-id'] || row['order-id'] || '';
+        const sku     = row['sku'] || row['seller-sku'] || '';
+        const qty     = parseInt(row['quantity'] || row['quantity-purchased'] || '0', 10);
+        const qtyShip = parseInt(row['quantity-shipped'] || '0', 10);
+        const price   = parseFloat(row['item-price'] || '0');
+        const disc    = parseFloat(row['item-promotion-discount'] || row['promotion-discount'] || '0');
+        const asin    = row['asin'] || '';
+        const date    = (row['purchase-date'] || '').slice(0, 10);
+        const status  = row['order-status'] || '';
+        const promoIds = row['promotion-ids'] || '';
+        return { orderId, sku, qty, qtyShip, price, disc, asin, date, status, promoIds };
+      }).filter(r => r.orderId);
+
+      const dedupedCandidates = candidateRows.filter(r => !existingKeys.has(`${r.orderId}||${r.sku}`));
+      const dupCount = candidateRows.length - dedupedCandidates.length;
 
       if (dupCount > 0) {
         console.log(`[sync-orders] ${brand.id} — skipped ${dupCount} duplicate order+sku rows`);
+      }
+
+      // Fetch (or reuse cached) fee estimates for each new row, then assemble
+      // the final sheet rows. Sequential — cache hits are instant, and this
+      // only makes new API calls for genuinely new, unpriced rows — to stay
+      // under Product Fees API rate limits.
+      const dedupedRows = [];
+      for (const r of dedupedCandidates) {
+        const unitPrice     = r.qty > 0 ? round2(r.price / r.qty) : round2(r.price);
+        const feePerUnit    = await getFeesEstimate(feesCache, r.asin, unitPrice);
+        const estimatedFees = feePerUnit != null ? round2(feePerUnit * r.qty) : '';
+
+        dedupedRows.push([
+          r.orderId,                                  // order_id
+          r.date,                                      // date
+          r.status,                                    // status
+          round2(r.price),                             // order_total (line item total)
+          r.promoIds,                                  // promotion_ids
+          'FALSE',                                     // is_premium_order (not in flat file)
+          round2(r.disc),                              // promotion_discount
+          round2(r.price),                             // item_price
+          r.qty,                                       // quantity_ordered
+          r.qtyShip,                                   // quantity_shipped
+          r.qty,                                       // unit_count
+          r.sku,                                       // sku (used for brand ID; kept for traceability)
+          r.asin,                                      // asin (column L)
+          brand.id,                                    // brand
+          nowEst,                                       // last_updated (EST)
+          estimatedFees,                                // estimated_fees (Product Fees API estimate)
+        ]);
       }
 
       if (dedupedRows.length > 0) {
@@ -290,3 +316,63 @@ function toEstIso(date) {
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms)); 
 const round2 = n  => Math.round(n * 100) / 100;
+
+/**
+ * Returns an ESTIMATED per-unit fee for a given ASIN at a given per-unit price,
+ * via Amazon's Product Fees API v0 (POST /products/fees/v0/items/{asin}/feesEstimate).
+ * This is an ESTIMATE, not an actual charged fee — actual fees only exist in the
+ * Finances API (settlement-based, lags by weeks). Estimate is intentionally what
+ * we're using here per requirements — it's fast, available immediately per order,
+ * and "close enough" for a monthly rollup on the dashboard.
+ *
+ * Caches by `${asin}|${unitPrice}` for the life of one cron run — the same
+ * ASIN at the same price always estimates identically, so we only ever pay
+ * for one API call per unique combo per run, no matter how many order rows
+ * reference it.
+ *
+ * Returns null (not 0) on any failure so callers can distinguish "we don't
+ * know" from "the fee is actually zero" — a blank cell in the sheet, not a
+ * misleading $0.
+ */
+async function getFeesEstimate(feesCache, asin, unitPrice) {
+  if (!asin || !unitPrice || unitPrice <= 0) return null;
+
+  const cacheKey = `${asin}|${unitPrice}`;
+  if (feesCache.has(cacheKey)) return feesCache.get(cacheKey);
+
+  try {
+    const body = {
+      FeesEstimateRequest: {
+        MarketplaceId: process.env.SP_MARKETPLACE_ID,
+        IsAmazonFulfilled: true,
+        PriceToEstimateFees: {
+          ListingPrice: { CurrencyCode: 'USD', Amount: unitPrice },
+          Shipping:     { CurrencyCode: 'USD', Amount: 0 },
+        },
+        Identifier: cacheKey,
+      },
+    };
+
+    const resp = await spRequest('POST', `/products/fees/v0/items/${asin}/feesEstimate`, {}, body);
+    const result = resp?.payload?.FeesEstimateResult;
+
+    if (result?.Status !== 'Success' || !result?.FeesEstimate) {
+      console.warn(`[sync-orders] fees estimate not available for ${asin} @ $${unitPrice}: ${result?.Status || 'no result'}`);
+      feesCache.set(cacheKey, null);
+      return null;
+    }
+
+    const feePerUnit = result.FeesEstimate.TotalFeesEstimate?.Amount ?? null;
+    feesCache.set(cacheKey, feePerUnit);
+
+    // Small delay only on actual (non-cached) API calls, to stay under
+    // Product Fees API rate limits without slowing down cache hits.
+    await sleep(1100);
+
+    return feePerUnit;
+  } catch (err) {
+    console.warn(`[sync-orders] fees estimate failed for ${asin} @ $${unitPrice}: ${err.message}`);
+    feesCache.set(cacheKey, null);
+    return null;
+  }
+}
