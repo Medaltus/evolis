@@ -34,24 +34,32 @@
  *   unfiltered). ASINs come from the same master ASIN→brand sheet
  *   sync-advertising-process.js already reads.
  *
- * retention_90_day is currently always NULL — see the note in
- * fetchSubscriptionRows() below. SUBSCRIBER_RETENTION only supports a
- * `brandNames` filter (not `asins`), and we don't yet have Amazon's exact
- * registered brand name strings confirmed. Revisit once that's known —
- * active_subscriptions is unaffected and fully working in the meantime.
+ * retention_90_day uses SUBSCRIBER_RETENTION with a filters.brandNames
+ * call (separate from the active_subscriptions call, which uses
+ * filters.asins — the two metrics don't support the same filter type).
+ * Amazon's exact registered brand names were confirmed directly from
+ * Seller Central (2026-07-09) and live in brands.js as `amazonBrandName`.
+ * A retention failure for one brand doesn't block that brand's
+ * active_subscriptions data from writing — the two are fetched and
+ * written independently.
  *
  * The `asins` filter caps at 20 items per call — brands with more ASINs
  * than that get chunked into multiple calls and summed per month.
+ *
+ * Historical accumulation: each run only ever RECOMPUTES the trailing
+ * MONTHS_OF_HISTORY window, but the sheet keeps growing — existing rows
+ * outside that window are preserved, not wiped, on every write. Only the
+ * months this run actually fetched fresh data for get overwritten.
  *
  * Sheet: amazon-subscriptions
  * Columns: year, month, active_subscriptions, retention_90_day,
  *          brand, last_updated
  */
 
-const { spRequest }              = require('../_spauth');
-const { ensureTab, replaceRows } = require('../config/_sheets_client');
-const brands                     = require('../config/brands');
-const sheets                     = require('../config/sheets');
+const { spRequest }                         = require('../_spauth');
+const { ensureTab, readRows, replaceRows }  = require('../config/_sheets_client');
+const brands                                = require('../config/brands');
+const sheets                                = require('../config/sheets');
 
 const HEADERS = [
   'year', 'month', 'active_subscriptions',
@@ -107,11 +115,32 @@ module.exports = async (req, res) => {
 
     try {
       console.log(`[sync-subscriptions] starting ${brand.id} (${brandAsins.length} ASINs)`);
-      const rows  = await fetchSubscriptionRows(brand, brandAsins, now);
-      const token = await ensureTab(sheets.subscriptions, brand.tabName, HEADERS);
-      await replaceRows(sheets.subscriptions, brand.tabName, HEADERS, rows, token);
-      results.push({ brand: brand.id, status: 'ok', rows: rows.length, asinCount: brandAsins.length });
-      console.log(`[sync-subscriptions] ${brand.id} — ${rows.length} rows written`);
+      const newRows = await fetchSubscriptionRows(brand, brandAsins, now);
+      const token   = await ensureTab(sheets.subscriptions, brand.tabName, HEADERS);
+
+      // Accumulate history instead of wiping the tab each run: keep every
+      // existing row, but overwrite any month THIS run actually recomputed
+      // (the trailing MONTHS_OF_HISTORY window) with fresh values. Months
+      // older than that window — which would otherwise get destroyed by a
+      // full replaceRows every run — are left exactly as they were.
+      const existingRaw  = await readRows(sheets.subscriptions, brand.tabName);
+      const mergedByKey  = {};
+      (existingRaw || []).forEach(r => {
+        const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
+        if (!y || !m) return;
+        mergedByKey[`${y}-${m}`] = [r.year, r.month, r.active_subscriptions, r.retention_90_day, r.brand, r.last_updated];
+      });
+      newRows.forEach(row => { mergedByKey[`${row[0]}-${row[1]}`] = row; });
+
+      const mergedRows = Object.values(mergedByKey).sort((a, b) => {
+        const ay = parseInt(a[0], 10), by = parseInt(b[0], 10);
+        const am = parseInt(a[1], 10), bm = parseInt(b[1], 10);
+        return ay !== by ? ay - by : am - bm;
+      });
+
+      await replaceRows(sheets.subscriptions, brand.tabName, HEADERS, mergedRows, token);
+      results.push({ brand: brand.id, status: 'ok', totalRows: mergedRows.length, refreshedThisRun: newRows.length, asinCount: brandAsins.length });
+      console.log(`[sync-subscriptions] ${brand.id} — ${mergedRows.length} total rows (${newRows.length} refreshed this run)`);
     } catch (err) {
       console.error(`[sync-subscriptions] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
@@ -124,29 +153,57 @@ module.exports = async (req, res) => {
 async function fetchSubscriptionRows(brand, brandAsins, now) {
   const { startDate, endDate } = trailingMonthRange(MONTHS_OF_HISTORY);
 
-  // SUBSCRIBER_RETENTION only supports filtering by `brandNames`, not
-  // `asins` — confirmed via Amazon's own validation error (2026-07-09):
-  // "Filter 'asins' is not supported for metric 'SUBSCRIBER_RETENTION'.
-  // Allowed filters: [brandNames]". Requesting it alongside
-  // ACTIVE_SUBSCRIPTIONS under an asins filter fails the WHOLE call, not
-  // just the retention part. Until we confirm Amazon's exact registered
-  // brandNames string for each brand (same guessing problem we already hit
-  // once — not repeating that blind), retention is left null here.
-  // active_subscriptions is unaffected and fully working.
   const activeSeries = await fetchActiveSubscriptions(brandAsins, startDate, endDate);
 
   if (activeSeries.length === 0) {
     throw new Error('No ACTIVE_SUBSCRIPTIONS data returned — see logged raw response');
   }
 
+  // SUBSCRIBER_RETENTION only supports filters.brandNames (not asins) —
+  // confirmed via Amazon's validation error (2026-07-09). Amazon's exact
+  // registered brand names were confirmed directly from Seller Central and
+  // added to brands.js as `amazonBrandName`. This is a SEPARATE call (its
+  // own rate-limit delay) from active_subscriptions, and its failure is
+  // non-fatal — a brand's active_subscriptions data should still write even
+  // if retention has a problem, rather than losing both over one issue.
+  let retentionByMonth = {};
+  if (brand.amazonBrandName) {
+    await sleep(RATE_LIMIT_DELAY_MS);
+    try {
+      const retentionSeries = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate);
+      retentionSeries.forEach(({ year, month, value }) => {
+        retentionByMonth[`${year}-${month}`] = value;
+      });
+    } catch (err) {
+      console.warn(`[sync-subscriptions] ${brand.id} — retention fetch failed, writing null retention this run:`, err.message);
+    }
+  } else {
+    console.warn(`[sync-subscriptions] ${brand.id} — no amazonBrandName set in brands.js, skipping retention`);
+  }
+
   return activeSeries.map(({ year, month, value }) => [
     year,
     month,
     value,
-    null, // retention_90_day — pending brandNames confirmation, see note above
+    retentionByMonth[`${year}-${month}`] ?? null,
     brand.id,
     now,
   ]);
+}
+
+async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
+  const body = {
+    aggregationFrequency: 'MONTH',
+    timeInterval: { startDate, endDate },
+    metrics: ['SUBSCRIBER_RETENTION'],
+    timePeriodType: 'PERFORMANCE',
+    marketplaceId: process.env.SP_MARKETPLACE_ID,
+    programTypes: ['SUBSCRIBE_AND_SAVE'],
+    filters: { brandNames: [amazonBrandName] },
+  };
+
+  const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+  return extractMetricSeries(resp, 'subscriberRetention');
 }
 
 // The `asins` filter caps at 20 items (confirmed via Amazon's error for a
