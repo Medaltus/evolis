@@ -40,13 +40,15 @@
  * Amazon's exact registered brand names were confirmed directly from
  * Seller Central (2026-07-09) and live in brands.js as `amazonBrandName`.
  *
- * CONFIRMED (2026-07-09, real response): SUBSCRIBER_RETENTION does NOT
- * bucket by month despite aggregationFrequency=MONTH — it returns exactly
- * ONE value (field: subscriberRetentionFor90Days) for the whole requested
- * timeInterval. So this call deliberately asks about just the last full
- * calendar month (not the 13-month window used for active_subscriptions),
- * and that one value is written only to that one month's row — every
- * other month keeps whatever it already had.
+ * CONFIRMED (2026-07-09) two ways — a real API response, AND Seller
+ * Central's own "Subscriber Retention" widget for the same account —
+ * that this metric returns ONE blended value for the WHOLE requested
+ * window, not a per-month series. So it deliberately reuses the SAME
+ * 13-month window as active_subscriptions (a narrower "just last month"
+ * window was tried and returns empty — a cohort from last month hasn't
+ * reached its 90-day mark yet), and that one value is written only to
+ * the current (last full) month's row — every other month keeps
+ * whatever it already had.
  *
  * A retention failure for one brand doesn't block that brand's
  * active_subscriptions data from writing — the two are fetched and
@@ -176,25 +178,27 @@ async function fetchSubscriptionRows(brand, brandAsins, now) {
   // non-fatal — a brand's active_subscriptions data should still write even
   // if retention has a problem, rather than losing both over one issue.
   //
-  // IMPORTANT — this metric does NOT bucket by month despite
-  // aggregationFrequency=MONTH: a real response confirmed (2026-07-09) it
-  // returns exactly ONE object covering the whole requested timeInterval,
-  // e.g. { subscriberRetentionFor90Days: 71.05, timeInterval: {...} } for
-  // a 13-month-wide request. So we deliberately request a NARROW window —
-  // just the last full calendar month — to get one current, meaningful
-  // rate, rather than one number blended across 13 months. The result
-  // applies only to that one month's row; every other month keeps
-  // whatever it already had (null if new, or a prior run's value).
+  // CONFIRMED (2026-07-09) two ways — a real API response, AND Seller
+  // Central's own "Subscriber Retention" widget showing the exact same
+  // pattern for the exact same account (évolis, 90 Days: 70.4%, computed
+  // over the widget's full selected ~13-month date range) — that this
+  // metric returns ONE blended value for the WHOLE requested window, not
+  // a per-month series. A narrower "just last month" window was tried and
+  // returns empty, because a 90-day cohort from last month hasn't reached
+  // its 90-day mark yet. So this deliberately reuses the SAME wide window
+  // as active_subscriptions, and the one resulting value is written only
+  // to the current (last full) month's row — every other month keeps
+  // whatever it already had.
   let retentionByMonth = {};
   if (brand.amazonBrandName) {
     await sleep(RATE_LIMIT_DELAY_MS);
     try {
-      const retentionWindow = lastFullMonthRange();
-      const value = await fetchSubscriberRetention(brand.amazonBrandName, retentionWindow.startDate, retentionWindow.endDate);
+      const value = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate);
       if (value == null) {
         console.warn(`[sync-subscriptions] ${brand.id} — SUBSCRIBER_RETENTION call succeeded but returned no value (writing null retention this run)`);
       } else {
-        retentionByMonth[`${retentionWindow.year}-${retentionWindow.month}`] = value;
+        const current = currentRowKey();
+        retentionByMonth[`${current.year}-${current.month}`] = value;
       }
     } catch (err) {
       console.warn(`[sync-subscriptions] ${brand.id} — retention fetch failed, writing null retention this run:`, err.message);
@@ -224,7 +228,39 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
     filters: { brandNames: [amazonBrandName] },
   };
 
-  const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+  // Retry-on-429 — same gap sync-advertising-request.js had before we fixed
+  // it there. A real QuotaExceeded showed up on this exact call in testing —
+  // but as a NORMALLY RESOLVED response body ({"errors":[{"code":"QuotaExceeded",...}]}),
+  // not a thrown exception. So we check both: a thrown error (in case
+  // spRequest ever does throw for other failure modes) AND an errors[] array
+  // in a successfully-resolved body.
+  const MAX_RETRIES = 3;
+  let resp;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let thrown = null;
+    try {
+      resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+    } catch (err) {
+      thrown = err;
+    }
+
+    const errorCode = thrown?.message || resp?.errors?.[0]?.code || '';
+    const isThrottled = /quota|429|throttl/i.test(errorCode);
+
+    if (!isThrottled) {
+      if (thrown) throw thrown; // genuine non-throttle failure — don't swallow it
+      break; // success (or a non-throttle error body we'll log below)
+    }
+
+    if (attempt < MAX_RETRIES) {
+      const waitSec = 2 * attempt;
+      console.warn(`[sync-subscriptions] retention call throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${waitSec}s`);
+      await sleep(waitSec * 1000);
+      continue;
+    }
+    // Exhausted retries on a genuine throttle — fall through and let the
+    // "no value found" branch below log the raw response and return null.
+  }
 
   // CONFIRMED shape (2026-07-09): one object covering the whole requested
   // interval, e.g. { subscriberRetentionFor90Days: 71.05, timeInterval: {...} }
@@ -239,20 +275,14 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
   return value;
 }
 
-// Last full calendar month — deliberately narrow, since
-// SUBSCRIBER_RETENTION returns one blended rate for whatever window you
-// give it. A 13-month-wide ask would blur a year of cohorts into one
-// number; this keeps it to one current, meaningful month.
-function lastFullMonthRange() {
-  const now   = new Date();
-  const end   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 1, 1));
-  return {
-    year:      start.getUTCFullYear(),
-    month:     start.getUTCMonth() + 1,
-    startDate: start.toISOString().slice(0, 19) + 'Z',
-    endDate:   end.toISOString().slice(0, 19) + 'Z',
-  };
+// The last full calendar month — where the single retention value gets
+// written. Same "last full month" concept used elsewhere in this codebase
+// (e.g. the Stewardship dashboard charts), just needed here as a plain
+// year/month lookup rather than a date-range builder.
+function currentRowKey() {
+  const now = new Date();
+  const d   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
 
 // The `asins` filter caps at 20 items (confirmed via Amazon's error for a
