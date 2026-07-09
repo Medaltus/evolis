@@ -276,9 +276,8 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
 }
 
 // The last full calendar month — where the single retention value gets
-// written. Same "last full month" concept used elsewhere in this codebase
-// (e.g. the Stewardship dashboard charts), just needed here as a plain
-// year/month lookup rather than a date-range builder.
+// written. Matches the "last full month" convention used elsewhere in
+// this codebase (e.g. the Stewardship dashboard charts).
 function currentRowKey() {
   const now = new Date();
   const d   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
