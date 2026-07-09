@@ -108,8 +108,8 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'No search term report IDs found in _meta — did sync-ad-search-terms-request run?' });
   }
 
-  if (meta['st_report_status'] === 'PROCESSED') {
-    return res.status(200).json({ message: 'Already processed' });
+  if (meta['st_report_status'] === 'PROCESSED' && !req.query.force) {
+    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-poll anyway (e.g. if this got marked processed before any report actually finished).' });
   }
 
   const token = await getAdToken();
@@ -176,16 +176,24 @@ module.exports = async (req, res) => {
     }
   }
 
-  // Mark processed
-  try {
-    const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
-    const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
-    const mm  = {};
-    ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-    mm['st_report_status'] = ['st_report_status', 'PROCESSED', now];
-    await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
-  } catch (err) {
-    console.warn('[sync-ad-search-terms-process] failed to mark processed:', err.message);
+  // Only mark PROCESSED if at least one report actually produced real data.
+  // Previously this ran unconditionally — a run where every report was
+  // still PENDING would still mark itself done, permanently blocking any
+  // future retry even though nothing was ever written.
+  const gotRealData = results.some(r => r.status === 'ok' && r.rows > 0);
+  if (gotRealData) {
+    try {
+      const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
+      const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
+      const mm  = {};
+      ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+      mm['st_report_status'] = ['st_report_status', 'PROCESSED', now];
+      await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
+    } catch (err) {
+      console.warn('[sync-ad-search-terms-process] failed to mark processed:', err.message);
+    }
+  } else {
+    console.warn('[sync-ad-search-terms-process] no real data written this run — leaving status as REQUESTED so a retry can happen');
   }
 
   res.status(200).json({ synced: results, timestamp: now });
