@@ -170,16 +170,16 @@ module.exports = async (req, res) => {
         fetchCsv(PRODUCTS_SHEET_ID, PROD_NAMES_GID),
       ]);
 
-      // Parse events
+      // Parse events — SKUs column is optional. If blank/missing, the event
+      // applies to ALL SKUs that have a regular price in the Product Short Name tab.
+      // We build the skuSet after priceRef is populated below.
       const evRows = parseTsvRows(eventsCsv, ',');
-      evRows.forEach(r => {
-        const start = (r['start_date'] || '').trim();
-        const end   = (r['end_date']   || '').trim();
-        const skus  = (r['skus']       || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-        if (start && end && skus.length) {
-          eventWindows.push({ skuSet: new Set(skus), startDate: start, endDate: end });
-        }
-      });
+      const rawEvents = evRows.map(r => ({
+        name:      (r['Event Name'] || '').trim(),
+        startDate: (r['start_date'] || '').trim(),
+        endDate:   (r['end_date']   || '').trim(),
+        skuList:   (r['SKUs']       || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+      })).filter(ev => ev.startDate && ev.endDate);
 
       // Parse regular prices
       const prodRows = parseTsvRows(prodCsv, ',');
@@ -187,6 +187,13 @@ module.exports = async (req, res) => {
         const sku   = (r['SKU'] || '').trim().toUpperCase();
         const price = parseFloat((r['Price'] || r['price'] || '').replace(/[$,]/g, '')) || 0;
         if (sku && price > 0) priceRef.set(sku, price);
+      });
+
+      // Now build eventWindows — if SKUs column was blank, use all priced SKUs
+      const allPricedSkus = new Set(priceRef.keys());
+      rawEvents.forEach(ev => {
+        const skuSet = ev.skuList.length > 0 ? new Set(ev.skuList) : allPricedSkus;
+        eventWindows.push({ skuSet, startDate: ev.startDate, endDate: ev.endDate });
       });
 
       console.log(`[sync-orders-process] events loaded: ${eventWindows.length}, prices: ${priceRef.size}`);
@@ -273,18 +280,22 @@ module.exports = async (req, res) => {
           continue; // leave this row exactly as-is, including its estimated_fees
         }
 
-        // Only pay for a new fee estimate if price actually changed (or this
-        // is a brand-new row). A status-only change reuses the stored value.
-        // NOTE: sheet column is "Amazon Estimated Fees" — must match exactly.
+        // Only pay for a new fee estimate if price actually changed AND this
+        // is a brand-new row. Price-unchanged rows always reuse stored fee or
+        // stay blank — this prevents timeout when many rows are reprocessed
+        // purely to backfill Amazon Sale Promotions.
         const unitPrice      = qty > 0 ? round2(price / qty) : price;
         const priceUnchanged = existing && round2(parseFloat(existing.row.item_price || '0')) === price;
         const storedFee      = existing?.row['Amazon Estimated Fees'];
         const hasStoredFee   = storedFee !== '' && storedFee != null;
 
         let estimatedFees;
-        if (priceUnchanged && hasStoredFee) {
-          estimatedFees = storedFee;
+        if (priceUnchanged) {
+          // Price unchanged — reuse stored fee if available, otherwise leave blank.
+          // Never call the fees API for a price-unchanged row.
+          estimatedFees = hasStoredFee ? storedFee : '';
         } else {
+          // Price changed or brand-new row — call the fees API.
           const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice);
           estimatedFees = feePerUnit != null ? round2(feePerUnit * qty) : '';
         }
