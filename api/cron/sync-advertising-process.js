@@ -273,10 +273,23 @@ module.exports = async (req, res) => {
     }
 
     // ── 5b. Merge SP + SB campaign rows, aggregate per brand ─────────────────
-    // SB uses 'cost' instead of 'spend', and 'purchases14d' for units (no unitsSoldClicks14d)
+    // SB and SP use different column names for the same concepts — SB has no
+    // "14d attribution window" suffix the way SP does. Confirmed against
+    // Amazon's real sbCampaigns schema (2026-07-09):
+    //   SP: spend, sales14d, unitsSoldClicks14d
+    //   SB: cost,  sales,    purchases
+    // Remap all three SB fields to the SP-shaped keys the aggregation below
+    // reads — previously only `spend` was remapped and `purchases14d` (which
+    // was never actually SB's field name) was used instead of `purchases`,
+    // so SB sales and units were both silently counted as 0 in every total.
     const allCampaignRows = [
       ...spRows,
-      ...sbRows.map(r => ({ ...r, spend: r.cost || r.spend || 0, unitsSoldClicks14d: r.purchases14d || 0 })),
+      ...sbRows.map(r => ({
+        ...r,
+        spend:               r.cost      || r.spend      || 0,
+        sales14d:            r.sales     || r.sales14d    || 0,
+        unitsSoldClicks14d:  r.purchases || r.purchases14d || 0,
+      })),
     ];
 
     const brandTotals = {};
