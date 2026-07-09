@@ -103,6 +103,12 @@ module.exports = async (req, res) => {
   }
 };
 
+// Strips accents so "évolis" matches "evolis" regardless of exact casing —
+// same fix already applied to sync-advertising-process.js's brand matching.
+function stripAccents(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 // Pulls one real SKU (+ its ASIN if present) for a brand from the master
 // ASIN→brand sheet, so this test doesn't need a hand-typed SKU to start.
 async function findOneSkuForBrand(tabName) {
@@ -116,9 +122,15 @@ async function findOneSkuForBrand(tabName) {
     const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
     const asin      = cols[0] || '';
     const sku       = cols[1] || '';
-    const brandName = (cols[3] || '').toLowerCase().trim();
+    const brandName = stripAccents((cols[3] || '').toLowerCase().trim());
     if (!sku) continue;
-    const matched = brands.find(b => b.active && (brandName === b.id.toLowerCase() || brandName.includes(b.id.toLowerCase())));
+    const matched = brands.find(b =>
+      b.active && (
+        brandName === stripAccents(b.id.toLowerCase()) ||
+        brandName === stripAccents((b.displayName || '').toLowerCase()) ||
+        brandName.includes(stripAccents(b.id.toLowerCase()))
+      )
+    );
     if (matched && matched.tabName === tabName) return { sku, asin };
   }
   return { sku: null, asin: null };
