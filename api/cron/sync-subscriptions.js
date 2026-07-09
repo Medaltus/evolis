@@ -171,6 +171,12 @@ async function fetchSubscriptionRows(brand, brandAsins, now) {
     await sleep(RATE_LIMIT_DELAY_MS);
     try {
       const retentionSeries = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate);
+      if (retentionSeries.length === 0) {
+        // This is the gap that let retention silently write null with zero
+        // visibility in the logs — the call succeeded (no exception), but
+        // came back with no data points, and nothing said so. Now it does.
+        console.warn(`[sync-subscriptions] ${brand.id} — SUBSCRIBER_RETENTION call succeeded but returned 0 data points (writing null retention this run)`);
+      }
       retentionSeries.forEach(({ year, month, value }) => {
         retentionByMonth[`${year}-${month}`] = value;
       });
@@ -203,7 +209,17 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
   };
 
   const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
-  return extractMetricSeries(resp, 'subscriberRetention');
+  const series = extractMetricSeries(resp, 'subscriberRetention');
+
+  // Never independently confirmed 'subscriberRetention' is the real key —
+  // it was assumed to match activeSubscriptions' camelCase pattern. Log
+  // the raw response whenever extraction comes back empty so the actual
+  // field name (if different) is visible instead of failing silently again.
+  if (series.length === 0) {
+    console.warn(`[sync-subscriptions] SUBSCRIBER_RETENTION raw response (0 extracted):`, JSON.stringify(resp));
+  }
+
+  return series;
 }
 
 // The `asins` filter caps at 20 items (confirmed via Amazon's error for a
