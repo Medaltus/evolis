@@ -4004,15 +4004,17 @@ function initSns() {
     return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
   }
 
-  // Sums promotion_discount + total units for a brand-filtered order-row set in a
-  // given month. Mirrors aggregateMonth() above but also carries promo discount,
-  // which aggregateMonth doesn't track.
+  // Sums promotion_discount + sale_promos + total units for a brand-filtered
+  // order-row set in a given month. promotion_discount covers S&S/coupons;
+  // sale_promos covers seller-funded event discounts (Prime Day, BSS, etc.)
+  // written by sync-orders-process.js.
   function aggregateStewardshipMonth(rows, year, month) {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
     const filtered = rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix);
     const totalUnits    = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
     const promoDiscount = filtered.reduce((s, r) => s + parseAmt(r.promotion_discount), 0);
-    return { totalUnits, promoDiscount, hasData: filtered.length > 0 };
+    const salePromos    = filtered.reduce((s, r) => s + (parseFloat(r['Amazon Sale Promotions']) || 0), 0);
+    return { totalUnits, promoDiscount, salePromos, hasData: filtered.length > 0 };
   }
 
   // Vine tab: one row per enrolled SKU. Sums (Units Enrolled × $200) into the
@@ -4145,14 +4147,12 @@ function initSns() {
     const HIST_GID = '1249281379';
 
     try {
-      const [syncCsv, histCsv, adSummaryCsv, vineCsv, revCsv, eventsCsv, prodNamesCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, vineCsv, revCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(VINE_SHEET_ID, VINE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(REVENUE_SHEET_ID, REVENUE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(VINE_SHEET_ID, EVENTS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(VINE_SHEET_ID, PROD_NAMES_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const syncRows      = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
@@ -4165,15 +4165,6 @@ function initSns() {
       }) : [];
       const vineMap = vineMonthlyCost(vineRows);
 
-      // ── Event promo investment (Prime Day, BSS, etc.) ────────────────────
-      // Calculates (regular_price - item_price) × units for orders that fall
-      // within an event date window and whose SKU was part of the deal.
-      const productRows  = isCsv(prodNamesCsv) ? parseCsv(prodNamesCsv) : [];
-      const eventRows    = isCsv(eventsCsv)    ? parseCsv(eventsCsv).filter(r => (r['event_name'] || '').trim()) : [];
-      const priceMap     = buildPriceMap(productRows);
-      const eventPromoMap = buildEventPromoMap(eventRows, allOrderRows, priceMap);
-      console.log('[Evolis] eventPromoMap:', eventPromoMap);
-
       // ── Investments chart (13 trailing months) ──────────────────────────
       const invMonths = trailingMonths(year, month, 13);
       const investLabels = [], adsData = [], vineData = [], promosData = [];
@@ -4185,21 +4176,17 @@ function initSns() {
         const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
         adsData.push(adRow ? parseAmt(adRow.spend) : fallback.ads);
         vineData.push(key in vineMap ? vineMap[key] : fallback.vine);
-        // Promos = Subscribe&Save/coupon discounts from order sheet
-        //        + event-funded deal discounts (Prime Day, BSS, etc.)
-        const orderPromos = ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos;
-        const eventPromos = eventPromoMap[key] || 0;
-        promosData.push(orderPromos + eventPromos);
+        // promoDiscount = S&S/coupon discounts; salePromos = event discounts from cron
+        const totalPromos = ordersAgg.hasData
+          ? ordersAgg.promoDiscount + ordersAgg.salePromos
+          : fallback.promos;
+        promosData.push(totalPromos);
       });
 
       // ── Launch-to-date total investments (live, not hardcoded) ──────────
-      // Sums all months from the STEWARDSHIP_INVEST_FALLBACK (historical) plus
-      // all live months we have data for, preferring live over fallback.
       const allKnownKeys = new Set([
         ...Object.keys(STEWARDSHIP_INVEST_FALLBACK),
-        ...adsData.map((_, i) => monthKey(invMonths[i].year, invMonths[i].month)),
-        ...Object.keys(eventPromoMap),
-        ...Object.keys(vineMap),
+        ...invMonths.map(({ year: y, month: m }) => monthKey(y, m)),
       ]);
       let ltdTotal = 0;
       allKnownKeys.forEach(key => {
@@ -4209,8 +4196,9 @@ function initSns() {
         const fallback  = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
         ltdTotal += adRow ? parseAmt(adRow.spend) : fallback.ads;
         ltdTotal += key in vineMap ? vineMap[key] : fallback.vine;
-        const orderPromos = ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos;
-        ltdTotal += orderPromos + (eventPromoMap[key] || 0);
+        ltdTotal += ordersAgg.hasData
+          ? ordersAgg.promoDiscount + ordersAgg.salePromos
+          : fallback.promos;
       });
       const ltdEl = document.getElementById('kpi-ltd-investments');
       if (ltdEl) ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
@@ -4268,11 +4256,10 @@ function initSns() {
       if (pctUnitsAdsCurr != null) setKpiVal('kpi-pct-units-ads', pctUnitsAdsCurr + '%');
       setKpiMom('kpi-pct-units-ads', pct(pctUnitsAdsCurr, pctUnitsAdsPrev));
 
-      // % Revenue Invested — (Ads + Vine + Promos + Event Promos this month) ÷ Revenue this month
+      // % Revenue Invested — (Ads + Vine + S&S promos + event sale promos) ÷ Revenue this month
       const currInvestTotal = (adCurr ? parseAmt(adCurr.spend) : 0)
         + (vineMap[monthKey(year, month)] || 0)
-        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount : 0)
-        + (eventPromoMap[monthKey(year, month)] || 0);
+        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount + ordersAggCurr.salePromos : 0);
       const currRevenue = getMonthRevenue(revCsv, year, month);
       if (currRevenue) {
         const pctRevenueInvested = Math.round((currInvestTotal / currRevenue) * 100);
