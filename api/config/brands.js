@@ -7,27 +7,34 @@
  * skuPrefix:       first 3 chars of all SKUs for this brand
  * tabName:         slug used as the Google Sheet tab name
  * active:          set false to pause syncing without deleting config
- * amazonBrandName: EXACT string as registered in Amazon Brand Registry.
- *                   Confirmed directly from Seller Central (2026-07-09) —
- *                   do not guess/normalize casing or accents here, several
- *                   differ from `displayName` (e.g. evolis is lowercase
- *                   "évolis" on Amazon but "Évolis" in displayName).
+ * amazonBrandName: EXACT string as registered in Amazon Brand Registry,
+ *                   in ALL CAPS. Confirmed 2026-07-09: the Replenishment
+ *                   API's SUBSCRIBER_RETENTION brandNames filter requires
+ *                   uppercase (accents preserved, e.g. "ÉVOLIS" not
+ *                   "évolis" or "Évolis") — verified against Seller
+ *                   Central's own retention widget, which returned the
+ *                   exact same 70.4% figure once queried in uppercase.
+ *                   Mixed-case values silently returned empty results
+ *                   with no error, which is what made this hard to spot.
  *                   Used by sync-subscriptions.js's SUBSCRIBER_RETENTION
- *                   call, which only supports a brandNames filter (not
- *                   asins) and requires Amazon's exact registered value.
+ *                   call (asins filter, used by active_subscriptions,
+ *                   does not have this same casing requirement).
  *
- * cimeosil — REMOVED 2026-07-09. Confirmed not a registered Amazon Brand
- * Registry entry (absent from the full brand checklist in Seller Central).
- * This also explains why it always had 0 ASINs in the master SKU/ASIN
- * sheet and was being skipped by sync-subscriptions.js.
+ * cimeosil — REMOVED then RESTORED, both 2026-07-09. Initially dropped on
+ * the assumption it wasn't a real registered brand (absent from the Brand
+ * Registry checklist AND the master ASIN sheet). That assumption was
+ * wrong — confirmed via Seller Central's Subscriber Retention widget that
+ * "CIMEOSIL" returns real data (78.6% 90-day retention). It's a genuine
+ * active brand; it's the master ASIN sheet that's incomplete, not this
+ * brand's registration. See the inline note on its entry below.
  */
 module.exports = [
   {
     id:              'evolis',
     tabName:         'evolis',
     skuPrefix:       'EVO',
-    displayName:     'évolis',
-    amazonBrandName: 'évolis',
+    displayName:     'Évolis',
+    amazonBrandName: 'ÉVOLIS',
     active:          true,
   },
   {
@@ -35,7 +42,7 @@ module.exports = [
     tabName:         'skinuva',
     skuPrefix:       'SVA',
     displayName:     'Skinuva',
-    amazonBrandName: 'Skinuva',
+    amazonBrandName: 'SKINUVA',
     active:          true,
   },
   {
@@ -43,7 +50,7 @@ module.exports = [
     tabName:         'dearcloud',
     skuPrefix:       'DEC',
     displayName:     'dearcloud',
-    amazonBrandName: 'dearcloud',
+    amazonBrandName: 'DEARCLOUD',
     active:          true,
   },
   {
@@ -51,7 +58,7 @@ module.exports = [
     tabName:         'creme-shop',
     skuPrefix:       'CRE',
     displayName:     'The Crème Shop',
-    amazonBrandName: 'The Crème Shop',
+    amazonBrandName: 'THE CRÈME SHOP',
     active:          true,
   },
   {
@@ -59,7 +66,7 @@ module.exports = [
     tabName:         'cloud-cafe',
     skuPrefix:       'CLC',
     displayName:     'Cloud Cafe',
-    amazonBrandName: 'Clöud Café',
+    amazonBrandName: 'CLÖUD CAFÉ',
     active:          true,
   },
   {
@@ -71,11 +78,28 @@ module.exports = [
     active:          true,
   },
   {
+    id:              'cimeosil',
+    tabName:         'cimeosil',
+    skuPrefix:       'CIM',
+    displayName:     'Cimeosil',
+    amazonBrandName: 'CIMEOSIL',
+    active:          true,
+    // RESTORED 2026-07-09 — earlier removed on the assumption it wasn't a
+    // real registered brand (absent from the Brand Registry checklist AND
+    // the master ASIN sheet). That assumption was wrong: confirmed via
+    // Seller Central's Subscriber Retention widget that "CIMEOSIL" (all
+    // caps) returns real data (78.6% 90-day retention). It's a genuine
+    // active brand — just still missing from the master ASIN sheet, which
+    // means it'll keep showing "no ASINs found, skipping" for
+    // active_subscriptions in sync-subscriptions.js until those ASINs are
+    // added there. Retention (brandNames-based) works right now regardless.
+  },
+  {
     id:              'just-bjorn',
     tabName:         'just-bjorn',
     skuPrefix:       'JBJ',
     displayName:     'Just Bjorn',
-    amazonBrandName: 'just björn',
+    amazonBrandName: 'JUST BJÖRN',
     active:          true,
   },
   {
@@ -83,7 +107,7 @@ module.exports = [
     tabName:         'amala',
     skuPrefix:       'ALA',
     displayName:     'Amala',
-    amazonBrandName: 'Amala',
+    amazonBrandName: 'AMALA',
     active:          true,
   },
   {
@@ -91,7 +115,7 @@ module.exports = [
     tabName:         'collagelee',
     skuPrefix:       'COL',
     displayName:     'Collagelee',
-    amazonBrandName: 'Collagelée',
+    amazonBrandName: 'COLLAGELÉE',
     active:          true,
   },
   {
@@ -99,7 +123,7 @@ module.exports = [
     tabName:         'hillside',
     skuPrefix:       'HIL',
     displayName:     'Hillside',
-    amazonBrandName: 'Hillside Candle',
+    amazonBrandName: 'HILLSIDE CANDLE',
     active:          true,
   },
   {
@@ -107,7 +131,7 @@ module.exports = [
     tabName:         'prohibition',
     skuPrefix:       'PRB',
     displayName:     'Prohibition',
-    amazonBrandName: 'Prohibition Wellness',
+    amazonBrandName: 'PROHIBITION WELLNESS',
     active:          true,
   },
   {
@@ -115,7 +139,7 @@ module.exports = [
     tabName:         'eraclea',
     skuPrefix:       'ERA',
     displayName:     'Eraclea',
-    amazonBrandName: 'eraclea',
+    amazonBrandName: 'ERACLEA',
     active:          true,
   },
   {
@@ -123,7 +147,7 @@ module.exports = [
     tabName:         'skinside-seoul',
     skuPrefix:       'SSS',
     displayName:     'skinside SEOUL',
-    amazonBrandName: 'skinside SEOUL',
+    amazonBrandName: 'SKINSIDE SEOUL',
     active:          true,
   },
   {
