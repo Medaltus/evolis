@@ -64,10 +64,10 @@ module.exports = async (req, res) => {
     const reportJobs = [
       () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_curr'),
       () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_curr'),
-      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    curr, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases14d','sales14d'], 'sb_curr'),
+      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    curr, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_curr'),
       () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_prev'),
       () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_prev'),
-      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    prev, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases14d','sales14d'], 'sb_prev'),
+      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    prev, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_prev'),
     ];
 
     const STAGGER_MS = 1500;
