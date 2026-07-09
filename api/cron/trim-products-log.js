@@ -25,7 +25,7 @@ const HEADERS = [
   'date', 'sku', 'asin',
   'fulfillable_quantity', 'reserved_quantity', 'inbound_working_quantity',
   'inbound_shipped_quantity', 'inbound_receiving_quantity',
-  'unfulfillable_quantity', 'total_quantity',
+  'unfulfillable_quantity', 'seller_fulfilled_quantity', 'total_quantity',
   'name', 'status', 'sales_ranks', 'title', 'item_highlights',
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords', 'ingredients', 'item_type_keyword',
