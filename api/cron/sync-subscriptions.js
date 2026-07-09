@@ -39,6 +39,15 @@
  * filters.asins — the two metrics don't support the same filter type).
  * Amazon's exact registered brand names were confirmed directly from
  * Seller Central (2026-07-09) and live in brands.js as `amazonBrandName`.
+ *
+ * CONFIRMED (2026-07-09, real response): SUBSCRIBER_RETENTION does NOT
+ * bucket by month despite aggregationFrequency=MONTH — it returns exactly
+ * ONE value (field: subscriberRetentionFor90Days) for the whole requested
+ * timeInterval. So this call deliberately asks about just the last full
+ * calendar month (not the 13-month window used for active_subscriptions),
+ * and that one value is written only to that one month's row — every
+ * other month keeps whatever it already had.
+ *
  * A retention failure for one brand doesn't block that brand's
  * active_subscriptions data from writing — the two are fetched and
  * written independently.
@@ -166,20 +175,27 @@ async function fetchSubscriptionRows(brand, brandAsins, now) {
   // own rate-limit delay) from active_subscriptions, and its failure is
   // non-fatal — a brand's active_subscriptions data should still write even
   // if retention has a problem, rather than losing both over one issue.
+  //
+  // IMPORTANT — this metric does NOT bucket by month despite
+  // aggregationFrequency=MONTH: a real response confirmed (2026-07-09) it
+  // returns exactly ONE object covering the whole requested timeInterval,
+  // e.g. { subscriberRetentionFor90Days: 71.05, timeInterval: {...} } for
+  // a 13-month-wide request. So we deliberately request a NARROW window —
+  // just the last full calendar month — to get one current, meaningful
+  // rate, rather than one number blended across 13 months. The result
+  // applies only to that one month's row; every other month keeps
+  // whatever it already had (null if new, or a prior run's value).
   let retentionByMonth = {};
   if (brand.amazonBrandName) {
     await sleep(RATE_LIMIT_DELAY_MS);
     try {
-      const retentionSeries = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate);
-      if (retentionSeries.length === 0) {
-        // This is the gap that let retention silently write null with zero
-        // visibility in the logs — the call succeeded (no exception), but
-        // came back with no data points, and nothing said so. Now it does.
-        console.warn(`[sync-subscriptions] ${brand.id} — SUBSCRIBER_RETENTION call succeeded but returned 0 data points (writing null retention this run)`);
+      const retentionWindow = lastFullMonthRange();
+      const value = await fetchSubscriberRetention(brand.amazonBrandName, retentionWindow.startDate, retentionWindow.endDate);
+      if (value == null) {
+        console.warn(`[sync-subscriptions] ${brand.id} — SUBSCRIBER_RETENTION call succeeded but returned no value (writing null retention this run)`);
+      } else {
+        retentionByMonth[`${retentionWindow.year}-${retentionWindow.month}`] = value;
       }
-      retentionSeries.forEach(({ year, month, value }) => {
-        retentionByMonth[`${year}-${month}`] = value;
-      });
     } catch (err) {
       console.warn(`[sync-subscriptions] ${brand.id} — retention fetch failed, writing null retention this run:`, err.message);
     }
@@ -209,17 +225,34 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
   };
 
   const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
-  const series = extractMetricSeries(resp, 'subscriberRetention');
 
-  // Never independently confirmed 'subscriberRetention' is the real key —
-  // it was assumed to match activeSubscriptions' camelCase pattern. Log
-  // the raw response whenever extraction comes back empty so the actual
-  // field name (if different) is visible instead of failing silently again.
-  if (series.length === 0) {
-    console.warn(`[sync-subscriptions] SUBSCRIBER_RETENTION raw response (0 extracted):`, JSON.stringify(resp));
+  // CONFIRMED shape (2026-07-09): one object covering the whole requested
+  // interval, e.g. { subscriberRetentionFor90Days: 71.05, timeInterval: {...} }
+  // — NOT a per-month series like activeSubscriptions.
+  const period = resp?.metrics?.[0];
+  const value  = period?.subscriberRetentionFor90Days;
+
+  if (value == null) {
+    console.warn(`[sync-subscriptions] SUBSCRIBER_RETENTION raw response (no value found):`, JSON.stringify(resp));
+    return null;
   }
+  return value;
+}
 
-  return series;
+// Last full calendar month — deliberately narrow, since
+// SUBSCRIBER_RETENTION returns one blended rate for whatever window you
+// give it. A 13-month-wide ask would blur a year of cohorts into one
+// number; this keeps it to one current, meaningful month.
+function lastFullMonthRange() {
+  const now   = new Date();
+  const end   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 1, 1));
+  return {
+    year:      start.getUTCFullYear(),
+    month:     start.getUTCMonth() + 1,
+    startDate: start.toISOString().slice(0, 19) + 'Z',
+    endDate:   end.toISOString().slice(0, 19) + 'Z',
+  };
 }
 
 // The `asins` filter caps at 20 items (confirmed via Amazon's error for a
