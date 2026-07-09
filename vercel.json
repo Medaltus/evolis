@@ -34,6 +34,14 @@
       "schedule": "15 3 * * *"
     },
     {
+      "path": "/api/cron/sync-ad-search-terms-request",
+      "schedule": "10 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ad-search-terms-process",
+      "schedule": "25 3 * * *"
+    },
+    {
       "path": "/api/cron/sync-subscriptions",
       "schedule": "30 3 * * *"
     },
@@ -119,6 +127,12 @@
       "maxDuration": 300
     },
     "api/cron/sync-advertising-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-ad-search-terms-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-ad-search-terms-process.js": {
       "maxDuration": 300
     },
     "api/cron/sync-advertising-backfill.js": {
