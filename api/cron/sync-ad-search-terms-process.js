@@ -69,9 +69,16 @@ const CAMPAIGN_BRANDS = [
   { name: 'skinside-seoul', tabName: 'skinside-seoul' },
 ].sort((a, b) => b.name.length - a.name.length);
 
+// Strips accents/diacritics so "évolis", "ÉVOLIS", and "evolis" all match
+// the same way. Lowercasing alone isn't enough — 'évolis'.includes('evolis')
+// is false, since é and e are different characters even after lowercasing.
+function stripAccents(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function identifyBrand(campaignName) {
-  const lower = (campaignName || '').toLowerCase();
-  const match = CAMPAIGN_BRANDS.find(b => lower.includes(b.name));
+  const normalized = stripAccents((campaignName || '').toLowerCase());
+  const match = CAMPAIGN_BRANDS.find(b => normalized.includes(b.name));
   return match ? match.tabName : null;
 }
 
