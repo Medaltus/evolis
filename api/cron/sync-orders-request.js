@@ -2,11 +2,11 @@
  * api/cron/sync-orders-request.js
  * Step 1 of 2 — requests a single flat file report covering a rolling
  * 15-day window (all brands) and stores the reportId + range in the
- * orders sheet's _meta tab. sync-orders-process.js picks it up 15 min later.
+ * orders sheet's _meta tab. sync-orders-process.js picks it up 25 min later.
  *
  * Why a 15-day window instead of a narrow rolling window:
  *   Order status (pending → shipped/cancelled) can take days to settle.
- *   Re-pulling the same 15 days every run means every recent order gets
+ *   Re-pulling the same 30 days every run means every recent order gets
  *   checked against Amazon's current data on every run, not just once when
  *   it first appears — sync-orders-process.js overwrites a row when Amazon's
  *   data for it has actually changed. This is what replaces the separate
@@ -19,7 +19,7 @@
  *   pricing every new/changed line item) lives in sync-orders-process.js,
  *   which runs on its own schedule with room to actually finish.
  *
- * Runs every 2 hours, on the hour. sync-orders-process.js runs 15 min later.
+ * Runs every 4 hours, on the hour. sync-orders-process.js runs 25 min later.
  *
  * Manual / backfill:
  *   GET /api/cron/sync-orders-request?days=30            — wider window
@@ -32,7 +32,7 @@ const sheets                               = require('../config/sheets');
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
-const DEFAULT_DAYS = 15;
+const DEFAULT_DAYS = 30;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
