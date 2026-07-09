@@ -20,7 +20,8 @@
  * That sheet is also where `name` comes from (column C), NOT the API —
  * per requirements, `name` and `title` are deliberately different columns.
  * High On Love is hard-excluded — different Amazon seller account,
- * these credentials don't apply there.
+ * these credentials don't apply there. SKUs prefixed "C-SVA" are also
+ * excluded — those are website-only inventory, not Amazon listings.
  *
  * WHY THIS IS RESUMABLE, NOT ONE SHOT:
  *   Hundreds of SKUs × 3 API calls each, spaced responsibly, cannot
@@ -63,7 +64,7 @@ const HEADERS = [
   'date', 'sku', 'asin',
   'fulfillable_quantity', 'reserved_quantity', 'inbound_working_quantity',
   'inbound_shipped_quantity', 'inbound_receiving_quantity',
-  'unfulfillable_quantity', 'total_quantity',
+  'unfulfillable_quantity', 'seller_fulfilled_quantity', 'total_quantity',
   'name', 'status', 'sales_ranks', 'title', 'item_highlights',
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords', 'ingredients', 'item_type_keyword',
@@ -167,6 +168,13 @@ async function buildProductRow(item, dateStr, nowIso) {
   const inv = inventory?.payload?.inventorySummaries?.[0]?.inventoryDetails || {};
   const totalQuantity = inventory?.payload?.inventorySummaries?.[0]?.totalQuantity ?? '';
 
+  // Merchant-fulfilled (seller-fulfilled) stock — comes from the SAME
+  // Listings API call, under the "DEFAULT" fulfillment channel, distinct
+  // from FBA's "AMAZON_NA" channel. No separate API call needed.
+  const fulfillmentAvailability = listing?.attributes?.fulfillment_availability || [];
+  const defaultChannel = fulfillmentAvailability.find(f => f.fulfillment_channel_code === 'DEFAULT');
+  const sellerFulfilledQuantity = defaultChannel?.quantity ?? '';
+
   const bullets = listing?.attributes?.bullet_point || [];
   const bulletVal = idx => bullets[idx]?.value || '';
 
@@ -191,6 +199,7 @@ async function buildProductRow(item, dateStr, nowIso) {
     inv.inboundShippedQuantity ?? '',
     inv.inboundReceivingQuantity ?? '',
     inv.unfulfillableQuantity?.totalUnfulfillableQuantity ?? '',
+    sellerFulfilledQuantity,
     totalQuantity,
     name || '', // from master sheet, NOT the API — per requirements
     (listing?.summaries?.[0]?.status || []).join(', '),
@@ -269,6 +278,7 @@ async function fetchMasterSkuList() {
     const brandNorm = stripAccents(rawBrand.toLowerCase());
 
     if (!asin || !sku) continue;
+    if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
     if (EXCLUDED_BRAND_NAMES.some(x => brandNorm.includes(x))) continue;
 
     const matched = brands.find(b =>
