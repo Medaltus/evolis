@@ -45,8 +45,8 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
-  'estimated_fees', // Amazon Product Fees API estimate, line-item total
-  'Amazon Sale Promotions', // seller-funded event discount: (regular_price - item_price) × units
+  'Amazon Estimated Fees',   // Amazon Product Fees API estimate — matches sheet column exactly
+  'Amazon Sale Promotions',  // seller-funded event discount: (regular_price - item_price) × units
 ];
 
 const META_TAB     = '_meta';
@@ -256,7 +256,17 @@ module.exports = async (req, res) => {
         const promoIds = row['promotion-ids'] || '';
 
         const existing = existingByKey.get(key);
-        const changed  = !existing || rowChanged(existing.row, { date, status, price, disc, qty, qtyShip, promoIds });
+
+        // Check if this row needs an Amazon Sale Promotions value written for
+        // the first time — treat a blank sale_promos on an event-window row as
+        // a change so we don't skip it with the unchanged shortcut below.
+        const isInEventWindow = date && eventWindows.some(
+          ev => date >= ev.startDate && date <= ev.endDate && ev.skuSet.has(sku.toUpperCase())
+        );
+        const missingPromos = isInEventWindow &&
+          (existing?.row['Amazon Sale Promotions'] == null || existing?.row['Amazon Sale Promotions'] === '');
+
+        const changed  = !existing || missingPromos || rowChanged(existing.row, { date, status, price, disc, qty, qtyShip, promoIds });
 
         if (existing && !changed) {
           unchangedCount++;
@@ -265,13 +275,15 @@ module.exports = async (req, res) => {
 
         // Only pay for a new fee estimate if price actually changed (or this
         // is a brand-new row). A status-only change reuses the stored value.
+        // NOTE: sheet column is "Amazon Estimated Fees" — must match exactly.
         const unitPrice      = qty > 0 ? round2(price / qty) : price;
         const priceUnchanged = existing && round2(parseFloat(existing.row.item_price || '0')) === price;
-        const hasStoredFee   = existing && existing.row.estimated_fees !== '' && existing.row.estimated_fees != null;
+        const storedFee      = existing?.row['Amazon Estimated Fees'];
+        const hasStoredFee   = storedFee !== '' && storedFee != null;
 
         let estimatedFees;
         if (priceUnchanged && hasStoredFee) {
-          estimatedFees = existing.row.estimated_fees;
+          estimatedFees = storedFee;
         } else {
           const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice);
           estimatedFees = feePerUnit != null ? round2(feePerUnit * qty) : '';
@@ -317,7 +329,7 @@ module.exports = async (req, res) => {
           asin,          // asin
           brand.id,      // brand
           nowEst,        // last_updated (EST)
-          estimatedFees, // estimated_fees
+          estimatedFees, // Amazon Estimated Fees
           salePromos,    // Amazon Sale Promotions
         ];
 
