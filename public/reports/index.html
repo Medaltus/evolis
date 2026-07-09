@@ -728,7 +728,7 @@ As inventory availability improves, the current sales mix provides a strong foun
         <span id="amazon-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
       </div>
       <div class="kpi-row">
-        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label" title="Net of canceled, Vine, and returned units">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
@@ -2954,6 +2954,8 @@ function initSns() {
   const AD_SUMMARY_GID      = '2032256212';                                     // Évolis tab
   const AD_ORDERS_SHEET_ID  = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI'; // ad orders cache
   const AD_ORDERS_GID       = '158578426';                                      // Évolis tab
+  const RETURNS_SHEET_ID    = '16mnFaFkTfXS4FzZ2mI5aoDKNrw8FWe8R8IUDnv3FHVs'; // dedicated returns workbook (SHEET_RETURNS)
+  const RETURNS_TAB_NAME    = 'evolis'; // sync-returns-process.js writes here (brand.tabName, no suffix — dedicated sheet)
   const BRAND               = 'evolis';
 
   // Derive the last FULL month from today
@@ -2971,10 +2973,31 @@ function initSns() {
     return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
   }
 
+  // Sheet CSV URL using tab NAME instead of gid — used for the returns tab,
+  // whose gid isn't known ahead of time (ensureTab() in sync-returns-process.js
+  // creates it on first run). Swap to sheetCsvUrl()+gid once confirmed if
+  // preferred; gviz name-lookup works fine either way.
+  function sheetCsvUrlByName(sheetId, sheetName) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  }
+
   // Validate that response looks like CSV (not an HTML error page)
   function isCsv(text) {
     const t = text.trim();
     return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+
+  // ── Returns aggregation ──────────────────────────────────────────────────
+  // Sums returned units for a given year-month, matched by RETURN date (not
+  // the original order date) — this nets Total Units down in the month the
+  // return actually happened, same convention most sellers use for "Net Units."
+  function aggregateReturnsMonth(returnRows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    return returnRows.reduce((sum, r) => {
+      const d = normalizeDate(r.return_date).substring(0, 7);
+      if (d !== prefix) return sum;
+      return sum + (parseInt(r.quantity, 10) || 0);
+    }, 0);
   }
 
   // ── Row filtering ─────────────────────────────────────────────────────────
@@ -3193,17 +3216,26 @@ function initSns() {
       const HIST_GID = '1249281379';
 
       console.log('[Evolis] Starting fetch...');
-      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, returnsCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrlByName(RETURNS_SHEET_ID, RETURNS_TAB_NAME) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Returns sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Returns sheet fetch error:', e.message), '')),
       ]);
 
       console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
       console.log('[Evolis] histCsv length:', histCsv.length, 'isCsv:', isCsv(histCsv));
       const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
       const histRows = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
+
+      // Returns tab has no promotion_ids/status columns to filter on — just
+      // confirm it's this brand (sync-returns-process.js already writes a
+      // 'brand' column per row when it upserts into evolis-returns).
+      const returnRows = isCsv(returnsCsv)
+        ? parseCsv(returnsCsv).filter(r => (r.brand || '').toLowerCase().trim() === BRAND)
+        : [];
+      console.log('[Evolis] returnRows:', returnRows.length);
 
       // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
       const allRows = [...syncRows, ...histRows];
@@ -3216,6 +3248,20 @@ function initSns() {
         showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
         return;
       }
+
+      // Net returned units out of Total Units, matched to the month the
+      // return happened (not the original order month) — same "Net Units"
+      // convention Amazon's own Business Reports use. The returns tab is a
+      // rolling window like sync-orders, so prevYoy (a full year back) will
+      // typically net 0 here until/unless it's backfilled further.
+      const returnedCurr = aggregateReturnsMonth(returnRows, year, month);
+      const returnedPrev = aggregateReturnsMonth(returnRows, prevYear, prevMonth);
+      const returnedYoy  = aggregateReturnsMonth(returnRows, yoyYear, yoyMonth);
+      curr.totalUnits = Math.max(0, curr.totalUnits - returnedCurr);
+      if (prev)    prev.totalUnits    = Math.max(0, prev.totalUnits - returnedPrev);
+      if (prevYoy) prevYoy.totalUnits = Math.max(0, prevYoy.totalUnits - returnedYoy);
+      console.log('[Evolis] returned units — curr:', returnedCurr, 'prev:', returnedPrev, 'yoy:', returnedYoy);
+
 
       // Parse ad summary — find current month row for KPI adUnits
       // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
