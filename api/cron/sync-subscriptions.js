@@ -34,6 +34,15 @@
  *   unfiltered). ASINs come from the same master ASIN→brand sheet
  *   sync-advertising-process.js already reads.
  *
+ * retention_90_day is currently always NULL — see the note in
+ * fetchSubscriptionRows() below. SUBSCRIBER_RETENTION only supports a
+ * `brandNames` filter (not `asins`), and we don't yet have Amazon's exact
+ * registered brand name strings confirmed. Revisit once that's known —
+ * active_subscriptions is unaffected and fully working in the meantime.
+ *
+ * The `asins` filter caps at 20 items per call — brands with more ASINs
+ * than that get chunked into multiple calls and summed per month.
+ *
  * Sheet: amazon-subscriptions
  * Columns: year, month, active_subscriptions, retention_90_day,
  *          brand, last_updated
@@ -115,44 +124,71 @@ module.exports = async (req, res) => {
 async function fetchSubscriptionRows(brand, brandAsins, now) {
   const { startDate, endDate } = trailingMonthRange(MONTHS_OF_HISTORY);
 
-  const body = {
-    aggregationFrequency: 'MONTH',
-    timeInterval: { startDate, endDate },
-    metrics: ['ACTIVE_SUBSCRIPTIONS', 'SUBSCRIBER_RETENTION'],
-    timePeriodType: 'PERFORMANCE',
-    marketplaceId: process.env.SP_MARKETPLACE_ID,
-    programTypes: ['SUBSCRIBE_AND_SAVE'],
-    filters: { asins: brandAsins },
-  };
-
-  const resp = await spRequest(
-    'POST',
-    `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`,
-    {},
-    body
-  );
-
-  const activeSeries    = extractMetricSeries(resp, 'activeSubscriptions');
-  const retentionSeries = extractMetricSeries(resp, 'subscriberRetention');
+  // SUBSCRIBER_RETENTION only supports filtering by `brandNames`, not
+  // `asins` — confirmed via Amazon's own validation error (2026-07-09):
+  // "Filter 'asins' is not supported for metric 'SUBSCRIBER_RETENTION'.
+  // Allowed filters: [brandNames]". Requesting it alongside
+  // ACTIVE_SUBSCRIPTIONS under an asins filter fails the WHOLE call, not
+  // just the retention part. Until we confirm Amazon's exact registered
+  // brandNames string for each brand (same guessing problem we already hit
+  // once — not repeating that blind), retention is left null here.
+  // active_subscriptions is unaffected and fully working.
+  const activeSeries = await fetchActiveSubscriptions(brandAsins, startDate, endDate);
 
   if (activeSeries.length === 0) {
-    console.error(`[sync-subscriptions] ${brand.id} — empty response:`, JSON.stringify(resp));
     throw new Error('No ACTIVE_SUBSCRIPTIONS data returned — see logged raw response');
   }
-
-  const retentionByMonth = {};
-  retentionSeries.forEach(({ year, month, value }) => {
-    retentionByMonth[`${year}-${month}`] = value;
-  });
 
   return activeSeries.map(({ year, month, value }) => [
     year,
     month,
     value,
-    retentionByMonth[`${year}-${month}`] ?? null,
+    null, // retention_90_day — pending brandNames confirmation, see note above
     brand.id,
     now,
   ]);
+}
+
+// The `asins` filter caps at 20 items (confirmed via Amazon's error for a
+// 21-ASIN brand). Chunk into batches of 20 and sum per month — this is
+// correct because active subscriptions per ASIN sum linearly across any
+// partition of a brand's ASIN list.
+const MAX_ASINS_PER_FILTER = 20;
+
+async function fetchActiveSubscriptions(brandAsins, startDate, endDate) {
+  const chunks = chunkArray(brandAsins, MAX_ASINS_PER_FILTER);
+  const monthTotals = {}; // 'YYYY-M' -> { year, month, value }
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) await sleep(RATE_LIMIT_DELAY_MS); // separate rate-limited calls, same as between brands
+
+    const body = {
+      aggregationFrequency: 'MONTH',
+      timeInterval: { startDate, endDate },
+      metrics: ['ACTIVE_SUBSCRIPTIONS'],
+      timePeriodType: 'PERFORMANCE',
+      marketplaceId: process.env.SP_MARKETPLACE_ID,
+      programTypes: ['SUBSCRIBE_AND_SAVE'],
+      filters: { asins: chunks[i] },
+    };
+
+    const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+    const series = extractMetricSeries(resp, 'activeSubscriptions');
+
+    series.forEach(({ year, month, value }) => {
+      const key = `${year}-${month}`;
+      if (!monthTotals[key]) monthTotals[key] = { year, month, value: 0 };
+      monthTotals[key].value += value;
+    });
+  }
+
+  return Object.values(monthTotals);
+}
+
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 // Normalizes the getSellingPartnerMetrics response into [{ year, month, value }, ...]
