@@ -3,19 +3,11 @@
   "crons": [
     {
       "path": "/api/cron/sync-orders-request",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 */2 * * *"
     },
     {
       "path": "/api/cron/sync-orders-process",
-      "schedule": "25 */4 * * *"
-    },
-    {
-      "path": "/api/cron/sync-returns-request",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/sync-returns-process",
-      "schedule": "20 */6 * * *"
+      "schedule": "15 */2 * * *"
     },
     {
       "path": "/api/cron/sync-walmart-orders",
@@ -31,7 +23,11 @@
     },
     {
       "path": "/api/cron/sync-products",
-      "schedule": "30 2 * * *"
+      "schedule": "*/15 2-4 * * *"
+    },
+    {
+      "path": "/api/cron/trim-products-log",
+      "schedule": "45 4 * * *"
     },
     {
       "path": "/api/cron/sync-advertising-request",
@@ -119,12 +115,6 @@
     "api/cron/sync-orders-process.js": {
       "maxDuration": 300
     },
-    "api/cron/sync-returns-request.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-returns-process.js": {
-      "maxDuration": 300
-    },
     "api/cron/sync-walmart-orders.js": {
       "maxDuration": 300
     },
@@ -135,6 +125,9 @@
       "maxDuration": 300
     },
     "api/cron/sync-products.js": {
+      "maxDuration": 300
+    },
+    "api/cron/trim-products-log.js": {
       "maxDuration": 300
     },
     "api/cron/sync-advertising-request.js": {
