@@ -126,6 +126,13 @@ module.exports = async (req, res) => {
 // now it gets up to 3 attempts before giving up.
 const MAX_RETRIES = 3;
 
+// Amazon's idempotency response for a request identical to one already
+// made — the report identity is derived from name+dateRange+config, so
+// re-running this cron twice for the same day/range hits this rather than
+// creating a wasteful duplicate. The reportId Amazon references IS the
+// report we want — this isn't an error to retry, it's a "you already have this."
+const DUPLICATE_ID_REGEX = /duplicate of\s*:\s*([a-f0-9-]+)/i;
+
 async function requestReportWithRetry(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns, label) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const { statusCode, body, retryAfterSec } = await adRequestRaw('POST', '/reporting/reports', token, profileId, {
@@ -145,6 +152,13 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
     if (body?.reportId) {
       console.log(`[sync-advertising-request] ${label}: ${body.reportId}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
       return body.reportId;
+    }
+
+    const duplicateMatch = (statusCode === 425 || body?.code === '425') && body?.detail?.match(DUPLICATE_ID_REGEX);
+    if (duplicateMatch) {
+      const existingId = duplicateMatch[1];
+      console.log(`[sync-advertising-request] ${label}: reusing existing report ${existingId} (identical request already made today)`);
+      return existingId;
     }
 
     const isThrottled = statusCode === 429 || body?.code === '429';
