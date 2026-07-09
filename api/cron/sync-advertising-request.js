@@ -156,7 +156,7 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
       continue;
     }
 
-    console.error(`[sync-advertising-request] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(body).slice(0, 200));
+    console.error(`[sync-advertising-request] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(body));
     return null;
   }
   return null;
