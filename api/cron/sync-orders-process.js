@@ -152,9 +152,9 @@ module.exports = async (req, res) => {
   // ── Load Events + price reference for sale_promos calculation ─────────────
   // Events tab: event_name, start_date, end_date, skus (comma-separated)
   // Product Short Name tab: ASIN, SKU, Product Short Name, Brand, Price
-  // Both live in the master SKU/ASIN sheet (SHEET_PRODUCTS env var).
+  // Both live in the master SKU/ASIN sheet (SHEET_MASTER_SKU_LIST env var).
   // We load them once here and pass the lookup into the per-row upsert below.
-  const PRODUCTS_SHEET_ID = process.env.SHEET_PRODUCTS;
+  const PRODUCTS_SHEET_ID = process.env.SHEET_MASTER_SKU_LIST;
   const EVENTS_GID        = '347530381';
   const PROD_NAMES_GID    = '164358627';
 
