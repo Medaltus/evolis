@@ -26,7 +26,7 @@ module.exports = [
     id:              'evolis',
     tabName:         'evolis',
     skuPrefix:       'EVO',
-    displayName:     'Évolis',
+    displayName:     'évolis',
     amazonBrandName: 'évolis',
     active:          true,
   },
