@@ -46,6 +46,7 @@ const HEADERS = [
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
   'estimated_fees', // Amazon Product Fees API estimate, line-item total
+  'Amazon Sale Promotions', // seller-funded event discount: (regular_price - item_price) × units
 ];
 
 const META_TAB     = '_meta';
@@ -148,6 +149,52 @@ module.exports = async (req, res) => {
 
   console.log(`[sync-orders-process] flat file rows: ${rows.length}`);
 
+  // ── Load Events + price reference for sale_promos calculation ─────────────
+  // Events tab: event_name, start_date, end_date, skus (comma-separated)
+  // Product Short Name tab: ASIN, SKU, Product Short Name, Brand, Price
+  // Both live in the master SKU/ASIN sheet (SHEET_PRODUCTS env var).
+  // We load them once here and pass the lookup into the per-row upsert below.
+  const PRODUCTS_SHEET_ID = process.env.SHEET_PRODUCTS;
+  const EVENTS_GID        = '347530381';
+  const PROD_NAMES_GID    = '164358627';
+
+  // eventWindows: array of { skuSet: Set, startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
+  // priceRef: Map of SKU.toUpperCase() → regular price (number)
+  let eventWindows = [];
+  let priceRef     = new Map();
+
+  try {
+    if (PRODUCTS_SHEET_ID) {
+      const [eventsCsv, prodCsv] = await Promise.all([
+        fetchCsv(PRODUCTS_SHEET_ID, EVENTS_GID),
+        fetchCsv(PRODUCTS_SHEET_ID, PROD_NAMES_GID),
+      ]);
+
+      // Parse events
+      const evRows = parseTsvRows(eventsCsv, ',');
+      evRows.forEach(r => {
+        const start = (r['start_date'] || '').trim();
+        const end   = (r['end_date']   || '').trim();
+        const skus  = (r['skus']       || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        if (start && end && skus.length) {
+          eventWindows.push({ skuSet: new Set(skus), startDate: start, endDate: end });
+        }
+      });
+
+      // Parse regular prices
+      const prodRows = parseTsvRows(prodCsv, ',');
+      prodRows.forEach(r => {
+        const sku   = (r['SKU'] || '').trim().toUpperCase();
+        const price = parseFloat((r['Price'] || r['price'] || '').replace(/[$,]/g, '')) || 0;
+        if (sku && price > 0) priceRef.set(sku, price);
+      });
+
+      console.log(`[sync-orders-process] events loaded: ${eventWindows.length}, prices: ${priceRef.size}`);
+    }
+  } catch (err) {
+    console.warn('[sync-orders-process] failed to load events/prices — sale_promos will be blank:', err.message);
+  }
+
   // ── 5. Per-brand upsert ────────────────────────────────────────────────────
   const nowEst  = toEstIso(new Date());
   const results = [];
@@ -230,6 +277,30 @@ module.exports = async (req, res) => {
           estimatedFees = feePerUnit != null ? round2(feePerUnit * qty) : '';
         }
 
+        // ── sale_promos: seller-funded event discount ───────────────────────
+        // For orders falling within a sale event window, calculates
+        // (regular_price - item_price) × unit_count. Reuses stored value for
+        // unchanged rows (same as estimated_fees pattern) so historical rows
+        // that age out of the Amazon report window are never cleared.
+        let salePromos = '';
+        if (date && qty > 0) {
+          for (const ev of eventWindows) {
+            if (date >= ev.startDate && date <= ev.endDate && ev.skuSet.has(sku.toUpperCase())) {
+              const regularPrice = priceRef.get(sku.toUpperCase());
+              if (regularPrice && regularPrice > price) {
+                salePromos = round2((regularPrice - price) * qty);
+              }
+              break; // only one event window per order row
+            }
+          }
+        }
+        // If this is an unchanged row being skipped, we already continue'd above.
+        // For updated rows where sale_promos wasn't recalculated (e.g. status-only
+        // change), fall back to stored value so we don't blank out a prior calculation.
+        if (salePromos === '' && existing && existing.row['Amazon Sale Promotions'] != null && existing.row['Amazon Sale Promotions'] !== '') {
+          salePromos = existing.row['Amazon Sale Promotions'];
+        }
+
         const newRow = [
           orderId,       // order_id
           date,          // date
@@ -247,6 +318,7 @@ module.exports = async (req, res) => {
           brand.id,      // brand
           nowEst,        // last_updated (EST)
           estimatedFees, // estimated_fees
+          salePromos,    // Amazon Sale Promotions
         ];
 
         if (existing) {
@@ -396,3 +468,39 @@ function toEstIso(date) {
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
+
+// Fetches a Google Sheet tab as CSV text using the export URL.
+async function fetchCsv(sheetId, gid) {
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`fetchCsv failed: ${resp.status} ${url}`);
+  return resp.text();
+}
+
+// Minimal CSV parser for Google Sheets exports (handles quoted fields).
+// delimiter is ',' for CSV exports.
+function parseTsvRows(text, delimiter = ',') {
+  if (!text || !text.trim()) return [];
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = splitLine(lines[0], delimiter).map(h => h.replace(/^"|"$/g, '').trim());
+  return lines.slice(1).map(line => {
+    const vals = splitLine(line, delimiter);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] || '').replace(/^"|"$/g, '').trim(); });
+    return obj;
+  });
+}
+
+function splitLine(line, delimiter) {
+  const result = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQuote = !inQuote; cur += c; }
+    else if (c === delimiter && !inQuote) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur);
+  return result;
+}
