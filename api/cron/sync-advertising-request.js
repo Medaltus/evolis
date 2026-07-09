@@ -54,38 +54,29 @@ module.exports = async (req, res) => {
     const profileId = await discoverProfileId(token);
     console.log(`[sync-advertising-request] using profileId=${profileId}`);
 
-    // ── Request all 6 reports in parallel ────────────────────────────────────
-    const [
-      asinCurrResp,
-      spCurrResp,
-      sbCurrResp,
-      asinPrevResp,
-      spPrevResp,
-      sbPrevResp,
-    ] = await Promise.allSettled([
-      requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
-      requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
-      requestReport(token, profileId, 'sbCampaigns', 'SPONSORED_BRANDS',   curr, ['campaign'], ['campaignName','impressions','clicks','cost','purchases14d','sales14d']),
-      requestReport(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'],  ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d']),
-      requestReport(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],    ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d']),
-      requestReport(token, profileId, 'sbCampaigns', 'SPONSORED_BRANDS',   prev, ['campaign'], ['campaignName','impressions','clicks','cost','purchases14d','sales14d']),
-    ]);
+    // ── Request all 6 reports, staggered ──────────────────────────────────────
+    // Previously fired all 6 in the exact same instant via Promise.allSettled —
+    // that's a self-inflicted burst against Amazon's reporting queue. Amazon's
+    // own docs say these limits are dynamic/queue-based, but there's no reason
+    // to make our own six requests compete with each other for the same instant.
+    // A ~1.5s stagger costs ~9s total (this function has a 300s budget) and
+    // removes that self-inflicted collision risk entirely.
+    const reportJobs = [
+      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_curr'),
+      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_curr'),
+      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    curr, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases14d','sales14d'], 'sb_curr'),
+      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_prev'),
+      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_prev'),
+      () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    prev, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases14d','sales14d'], 'sb_prev'),
+    ];
 
-    const getId = (result, label) => {
-      if (result.status === 'fulfilled' && result.value?.reportId) {
-        console.log(`[sync-advertising-request] ${label}: ${result.value.reportId}`);
-        return result.value.reportId;
-      }
-      console.error(`[sync-advertising-request] ${label} failed:`, result.reason?.message || JSON.stringify(result.value).slice(0,200));
-      return null;
-    };
-
-    const asinCurrId = getId(asinCurrResp, 'asin_curr');
-    const spCurrId   = getId(spCurrResp,   'sp_curr');
-    const sbCurrId   = getId(sbCurrResp,   'sb_curr');
-    const asinPrevId = getId(asinPrevResp, 'asin_prev');
-    const spPrevId   = getId(spPrevResp,   'sp_prev');
-    const sbPrevId   = getId(sbPrevResp,   'sb_prev');
+    const STAGGER_MS = 1500;
+    const results = [];
+    for (let i = 0; i < reportJobs.length; i++) {
+      if (i > 0) await sleep(STAGGER_MS);
+      results.push(await reportJobs[i]());
+    }
+    const [asinCurrId, spCurrId, sbCurrId, asinPrevId, spPrevId, sbPrevId] = results;
 
     // Require at least one curr and one prev report to succeed
     if (!spCurrId && !sbCurrId) return res.status(500).json({ error: 'All current month report requests failed' });
@@ -129,20 +120,46 @@ module.exports = async (req, res) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function requestReport(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns) {
-  return adRequest('POST', '/reporting/reports', token, profileId, {
-    name:      `ad_${reportTypeId}_${dateRange.endDate}`,
-    startDate: dateRange.startDate,
-    endDate:   dateRange.endDate,
-    configuration: {
-      adProduct,
-      groupBy,
-      columns,
-      reportTypeId,
-      timeUnit: 'SUMMARY',
-      format:   'GZIP_JSON',
-    },
-  });
+// Wraps a single report request with retry-on-429 logic. Amazon's own docs
+// recommend exponential backoff and honoring the Retry-After header on 429 —
+// previously a single throttle permanently lost that report for the day;
+// now it gets up to 3 attempts before giving up.
+const MAX_RETRIES = 3;
+
+async function requestReportWithRetry(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns, label) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const { statusCode, body, retryAfterSec } = await adRequestRaw('POST', '/reporting/reports', token, profileId, {
+      name:      `ad_${reportTypeId}_${dateRange.endDate}`,
+      startDate: dateRange.startDate,
+      endDate:   dateRange.endDate,
+      configuration: {
+        adProduct,
+        groupBy,
+        columns,
+        reportTypeId,
+        timeUnit: 'SUMMARY',
+        format:   'GZIP_JSON',
+      },
+    });
+
+    if (body?.reportId) {
+      console.log(`[sync-advertising-request] ${label}: ${body.reportId}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      return body.reportId;
+    }
+
+    const isThrottled = statusCode === 429 || body?.code === '429';
+    if (isThrottled && attempt < MAX_RETRIES) {
+      // Honor Retry-After if Amazon sent one; otherwise back off 2s/4s/8s.
+      const waitSec = retryAfterSec ?? (2 * attempt);
+      console.warn(`[sync-advertising-request] ${label} throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${waitSec}s`);
+      await sleep(waitSec * 1000);
+      continue;
+    }
+
+    console.error(`[sync-advertising-request] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(body).slice(0, 200));
+    return null;
+  }
+  return null;
 }
 
 async function discoverProfileId(token) {
@@ -178,6 +195,9 @@ function getLastMonthRange() {
   return { startDate: fmt(firstOfPrevMonth), endDate: fmt(lastOfPrevMonth) };
 }
 
+// Original simple version — still used by discoverProfileId, which doesn't
+// need retry logic (it's a one-off lookup, not something Amazon's reporting
+// queue would throttle the same way).
 function adRequest(method, path, token, profileId, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : '';
@@ -203,3 +223,38 @@ function adRequest(method, path, token, profileId, body) {
     req.end();
   });
 }
+
+// Retry-aware version — surfaces statusCode + Retry-After so
+// requestReportWithRetry can act on a 429 instead of just failing.
+function adRequestRaw(method, path, token, profileId, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : '';
+    const headers = {
+      'Authorization':                   `Bearer ${token}`,
+      'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
+      'Content-Type':                    method === 'POST' && path === '/reporting/reports'
+                                           ? 'application/vnd.createasyncreportrequest.v3+json'
+                                           : 'application/json',
+    };
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        const retryAfterHeader = res.headers['retry-after'];
+        const retryAfterSec    = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
+        try {
+          resolve({ statusCode: res.statusCode, body: JSON.parse(d), retryAfterSec });
+        } catch (e) {
+          resolve({ statusCode: res.statusCode, body: { parseError: d.slice(0, 300) }, retryAfterSec });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
