@@ -4174,17 +4174,24 @@ function initSns() {
         setKpiVal('kpi-pct-revenue-invested', pctRevenueInvested + '%');
       }
 
-      // ── Launch to Date — sum ALL historical investment data, not just
-      // the 13-month chart window. Each source contributes its full history:
-      //   Ads:    every row in AD_SUMMARY (already brand-filtered above)
-      //   Vine:   every enrollment date ever in the Product Short Name tab
-      //   Promos: every order row — allOrderRows is already brand-filtered
-      //           (sync-orders filters by SKU prefix at write time, so
-      //           every row in these sheets belongs to this brand already)
-      const ltdAds    = adRows.reduce((s, r) => s + parseAmt(r.spend), 0);
+      // ── Launch to Date ───────────────────────────────────────────────────
+      // IMPORTANT: this sums the SAME resolved values the chart bars show
+      // (live data where it exists, STEWARDSHIP_INVEST_FALLBACK where it
+      // doesn't) — NOT raw adRows/allOrderRows. Summing raw live rows alone
+      // undercounted badly, since most of the 13-month window is currently
+      // fallback-sourced (AD_SUMMARY/orders sheets don't have that much
+      // live history yet) — confirmed 2026-07-10 (LTD showed $4,945 vs a
+      // ~$15K+ visible chart sum before this fix.
+      //
+      // HONEST LIMITATION: this still only covers the 13-month window plus
+      // Vine (which has real history back to 2023). It is NOT a true
+      // from-launch total for Ads/Promos — that requires manually backfilling
+      // AD_SUMMARY / STEWARDSHIP_INVEST_FALLBACK with pre-2025-05 numbers.
+      // Vine is already complete since it reads every enrollment date ever
+      // logged, regardless of how far back it goes.
+      const ltdAds    = adsData.reduce((s, v) => s + v, 0);
+      const ltdPromos = promosData.reduce((s, v) => s + v, 0);
       const ltdVine   = Object.values(vineMap).reduce((s, v) => s + v, 0);
-      const ltdPromos = allOrderRows.reduce((s, r) =>
-        s + parseAmt(r.promotion_discount) + parseAmt(r['Amazon Sale Promotions']), 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
       console.log('[Evolis] LTD: ads=', ltdAds, 'vine=', ltdVine, 'promos=', ltdPromos, 'total=', ltdTotal);
       const ltdEl = document.getElementById('ltd-total-investments');
