@@ -888,7 +888,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           </div>
           <div class="chart-wrap-sm"><canvas id="chart-invest"></canvas></div>
           <div style="margin-top:12px;">
-            <div style="font-size:20px;font-weight:700;color:var(--navy);">$127,299</div>
+            <div id="ltd-total-investments" style="font-size:20px;font-weight:700;color:var(--navy);">$127,299</div>
             <div style="font-size:10px;color:var(--muted);">Launch to date · Total Investments</div>
           </div>
         </div>
@@ -4089,7 +4089,10 @@ function initSns() {
       const investLabels = [], adsData = [], vineData = [], promosData = [];
       invMonths.forEach(({ year: y, month: m }) => {
         const key = monthKey(y, m);
-        investLabels.push(monthAbbr[m - 1]);
+        // Always include year suffix so months spanning two calendar years
+        // are unambiguous — 'Nov '25' vs 'Nov '26' instead of two 'Nov' bars.
+        const label = `${monthAbbr[m - 1]} '${String(y).slice(2)}`;
+        investLabels.push(label);
         const adRow = findAdRow(adRows, y, m);
         const ordersAgg = aggregateStewardshipMonth(allOrderRows, y, m);
         const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
@@ -4160,6 +4163,22 @@ function initSns() {
         const pctRevenueInvested = Math.round((currInvestTotal / currRevenue) * 100);
         setKpiVal('kpi-pct-revenue-invested', pctRevenueInvested + '%');
       }
+
+      // ── Launch to Date — sum ALL historical investment data, not just
+      // the 13-month chart window. Each source contributes its full history:
+      //   Ads:    every row in AD_SUMMARY (includes manually backfilled months)
+      //   Vine:   every enrollment date ever in the Product Short Name tab
+      //   Promos: every order row in sync + historical sheets combined
+      const ltdAds    = adRows.reduce((s, r) => s + parseAmt(r.spend), 0);
+      const ltdVine   = Object.values(vineMap).reduce((s, v) => s + v, 0);
+      const ltdPromos = allOrderRows.reduce((s, r) =>
+        s + parseAmt(r.promotion_discount) + parseAmt(r['Amazon Sale Promotions']), 0);
+      const ltdTotal  = ltdAds + ltdVine + ltdPromos;
+      const ltdEl = document.getElementById('ltd-total-investments');
+      if (ltdEl) {
+        ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
+      }
+
       // Amazon Fees KPI intentionally left as-is — pending a Finances/Product Fees
       // API sync (net-new backend job), same shape as AD_SUMMARY. Do not overwrite
       // with a guess in the meantime.
