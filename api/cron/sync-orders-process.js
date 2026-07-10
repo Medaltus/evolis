@@ -45,7 +45,7 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
-  'Amazon Estimated Fees',   // Amazon Product Fees API estimate — matches sheet column exactly
+  'Amazon Estimated fees',   // Amazon Product Fees API estimate — matches sheet column exactly
   'Amazon Sale Promotions',  // seller-funded event discount: (regular_price - item_price) × units
 ];
 
@@ -287,7 +287,7 @@ module.exports = async (req, res) => {
         // purely to backfill Amazon Sale Promotions.
         const unitPrice      = qty > 0 ? round2(price / qty) : price;
         const priceUnchanged = existing && round2(parseFloat(existing.row.item_price || '0')) === price;
-        const storedFee      = existing?.row['Amazon Estimated Fees'];
+        const storedFee      = existing?.row['Amazon Estimated fees'];
         const hasStoredFee   = storedFee !== '' && storedFee != null;
 
         let estimatedFees;
