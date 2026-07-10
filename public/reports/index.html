@@ -728,7 +728,7 @@ As inventory availability improves, the current sales mix provides a strong foun
         <span id="amazon-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
       </div>
       <div class="kpi-row">
-        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label" title="Net of canceled, Vine, and returned units">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
@@ -888,7 +888,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           </div>
           <div class="chart-wrap-sm"><canvas id="chart-invest"></canvas></div>
           <div style="margin-top:12px;">
-            <div id="kpi-ltd-investments" style="font-size:20px;font-weight:700;color:var(--navy);">—</div>
+            <div style="font-size:20px;font-weight:700;color:var(--navy);">$127,299</div>
             <div style="font-size:10px;color:var(--muted);">Launch to date · Total Investments</div>
           </div>
         </div>
@@ -2954,8 +2954,6 @@ function initSns() {
   const AD_SUMMARY_GID      = '2032256212';                                     // Évolis tab
   const AD_ORDERS_SHEET_ID  = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI'; // ad orders cache
   const AD_ORDERS_GID       = '158578426';                                      // Évolis tab
-  const RETURNS_SHEET_ID    = '16mnFaFkTfXS4FzZ2mI5aoDKNrw8FWe8R8IUDnv3FHVs'; // dedicated returns workbook (SHEET_RETURNS)
-  const RETURNS_TAB_NAME    = 'evolis'; // sync-returns-process.js writes here (brand.tabName, no suffix — dedicated sheet)
   const BRAND               = 'evolis';
 
   // Derive the last FULL month from today
@@ -2973,31 +2971,10 @@ function initSns() {
     return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
   }
 
-  // Sheet CSV URL using tab NAME instead of gid — used for the returns tab,
-  // whose gid isn't known ahead of time (ensureTab() in sync-returns-process.js
-  // creates it on first run). Swap to sheetCsvUrl()+gid once confirmed if
-  // preferred; gviz name-lookup works fine either way.
-  function sheetCsvUrlByName(sheetId, sheetName) {
-    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-  }
-
   // Validate that response looks like CSV (not an HTML error page)
   function isCsv(text) {
     const t = text.trim();
     return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
-  }
-
-  // ── Returns aggregation ──────────────────────────────────────────────────
-  // Sums returned units for a given year-month, matched by RETURN date (not
-  // the original order date) — this nets Total Units down in the month the
-  // return actually happened, same convention most sellers use for "Net Units."
-  function aggregateReturnsMonth(returnRows, year, month) {
-    const prefix = `${year}-${String(month).padStart(2, '0')}`;
-    return returnRows.reduce((sum, r) => {
-      const d = normalizeDate(r.return_date).substring(0, 7);
-      if (d !== prefix) return sum;
-      return sum + (parseInt(r.quantity, 10) || 0);
-    }, 0);
   }
 
   // ── Row filtering ─────────────────────────────────────────────────────────
@@ -3216,26 +3193,17 @@ function initSns() {
       const HIST_GID = '1249281379';
 
       console.log('[Evolis] Starting fetch...');
-      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, returnsCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
-        fetch(sheetCsvUrlByName(RETURNS_SHEET_ID, RETURNS_TAB_NAME) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Returns sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Returns sheet fetch error:', e.message), '')),
       ]);
 
       console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
       console.log('[Evolis] histCsv length:', histCsv.length, 'isCsv:', isCsv(histCsv));
       const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
       const histRows = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
-
-      // Returns tab has no promotion_ids/status columns to filter on — just
-      // confirm it's this brand (sync-returns-process.js already writes a
-      // 'brand' column per row when it upserts into evolis-returns).
-      const returnRows = isCsv(returnsCsv)
-        ? parseCsv(returnsCsv).filter(r => (r.brand || '').toLowerCase().trim() === BRAND)
-        : [];
-      console.log('[Evolis] returnRows:', returnRows.length);
 
       // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
       const allRows = [...syncRows, ...histRows];
@@ -3248,20 +3216,6 @@ function initSns() {
         showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
         return;
       }
-
-      // Net returned units out of Total Units, matched to the month the
-      // return happened (not the original order month) — same "Net Units"
-      // convention Amazon's own Business Reports use. The returns tab is a
-      // rolling window like sync-orders, so prevYoy (a full year back) will
-      // typically net 0 here until/unless it's backfilled further.
-      const returnedCurr = aggregateReturnsMonth(returnRows, year, month);
-      const returnedPrev = aggregateReturnsMonth(returnRows, prevYear, prevMonth);
-      const returnedYoy  = aggregateReturnsMonth(returnRows, yoyYear, yoyMonth);
-      curr.totalUnits = Math.max(0, curr.totalUnits - returnedCurr);
-      if (prev)    prev.totalUnits    = Math.max(0, prev.totalUnits - returnedPrev);
-      if (prevYoy) prevYoy.totalUnits = Math.max(0, prevYoy.totalUnits - returnedYoy);
-      console.log('[Evolis] returned units — curr:', returnedCurr, 'prev:', returnedPrev, 'yoy:', returnedYoy);
-
 
       // Parse ad summary — find current month row for KPI adUnits
       // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
@@ -3943,23 +3897,26 @@ function initSns() {
   // ════════════════════════════════════════════════════════════════════════
   // GOOGLE SHEETS DATA — Brand Stewardship page (Marketing > Brand Stewardship)
   // ════════════════════════════════════════════════════════════════════════
-  // Reuses this IIFE's existing SYNC/HISTORICAL order sheets (for promotion_discount
-  // + total units) and AD_SUMMARY sheet (for ads spend/impressions/clicks/ad_units).
-  // Adds one new sheet: the "Vine" tab on the master SKU/ASIN sheet, where Vine
-  // enrollments are logged one row per SKU (Brand, SKU, ASIN, Date Enrolled).
-  // Each enrollment costs a flat $200 recognized in the month enrolled.
+  // Reuses this IIFE's existing SYNC/HISTORICAL order sheets (for
+  // promotion_discount + Amazon Sale Promotions + total units), and AD_SUMMARY
+  // sheet (for ads spend/impressions/clicks/ad_units).
   //
-  // FALLBACK DATA: any month not yet covered by a live sheet (older than the
-  // sheet's retention window, or before a source existed) falls back to the
-  // values below. These were the hand-verified numbers as of this build —
-  // update them here if you re-verify a month, or delete an entry once the
-  // live sheet actually covers it.
+  // VINE: reads column F ("Date Enrolled in Vine") from the "Product Short Name"
+  // tab of the master SKU/ASIN sheet (same tab already used by the products sync).
+  // Columns: A=ASIN, B=SKU, C=Product Short Name, D=Brand, E=Price, F=Date Enrolled in Vine.
+  // Each enrollment = flat $200, recognized in the month the date falls in.
+  // Rows with a blank column F are simply not yet enrolled — skipped.
+  //
+  // PROMOS: sums BOTH promotion_discount (column G of orders sheet, covers
+  // coupons/S&S discounts) AND "Amazon Sale Promotions" (column Q of orders
+  // sheet, covers Prime Day/event discounts that don't tag a promotion_id).
+  //
+  // FALLBACK DATA: any month not yet covered by a live sheet falls back to the
+  // values below. Update or delete entries here as live coverage catches up.
   // ────────────────────────────────────────────────────────────────────────
 
   const VINE_SHEET_ID    = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
-  const VINE_GID         = '846524361'; // "Vine" tab
-  const EVENTS_GID       = '347530381'; // "Events" tab — sale date ranges for promo investment calc
-  const PROD_NAMES_GID   = '164358627'; // "Product Short Name" tab — SKU → regular price lookup
+  const VINE_GID         = '164358627'; // "Product Short Name" tab — col F = Date Enrolled in Vine
   const VINE_COST_PER_ENROLLMENT = 200;
 
   // Investments chart fallback — keyed 'YYYY-MM'. Ported from the original
@@ -4004,35 +3961,57 @@ function initSns() {
     return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
   }
 
-  // Sums promotion_discount + sale_promos + total units for a brand-filtered
-  // order-row set in a given month. promotion_discount covers S&S/coupons;
-  // sale_promos covers seller-funded event discounts (Prime Day, BSS, etc.)
-  // written by sync-orders-process.js.
+  // Strips accents/diacritics — needed for brand-name matching on the
+  // Product Short Name tab where brand is stored as "évolis" (accented).
+  function stripAccents(str) {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  // Sums promotion_discount + Amazon Sale Promotions + total units for a
+  // brand-filtered order-row set in a given month.
+  // promotion_discount (col G): covers coupons, S&S, and other tagged promos.
+  // Amazon Sale Promotions (col Q): covers Prime Day / Amazon event discounts
+  //   that don't tag a promotion_id on the order — confirmed column name 2026-07-10.
   function aggregateStewardshipMonth(rows, year, month) {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
     const filtered = rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix);
     const totalUnits    = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
-    const promoDiscount = filtered.reduce((s, r) => s + parseAmt(r.promotion_discount), 0);
-    const salePromos    = filtered.reduce((s, r) => s + (parseFloat(r['Amazon Sale Promotions']) || 0), 0);
-    return { totalUnits, promoDiscount, salePromos, hasData: filtered.length > 0 };
+    const promoDiscount = filtered.reduce((s, r) =>
+      s + parseAmt(r.promotion_discount) + parseAmt(r['Amazon Sale Promotions']), 0);
+    return { totalUnits, promoDiscount, hasData: filtered.length > 0 };
   }
 
-  // Vine tab: one row per enrolled SKU. Sums (Units Enrolled × $200) into the
-  // month it was enrolled. Sheet headers are "Brand", "SKU", "ASIN",
-  // "Units Enrolled", "Date Enrolled (MM/DD/YY)".
+  // Reads "Date Enrolled in Vine" (column F) from the Product Short Name tab.
+  // Columns: A=ASIN, B=SKU, C=Product Short Name, D=Brand, E=Price, F=Date Enrolled in Vine.
+  // Each row with a non-blank col F that matches this brand = $200 in that month.
+  // Rows with blank col F are simply not yet enrolled — skipped with no noise.
   function vineMonthlyCost(vineRows) {
     const map = {};
     vineRows.forEach(r => {
-      const raw = (r['Date Enrolled (MM/DD/YY)'] || '').trim();
+      // Col D = brand name — filter to this brand only (accent-insensitive)
+      const rowBrand = stripAccents((r['Brand'] || r['brand'] || r[3] || '').toLowerCase().trim());
+      if (!rowBrand.includes('volis') && rowBrand !== BRAND) return;
+
+      // Col F = date enrolled — may be MM/DD/YYYY or YYYY-MM-DD depending on sheet formatting
+      const raw = (r['Date Enrolled in Vine'] || r[5] || '').trim();
       if (!raw) return;
-      const parts = raw.split('/');
-      if (parts.length !== 3) return;
-      const mm = parts[0].padStart(2, '0');
-      let yy = parts[2].trim();
-      if (yy.length === 2) yy = '20' + yy;
+
+      let yy, mm;
+      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        // YYYY-MM-DD
+        yy = raw.slice(0, 4);
+        mm = raw.slice(5, 7);
+      } else if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(raw)) {
+        // MM/DD/YY or MM/DD/YYYY
+        const parts = raw.split('/');
+        mm = parts[0].padStart(2, '0');
+        yy = parts[2].trim().length === 2 ? '20' + parts[2].trim() : parts[2].trim();
+      } else {
+        return; // unrecognised format — skip
+      }
+
       const key = `${yy}-${mm}`;
-      const units = parseInt(r['Units Enrolled'], 10) || 1; // default to 1 if blank
-      map[key] = (map[key] || 0) + (units * VINE_COST_PER_ENROLLMENT);
+      map[key] = (map[key] || 0) + VINE_COST_PER_ENROLLMENT;
     });
     return map;
   }
@@ -4054,64 +4033,6 @@ function initSns() {
       }
     }
     return null;
-  }
-
-  // Builds a SKU → regular_price map from the Product Short Name tab.
-  // Expects columns: A=ASIN, B=SKU, C=Product Short Name, D=Brand, E=Price
-  function buildPriceMap(productRows) {
-    const map = {};
-    productRows.forEach(r => {
-      const sku   = (r['SKU'] || '').trim().toUpperCase();
-      const brand = (r['Brand'] || '').toLowerCase().trim();
-      const price = parseAmt(r['Price'] || r['price'] || '');
-      if (sku && price > 0 && (brand === BRAND || brand.endsWith('volis'))) {
-        map[sku] = price;
-      }
-    });
-    return map;
-  }
-
-  // Builds a monthKey → event promo investment map from the Events tab.
-  // Events tab columns: event_name, start_date, end_date, skus (comma-separated)
-  // For each order during an event window whose SKU is in the event's SKU list,
-  // calculates: (regular_price - item_price) × unit_count
-  // and accumulates into the month the ORDER was placed (not the event start date),
-  // so multi-day events spanning a month boundary are attributed correctly.
-  function buildEventPromoMap(eventRows, allOrderRows, priceMap) {
-    const map = {}; // monthKey → total event promo investment
-
-    eventRows.forEach(ev => {
-      const startDate = (ev['start_date'] || ev['Start Date'] || '').trim();
-      const endDate   = (ev['end_date']   || ev['End Date']   || '').trim();
-      const skuList   = (ev['skus']       || ev['SKUs']       || ev['sku'] || '')
-        .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-
-      if (!startDate || !endDate || !skuList.length) return;
-
-      allOrderRows.forEach(r => {
-        const sku       = (r.sku || '').toUpperCase();
-        const orderDate = normalizeDate(r.date);
-        if (!skuList.includes(sku)) return;
-        if (orderDate < startDate || orderDate > endDate) return;
-
-        const regularPrice = priceMap[sku];
-        if (!regularPrice) return;
-
-        const itemPrice = parseAmt(r.item_price);
-        const units     = parseInt(r.unit_count, 10) || 0;
-        const discount  = regularPrice - itemPrice;
-
-        // Only count genuine discounts (not orders at or above regular price)
-        if (discount <= 0 || units <= 0) return;
-
-        const key = orderDate.substring(0, 7); // YYYY-MM
-        map[key] = (map[key] || 0) + (discount * units);
-      });
-    });
-
-    // Round all values to 2 decimal places
-    Object.keys(map).forEach(k => { map[k] = Math.round(map[k] * 100) / 100; });
-    return map;
   }
 
   function setKpiVal(id, text) {
@@ -4159,10 +4080,8 @@ function initSns() {
       const histRows       = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
       const allOrderRows   = [...syncRows, ...histRows];
       const adRows         = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv).filter(r => (r.brand || '').toLowerCase().trim() === BRAND) : [];
-      const vineRows       = isCsv(vineCsv) ? parseCsv(vineCsv).filter(r => {
-        const b = (r.Brand || r.brand || '').toLowerCase().trim();
-        return b === BRAND || b.endsWith('volis');
-      }) : [];
+      // Vine: all rows from Product Short Name tab — vineMonthlyCost filters by brand internally
+      const vineRows       = isCsv(vineCsv) ? parseCsv(vineCsv) : [];
       const vineMap = vineMonthlyCost(vineRows);
 
       // ── Investments chart (13 trailing months) ──────────────────────────
@@ -4176,32 +4095,8 @@ function initSns() {
         const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
         adsData.push(adRow ? parseAmt(adRow.spend) : fallback.ads);
         vineData.push(key in vineMap ? vineMap[key] : fallback.vine);
-        // promoDiscount = S&S/coupon discounts; salePromos = event discounts from cron
-        const totalPromos = ordersAgg.hasData
-          ? ordersAgg.promoDiscount + ordersAgg.salePromos
-          : fallback.promos;
-        promosData.push(totalPromos);
+        promosData.push(ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos);
       });
-
-      // ── Launch-to-date total investments (live, not hardcoded) ──────────
-      const allKnownKeys = new Set([
-        ...Object.keys(STEWARDSHIP_INVEST_FALLBACK),
-        ...invMonths.map(({ year: y, month: m }) => monthKey(y, m)),
-      ]);
-      let ltdTotal = 0;
-      allKnownKeys.forEach(key => {
-        const [y, m] = key.split('-').map(Number);
-        const adRow     = findAdRow(adRows, y, m);
-        const ordersAgg = aggregateStewardshipMonth(allOrderRows, y, m);
-        const fallback  = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
-        ltdTotal += adRow ? parseAmt(adRow.spend) : fallback.ads;
-        ltdTotal += key in vineMap ? vineMap[key] : fallback.vine;
-        ltdTotal += ordersAgg.hasData
-          ? ordersAgg.promoDiscount + ordersAgg.salePromos
-          : fallback.promos;
-      });
-      const ltdEl = document.getElementById('kpi-ltd-investments');
-      if (ltdEl) ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
 
       // ── Ad Impressions chart (monthly, Jan–Dec, this year vs last year) ─
       // Previously sampled Jan/Mar/May/Jul/Sep/Nov only (ported from the old
@@ -4256,10 +4151,10 @@ function initSns() {
       if (pctUnitsAdsCurr != null) setKpiVal('kpi-pct-units-ads', pctUnitsAdsCurr + '%');
       setKpiMom('kpi-pct-units-ads', pct(pctUnitsAdsCurr, pctUnitsAdsPrev));
 
-      // % Revenue Invested — (Ads + Vine + S&S promos + event sale promos) ÷ Revenue this month
+      // % Revenue Invested — (Ads + Vine + Promos this month) ÷ Revenue this month
       const currInvestTotal = (adCurr ? parseAmt(adCurr.spend) : 0)
         + (vineMap[monthKey(year, month)] || 0)
-        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount + ordersAggCurr.salePromos : 0);
+        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount : 0);
       const currRevenue = getMonthRevenue(revCsv, year, month);
       if (currRevenue) {
         const pctRevenueInvested = Math.round((currInvestTotal / currRevenue) * 100);
