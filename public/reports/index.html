@@ -3921,20 +3921,24 @@ function initSns() {
 
   // Investments chart fallback — keyed 'YYYY-MM'. Ported from the original
   // hardcoded 13-month series (assumed to end May 2026 based on the prior label order).
+  // Vine intentionally has NO fallback values here — see the comment at
+  // vineData.push() below for why. These vine numbers used to exist but
+  // were stale mock data (Oct/Nov 2025 = $200) that were never real
+  // enrollments; removed 2026-07-10 to prevent exactly that confusion.
   const STEWARDSHIP_INVEST_FALLBACK = {
-    '2025-05': { ads: 2600, vine: 0,   promos: 200 },
-    '2025-06': { ads: 2100, vine: 0,   promos: 150 },
-    '2025-07': { ads: 2500, vine: 0,   promos: 100 },
-    '2025-08': { ads: 1400, vine: 0,   promos: 0   },
-    '2025-09': { ads: 2000, vine: 0,   promos: 100 },
-    '2025-10': { ads: 2700, vine: 200, promos: 100 },
-    '2025-11': { ads: 1100, vine: 200, promos: 0   },
-    '2025-12': { ads: 1000, vine: 0,   promos: 0   },
-    '2026-01': { ads: 800,  vine: 0,   promos: 100 },
-    '2026-02': { ads: 700,  vine: 0,   promos: 100 },
-    '2026-03': { ads: 500,  vine: 0,   promos: 0   },
-    '2026-04': { ads: 400,  vine: 0,   promos: 100 },
-    '2026-05': { ads: 500,  vine: 0,   promos: 50  },
+    '2025-05': { ads: 2600, promos: 200 },
+    '2025-06': { ads: 2100, promos: 150 },
+    '2025-07': { ads: 2500, promos: 100 },
+    '2025-08': { ads: 1400, promos: 0   },
+    '2025-09': { ads: 2000, promos: 100 },
+    '2025-10': { ads: 2700, promos: 100 },
+    '2025-11': { ads: 1100, promos: 0   },
+    '2025-12': { ads: 1000, promos: 0   },
+    '2026-01': { ads: 800,  promos: 100 },
+    '2026-02': { ads: 700,  promos: 100 },
+    '2026-03': { ads: 500,  promos: 0   },
+    '2026-04': { ads: 400,  promos: 100 },
+    '2026-05': { ads: 500,  promos: 50  },
   };
 
   // Ad Impressions chart fallback — keyed 'YYYY-MM'. The 2025 comparison line has
@@ -4113,7 +4117,15 @@ function initSns() {
         const ordersAgg = aggregateStewardshipMonth(allOrderRows, y, m);
         const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
         adsData.push(adRow ? parseAmt(adRow.spend) : fallback.ads);
-        vineData.push(key in vineMap ? vineMap[key] : fallback.vine);
+        // Vine NEVER falls back to STEWARDSHIP_INVEST_FALLBACK — unlike
+        // Ads/Promos (which have real gaps in live coverage), Vine's source
+        // (column F of the Product Short Name tab) has always covered full
+        // history with no time window. A missing vineMap entry genuinely
+        // means $0 that month, not "unknown, use the old placeholder." The
+        // fallback object still has stale mock vine values (Oct/Nov 2025 =
+        // $200, leftover from the very first hardcoded chart) — those were
+        // never real enrollments and must not be used. Confirmed 2026-07-10.
+        vineData.push(vineMap[key] || 0);
         promosData.push(ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos);
       });
 
