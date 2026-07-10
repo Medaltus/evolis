@@ -3988,31 +3988,41 @@ function initSns() {
   function vineMonthlyCost(vineRows) {
     const map = {};
     vineRows.forEach(r => {
-      // Col D = brand name — filter to this brand only (accent-insensitive)
       const rowBrand = stripAccents((r['Brand'] || r['brand'] || r[3] || '').toLowerCase().trim());
-      if (!rowBrand.includes('volis') && rowBrand !== BRAND) return;
+      const brandNorm = stripAccents(BRAND.toLowerCase());
+      if (!rowBrand || rowBrand !== brandNorm) return;
 
-      // Col F = date enrolled — may be MM/DD/YYYY or YYYY-MM-DD depending on sheet formatting
       const raw = (r['Date Enrolled in Vine'] || r[5] || '').trim();
       if (!raw) return;
 
+      // Debug: log the first few raw values so we can see what Google Sheets exports
+      if (Object.keys(map).length < 3) {
+        console.log('[Vine] raw date value:', JSON.stringify(raw), 'for brand:', rowBrand);
+      }
+
       let yy, mm;
-      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-        // YYYY-MM-DD
+      // Google Sheets may export dates as serial numbers (e.g. 45159 = Oct 5 2025)
+      if (/^\d{4,5}$/.test(raw)) {
+        // Excel/Sheets serial date: days since 1899-12-30
+        const d = new Date(Date.UTC(1899, 11, 30) + parseInt(raw, 10) * 86400000);
+        yy = String(d.getUTCFullYear());
+        mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
         yy = raw.slice(0, 4);
         mm = raw.slice(5, 7);
       } else if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(raw)) {
-        // MM/DD/YY or MM/DD/YYYY
         const parts = raw.split('/');
         mm = parts[0].padStart(2, '0');
         yy = parts[2].trim().length === 2 ? '20' + parts[2].trim() : parts[2].trim();
       } else {
-        return; // unrecognised format — skip
+        console.warn('[Vine] unrecognised date format:', JSON.stringify(raw));
+        return;
       }
 
       const key = `${yy}-${mm}`;
       map[key] = (map[key] || 0) + VINE_COST_PER_ENROLLMENT;
     });
+    console.log('[Vine] vineMap:', map);
     return map;
   }
 
@@ -4166,14 +4176,17 @@ function initSns() {
 
       // ── Launch to Date — sum ALL historical investment data, not just
       // the 13-month chart window. Each source contributes its full history:
-      //   Ads:    every row in AD_SUMMARY (includes manually backfilled months)
+      //   Ads:    every row in AD_SUMMARY (already brand-filtered above)
       //   Vine:   every enrollment date ever in the Product Short Name tab
-      //   Promos: every order row in sync + historical sheets combined
+      //   Promos: every order row — allOrderRows is already brand-filtered
+      //           (sync-orders filters by SKU prefix at write time, so
+      //           every row in these sheets belongs to this brand already)
       const ltdAds    = adRows.reduce((s, r) => s + parseAmt(r.spend), 0);
       const ltdVine   = Object.values(vineMap).reduce((s, v) => s + v, 0);
       const ltdPromos = allOrderRows.reduce((s, r) =>
         s + parseAmt(r.promotion_discount) + parseAmt(r['Amazon Sale Promotions']), 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
+      console.log('[Evolis] LTD: ads=', ltdAds, 'vine=', ltdVine, 'promos=', ltdPromos, 'total=', ltdTotal);
       const ltdEl = document.getElementById('ltd-total-investments');
       if (ltdEl) {
         ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
