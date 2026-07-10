@@ -281,26 +281,30 @@ module.exports = async (req, res) => {
           continue; // leave this row exactly as-is, including its estimated_fees
         }
 
-        // Only pay for a new fee estimate if price actually changed AND this
-        // is a brand-new row. Price-unchanged rows always reuse stored fee or
-        // stay blank — this prevents timeout when many rows are reprocessed
-        // purely to backfill Amazon Sale Promotions.
-        const unitPrice      = qty > 0 ? round2(price / qty) : price;
-        const priceUnchanged = existing && round2(parseFloat(existing.row.item_price || '0')) === price;
-        const storedFee      = existing?.row['Amazon Estimated fees'];
-        const hasStoredFee   = storedFee !== '' && storedFee != null;
+        // Reuse a stored fee if we already have one — never overwrite with
+        // blank, and never re-pay for a fee we already successfully fetched.
+        // If we DON'T have one yet (brand-new row, price changed, OR a prior
+        // attempt on this row failed/was skipped), always try the API again.
+        // This row only got here at all because something about it changed
+        // (see the `changed` check above) — unchanged rows never reach this
+        // code, so this doesn't reprocess the whole sheet every run, just
+        // rows that were already going to be touched for another reason.
+        const unitPrice    = qty > 0 ? round2(price / qty) : price;
+        const storedFee    = existing?.row['Amazon Estimated fees'];
+        const hasStoredFee = storedFee !== '' && storedFee != null;
+
+        // Fees depend on fulfillment channel — FBA vs seller-fulfilled get
+        // different fee schedules from Amazon, and passing the wrong flag
+        // returns Status: ClientError / InvalidParameterValue every time.
+        // Each product has an FBA SKU (e.g. EVO0001) and a seller-fulfilled
+        // SKU (e.g. EVO0001-SF); the -SF suffix is the only reliable signal.
+        const isAmazonFulfilled = !sku.toUpperCase().endsWith('-SF');
 
         let estimatedFees;
         if (hasStoredFee) {
-          // Always preserve a stored fee — never overwrite with blank.
           estimatedFees = storedFee;
-        } else if (priceUnchanged && existing) {
-          // Price unchanged, no stored fee — don't call the API, just leave blank.
-          // Fee will be populated on a future run when the row is touched for another reason.
-          estimatedFees = '';
         } else {
-          // New row or price changed — call the fees API.
-          const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice);
+          const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled);
           estimatedFees = feePerUnit != null ? round2(feePerUnit * qty) : '';
         }
 
@@ -427,20 +431,25 @@ function rowChanged(existingRowObj, candidate) {
  * Finances API, settlement-based, lags by weeks) — intentionally using the
  * estimate here per requirements, since it's available immediately per order.
  *
+ * isAmazonFulfilled must match the actual fulfillment channel — passing the
+ * wrong value returns Status: ClientError / InvalidParameterValue, not a
+ * usable estimate. Caller derives this from the SKU (-SF suffix = seller-
+ * fulfilled), since that's the only reliable signal available here.
+ *
  * Returns null (not 0) on failure so callers can tell "we don't know" apart
  * from "the fee is actually zero."
  */
-async function getFeesEstimate(feesCache, asin, unitPrice) {
+async function getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled) {
   if (!asin || !unitPrice || unitPrice <= 0) return null;
 
-  const cacheKey = `${asin}|${unitPrice}`;
+  const cacheKey = `${asin}|${unitPrice}|${isAmazonFulfilled}`;
   if (feesCache.has(cacheKey)) return feesCache.get(cacheKey);
 
   try {
     const body = {
       FeesEstimateRequest: {
         MarketplaceId: process.env.SP_MARKETPLACE_ID,
-        IsAmazonFulfilled: true,
+        IsAmazonFulfilled: isAmazonFulfilled,
         PriceToEstimateFees: {
           ListingPrice: { CurrencyCode: 'USD', Amount: unitPrice },
           Shipping:     { CurrencyCode: 'USD', Amount: 0 },
@@ -453,7 +462,9 @@ async function getFeesEstimate(feesCache, asin, unitPrice) {
     const result = resp?.payload?.FeesEstimateResult;
 
     if (result?.Status !== 'Success' || !result?.FeesEstimate) {
-      console.warn(`[sync-orders-process] fees estimate not available for ${asin} @ $${unitPrice}: ${result?.Status || 'no result'}`);
+      // Log the real reason, not just the Status — this is what was hiding
+      // the fulfillment-channel mismatch (Error.Code: InvalidParameterValue).
+      console.warn(`[sync-orders-process] fees estimate not available for ${asin} @ $${unitPrice} (isAmazonFulfilled=${isAmazonFulfilled}): ${result?.Status || 'no result'} — ${JSON.stringify(result?.Error || {})}`);
       feesCache.set(cacheKey, null);
       return null;
     }
@@ -467,7 +478,7 @@ async function getFeesEstimate(feesCache, asin, unitPrice) {
 
     return feePerUnit;
   } catch (err) {
-    console.warn(`[sync-orders-process] fees estimate failed for ${asin} @ $${unitPrice}: ${err.message}`);
+    console.warn(`[sync-orders-process] fees estimate failed for ${asin} @ $${unitPrice} (isAmazonFulfilled=${isAmazonFulfilled}): ${err.message}`);
     feesCache.set(cacheKey, null);
     return null;
   }
