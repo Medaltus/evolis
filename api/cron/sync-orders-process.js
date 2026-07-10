@@ -158,7 +158,7 @@ module.exports = async (req, res) => {
   const EVENTS_GID        = '347530381';
   const PROD_NAMES_GID    = '164358627';
 
-  // eventWindows: array of { skuSet: Set, startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
+  // eventWindows: array of { asinSet: Set, startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
   // priceRef: Map of SKU.toUpperCase() → regular price (number)
   let eventWindows = [];
   let priceRef     = new Map();
@@ -172,7 +172,7 @@ module.exports = async (req, res) => {
 
       // Parse events — SKUs column is optional. If blank/missing, the event
       // applies to ALL SKUs that have a regular price in the Product Short Name tab.
-      // We build the skuSet after priceRef is populated below.
+      // We build the asinSet after priceRef is populated below.
       const evRows = parseTsvRows(eventsCsv, ',');
       const rawEvents = evRows.map(r => ({
         name:      (r['Event Name'] || '').trim(),
@@ -181,19 +181,20 @@ module.exports = async (req, res) => {
         skuList:   (r['SKUs']       || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
       })).filter(ev => ev.startDate && ev.endDate);
 
-      // Parse regular prices
+      // Parse regular prices — keyed by ASIN (safer than SKU since each product
+      // has two SKUs: FBA e.g. EVO0001 and seller-fulfilled e.g. EVO0001-SF,
+      // but only the FBA SKU is listed in Product Short Name. ASIN covers both.)
       const prodRows = parseTsvRows(prodCsv, ',');
       prodRows.forEach(r => {
-        const sku   = (r['SKU'] || '').trim().toUpperCase();
-        const price = parseFloat((r['Price'] || r['price'] || '').replace(/[$,]/g, '')) || 0;
-        if (sku && price > 0) priceRef.set(sku, price);
+        const asinKey = (r['ASIN'] || '').trim().toUpperCase();
+        const price   = parseFloat((r['Price'] || r['price'] || '').replace(/[$,]/g, '')) || 0;
+        if (asinKey && price > 0) priceRef.set(asinKey, price);
       });
 
-      // Now build eventWindows — if SKUs column was blank, use all priced SKUs
-      const allPricedSkus = new Set(priceRef.keys());
+      // Build eventWindows — always uses ALL priced ASINs from Product Short Name tab.
+      const allPricedAsins = new Set(priceRef.keys());
       rawEvents.forEach(ev => {
-        const skuSet = ev.skuList.length > 0 ? new Set(ev.skuList) : allPricedSkus;
-        eventWindows.push({ skuSet, startDate: ev.startDate, endDate: ev.endDate });
+        eventWindows.push({ asinSet: allPricedAsins, startDate: ev.startDate, endDate: ev.endDate });
       });
 
       console.log(`[sync-orders-process] events loaded: ${eventWindows.length}, prices: ${priceRef.size}`);
@@ -267,8 +268,8 @@ module.exports = async (req, res) => {
         // Check if this row needs an Amazon Sale Promotions value written for
         // the first time — treat a blank sale_promos on an event-window row as
         // a change so we don't skip it with the unchanged shortcut below.
-        const isInEventWindow = date && eventWindows.some(
-          ev => date >= ev.startDate && date <= ev.endDate && ev.skuSet.has(sku.toUpperCase())
+        const isInEventWindow = date && asin && eventWindows.some(
+          ev => date >= ev.startDate && date <= ev.endDate && ev.asinSet.has(asin.toUpperCase())
         );
         const missingPromos = isInEventWindow &&
           (existing?.row['Amazon Sale Promotions'] == null || existing?.row['Amazon Sale Promotions'] === '');
@@ -301,19 +302,19 @@ module.exports = async (req, res) => {
         }
 
         // ── sale_promos: seller-funded event discount ───────────────────────
-        // For orders falling within a sale event window, calculates
-        // (regular_price - item_price) × unit_count. Reuses stored value for
-        // unchanged rows (same as estimated_fees pattern) so historical rows
-        // that age out of the Amazon report window are never cleared.
         let salePromos = '';
-        if (date && qty > 0) {
+        let diagCount  = 0;
+        if (date && qty > 0 && asin) {
           for (const ev of eventWindows) {
-            if (date >= ev.startDate && date <= ev.endDate && ev.skuSet.has(sku.toUpperCase())) {
-              const regularPrice = priceRef.get(sku.toUpperCase());
+            if (date >= ev.startDate && date <= ev.endDate && ev.asinSet.has(asin.toUpperCase())) {
+              const regularPrice = priceRef.get(asin.toUpperCase());
+              if (diagCount++ < 5) {
+                console.log(`[sale-promos-diag] asin=${asin} sku=${sku} date=${date} itemPrice=${price} regularPrice=${regularPrice} qty=${qty}`);
+              }
               if (regularPrice && regularPrice > price) {
                 salePromos = round2((regularPrice - price) * qty);
               }
-              break; // only one event window per order row
+              break;
             }
           }
         }
