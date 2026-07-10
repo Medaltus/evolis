@@ -4089,7 +4089,13 @@ function initSns() {
       const syncRows      = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
       const histRows       = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
       const allOrderRows   = [...syncRows, ...histRows];
-      const adRows         = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv).filter(r => (r.brand || '').toLowerCase().trim() === BRAND) : [];
+      // NOTE: no brand filter here — this GID is the "evolis" tab specifically
+      // (AD_SUMMARY is organized one tab per brand, same as orders/subscriptions).
+      // A brand-column filter was here before and silently dropped every
+      // backfilled historical row, since those rows don't have the brand
+      // column filled in (only the live-synced 2026 rows do) — confirmed
+      // 2026-07-10 when historical data was added but LTD didn't reflect it.
+      const adRows         = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv) : [];
       // Vine: all rows from Product Short Name tab — vineMonthlyCost filters by brand internally
       const vineRows       = isCsv(vineCsv) ? parseCsv(vineCsv) : [];
       const vineMap = vineMonthlyCost(vineRows);
@@ -4175,21 +4181,18 @@ function initSns() {
       }
 
       // ── Launch to Date ───────────────────────────────────────────────────
-      // IMPORTANT: this sums the SAME resolved values the chart bars show
-      // (live data where it exists, STEWARDSHIP_INVEST_FALLBACK where it
-      // doesn't) — NOT raw adRows/allOrderRows. Summing raw live rows alone
-      // undercounted badly, since most of the 13-month window is currently
-      // fallback-sourced (AD_SUMMARY/orders sheets don't have that much
-      // live history yet) — confirmed 2026-07-10 (LTD showed $4,945 vs a
-      // ~$15K+ visible chart sum before this fix.
+      // Ads: sums ALL of adRows now — the brand-filter bug fix above means
+      // adRows genuinely contains full history (back to 2023-01, per the
+      // historical backfill added 2026-07-10), so this is now MORE complete
+      // than the 13-month chart window, not just matching it.
       //
-      // HONEST LIMITATION: this still only covers the 13-month window plus
-      // Vine (which has real history back to 2023). It is NOT a true
-      // from-launch total for Ads/Promos — that requires manually backfilling
-      // AD_SUMMARY / STEWARDSHIP_INVEST_FALLBACK with pre-2025-05 numbers.
-      // Vine is already complete since it reads every enrollment date ever
-      // logged, regardless of how far back it goes.
-      const ltdAds    = adsData.reduce((s, v) => s + v, 0);
+      // Promos: still chart-blended (adsData/promosData, live-else-fallback)
+      // since there's no equivalent full historical backfill for orders/promo
+      // data yet — STEWARDSHIP_INVEST_FALLBACK only goes back to 2025-05.
+      //
+      // Vine: already complete — reads every enrollment date ever logged,
+      // regardless of how far back it goes (data confirmed back to 2023-08).
+      const ltdAds    = adRows.reduce((s, r) => s + parseAmt(r.spend), 0);
       const ltdPromos = promosData.reduce((s, v) => s + v, 0);
       const ltdVine   = Object.values(vineMap).reduce((s, v) => s + v, 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
