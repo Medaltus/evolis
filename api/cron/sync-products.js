@@ -83,6 +83,7 @@ module.exports = async (req, res) => {
   }
 
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const force = req.query.force === 'true';
 
   let meta;
   try {
@@ -92,9 +93,19 @@ module.exports = async (req, res) => {
   }
 
   let cursor = 0;
-  if (meta.products_log_date === today) {
+  if (force) {
+    // Remove any rows already written for TODAY (across all brand tabs)
+    // before reprocessing — this is an "overwrite today" operation, not a
+    // duplicate-creating re-append. Every other day's history is untouched.
+    try {
+      await clearRowsForDate(today);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to clear today\'s existing rows before forced re-run', detail: err.message });
+    }
+    console.log(`[sync-products] force=true — cleared today's (${today}) existing rows, restarting from cursor 0`);
+  } else if (meta.products_log_date === today) {
     if (meta.products_log_complete === 'true') {
-      return res.status(200).json({ message: `Already completed for ${today}` });
+      return res.status(200).json({ message: `Already completed for ${today}. Pass ?force=true to overwrite today's rows and reprocess (e.g. after a column/logic change).` });
     }
     cursor = parseInt(meta.products_log_cursor || '0', 10) || 0;
   }
@@ -158,22 +169,26 @@ module.exports = async (req, res) => {
 
 async function buildProductRow(item, dateStr, nowIso) {
   const { sku, asin, name } = item;
+  const sfSku = `${sku}-SF`;
 
-  const [listing, inventory, catalog] = await Promise.all([
+  // Fire all 4 API calls in parallel — the SF listing call costs no extra
+  // wall-clock time this way vs. the 3 we were already making.
+  const [listing, inventory, catalog, sfListing] = await Promise.all([
     fetchListing(sku).catch(err => ({ __error: err.message })),
     fetchInventory(sku).catch(err => ({ __error: err.message })),
     fetchCatalog(asin).catch(err => ({ __error: err.message })),
+    fetchListing(sfSku).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
   ]);
 
   const inv = inventory?.payload?.inventorySummaries?.[0]?.inventoryDetails || {};
   const totalQuantity = inventory?.payload?.inventorySummaries?.[0]?.totalQuantity ?? '';
 
-  // Merchant-fulfilled (seller-fulfilled) stock — comes from the SAME
-  // Listings API call, under the "DEFAULT" fulfillment channel, distinct
-  // from FBA's "AMAZON_NA" channel. No separate API call needed.
-  const fulfillmentAvailability = listing?.attributes?.fulfillment_availability || [];
-  const defaultChannel = fulfillmentAvailability.find(f => f.fulfillment_channel_code === 'DEFAULT');
-  const sellerFulfilledQuantity = defaultChannel?.quantity ?? '';
+  // Merchant-fulfilled stock lives on the -SF SKU, not the FBA SKU.
+  // The DEFAULT channel on the FBA SKU's own listing always returned 0
+  // because that's a different listing — confirmed 2026-07-10.
+  const sfFulfillmentAvail  = sfListing?.attributes?.fulfillment_availability || [];
+  const sfDefaultChannel    = sfFulfillmentAvail.find(f => f.fulfillment_channel_code === 'DEFAULT');
+  const sellerFulfilledQuantity = sfDefaultChannel?.quantity ?? '';
 
   const bullets = listing?.attributes?.bullet_point || [];
   const bulletVal = idx => bullets[idx]?.value || '';
@@ -296,6 +311,27 @@ async function fetchMasterSkuList() {
     out.push({ asin, sku, name, brandTabName: matched.tabName });
   }
   return out;
+}
+
+// Removes every row matching `dateStr` from every active brand's tab,
+// leaving all other dates' history untouched. Used by ?force=true to
+// support "overwrite today" without duplicating rows or losing history.
+async function clearRowsForDate(dateStr) {
+  for (const brand of brands.filter(b => b.active)) {
+    try {
+      const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
+      const rows  = await readRows(sheets.products, brand.tabName);
+      const kept  = rows.filter(r => (r.date || '') !== dateStr);
+      if (kept.length !== rows.length) {
+        const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
+        await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token);
+        console.log(`[sync-products] ${brand.id} — cleared ${rows.length - kept.length} existing rows for ${dateStr}`);
+      }
+    } catch (err) {
+      console.warn(`[sync-products] ${brand.id} — failed to clear rows for ${dateStr}:`, err.message);
+      // Don't throw — a brand with no tab yet (e.g. never synced before) is fine to skip.
+    }
+  }
 }
 
 // ── _meta helpers ────────────────────────────────────────────────────────
