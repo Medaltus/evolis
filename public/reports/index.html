@@ -4146,6 +4146,9 @@ function initSns() {
         }
         const prevRow = findAdRow(adRows, year - 1, m);
         const prevKey = monthKey(year - 1, m);
+        if (m <= 3) {
+          console.log(`[Evolis] impressions debug ${year-1}-${m}: prevRow found=`, !!prevRow, 'raw impressions value=', JSON.stringify(prevRow?.impressions), 'parsed=', parseInt(prevRow?.impressions, 10));
+        }
         impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : (STEWARDSHIP_IMPRESSIONS_FALLBACK[prevKey] ?? null));
       });
 
