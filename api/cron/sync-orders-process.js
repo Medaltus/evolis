@@ -291,12 +291,15 @@ module.exports = async (req, res) => {
         const hasStoredFee   = storedFee !== '' && storedFee != null;
 
         let estimatedFees;
-        if (priceUnchanged) {
-          // Price unchanged — reuse stored fee if available, otherwise leave blank.
-          // Never call the fees API for a price-unchanged row.
-          estimatedFees = hasStoredFee ? storedFee : '';
+        if (hasStoredFee) {
+          // Always preserve a stored fee — never overwrite with blank.
+          estimatedFees = storedFee;
+        } else if (priceUnchanged && existing) {
+          // Price unchanged, no stored fee — don't call the API, just leave blank.
+          // Fee will be populated on a future run when the row is touched for another reason.
+          estimatedFees = '';
         } else {
-          // Price changed or brand-new row — call the fees API.
+          // New row or price changed — call the fees API.
           const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice);
           estimatedFees = feePerUnit != null ? round2(feePerUnit * qty) : '';
         }
