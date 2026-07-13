@@ -23,13 +23,15 @@
   --border:rgba(0,31,96,0.10); --border2:rgba(0,31,96,0.06);
   --text:#001F60; --muted:#6B7BA2; --success:#24e9a3; --warn:#C87D2F; --danger:#db372d;
   --sidebar-w:224px;
-  --font:'GT Walsheim Pro Medium','DM Sans',system-ui,sans-serif; --mono:'DM Mono','Fira Mono',monospace;
-  --font-header:'GT Walsheim Pro Bold','DM Sans',system-ui,sans-serif;
+  --font:'GT Walsheim Pro Light','DM Sans',system-ui,sans-serif; --mono:'DM Mono','Fira Mono',monospace;
+  --font-header:'GT Walsheim Pro Medium','DM Sans',system-ui,sans-serif;
+  --font-bold:'GT Walsheim Pro Bold','DM Sans',system-ui,sans-serif;
   --font-subheader:'Plantin MT Pro Italic',Georgia,'Times New Roman',serif;
   --font-body-light:'GT Walsheim Pro Light','DM Sans',system-ui,sans-serif;
   --radius:10px; --radius-sm:6px;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
+strong,b{font-family:var(--font-bold);font-weight:700;}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.55;}
 
 /* ── Layout ── */
@@ -558,7 +560,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-cover-toprow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:70px;}
 .pdfx-logo-white{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-style:italic;color:#fff;letter-spacing:-.2px;}
 .pdfx-hdr-right{text-align:right;}
-.pdfx-hdr-tag{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+.pdfx-hdr-tag{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);font-family:var(--font-subheader);}
 .pdfx-hdr-month{font-family:var(--font-subheader);font-size:17px;color:#fff;margin-top:3px;}
 .pdfx-cover-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:12px;}
 .pdfx-cover-title{font-family:var(--font-header);font-size:38px;line-height:1.14;margin-bottom:18px;}
@@ -566,7 +568,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-cover-desc{font-size:12.5px;color:rgba(255,255,255,.68);line-height:1.65;max-width:520px;}
 /* flex:1 fills all remaining vertical space below the navy block (up to the full 11in page); justify-content:center vertically centers the pill/headline/columns within that remaining space, per the request to justify this content to the middle of the space below the navy area. */
 .pdfx-cover-white{padding:40px 60px;flex:1;display:flex;flex-direction:column;justify-content:center;}
-.pdfx-pill{display:inline-block;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:4px;padding:4px 12px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#0f9c6e;margin-bottom:24px;}
+.pdfx-pill{display:inline-block;align-self:flex-start;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:20px;padding:5px 16px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--green);margin-bottom:24px;}
 .pdfx-cover-headline{font-family:var(--font-subheader);font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:28px;}
 .pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:8px;}
 .pdfx-cover-col{font-size:12px;color:#48557a;line-height:1.75;}
@@ -584,7 +586,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-tab.on{color:var(--navy);border-bottom-color:var(--green);}
 .pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 .pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
-.pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-header);}
+.pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-subheader);}
 .pdfx-chdate{font-size:11px;color:var(--muted);}
 .pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
 .pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
@@ -592,8 +594,8 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-kpi{border:1px solid var(--border);border-radius:8px;padding:12px 13px;background:#fbfbfd;}
 .pdfx-kpi-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;}
 .pdfx-kpi-val{font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-.5px;line-height:1;}
-.pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:600;}
-.pdfx-kpi-mom.up{color:#1db88a;}
+.pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:400;font-family:var(--font-body-light);}
+.pdfx-kpi-mom.up{color:var(--green);}
 .pdfx-kpi-mom.dn{color:var(--danger);}
 .pdfx-kpi-mom.flat{color:var(--muted);}
 .pdfx-card{border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px;}
@@ -607,7 +609,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-table tbody tr:nth-child(even){background:#f7f8fb;}
 .pdfx-insight{background:var(--sand);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
 .pdfx-insight strong{color:var(--warn);}
-.pdfx-two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.pdfx-two-col{display:grid;grid-template-columns:1fr;gap:16px;}
 .pdfx-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
 .pdfx-check{display:flex;align-items:center;gap:10px;background:#F5F6F9;border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
 .pdfx-check-icon{width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
@@ -5952,7 +5954,7 @@ async function loadAuditResultsFromSheet() {
         const isNum = i > 1;
         let cellHtml;
         if (c.momText) {
-          const color = c.momClass === 'up' ? '#1db88a' : c.momClass === 'dn' ? 'var(--danger)' : 'rgba(107,123,162,.4)';
+          const color = c.momClass === 'up' ? 'var(--green)' : c.momClass === 'dn' ? 'var(--danger)' : 'rgba(107,123,162,.4)';
           // Bold number, NOT-bold colored MOM% — per requirements 2026-07-13
           cellHtml = '<strong>' + pdfxEscape(c.text) + '</strong> <span style="font-weight:400;color:' + color + ';">' + pdfxEscape(c.momText) + '</span>';
         } else {
@@ -6218,8 +6220,19 @@ async function loadAuditResultsFromSheet() {
       root.style.zIndex = '999999';
       root.style.opacity = '1';
 
-      // Paint cycle before measuring/capturing
-      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 50)));
+      // Paint cycle first, then wait for every <img> to actually finish
+      // loading — a fixed 50ms delay isn't reliable for real network image
+      // loads (logo, watermark), even though text paints instantly. This is
+      // why the logo/watermark intermittently went missing: text always won
+      // the race, images sometimes didn't. Confirmed 2026-07-13.
+      await new Promise(r => requestAnimationFrame(r));
+      const imgs = Array.from(root.querySelectorAll('img'));
+      console.log('[pdf-export] waiting for', imgs.length, 'images to load');
+      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+        img.addEventListener('load', res, { once: true });
+        img.addEventListener('error', () => { console.warn('[pdf-export] image failed to load:', img.src); res(); }, { once: true });
+      })));
+      console.log('[pdf-export] all images settled');
 
       const pageEls = Array.from(root.querySelectorAll('.pdfx-page'));
       console.log('[pdf-export] .pdfx-page count:', pageEls.length);
