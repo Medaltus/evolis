@@ -92,8 +92,14 @@ async function appendRows(sheetId, tabName, rows, token) {
 /**
  * Clear all data rows (keep header) then write fresh rows.
  * Used for full-refresh syncs.
+ *
+ * valueInputOption defaults to 'RAW' (existing behavior, unchanged for every
+ * current caller). Pass 'USER_ENTERED' when rows contain real spreadsheet
+ * formulas (e.g. "=K2+L2") that need to actually evaluate rather than be
+ * stored as literal text — RAW stores formula-looking strings as-is, it
+ * does not evaluate them. Added 2026-07-13 for sync-stewardship-summary.js.
  */
-async function replaceRows(sheetId, tabName, headers, rows, token) {
+async function replaceRows(sheetId, tabName, headers, rows, token, valueInputOption = 'RAW') {
   // Clear everything from row 2 onwards
   const clearRange = `${tabName}!A2:ZZ`;
   await sheetsPost(token, `/${sheetId}/values/${encodeURIComponent(clearRange)}:clear`, {});
@@ -101,7 +107,7 @@ async function replaceRows(sheetId, tabName, headers, rows, token) {
   if (rows.length) {
     await sheetsPost(
       token,
-      `/${sheetId}/values/${encodeURIComponent(tabName + '!A2')}?valueInputOption=RAW`,
+      `/${sheetId}/values/${encodeURIComponent(tabName + '!A2')}?valueInputOption=${valueInputOption}`,
       { values: rows },
       'PUT'
     );
