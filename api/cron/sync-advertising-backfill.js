@@ -62,24 +62,15 @@ module.exports = async (req, res) => {
 
     let asinReportId = null;
     try {
-      const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
-        name: `backfill_asin_${monthParam}`,
-        startDate,
-        endDate,
-        configuration: {
-          adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['advertiser'],
-          columns:      ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
-          reportTypeId: 'spAdvertisedProduct',
-          timeUnit:     'SUMMARY',
-          format:       'GZIP_JSON',
-        },
-      });
-      asinReportId = resp.reportId;
+      asinReportId = await requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
+        { startDate, endDate },
+        ['advertiser'],
+        ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+        `backfill_asin_${monthParam}`);
       if (asinReportId) {
         console.log(`[sync-advertising-backfill] ASIN report: ${asinReportId}`);
       } else {
-        console.error(`[sync-advertising-backfill] ASIN report missing reportId. Raw: ${JSON.stringify(resp).slice(0,300)}`);
+        console.error(`[sync-advertising-backfill] ASIN report failed after retries`);
       }
     } catch (err) {
       console.error('[sync-advertising-backfill] ASIN report failed:', err.message);
@@ -87,24 +78,15 @@ module.exports = async (req, res) => {
 
     let summaryReportId = null;
     try {
-      const resp = await adRequest('POST', '/reporting/reports', token, profileId, {
-        name: `backfill_summary_${monthParam}`,
-        startDate,
-        endDate,
-        configuration: {
-          adProduct:    'SPONSORED_PRODUCTS',
-          groupBy:      ['campaign'],
-          columns:      ['campaignName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
-          reportTypeId: 'spCampaigns',
-          timeUnit:     'SUMMARY',
-          format:       'GZIP_JSON',
-        },
-      });
-      summaryReportId = resp.reportId;
+      summaryReportId = await requestReportWithRetry(token, profileId, 'spCampaigns', 'SPONSORED_PRODUCTS',
+        { startDate, endDate },
+        ['campaign'],
+        ['campaignName', 'impressions', 'clicks', 'spend', 'purchases14d', 'sales14d', 'unitsSoldClicks14d'],
+        `backfill_summary_${monthParam}`);
       if (summaryReportId) {
         console.log(`[sync-advertising-backfill] summary report: ${summaryReportId}`);
       } else {
-        console.error(`[sync-advertising-backfill] summary report missing reportId. Raw: ${JSON.stringify(resp).slice(0,300)}`);
+        console.error(`[sync-advertising-backfill] summary report failed after retries`);
       }
     } catch (err) {
       console.error('[sync-advertising-backfill] summary report failed:', err.message);
@@ -152,6 +134,92 @@ async function discoverProfileId(token) {
   if (!p) throw new Error('NewDerm US seller profile not found');
   return p.profileId;
 }
+
+// ── Retry + duplicate-handling (ported verbatim from sync-advertising-request.js) ──
+// Without this, a re-run of a backfill whose report was already successfully
+// created earlier gets a 425 "duplicate of: <id>" response from Amazon —
+// which IS the report we want, not a failure — and previously surfaced as
+// a misleading "Both report requests failed" even though nothing was wrong.
+// FIXED 2026-07-13.
+const MAX_RETRIES = 3;
+const DUPLICATE_ID_REGEX = /duplicate of\s*:\s*([a-f0-9-]+)/i;
+
+async function requestReportWithRetry(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns, label) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const { statusCode, body, retryAfterSec } = await adRequestRaw('POST', '/reporting/reports', token, profileId, {
+      name:      label,
+      startDate: dateRange.startDate,
+      endDate:   dateRange.endDate,
+      configuration: {
+        adProduct,
+        groupBy,
+        columns,
+        reportTypeId,
+        timeUnit: 'SUMMARY',
+        format:   'GZIP_JSON',
+      },
+    });
+
+    if (body?.reportId) {
+      console.log(`[sync-advertising-backfill] ${label}: ${body.reportId}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      return body.reportId;
+    }
+
+    const duplicateMatch = (statusCode === 425 || body?.code === '425') && body?.detail?.match(DUPLICATE_ID_REGEX);
+    if (duplicateMatch) {
+      const existingId = duplicateMatch[1];
+      console.log(`[sync-advertising-backfill] ${label}: reusing existing report ${existingId} (identical request already made)`);
+      return existingId;
+    }
+
+    const isThrottled = statusCode === 429 || body?.code === '429';
+    if (isThrottled && attempt < MAX_RETRIES) {
+      const waitSec = retryAfterSec ?? (2 * attempt);
+      console.warn(`[sync-advertising-backfill] ${label} throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${waitSec}s`);
+      await sleep(waitSec * 1000);
+      continue;
+    }
+
+    console.error(`[sync-advertising-backfill] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(body));
+    return null;
+  }
+  return null;
+}
+
+// Retry-aware version — surfaces statusCode + Retry-After so
+// requestReportWithRetry can act on a 425/429 instead of just failing.
+function adRequestRaw(method, path, token, profileId, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : '';
+    const headers = {
+      'Authorization':                   `Bearer ${token}`,
+      'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
+      'Content-Type':                    method === 'POST' && path === '/reporting/reports'
+                                           ? 'application/vnd.createasyncreportrequest.v3+json'
+                                           : 'application/json',
+    };
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        const retryAfterHeader = res.headers['retry-after'];
+        const retryAfterSec    = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
+        try {
+          resolve({ statusCode: res.statusCode, body: JSON.parse(d), retryAfterSec });
+        } catch (e) {
+          resolve({ statusCode: res.statusCode, body: { parseError: d.slice(0, 300) }, retryAfterSec });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function adRequest(method, path, token, profileId, body) {
   return new Promise((resolve, reject) => {
