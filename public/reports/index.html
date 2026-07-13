@@ -6,6 +6,16 @@
 <title>Évolis — Internal Dashboard · Medaltus</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* Brand fonts — style guide: main headers = GT Walsheim Pro (Bold), other
+   headers = Plantin MT Pro Italic, body/report fields = GT Walsheim Pro
+   Light/Medium. Font files sit alongside index.html in the same folder,
+   so plain relative paths (no leading slash) work regardless of exactly
+   how this path is routed/served. */
+@font-face { font-family:'GT Walsheim Pro Bold';   src:url('GT Walsheim Pro Bold.ttf') format('truetype');   font-weight:700; font-style:normal; }
+@font-face { font-family:'GT Walsheim Pro Medium'; src:url('GT Walsheim Pro Medium.ttf') format('truetype'); font-weight:500; font-style:normal; }
+@font-face { font-family:'GT Walsheim Pro Light';  src:url('GT Walsheim Pro Light.ttf') format('truetype');  font-weight:300; font-style:normal; }
+@font-face { font-family:'Plantin MT Pro Italic';  src:url('Monotype - PlantinMTPro-Italic.otf') format('opentype'); font-style:italic; }
+
 :root {
   --navy:#001F60; --slate:#6B7BA2; --green:#24E9A3; --sand:#F4DFD0; --silver:#CCD3D5;
   --white:#ffffff; --bg:#F5F6F9; --bg2:#ECEEF4;
@@ -13,7 +23,10 @@
   --border:rgba(0,31,96,0.10); --border2:rgba(0,31,96,0.06);
   --text:#001F60; --muted:#6B7BA2; --success:#24e9a3; --warn:#C87D2F; --danger:#db372d;
   --sidebar-w:224px;
-  --font:'DM Sans',system-ui,sans-serif; --mono:'DM Mono','Fira Mono',monospace;
+  --font:'GT Walsheim Pro Medium','DM Sans',system-ui,sans-serif; --mono:'DM Mono','Fira Mono',monospace;
+  --font-header:'GT Walsheim Pro Bold','DM Sans',system-ui,sans-serif;
+  --font-subheader:'Plantin MT Pro Italic',Georgia,'Times New Roman',serif;
+  --font-body-light:'GT Walsheim Pro Light','DM Sans',system-ui,sans-serif;
   --radius:10px; --radius-sm:6px;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -68,7 +81,7 @@ nav{flex:1;padding:8px 8px 0;}
 .page{display:none;flex:1;padding:28px;}
 .page.active{display:block;}
 .page-hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px;gap:12px;flex-wrap:wrap;}
-.page-title{font-size:20px;font-weight:600;letter-spacing:-.5px;color:var(--navy);}
+.page-title{font-size:20px;font-weight:600;letter-spacing:-.5px;color:var(--navy);font-family:var(--font-header);}
 .page-sub{font-size:12px;color:var(--muted);margin-top:3px;}
 
 /* ── Channel tabs (Sales/Marketing/Events) ── */
@@ -104,7 +117,7 @@ nav{flex:1;padding:8px 8px 0;}
    .two-col card pair, add margin-top:0 to both cards' inline styles to
    override this — don't assume identical CSS means identical rendering. */
 .card+.card{margin-top:14px;}
-.card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:14px;}
+.card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:14px;font-family:var(--font-subheader);}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:16px;}
 .check-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;display:flex;align-items:center;gap:12px;}
@@ -539,37 +552,39 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
    state, so this reads as part of "generating", not a glitch). */
 #pdfx-root{display:none;width:8.5in;background:#fff;font-family:var(--font);}
 .pdfx-page{width:8.5in;min-height:11in;background:#fff;position:relative;box-sizing:border-box;overflow:hidden;page-break-after:always;}
+.pdfx-page.pdfx-cover{display:flex;flex-direction:column;}
 .pdfx-cover{padding:0;}
 .pdfx-cover-navy{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);padding:44px 52px 56px;color:#fff;position:relative;}
 .pdfx-cover-toprow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:70px;}
 .pdfx-logo-white{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-style:italic;color:#fff;letter-spacing:-.2px;}
 .pdfx-hdr-right{text-align:right;}
 .pdfx-hdr-tag{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);}
-.pdfx-hdr-month{font-family:Georgia,serif;font-size:17px;color:#fff;margin-top:3px;}
+.pdfx-hdr-month{font-family:var(--font-subheader);font-size:17px;color:#fff;margin-top:3px;}
 .pdfx-cover-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:12px;}
-.pdfx-cover-title{font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:1.14;margin-bottom:18px;}
+.pdfx-cover-title{font-family:var(--font-header);font-size:38px;line-height:1.14;margin-bottom:18px;}
 .pdfx-cover-rule{width:44px;height:2px;background:var(--green);margin-bottom:20px;}
 .pdfx-cover-desc{font-size:12.5px;color:rgba(255,255,255,.68);line-height:1.65;max-width:520px;}
-.pdfx-cover-white{padding:40px 52px 20px;}
-.pdfx-pill{display:inline-block;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:4px;padding:4px 12px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#0f9c6e;margin-bottom:16px;}
-.pdfx-cover-headline{font-family:Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:20px;}
-.pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:30px;}
+/* flex:1 fills all remaining vertical space below the navy block (up to the full 11in page); justify-content:center vertically centers the pill/headline/columns within that remaining space, per the request to justify this content to the middle of the space below the navy area. */
+.pdfx-cover-white{padding:40px 60px;flex:1;display:flex;flex-direction:column;justify-content:center;}
+.pdfx-pill{display:inline-block;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:4px;padding:4px 12px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#0f9c6e;margin-bottom:24px;}
+.pdfx-cover-headline{font-family:var(--font-subheader);font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:28px;}
+.pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:8px;}
 .pdfx-cover-col{font-size:12px;color:#48557a;line-height:1.75;}
 .pdfx-cover-col p{margin-bottom:12px;}
 
 /* Interior page header band */
 .pdfx-inner{padding:34px 46px 40px;}
-.pdfx-topband{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid var(--navy);margin-bottom:14px;}
+.pdfx-topband{display:flex;justify-content:space-between;align-items:center;background:var(--navy);margin:-34px -46px 20px -46px;padding:24px 46px 22px;}
 .pdfx-logo-navy{font-family:Georgia,'Times New Roman',serif;font-size:19px;font-style:italic;color:var(--navy);}
 .pdfx-tagright{text-align:right;}
-.pdfx-tagright .pdfx-hdr-tag{color:var(--muted);}
-.pdfx-tagright .pdfx-hdr-month{color:var(--navy);font-size:15px;}
+.pdfx-tagright .pdfx-hdr-tag{color:rgba(255,255,255,.55);}
+.pdfx-tagright .pdfx-hdr-month{color:#fff;font-size:15px;}
 .pdfx-tabs{display:flex;gap:22px;margin-bottom:20px;}
 .pdfx-tab{font-size:12px;font-weight:600;color:var(--muted);padding-bottom:7px;border-bottom:2px solid transparent;}
 .pdfx-tab.on{color:var(--navy);border-bottom-color:var(--green);}
 .pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 .pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
-.pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);}
+.pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-header);}
 .pdfx-chdate{font-size:11px;color:var(--muted);}
 .pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
 .pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
@@ -582,7 +597,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-kpi-mom.dn{color:var(--danger);}
 .pdfx-kpi-mom.flat{color:var(--muted);}
 .pdfx-card{border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px;}
-.pdfx-card-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:10px;}
+.pdfx-card-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:10px;font-family:var(--font-subheader);}
 .pdfx-chart-img{width:100%;display:block;}
 .pdfx-table{width:100%;border-collapse:collapse;font-size:11px;}
 .pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
@@ -590,7 +605,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-table tbody td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--navy);}
 .pdfx-table tbody td.num{text-align:right;}
 .pdfx-table tbody tr:nth-child(even){background:#f7f8fb;}
-.pdfx-insight{background:#fdf4ec;border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
+.pdfx-insight{background:var(--sand);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
 .pdfx-insight strong{color:var(--warn);}
 .pdfx-two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .pdfx-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
@@ -621,7 +636,10 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 <!-- ══ SIDEBAR ══ -->
 <aside class="sidebar">
   <div class="sb-brand">
-    <div class="sb-brand-logo">évolis <span>·</span> Medaltus</div>
+    <div class="sb-brand-logo" style="display:flex;align-items:center;gap:6px;">
+      <img src="evolis logo.svg" alt="évolis" style="height:18px;width:auto;filter:brightness(0) invert(1);">
+      <span>· Medaltus</span>
+    </div>
     <div class="sb-brand-sub">Brand Dashboard</div>
     <div class="sb-internal-badge">Internal</div>
   </div>
@@ -5892,17 +5910,31 @@ async function loadAuditResultsFromSheet() {
   }
 
   // Reads a top-sellers table body into rows of [rank, name, ...numeric cols]
+  // Returns cells as { text, momPct, momClass } instead of flat strings, so
+  // the number and its MOM badge (if any) can be styled independently in
+  // the PDF — bold number, non-bold colored %. Reuses the same green/red
+  // as the live dashboard's .tp-mom-up/.tp-mom-dn (#1db88a / var(--danger)).
   function pdfxTableRows(tbodyId) {
     const tbody = pdfxById(tbodyId);
     if (!tbody) return [];
     const rows = [];
     tbody.querySelectorAll('tr').forEach(function (tr) {
       const cells = Array.prototype.map.call(tr.querySelectorAll('td'), function (td) {
-        return td.textContent.trim();
+        const momEl = td.querySelector('.tp-mom-up, .tp-mom-dn, .tp-mom-flat');
+        if (!momEl) return { text: td.textContent.trim(), momText: '', momClass: '' };
+        const momText = momEl.textContent.trim();
+        const clone = td.cloneNode(true);
+        const momInClone = clone.querySelector('.tp-mom-up, .tp-mom-dn, .tp-mom-flat');
+        if (momInClone) momInClone.remove();
+        const numberText = clone.textContent.trim();
+        let momClass = 'flat';
+        if (momEl.classList.contains('tp-mom-up')) momClass = 'up';
+        else if (momEl.classList.contains('tp-mom-dn')) momClass = 'dn';
+        return { text: numberText, momText, momClass };
       });
-      // Skip "Loading…" / empty placeholder rows
+      const flatJoin = cells.map(function (c) { return c.text; }).join(' ');
       if (cells.length < 2) return;
-      if (/loading/i.test(cells.join(' '))) return;
+      if (/loading/i.test(flatJoin)) return;
       rows.push(cells);
     });
     return rows;
@@ -5917,7 +5949,16 @@ async function loadAuditResultsFromSheet() {
     }).join('') + '</tr>';
     let tbody = rows.map(function (cells) {
       return '<tr>' + cells.map(function (c, i) {
-        return '<td' + (i > 1 ? ' class="num"' : '') + '>' + pdfxEscape(c) + '</td>';
+        const isNum = i > 1;
+        let cellHtml;
+        if (c.momText) {
+          const color = c.momClass === 'up' ? '#1db88a' : c.momClass === 'dn' ? 'var(--danger)' : 'rgba(107,123,162,.4)';
+          // Bold number, NOT-bold colored MOM% — per requirements 2026-07-13
+          cellHtml = '<strong>' + pdfxEscape(c.text) + '</strong> <span style="font-weight:400;color:' + color + ';">' + pdfxEscape(c.momText) + '</span>';
+        } else {
+          cellHtml = isNum ? '<strong>' + pdfxEscape(c.text) + '</strong>' : pdfxEscape(c.text);
+        }
+        return '<td' + (isNum ? ' class="num"' : '') + '>' + cellHtml + '</td>';
       }).join('') + '</tr>';
     }).join('');
     return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
@@ -5929,15 +5970,13 @@ async function loadAuditResultsFromSheet() {
     try {
       const chart = window[varName];
       if (chart && typeof chart.toBase64Image === 'function') {
-        // Full-resolution PNG (the default with no args) produces a base64
-        // string easily in the hundreds of KB as raw text for a scale:2
-        // chart. html2canvas has its OWN internal image loader (separate
-        // from the browser's native <img> loading) that was silently
-        // failing on images that large — "Error loading image data:" in
-        // the console, PDF saved "successfully" but with blank chart
-        // areas. Confirmed 2026-07-13. JPEG at 0.85 quality is a small
-        // fraction of the size with no visible quality loss for a chart.
-        return chart.toBase64Image('image/jpeg', 0.85);
+        // PNG, not JPEG — JPEG has no alpha channel, so Chart.js's transparent
+        // canvas background gets filled with BLACK by the browser before
+        // JPEG-encoding. That's what caused every chart to show a solid black
+        // background in the exported PDF. Confirmed 2026-07-13. Switched back
+        // to PNG now that the actual size-related error (useCORS, removed
+        // separately) is fixed — PNG was never really the problem.
+        return chart.toBase64Image('image/png');
       }
     } catch (e) { /* noop */ }
     return '';
@@ -5964,7 +6003,7 @@ async function loadAuditResultsFromSheet() {
       return '<span class="pdfx-tab' + (t === activeTab ? ' on' : '') + '">' + t + '</span>';
     }).join('');
     return '<div class="pdfx-topband">' +
-      '<span class="pdfx-logo-navy">évolis<sup style="font-size:9px;">®</sup></span>' +
+      '<span class="pdfx-logo-navy"><img src="evolis logo.svg" alt="évolis" style="height:20px;width:auto;filter:brightness(0) invert(1);"></span>' +
       '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
       '</div>' +
       '<div class="pdfx-tabs">' + tabsHtml + '</div>';
@@ -5986,8 +6025,9 @@ async function loadAuditResultsFromSheet() {
     return '' +
       '<div class="pdfx-page pdfx-cover">' +
         '<div class="pdfx-cover-navy">' +
+          '<img src="watermark.svg" alt="" style="position:absolute;right:-40px;top:-40px;width:340px;height:auto;opacity:0.12;pointer-events:none;">' +
           '<div class="pdfx-cover-toprow">' +
-            '<span class="pdfx-logo-white">évolis<sup style="font-size:10px;">®</sup></span>' +
+            '<span class="pdfx-logo-white"><img src="evolis logo.svg" alt="évolis" style="height:24px;width:auto;filter:brightness(0) invert(1);"></span>' +
             '<div class="pdfx-hdr-right"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
           '</div>' +
           '<div class="pdfx-cover-eyebrow">Monthly Overview</div>' +
@@ -6132,6 +6172,23 @@ async function loadAuditResultsFromSheet() {
     let root = null;
 
     try {
+      // A PDF export shouldn't silently produce blank chart cards just
+      // because the user hasn't clicked into Website/Walmart/Opportunities
+      // yet this session — those charts only exist once their tab's lazy
+      // init has run. Force all of them to run now, awaiting each, before
+      // building any page HTML. Confirmed 2026-07-13 — this is why Sales by
+      // Month (Website/Walmart) and Active Subscriptions were blank.
+      const initPromises = [];
+      if (!window._amazonLiveInit     && typeof window.initAmazonLive === 'function')     initPromises.push(window.initAmazonLive());
+      if (!window._webLiveInit        && typeof window.initWebLive === 'function')        initPromises.push(window.initWebLive());
+      if (!window._walmartLiveInit    && typeof window.initWalmartLive === 'function')     initPromises.push(window.initWalmartLive());
+      if (!window._stewardshipLiveInit && typeof window.initStewardshipLive === 'function') initPromises.push(window.initStewardshipLive());
+      if (!window._snsChart           && typeof initSns === 'function')                    initSns();
+      if (initPromises.length) {
+        console.log('[pdf-export] awaiting', initPromises.length, 'lazy chart init(s) before building PDF');
+        await Promise.all(initPromises);
+      }
+
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
       console.log('[pdf-export] monthYear:', JSON.stringify(monthYear));
