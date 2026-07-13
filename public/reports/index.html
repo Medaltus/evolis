@@ -526,20 +526,18 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
    elements because fixed positioning is resolved against the viewport at clone
    time. position:absolute keeps it in normal document flow so html2canvas can
    correctly measure and paint it. */
-/* Was position:absolute;left:-99999px — that extreme negative offset is a
-   known source of blank captures in html2canvas: it can fail to correctly
-   render content sitting that far outside real viewport coordinates, even
-   with explicit windowWidth/windowHeight set, and fails SILENTLY (no
-   console error, just an empty/white canvas). Confirmed 2026-07-13 — the
-   html2canvas image-loading errors were fixed (removed useCORS) but the
-   PDF was still fully blank, which is exactly this failure signature.
-   Fixed positioning at the real viewport origin (0,0) keeps this within
-   real viewport bounds. Hidden from view via z-index:-1 (sits BEHIND the
-   real page's opaque content) rather than opacity:0 — opacity compounds
-   visually across descendants, so opacity:0 on the root risks html2canvas
-   faithfully capturing everything inside as transparent too, which would
-   just reproduce the same blank-PDF symptom through a different path. */
-#pdfx-root{position:fixed;top:0;left:0;z-index:-1;pointer-events:none;width:8.5in;background:#fff;font-family:var(--font);}
+/* Default state: fully hidden, not just visually invisible. Two previous
+   approaches (position:absolute;left:-99999px, then position:fixed with
+   z-index:-1) both produced a fast, error-free, but completely BLANK PDF —
+   strong evidence html2canvas was capturing an empty/near-instant canvas
+   rather than doing real rendering work. Abandoning clever "technically
+   present but hidden" positioning entirely. exportPartnerPDF() now
+   explicitly makes this element FULLY VISIBLE on top of everything during
+   capture, then hides it again immediately after — removes all ambiguity
+   about what html2canvas is looking at, at the cost of a brief on-screen
+   flash during export (acceptable — the button already shows a loading
+   state, so this reads as part of "generating", not a glitch). */
+#pdfx-root{display:none;width:8.5in;background:#fff;font-family:var(--font);}
 .pdfx-page{width:8.5in;min-height:11in;background:#fff;position:relative;box-sizing:border-box;overflow:hidden;page-break-after:always;}
 .pdfx-cover{padding:0;}
 .pdfx-cover-navy{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);padding:44px 52px 56px;color:#fff;position:relative;}
@@ -6155,6 +6153,17 @@ async function loadAuditResultsFromSheet() {
 
       root.innerHTML = coverHtml + amazonHtml + websiteHtml + walmartHtml + stewardHtml + oppHtml;
 
+      // Make it REALLY, GENUINELY visible — on top of everything — only
+      // for the duration of the capture. No opacity/z-index-behind tricks
+      // this time; both of those silently produced a blank PDF. This
+      // removes all ambiguity about what html2canvas is looking at.
+      root.style.display = 'block';
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.zIndex = '999999';
+      root.style.opacity = '1';
+
       console.log('[pdf-export] root.innerHTML.length:', root.innerHTML.length);
       console.log('[pdf-export] root computed style — display:', getComputedStyle(root).display,
         'position:', getComputedStyle(root).position, 'width:', getComputedStyle(root).width);
@@ -6168,22 +6177,22 @@ async function loadAuditResultsFromSheet() {
 
       const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
 
+      function hideRoot() {
+        root.style.display = 'none';
+        root.style.position = '';
+        root.style.top = '';
+        root.style.left = '';
+        root.style.zIndex = '';
+        root.style.opacity = '';
+      }
+
       const opt = {
         margin: 0,
         filename: filename,
         image: { type: 'jpeg', quality: 0.97 },
         html2canvas: {
           scale: 2,
-          // useCORS:true was here before — removed. It forces crossOrigin="anonymous"
-          // onto every image html2canvas processes, INCLUDING our base64 data-URI
-          // chart images, which aren't cross-origin at all and don't support that
-          // attribute correctly in this context. That's what caused "Error loading
-          // image data:" for every chart image, even after reducing their size.
-          // Confirmed 2026-07-13 — removing this, not the image size, was the fix.
           backgroundColor: '#ffffff',
-          // Explicit window size prevents html2canvas from mis-measuring an
-          // off-screen (left:-99999px) element, which is what produced a
-          // blank single-page PDF previously.
           windowWidth: root.scrollWidth,
           windowHeight: root.scrollHeight
         },
@@ -6193,15 +6202,17 @@ async function loadAuditResultsFromSheet() {
       console.log('[pdf-export] html2canvas windowWidth/windowHeight in opt:', opt.html2canvas.windowWidth, opt.html2canvas.windowHeight);
 
       // Give the browser a paint cycle to commit layout/styles for the newly
-      // injected off-screen content before html2canvas measures it.
+      // shown content before html2canvas measures it.
       requestAnimationFrame(function () {
         setTimeout(function () {
           console.log('[pdf-export] root.scrollWidth/scrollHeight (at capture time, after rAF+timeout):', root.scrollWidth, root.scrollHeight);
           html2pdf().from(root).set(opt).save().then(function () {
             console.log('[pdf-export] html2pdf().save() resolved successfully');
+            hideRoot();
             if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
           }).catch(function (err) {
             console.error('[pdf-export] failed:', err);
+            hideRoot();
             if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
             alert('PDF export failed — check the console for details.');
           });
@@ -6209,6 +6220,8 @@ async function loadAuditResultsFromSheet() {
       });
     } catch (err) {
       console.error('[pdf-export] build failed:', err);
+      const root = pdfxById('pdfx-root');
+      if (root) { root.style.display = 'none'; root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = ''; }
       if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
       alert('PDF export failed while gathering report data — check the console for details.');
     }
