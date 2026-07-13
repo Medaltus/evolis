@@ -5917,7 +5917,15 @@ async function loadAuditResultsFromSheet() {
     try {
       const chart = window[varName];
       if (chart && typeof chart.toBase64Image === 'function') {
-        return chart.toBase64Image();
+        // Full-resolution PNG (the default with no args) produces a base64
+        // string easily in the hundreds of KB as raw text for a scale:2
+        // chart. html2canvas has its OWN internal image loader (separate
+        // from the browser's native <img> loading) that was silently
+        // failing on images that large — "Error loading image data:" in
+        // the console, PDF saved "successfully" but with blank chart
+        // areas. Confirmed 2026-07-13. JPEG at 0.85 quality is a small
+        // fraction of the size with no visible quality loss for a chart.
+        return chart.toBase64Image('image/jpeg', 0.85);
       }
     } catch (e) { /* noop */ }
     return '';
