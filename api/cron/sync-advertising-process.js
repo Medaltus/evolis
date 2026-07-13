@@ -125,7 +125,13 @@ module.exports = async (req, res) => {
   }
 
   // ── PROCESSED early exit — check queue first ──────────────────────────────
-  if (meta['ad_report_status'] === 'PROCESSED') {
+  // Must NOT fire when a backfill is pending — otherwise a stale PROCESSED
+  // status from the last regular daily run (which always sets this at the
+  // end, regardless of which path it took) permanently blocks a pending
+  // backfill from ever being reached at all, before isBackfillPending's own
+  // priority logic further below even gets a chance to run. This is the same
+  // starvation bug as before, just one check earlier in the file. FIXED 2026-07-13.
+  if (meta['ad_report_status'] === 'PROCESSED' && !isBackfillPending) {
     const queueStr = meta['ad_backfill_queue'] || '';
     const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
     if (queue.length > 0) {
