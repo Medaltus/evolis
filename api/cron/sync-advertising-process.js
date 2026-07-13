@@ -31,7 +31,7 @@ const SUMMARY_HEADERS = [
   'acos', 'roas', 'ad_units', 'ctr', 'cpc', 'brand', 'last_updated',
 ];
 const ASIN_HEADERS = [
-  'year', 'month', 'sku', 'ad_units', 'spend', 'sales',
+  'year', 'month', 'asin', 'ad_units', 'spend', 'sales',
   'acos', 'brand', 'last_updated',
 ];
 
@@ -273,7 +273,7 @@ module.exports = async (req, res) => {
           const existing = await readRows(SHEET_AD_ORDERS, tabName);
           // Remove rows matching this year/month, then append new ones
           const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
-          const allRows = [...kept.map(r => [r.year, r.month, r.sku, r.ad_units, r.spend, r.sales, r.acos, r.brand, r.last_updated]), ...newRows];
+          const allRows = [...kept.map(r => [r.year, r.month, r.asin, r.ad_units, r.spend, r.sales, r.acos, r.brand, r.last_updated]), ...newRows];
           await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, allRows, tok);
           console.log(`[sync-advertising-process] ${label} ${tabName}: upserted ${newRows.length} ASIN rows`);
         } catch (err) {
