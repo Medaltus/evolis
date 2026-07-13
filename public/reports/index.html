@@ -611,7 +611,8 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -6124,39 +6125,35 @@ async function loadAuditResultsFromSheet() {
 
   // ---- main entry point ----------------------------------------------------
 
-  window.exportPartnerPDF = function () {
+  window.exportPartnerPDF = async function () {
     const btn = pdfxById('pdf-export-btn');
     if (btn) { btn.disabled = true; btn.classList.add('pdfx-loading'); }
+
+    let root = null;
 
     try {
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
-      console.log('[pdf-export] monthYear:', JSON.stringify(monthYear), 'rangeText:', JSON.stringify(rangeText));
+      console.log('[pdf-export] monthYear:', JSON.stringify(monthYear));
 
-      let root = pdfxById('pdfx-root');
+      root = pdfxById('pdfx-root');
       if (!root) {
         root = document.createElement('div');
         root.id = 'pdfx-root';
         document.body.appendChild(root);
       }
 
-      const coverHtml    = buildCoverPage(monthYear);
-      const amazonHtml   = buildAmazonPage(monthYear);
-      const websiteHtml  = buildWebsitePage(monthYear);
-      const walmartHtml  = buildWalmartPage(monthYear);
-      const stewardHtml  = buildStewardshipPage(monthYear);
-      const oppHtml      = buildOpportunitiesPage(monthYear);
-      console.log('[pdf-export] page HTML lengths:', {
-        cover: coverHtml.length, amazon: amazonHtml.length, website: websiteHtml.length,
-        walmart: walmartHtml.length, stewardship: stewardHtml.length, opportunities: oppHtml.length,
-      });
+      root.innerHTML =
+        buildCoverPage(monthYear) + buildAmazonPage(monthYear) + buildWebsitePage(monthYear) +
+        buildWalmartPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear);
 
-      root.innerHTML = coverHtml + amazonHtml + websiteHtml + walmartHtml + stewardHtml + oppHtml;
-
-      // Make it REALLY, GENUINELY visible — on top of everything — only
-      // for the duration of the capture. No opacity/z-index-behind tricks
-      // this time; both of those silently produced a blank PDF. This
-      // removes all ambiguity about what html2canvas is looking at.
+      // Fully, genuinely visible on top of everything during capture — this
+      // part was already confirmed correct earlier. The bug was entirely in
+      // html2pdf.js's wrapper (.toCanvas() resolved undefined even chained
+      // correctly through .toContainer() first — a real bug/incompatibility
+      // in that specific bundle, not our positioning). Bypassing that wrapper
+      // entirely now: html2canvas and jsPDF called directly, one real Letter
+      // page captured at a time from each .pdfx-page div.
       root.style.display = 'block';
       root.style.position = 'fixed';
       root.style.top = '0';
@@ -6164,95 +6161,43 @@ async function loadAuditResultsFromSheet() {
       root.style.zIndex = '999999';
       root.style.opacity = '1';
 
-      console.log('[pdf-export] root.innerHTML.length:', root.innerHTML.length);
-      console.log('[pdf-export] root computed style — display:', getComputedStyle(root).display,
-        'position:', getComputedStyle(root).position, 'width:', getComputedStyle(root).width);
-      console.log('[pdf-export] root.scrollWidth/scrollHeight (before rAF):', root.scrollWidth, root.scrollHeight);
-      console.log('[pdf-export] typeof html2pdf:', typeof html2pdf, '| typeof window.jspdf:', typeof window.jspdf);
+      // Paint cycle before measuring/capturing
+      await new Promise(r => requestAnimationFrame(() => setTimeout(r, 50)));
 
-      // Remove page-break-after on the very last page so html2pdf doesn't add a blank trailing page
-      const pages = root.querySelectorAll('.pdfx-page');
-      console.log('[pdf-export] .pdfx-page count found in root:', pages.length);
-      if (pages.length) pages[pages.length - 1].style.pageBreakAfter = 'auto';
+      const pageEls = Array.from(root.querySelectorAll('.pdfx-page'));
+      console.log('[pdf-export] .pdfx-page count:', pageEls.length);
+      if (!pageEls.length) throw new Error('No .pdfx-page elements found — nothing to export.');
 
-      const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (typeof jsPDFCtor !== 'function') throw new Error('jsPDF constructor not found on window.jspdf.jsPDF or window.jsPDF.');
+      if (typeof html2canvas !== 'function') throw new Error('html2canvas is not available as a global.');
 
-      function hideRoot() {
-        root.style.display = 'none';
-        root.style.position = '';
-        root.style.top = '';
-        root.style.left = '';
-        root.style.zIndex = '';
-        root.style.opacity = '';
+      const pdf = new jsPDFCtor({ unit: 'in', format: 'letter', orientation: 'portrait' });
+      const pageWidthIn = 8.5, pageHeightIn = 11;
+
+      for (let i = 0; i < pageEls.length; i++) {
+        const el = pageEls[i];
+        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+        console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
+        const imgData = canvas.toDataURL('image/jpeg', 0.97);
+        if (i > 0) pdf.addPage();
+        // Scale the captured canvas to fill the page width, preserving aspect ratio
+        const renderedHeightIn = pageWidthIn * (canvas.height / canvas.width);
+        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthIn, Math.min(renderedHeightIn, pageHeightIn));
       }
 
-      const opt = {
-        margin: 0,
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.97 },
-        html2canvas: {
-          scale: 2,
-          backgroundColor: '#ffffff',
-          // windowWidth/windowHeight removed — those existed to compensate for
-          // the OLD off-screen positioning tricks (both of which are gone now
-          // that root is genuinely on-screen at its real size during capture).
-          // Keeping fake window dimensions while root sits at real on-screen
-          // coordinates creates a coordinate-system mismatch, which is a very
-          // plausible explanation for why the PDF was still blank even with a
-          // confirmed-visible, confirmed-correct on-screen element to capture.
-          // Confirmed 2026-07-13.
-        },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-      };
+      const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
+      pdf.save(filename);
+      console.log('[pdf-export] pdf.save() called — download should start now');
 
-      // Give the browser a paint cycle to commit layout/styles for the newly
-      // shown content before html2canvas measures it.
-      requestAnimationFrame(function () {
-        setTimeout(function () {
-          console.log('[pdf-export] root.scrollWidth/scrollHeight (at capture time, after rAF+timeout):', root.scrollWidth, root.scrollHeight);
-
-          // ── TEMPORARY DIAGNOSTIC ──────────────────────────────────────────
-          // html2canvas/jsPDF are NOT global — this bundle keeps them fully
-          // private inside its own closure (confirmed: calling html2canvas()
-          // directly throws "html2canvas is not defined", a real
-          // ReferenceError). Every previous attempt to call it as a bare
-          // global was testing something that never existed. html2pdf.js's
-          // own documented worker-chain API has a .toCanvas() step that
-          // exposes its INTERNAL canvas correctly — using that instead.
-          html2pdf().from(root).set(opt).toContainer().toCanvas().then(function (canvas) {
-            console.log('[pdf-export] DIAGNOSTIC internal canvas size via .toContainer().toCanvas():', canvas ? (canvas.width + ' x ' + canvas.height) : 'canvas is ' + canvas);
-            if (!canvas) { console.error('[pdf-export] DIAGNOSTIC canvas is still falsy even after .toContainer().toCanvas() — stopping here.'); return; }
-            canvas.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;border:6px solid lime;max-width:96vw;max-height:96vh;overflow:auto;background:#fff;';
-            canvas.id = 'pdfx-debug-canvas';
-            const existing = document.getElementById('pdfx-debug-canvas');
-            if (existing) existing.remove();
-            document.body.appendChild(canvas);
-            console.log('[pdf-export] DIAGNOSTIC canvas appended — click it to remove.');
-            canvas.addEventListener('click', function () { canvas.remove(); });
-          }).catch(function (err) {
-            console.error('[pdf-export] DIAGNOSTIC .toContainer().toCanvas() failed:', err);
-          });
-          // ── END TEMPORARY DIAGNOSTIC ──────────────────────────────────────
-
-          html2pdf().from(root).set(opt).save().then(function () {
-            console.log('[pdf-export] html2pdf().save() resolved successfully');
-            hideRoot();
-            if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
-          }).catch(function (err) {
-            console.error('[pdf-export] failed:', err);
-            hideRoot();
-            if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
-            alert('PDF export failed — check the console for details.');
-          });
-        }, 50);
-      });
+      root.style.display = 'none';
+      root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = '';
+      if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
     } catch (err) {
-      console.error('[pdf-export] build failed:', err);
-      const root = pdfxById('pdfx-root');
+      console.error('[pdf-export] failed:', err);
       if (root) { root.style.display = 'none'; root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = ''; }
       if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
-      alert('PDF export failed while gathering report data — check the console for details.');
+      alert('PDF export failed — check the console for details.');
     }
   };
 
