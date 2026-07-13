@@ -99,7 +99,7 @@ nav{flex:1;padding:8px 8px 0;}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:22px;}
 .kpi-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;height:88px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;}
 .kpi-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;}
-.kpi-value{font-size:26px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--navy);}
+.kpi-value{font-size:26px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--navy);font-family:var(--font-subheader);}
 .kpi-value.sm{font-size:20px;}
 .kpi-mom{font-size:11px;margin-top:5px;}
 .kpi-mom.up{color:#1db88a;}
@@ -202,7 +202,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .brand-hero-left .brand-tagline{font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px;}
 .brand-hero-right{display:flex;gap:20px;}
 .hero-stat{text-align:center;}
-.hero-stat-val{font-size:20px;font-weight:600;color:var(--green);line-height:1;}
+.hero-stat-val{font-size:20px;font-weight:600;color:var(--green);line-height:1;font-family:var(--font-subheader);}
 .hero-stat-lbl{font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em;margin-top:3px;}
 
 /* ── Responsive ── */
@@ -240,7 +240,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .metric-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;}
 .metric-strip-card{background:var(--white);padding:14px 16px;}
 .ms-label{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;}
-.ms-value{font-size:22px;font-weight:700;color:var(--navy);line-height:1;}
+.ms-value{font-size:22px;font-weight:700;color:var(--navy);line-height:1;font-family:var(--font-subheader);}
 .ms-sub{font-size:10px;color:var(--muted);margin-top:4px;}
 
 /* Chart section */
@@ -585,18 +585,18 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-tab{font-size:12px;font-weight:600;color:rgba(255,255,255,.55);padding-bottom:12px;border-bottom:3px solid transparent;}
 .pdfx-tab.on{color:#fff;border-bottom-color:var(--green);}
 .pdfx-header-divider{height:1px;background:var(--border);margin:0 -46px 20px -46px;}
-.pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-family:var(--font-subheader);}
 .pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
 .pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-subheader);}
 .pdfx-chdate{font-size:11px;color:var(--muted);}
 .pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-bottom:18px;}
 .pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
 .pdfx-kpis.n2{grid-template-columns:repeat(2,1fr);}
-.pdfx-kpi{border:1px solid var(--border);border-radius:0;padding:16px 14px;background:#fbfbfd;margin-left:-1px;}
+.pdfx-kpi{border:1px solid var(--border);border-radius:0;padding:20px 16px;background:#fbfbfd;margin-left:-1px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;}
 .pdfx-kpi:first-child{margin-left:0;}
-.pdfx-kpi-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px;white-space:nowrap;}
-.pdfx-kpi-val{font-size:26px;font-weight:700;font-family:var(--font-bold);color:var(--navy);letter-spacing:-.5px;line-height:1;}
-.pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:400;font-family:var(--font-body-light);}
+.pdfx-kpi-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin-bottom:9px;white-space:nowrap;}
+.pdfx-kpi-val{font-size:29px;font-weight:700;font-family:var(--font-subheader);color:var(--navy);letter-spacing:-.5px;line-height:1;}
+.pdfx-kpi-mom{font-size:10px;margin-top:6px;font-weight:400;font-family:var(--font-body-light);min-height:13px;}
 .pdfx-kpi-mom.up{color:var(--green);}
 .pdfx-kpi-mom.dn{color:var(--danger);}
 .pdfx-kpi-mom.flat{color:var(--muted);}
@@ -618,7 +618,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-check-title{font-size:11.5px;font-weight:700;color:var(--navy);}
 .pdfx-check-status{font-size:10px;color:var(--muted);}
 .pdfx-ltd{margin-top:10px;}
-.pdfx-ltd-val{font-size:19px;font-weight:700;color:var(--navy);}
+.pdfx-ltd-val{font-size:19px;font-weight:700;color:var(--navy);font-family:var(--font-subheader);}
 .pdfx-ltd-lbl{font-size:9.5px;color:var(--muted);}
 .pdfx-footer{display:flex;justify-content:space-between;align-items:center;margin-top:36px;padding-top:16px;border-top:1px solid var(--border);}
 .pdfx-footer-brand{font-size:13px;font-weight:700;color:var(--navy);}
@@ -5900,7 +5900,12 @@ async function loadAuditResultsFromSheet() {
 
   function pdfxKpiCardHtml(k) {
     const arrow = k.momClass === 'up' ? '▲ ' : k.momClass === 'dn' ? '▼ ' : '';
-    const momHtml = k.mom ? '<div class="pdfx-kpi-mom ' + k.momClass + '">' + arrow + pdfxEscape(k.mom) + '</div>' : '';
+    // The MOM row is always rendered, even when there's no MOM value, so
+    // every card in a row has the identical label→value→mom structure —
+    // this is what keeps the metric numbers landing at the exact same
+    // height across the row regardless of which cards happen to have a
+    // MOM figure. An empty mom div still reserves its min-height (see CSS).
+    const momHtml = '<div class="pdfx-kpi-mom ' + (k.mom ? k.momClass : 'flat') + '">' + (k.mom ? arrow + pdfxEscape(k.mom) : '') + '</div>';
     return '<div class="pdfx-kpi">' +
       '<div class="pdfx-kpi-lbl">' + pdfxEscape(k.label) + '</div>' +
       '<div class="pdfx-kpi-val">' + pdfxEscape(k.value) + '</div>' +
@@ -6150,7 +6155,7 @@ async function loadAuditResultsFromSheet() {
     return '' +
       '<div class="pdfx-page pdfx-cover">' +
         '<div class="pdfx-cover-navy">' +
-          (PDFX_WATERMARK_SRC ? '<img src="' + PDFX_WATERMARK_SRC + '" alt="" style="position:absolute;right:-40px;top:-40px;width:340px;height:auto;opacity:0.12;pointer-events:none;">' : '') +
+          (PDFX_WATERMARK_SRC ? '<img src="' + PDFX_WATERMARK_SRC + '" alt="" style="position:absolute;right:-60px;top:-30px;width:640px;height:auto;opacity:0.16;pointer-events:none;">' : '') +
           '<div class="pdfx-cover-toprow">' +
             '<span class="pdfx-logo-white">' + pdfxLogoHtml('height:24px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
             '<div class="pdfx-hdr-right"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
@@ -6361,18 +6366,19 @@ async function loadAuditResultsFromSheet() {
         buildCoverPage(monthYear) + buildAmazonPage(monthYear) + buildWebsitePage(monthYear) +
         buildWalmartPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear);
 
-      // Fully, genuinely visible on top of everything during capture — this
-      // part was already confirmed correct earlier. The bug was entirely in
-      // html2pdf.js's wrapper (.toCanvas() resolved undefined even chained
-      // correctly through .toContainer() first — a real bug/incompatibility
-      // in that specific bundle, not our positioning). Bypassing that wrapper
-      // entirely now: html2canvas and jsPDF called directly, one real Letter
-      // page captured at a time from each .pdfx-page div.
+      // Positioned off-screen (not display:none, so it still has real layout
+      // for html2canvas to measure/paint) rather than visible on top of
+      // everything. The earlier full-screen-visible approach was a
+      // diagnostic step, not an actual requirement — the real bug that round
+      // was html2pdf.js's own wrapper (.toCanvas() resolving undefined even
+      // when chained correctly), which is bypassed entirely below by calling
+      // html2canvas and jsPDF directly. Nothing about capture depends on the
+      // container being visible on screen, so it no longer needs to be.
       root.style.display = 'block';
       root.style.position = 'fixed';
       root.style.top = '0';
-      root.style.left = '0';
-      root.style.zIndex = '999999';
+      root.style.left = '-99999px';
+      root.style.zIndex = '-1';
       root.style.opacity = '1';
 
       // Paint cycle first, then wait for every <img> to actually finish
