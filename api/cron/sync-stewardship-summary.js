@@ -94,14 +94,44 @@ module.exports = async (req, res) => {
   for (const brand of brands.filter(b => b.active)) {
     try {
       const [syncRows, histRows, adRows, revRows, subRows] = await Promise.all([
-        readRows(SYNC_SHEET_ID, brand.tabName).catch(() => []),
-        readRows(HISTORICAL_SHEET_ID, brand.tabName).catch(() => []),
-        readRows(AD_SUMMARY_SHEET_ID, brand.tabName).catch(() => []),
-        readRows(REVENUE_SHEET_ID, brand.tabName).catch(() => []),
-        readRows(SUBSCRIPTIONS_SHEET_ID, brand.tabName).catch(() => []),
+        readRows(SYNC_SHEET_ID, brand.tabName).catch(err => { console.warn(`[sync-stewardship-summary] ${brand.id} sync read failed: ${err.message}`); return []; }),
+        readRows(HISTORICAL_SHEET_ID, brand.tabName).catch(err => { console.warn(`[sync-stewardship-summary] ${brand.id} historical read failed: ${err.message}`); return []; }),
+        readRows(AD_SUMMARY_SHEET_ID, brand.tabName).catch(err => { console.warn(`[sync-stewardship-summary] ${brand.id} ad_summary read failed: ${err.message}`); return []; }),
+        readRows(REVENUE_SHEET_ID, brand.tabName).catch(err => { console.warn(`[sync-stewardship-summary] ${brand.id} revenue read failed: ${err.message}`); return []; }),
+        readRows(SUBSCRIPTIONS_SHEET_ID, brand.tabName).catch(err => { console.warn(`[sync-stewardship-summary] ${brand.id} subscriptions read failed: ${err.message}`); return []; }),
       ]);
 
+      // Diagnostic — shows exactly which source(s) came back empty per
+      // brand. A 0 here vs. a real row count is the difference between "no
+      // tab / read failed" and "tab exists but nothing matched during the
+      // year/month .find() below" — the .catch() above only fires on an
+      // actual thrown error, so this line still matters even when nothing
+      // above logged a warning. TEMPORARY — remove once pbj/dearcloud's
+      // zero-value bug is root-caused. Added 2026-07-13.
+      console.log(`[sync-stewardship-summary] ${brand.id} — sync=${syncRows.length} hist=${histRows.length} ad=${adRows.length} rev=${revRows.length} sub=${subRows.length}`);
+
       const allOrderRows = [...(syncRows || []), ...(histRows || [])];
+
+      // ensureTab must run before we try to read the summary tab's own
+      // existing data below — on a brand-new SUMMARY_SHEET_ID setup the tab
+      // may not exist yet, and readRows would just throw.
+      const token = await ensureTab(SUMMARY_SHEET_ID, brand.tabName, HEADERS);
+
+      // Preserve any manually-pasted website_subscriptions data. This cron
+      // does a full clear+rewrite of every column on every run (replaceRows
+      // has no row-level patch), so without this, the very next run after
+      // pasting historical numbers into that column would wipe them back to
+      // 0 — this reads what's already there FIRST so it can be carried
+      // forward instead of overwritten. Added 2026-07-13.
+      const existingSummaryRows = await readRows(SUMMARY_SHEET_ID, brand.tabName).catch(() => []);
+      const existingWebSubsByMonth = {};
+      existingSummaryRows.forEach(r => {
+        if (!r.year || !r.month) return;
+        const val = r.website_subscriptions;
+        if (val !== '' && val != null) {
+          existingWebSubsByMonth[monthKey(r.year, r.month)] = val;
+        }
+      });
 
       const promosByMonth = {};
       allOrderRows.forEach(r => {
@@ -120,18 +150,24 @@ module.exports = async (req, res) => {
       (revRows || []).forEach(r => { if (r.YEAR && r.MONTH) allMonths.add(monthKey(r.YEAR, r.MONTH)); });
       (subRows || []).forEach(r => { if (r.year && r.month) allMonths.add(monthKey(r.year, r.month)); });
 
-      const outRows = Array.from(allMonths).sort().map(ym => {
+      const outRows = Array.from(allMonths).sort().map((ym, idx) => {
         const [y, m] = ym.split('-').map(n => parseInt(n, 10));
         const adRow = (adRows || []).find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
         const revRow = (revRows || []).find(r => parseInt(r.YEAR, 10) === y && parseInt(r.MONTH, 10) === m);
         const subRow = (subRows || []).find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
 
         const activeSubscriptions = subRow ? parseIntSafe(subRow.active_subscriptions) : 0;
-        // Placeholder until the Shopify website-subscriptions cron exists —
-        // once that's built, replace this 0 with a real lookup the same way
-        // activeSubscriptions is read above.
-        const websiteSubscriptions = 0;
-        const totalSubscriptions = activeSubscriptions + websiteSubscriptions;
+        // Carry forward whatever's already in website_subscriptions (e.g.
+        // manually pasted historical data or the future Shopify cron's
+        // output) instead of overwriting it with 0 every run.
+        const websiteSubscriptions = existingWebSubsByMonth[ym] ?? 0;
+
+        // Sheet row for THIS output row — header is row 1, data starts at
+        // row 2, so row = idx + 2. Used for the total_subscriptions formula
+        // below so it references the correct row, not a fixed one.
+        const sheetRow = idx + 2;
+        // K=amazon_subscriptions, L=website_subscriptions (per HEADERS order)
+        const totalSubscriptionsFormula = `=K${sheetRow}+L${sheetRow}`;
 
         return [
           y, m,
@@ -145,13 +181,12 @@ module.exports = async (req, res) => {
           revRow ? (parseIntSafe(revRow['UNITS SOLD']) || 0) : 0,
           activeSubscriptions,
           websiteSubscriptions,
-          totalSubscriptions,
+          totalSubscriptionsFormula,
           now,
         ];
       });
 
-      const token = await ensureTab(SUMMARY_SHEET_ID, brand.tabName, HEADERS);
-      await replaceRows(SUMMARY_SHEET_ID, brand.tabName, HEADERS, outRows, token);
+      await replaceRows(SUMMARY_SHEET_ID, brand.tabName, HEADERS, outRows, token, 'USER_ENTERED');
 
       results.push({ brand: brand.id, status: 'ok', months: outRows.length });
       console.log(`[sync-stewardship-summary] ${brand.id} - ${outRows.length} months written`);
