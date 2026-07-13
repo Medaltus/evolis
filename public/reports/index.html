@@ -6211,6 +6211,32 @@ async function loadAuditResultsFromSheet() {
       requestAnimationFrame(function () {
         setTimeout(function () {
           console.log('[pdf-export] root.scrollWidth/scrollHeight (at capture time, after rAF+timeout):', root.scrollWidth, root.scrollHeight);
+
+          // ── TEMPORARY DIAGNOSTIC ──────────────────────────────────────────
+          // Three different positioning strategies all produced a blank PDF
+          // in well under 1 second — too consistent to still be a positioning
+          // problem. This calls the SAME html2canvas that html2pdf uses
+          // internally, directly, and displays the raw captured canvas right
+          // on the page so we can see with certainty whether the CAPTURE
+          // itself has real content, before html2pdf's PDF-assembly step
+          // (page-splitting, image embedding) ever touches it. Remove this
+          // block once the real bug is found.
+          if (window.html2canvas) {
+            html2canvas(root, { scale: 2, backgroundColor: '#ffffff' }).then(function (canvas) {
+              console.log('[pdf-export] DIAGNOSTIC raw html2canvas capture size:', canvas.width, 'x', canvas.height);
+              canvas.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;border:6px solid lime;max-width:96vw;max-height:96vh;overflow:auto;background:#fff;';
+              canvas.id = 'pdfx-debug-canvas';
+              const existing = document.getElementById('pdfx-debug-canvas');
+              if (existing) existing.remove();
+              document.body.appendChild(canvas);
+              console.log('[pdf-export] DIAGNOSTIC canvas appended to page with a lime border — leave it there and screenshot it, then click anywhere on it to remove it.');
+              canvas.addEventListener('click', function () { canvas.remove(); });
+            }).catch(function (err) {
+              console.error('[pdf-export] DIAGNOSTIC raw html2canvas call itself failed:', err);
+            });
+          }
+          // ── END TEMPORARY DIAGNOSTIC ──────────────────────────────────────
+
           html2pdf().from(root).set(opt).save().then(function () {
             console.log('[pdf-export] html2pdf().save() resolved successfully');
             hideRoot();
