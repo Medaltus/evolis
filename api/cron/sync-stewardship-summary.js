@@ -117,7 +117,7 @@ module.exports = async (req, res) => {
           adRow ? (parseInt(adRow.ad_units, 10) || 0) : 0,
           round2(promosByMonth[ym] || 0),
           vineByMonth[ym] || 0,
-          revRow ? (parseFloat(revRow.REVENUE) || 0) : 0,
+          revRow ? parseAmt(revRow.REVENUE) : 0,
           revRow ? (parseInt(revRow['UNITS SOLD'], 10) || 0) : 0,
           now,
         ];
