@@ -10,6 +10,14 @@
       "schedule": "15 */2 * * *"
     },
     {
+      "path": "/api/cron/fees-estimate",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/sale-promotions",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/sync-walmart-orders",
       "schedule": "0 6 * * *"
     },
@@ -113,6 +121,12 @@
       "maxDuration": 30
     },
     "api/cron/sync-orders-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/fees-estimate.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sale-promotions.js": {
       "maxDuration": 300
     },
     "api/cron/sync-walmart-orders.js": {
