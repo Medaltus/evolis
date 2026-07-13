@@ -6193,13 +6193,18 @@ async function loadAuditResultsFromSheet() {
         html2canvas: {
           scale: 2,
           backgroundColor: '#ffffff',
-          windowWidth: root.scrollWidth,
-          windowHeight: root.scrollHeight
+          // windowWidth/windowHeight removed — those existed to compensate for
+          // the OLD off-screen positioning tricks (both of which are gone now
+          // that root is genuinely on-screen at its real size during capture).
+          // Keeping fake window dimensions while root sits at real on-screen
+          // coordinates creates a coordinate-system mismatch, which is a very
+          // plausible explanation for why the PDF was still blank even with a
+          // confirmed-visible, confirmed-correct on-screen element to capture.
+          // Confirmed 2026-07-13.
         },
         jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
       };
-      console.log('[pdf-export] html2canvas windowWidth/windowHeight in opt:', opt.html2canvas.windowWidth, opt.html2canvas.windowHeight);
 
       // Give the browser a paint cycle to commit layout/styles for the newly
       // shown content before html2canvas measures it.
