@@ -146,7 +146,7 @@ async function touchMeta(sheetId, tabName, status, rowsWritten, token, errorMsg)
 const SHEETS_BASE = 'sheets.googleapis.com';
 const SHEETS_PATH = '/v4/spreadsheets';
 
-function sheetsGet(token, path) {
+function sheetsGet(token, path, retriesLeft = 3) {
   return new Promise((resolve, reject) => {
     const opts = {
       hostname: SHEETS_BASE,
@@ -157,9 +157,38 @@ function sheetsGet(token, path) {
     const req = https.request(opts, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch (e) { reject(new Error(`Sheets GET parse error: ${d.slice(0, 200)}`)); }
+      res.on('end', async () => {
+        let parsed;
+        try { parsed = JSON.parse(d); }
+        catch (e) { return reject(new Error(`Sheets GET parse error (${res.statusCode}): ${d.slice(0, 200)}`)); }
+
+        // Previously this resolved on ANY parseable body regardless of
+        // status code — a 429 (rate limit) response is still valid JSON,
+        // so it silently resolved with an error object that has no
+        // `.values` field. readRows then saw `data.values || []` and
+        // returned an empty array as if the tab just had no data, with no
+        // exception ever thrown. Discovered 2026-07-13 when the last two
+        // brands processed in sync-stewardship-summary's loop (pbj,
+        // skinside-seoul) came back completely empty across every single
+        // source with zero warnings logged — consistent with quota
+        // exhaustion near the end of a ~100-call run, silently swallowed.
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const isRateLimited = res.statusCode === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
+          if (isRateLimited && retriesLeft > 0) {
+            const waitMs = (4 - retriesLeft) * 2000 + 2000; // 2s, 4s, 6s
+            console.warn(`[sheets] rate limited on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
+            await new Promise(r => setTimeout(r, waitMs));
+            try {
+              resolve(await sheetsGet(token, path, retriesLeft - 1));
+            } catch (err) {
+              reject(err);
+            }
+            return;
+          }
+          return reject(new Error(`Sheets GET failed (${res.statusCode}): ${JSON.stringify(parsed).slice(0, 300)}`));
+        }
+
+        resolve(parsed);
       });
     });
     req.on('error', reject);
@@ -167,7 +196,7 @@ function sheetsGet(token, path) {
   });
 }
 
-function sheetsPost(token, path, body, method = 'POST') {
+function sheetsPost(token, path, body, method = 'POST', retriesLeft = 3) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const opts = {
@@ -183,9 +212,28 @@ function sheetsPost(token, path, body, method = 'POST') {
     const req = https.request(opts, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch (e) { reject(new Error(`Sheets POST parse error (${res.statusCode}): ${d.slice(0, 200)}`)); }
+      res.on('end', async () => {
+        let parsed;
+        try { parsed = JSON.parse(d); }
+        catch (e) { return reject(new Error(`Sheets POST parse error (${res.statusCode}): ${d.slice(0, 200)}`)); }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const isRateLimited = res.statusCode === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
+          if (isRateLimited && retriesLeft > 0) {
+            const waitMs = (4 - retriesLeft) * 2000 + 2000;
+            console.warn(`[sheets] rate limited on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
+            await new Promise(r => setTimeout(r, waitMs));
+            try {
+              resolve(await sheetsPost(token, path, body, method, retriesLeft - 1));
+            } catch (err) {
+              reject(err);
+            }
+            return;
+          }
+          return reject(new Error(`Sheets ${method} failed (${res.statusCode}): ${JSON.stringify(parsed).slice(0, 300)}`));
+        }
+
+        resolve(parsed);
       });
     });
     req.on('error', reject);
