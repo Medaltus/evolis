@@ -500,93 +500,10 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .audit-run-btn.running .spinner{display:block;}
 .audit-run-btn.running .btn-label{opacity:.6;}
 
-/* ══════════════════════════════════════════════════════════════
-   PDF EXPORT — button + hidden report template
-   ══════════════════════════════════════════════════════════════ */
-.pdf-export-btn{display:flex;align-items:center;gap:6px;background:var(--navy);color:#fff;border:none;border-radius:20px;padding:6px 14px;font-size:11.5px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .15s;letter-spacing:.01em;}
-.pdf-export-btn svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;flex-shrink:0;}
-.pdf-export-btn:hover{background:#0d3494;}
-.pdf-export-btn:disabled{opacity:.55;cursor:wait;}
-.pdf-export-btn .pdfx-spin{width:11px;height:11px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
-.pdf-export-btn.pdfx-loading .pdfx-spin{display:inline-block;}
-.pdf-export-btn.pdfx-loading .pdfx-label-text{opacity:.75;}
-
-/* Root container is rendered off-screen (not display:none, so html2canvas can measure/paint it) */
-#pdfx-root{position:fixed;top:0;left:-99999px;width:8.5in;z-index:-1;background:#fff;font-family:var(--font);}
-.pdfx-page{width:8.5in;min-height:11in;background:#fff;position:relative;box-sizing:border-box;overflow:hidden;page-break-after:always;}
-.pdfx-cover{padding:0;}
-.pdfx-cover-navy{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);padding:44px 52px 56px;color:#fff;position:relative;}
-.pdfx-cover-toprow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:70px;}
-.pdfx-logo-white{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-style:italic;color:#fff;letter-spacing:-.2px;}
-.pdfx-hdr-right{text-align:right;}
-.pdfx-hdr-tag{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);}
-.pdfx-hdr-month{font-family:Georgia,serif;font-size:17px;color:#fff;margin-top:3px;}
-.pdfx-cover-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:12px;}
-.pdfx-cover-title{font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:1.14;margin-bottom:18px;}
-.pdfx-cover-rule{width:44px;height:2px;background:var(--green);margin-bottom:20px;}
-.pdfx-cover-desc{font-size:12.5px;color:rgba(255,255,255,.68);line-height:1.65;max-width:520px;}
-.pdfx-cover-white{padding:40px 52px 20px;}
-.pdfx-pill{display:inline-block;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:4px;padding:4px 12px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#0f9c6e;margin-bottom:16px;}
-.pdfx-cover-headline{font-family:Georgia,serif;font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:20px;}
-.pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:30px;}
-.pdfx-cover-col{font-size:12px;color:#48557a;line-height:1.75;}
-.pdfx-cover-col p{margin-bottom:12px;}
-
-/* Interior page header band */
-.pdfx-inner{padding:34px 46px 40px;}
-.pdfx-topband{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid var(--navy);margin-bottom:14px;}
-.pdfx-logo-navy{font-family:Georgia,'Times New Roman',serif;font-size:19px;font-style:italic;color:var(--navy);}
-.pdfx-tagright{text-align:right;}
-.pdfx-tagright .pdfx-hdr-tag{color:var(--muted);}
-.pdfx-tagright .pdfx-hdr-month{color:var(--navy);font-size:15px;}
-.pdfx-tabs{display:flex;gap:22px;margin-bottom:20px;}
-.pdfx-tab{font-size:12px;font-weight:600;color:var(--muted);padding-bottom:7px;border-bottom:2px solid transparent;}
-.pdfx-tab.on{color:var(--navy);border-bottom-color:var(--green);}
-.pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
-.pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
-.pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);}
-.pdfx-chdate{font-size:11px;color:var(--muted);}
-.pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
-.pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
-.pdfx-kpis.n2{grid-template-columns:repeat(2,1fr);}
-.pdfx-kpi{border:1px solid var(--border);border-radius:8px;padding:12px 13px;background:#fbfbfd;}
-.pdfx-kpi-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;}
-.pdfx-kpi-val{font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-.5px;line-height:1;}
-.pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:600;}
-.pdfx-kpi-mom.up{color:#1db88a;}
-.pdfx-kpi-mom.dn{color:var(--danger);}
-.pdfx-kpi-mom.flat{color:var(--muted);}
-.pdfx-card{border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px;}
-.pdfx-card-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:10px;}
-.pdfx-chart-img{width:100%;display:block;}
-.pdfx-table{width:100%;border-collapse:collapse;font-size:11px;}
-.pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
-.pdfx-table thead th.num{text-align:right;}
-.pdfx-table tbody td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--navy);}
-.pdfx-table tbody td.num{text-align:right;}
-.pdfx-table tbody tr:nth-child(even){background:#f7f8fb;}
-.pdfx-insight{background:#fdf4ec;border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
-.pdfx-insight strong{color:var(--warn);}
-.pdfx-two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-.pdfx-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
-.pdfx-check{display:flex;align-items:center;gap:10px;background:#F5F6F9;border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
-.pdfx-check-icon{width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
-.pdfx-check-title{font-size:11.5px;font-weight:700;color:var(--navy);}
-.pdfx-check-status{font-size:10px;color:var(--muted);}
-.pdfx-ltd{margin-top:10px;}
-.pdfx-ltd-val{font-size:19px;font-weight:700;color:var(--navy);}
-.pdfx-ltd-lbl{font-size:9.5px;color:var(--muted);}
-.pdfx-footer{display:flex;justify-content:space-between;align-items:center;margin-top:36px;padding-top:16px;border-top:1px solid var(--border);}
-.pdfx-footer-brand{font-size:13px;font-weight:700;color:var(--navy);}
-.pdfx-footer-tag{font-size:9.5px;color:var(--muted);}
-.pdfx-footer-right{text-align:right;font-size:10px;color:var(--muted);}
-.pdfx-footer-conf{color:var(--green);font-weight:700;letter-spacing:.05em;}
-
 </style>
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -659,11 +576,6 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
   <div class="topbar">
     <span class="topbar-title" id="topbar-title">Overview — Évolis</span>
     <div class="topbar-right">
-      <button class="pdf-export-btn" id="pdf-export-btn" onclick="exportPartnerPDF()">
-        <svg viewBox="0 0 16 16"><path d="M8 1v9M4.5 6.5L8 10l3.5-3.5"/><path d="M2 11v2.5a1 1 0 001 1h10a1 1 0 001-1V11"/></svg>
-        <span class="pdfx-spin"></span>
-        <span class="pdfx-label-text">Export PDF Report</span>
-      </button>
       <span class="staging-pill">Staging</span>
       <span class="topbar-date" id="topbar-date">📅 May 1 – May 31, 2026</span>
       <span class="confidential-badge">Confidential</span>
@@ -966,27 +878,27 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div class="kpi-card" id="kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">85K</div><div class="kpi-mom dn">▼ 38% MOM</div></div>
       </div>
 
-      <div class="two-col" style="margin-bottom:20px;">
-        <div class="card" style="height:420px;display:flex;flex-direction:column;">
+      <div class="two-col" style="margin-bottom:20px;align-items:stretch;">
+        <div class="card" style="height:420px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div class="card-title">Investments</div>
           <div style="display:flex;gap:14px;font-size:10px;color:var(--muted);margin-bottom:14px;">
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>
           </div>
-          <div class="chart-wrap-sm" style="flex:1;"><canvas id="chart-invest"></canvas></div>
+          <div class="chart-wrap-sm" style="height:254px;flex-shrink:0;position:relative;"><canvas id="chart-invest"></canvas></div>
           <div style="margin-top:12px;">
             <div id="ltd-total-investments" style="font-size:20px;font-weight:700;color:var(--navy);">$127,299</div>
             <div style="font-size:10px;color:var(--muted);">Launch to date · Total Investments</div>
           </div>
         </div>
-        <div class="card" style="height:420px;display:flex;flex-direction:column;">
+        <div class="card" style="height:420px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div class="card-title">Ad Impressions</div>
           <div style="display:flex;gap:14px;font-size:10px;color:var(--muted);margin-bottom:14px;">
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
           </div>
-          <div class="chart-wrap-sm" style="flex:1;"><canvas id="chart-impressions"></canvas></div>
+          <div class="chart-wrap-sm" style="height:320px;flex-shrink:0;position:relative;"><canvas id="chart-impressions"></canvas></div>
         </div>
       </div>
 
@@ -5801,333 +5713,6 @@ async function loadAuditResultsFromSheet() {
     console.warn('[listings] Could not load audit results:', err.message);
   }
 }
-</script>
-
-<!-- ══════════════════════════════════════════════════════════════
-     PDF EXPORT MODULE
-     Builds a Letter-size, print-styled replica of the manual
-     partner PDF report from the live data already rendered on
-     this dashboard, then renders it to a downloadable PDF.
-     ══════════════════════════════════════════════════════════════ -->
-<script>
-(function () {
-
-  // ---- small DOM helpers -------------------------------------------------
-  function pdfxText(sel, root) {
-    const el = (root || document).querySelector(sel);
-    return el ? el.textContent.trim() : '';
-  }
-  function pdfxHTML(sel, root) {
-    const el = (root || document).querySelector(sel);
-    return el ? el.innerHTML : '';
-  }
-  function pdfxById(id) { return document.getElementById(id); }
-
-  // Reads a .kpi-card by element id → {label, value, mom, momClass}
-  function pdfxKpi(id) {
-    const el = pdfxById(id);
-    if (!el) return { label: '', value: '—', mom: '', momClass: 'flat' };
-    const label = pdfxText('.kpi-label', el);
-    const value = pdfxText('.kpi-value', el);
-    const momEl = el.querySelector('.kpi-mom');
-    let mom = momEl ? momEl.textContent.trim() : '';
-    mom = mom.replace(/^[▲▼]\s*/, '');
-    let momClass = 'flat';
-    if (momEl) {
-      if (momEl.classList.contains('up')) momClass = 'up';
-      else if (momEl.classList.contains('dn')) momClass = 'dn';
-    }
-    return { label, value, mom, momClass };
-  }
-
-  function pdfxKpiCardHtml(k) {
-    const arrow = k.momClass === 'up' ? '▲ ' : k.momClass === 'dn' ? '▼ ' : '';
-    const momHtml = k.mom ? '<div class="pdfx-kpi-mom ' + k.momClass + '">' + arrow + pdfxEscape(k.mom) + '</div>' : '';
-    return '<div class="pdfx-kpi">' +
-      '<div class="pdfx-kpi-lbl">' + pdfxEscape(k.label) + '</div>' +
-      '<div class="pdfx-kpi-val">' + pdfxEscape(k.value) + '</div>' +
-      momHtml +
-      '</div>';
-  }
-
-  function pdfxEscape(str) {
-    return String(str == null ? '' : str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  // Reads a top-sellers table body into rows of [rank, name, ...numeric cols]
-  function pdfxTableRows(tbodyId) {
-    const tbody = pdfxById(tbodyId);
-    if (!tbody) return [];
-    const rows = [];
-    tbody.querySelectorAll('tr').forEach(function (tr) {
-      const cells = Array.prototype.map.call(tr.querySelectorAll('td'), function (td) {
-        return td.textContent.trim();
-      });
-      // Skip "Loading…" / empty placeholder rows
-      if (cells.length < 2) return;
-      if (/loading/i.test(cells.join(' '))) return;
-      rows.push(cells);
-    });
-    return rows;
-  }
-
-  function pdfxTableHtml(headers, rows) {
-    if (!rows.length) {
-      return '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:10px 2px;">No sales data for this period.</div>';
-    }
-    let thead = '<tr>' + headers.map(function (h, i) {
-      return '<th' + (i > 1 ? ' class="num"' : '') + '>' + pdfxEscape(h) + '</th>';
-    }).join('') + '</tr>';
-    let tbody = rows.map(function (cells) {
-      return '<tr>' + cells.map(function (c, i) {
-        return '<td' + (i > 1 ? ' class="num"' : '') + '>' + pdfxEscape(c) + '</td>';
-      }).join('') + '</tr>';
-    }).join('');
-    return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
-  }
-
-  // Pulls a base64 PNG snapshot from a live Chart.js instance stored on window.
-  // Returns '' if the chart hasn't been instantiated yet.
-  function pdfxChartImg(varName) {
-    try {
-      const chart = window[varName];
-      if (chart && typeof chart.toBase64Image === 'function') {
-        return chart.toBase64Image();
-      }
-    } catch (e) { /* noop */ }
-    return '';
-  }
-
-  function pdfxChartBlock(varName, fallbackLabel) {
-    const img = pdfxChartImg(varName);
-    if (img) return '<img class="pdfx-chart-img" src="' + img + '">';
-    return '<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);font-style:italic;">' +
-      pdfxEscape(fallbackLabel || 'Chart not yet loaded') + '</div>';
-  }
-
-  // Derives "June 2026" style label from a date-range string like
-  // "📅 June 1 – June 30, 2026" or "June 1, 2026 - June 30, 2026"
-  function pdfxMonthYear(rangeText) {
-    const m = rangeText.match(/([A-Za-z]+)\s+\d{1,2}.*?(\d{4})/);
-    if (m) return m[1] + ' ' + m[2];
-    return '';
-  }
-
-  function pdfxHeaderBand(monthYear, activeTab) {
-    const tabs = ['Sales', 'Brand Stewardship', 'Opportunities'];
-    const tabsHtml = tabs.map(function (t) {
-      return '<span class="pdfx-tab' + (t === activeTab ? ' on' : '') + '">' + t + '</span>';
-    }).join('');
-    return '<div class="pdfx-topband">' +
-      '<span class="pdfx-logo-navy">évolis<sup style="font-size:9px;">®</sup></span>' +
-      '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
-      '</div>' +
-      '<div class="pdfx-tabs">' + tabsHtml + '</div>';
-  }
-
-  function pdfxFooter(monthYear) {
-    return '<div class="pdfx-footer">' +
-      '<div><div class="pdfx-footer-brand">medaltus.</div><div class="pdfx-footer-tag">A trusted partner for your brand.</div></div>' +
-      '<div class="pdfx-footer-right">Generated: ' + pdfxEscape(monthYear) + '<br><span class="pdfx-footer-conf">CONFIDENTIAL</span></div>' +
-      '</div>';
-  }
-
-  // ---- page builders ------------------------------------------------------
-
-  function buildCoverPage(monthYear) {
-    const headline = pdfxText('#exec-summary-headline') || 'Monthly Partnership Report';
-    const left = pdfxHTML('#exec-summary-left') || '';
-    const right = pdfxHTML('#exec-summary-right') || '';
-    return '' +
-      '<div class="pdfx-page pdfx-cover">' +
-        '<div class="pdfx-cover-navy">' +
-          '<div class="pdfx-cover-toprow">' +
-            '<span class="pdfx-logo-white">évolis<sup style="font-size:10px;">®</sup></span>' +
-            '<div class="pdfx-hdr-right"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
-          '</div>' +
-          '<div class="pdfx-cover-eyebrow">Monthly Overview</div>' +
-          '<div class="pdfx-cover-title">Monthly<br>Partnership<br>Report</div>' +
-          '<div class="pdfx-cover-rule"></div>' +
-          '<div class="pdfx-cover-desc">A brief overview of sales performance, ad investments, brand stewardship activities, and upcoming growth opportunities.</div>' +
-        '</div>' +
-        '<div class="pdfx-cover-white">' +
-          '<span class="pdfx-pill">Executive Summary</span>' +
-          '<div class="pdfx-cover-headline">' + pdfxEscape(headline) + '</div>' +
-          '<div class="pdfx-cover-cols">' +
-            '<div class="pdfx-cover-col">' + (left || '<p>—</p>') + '</div>' +
-            '<div class="pdfx-cover-col">' + (right || '<p>—</p>') + '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-  }
-
-  function buildAmazonPage(monthYear) {
-    const dateRange = pdfxText('#amazon-hdr-date').replace('📅', '').trim();
-    const kpis = ['kpi-total-units', 'kpi-total-orders', 'kpi-avg-order', 'kpi-units-ads', 'kpi-units-organic'].map(pdfxKpi);
-    const rows = pdfxTableRows('tp-tbody');
-    const insight = pdfxText('#tp-insight-text');
-    return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Sales') +
-          '<div class="pdfx-chlabel">Channel Performance</div>' +
-          '<div class="pdfx-chrow"><span class="pdfx-chname">Amazon</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
-          '<div class="pdfx-kpis">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales Revenue by Month</div>' + pdfxChartBlock('_amazonChart') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
-            pdfxTableHtml(['#', 'Product', 'Units', 'Units (Ads)', 'Units (Organic)'], rows) +
-          '</div>' +
-          (insight ? '<div class="pdfx-insight"><strong>Key Insight:</strong> ' + pdfxEscape(insight) + '</div>' : '') +
-        '</div>' +
-      '</div>';
-  }
-
-  function buildWebsitePage(monthYear) {
-    const dateRange = pdfxText('#web-hdr-date').replace('📅', '').trim();
-    const kpis = ['web-kpi-total-units', 'web-kpi-total-orders', 'web-kpi-avg-order', 'web-kpi-units-ads', 'web-kpi-units-organic'].map(pdfxKpi);
-    const rows = pdfxTableRows('web-tp-tbody');
-    const insight = pdfxText('#web-insight-text');
-    return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Sales') +
-          '<div class="pdfx-chlabel">Channel Performance</div>' +
-          '<div class="pdfx-chrow"><span class="pdfx-chname">Web — evolisproducts.com</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
-          '<div class="pdfx-kpis">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales by Month</div>' + pdfxChartBlock('_webChart') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
-            pdfxTableHtml(['#', 'Product', 'Units', 'Units (Ads)', 'Units (Organic)'], rows) +
-          '</div>' +
-          (insight ? '<div class="pdfx-insight"><strong>Key Insight:</strong> ' + pdfxEscape(insight) + '</div>' : '') +
-        '</div>' +
-      '</div>';
-  }
-
-  function buildWalmartPage(monthYear) {
-    const dateRange = pdfxText('#walmart-hdr-date').replace('📅', '').trim();
-    const kpis = ['wkpi-total-units', 'wkpi-total-orders', 'wkpi-avg-order'].map(pdfxKpi);
-    const rows = pdfxTableRows('wtp-tbody');
-    const insight = pdfxText('#wtp-insight-text');
-    return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Sales') +
-          '<div class="pdfx-chlabel">Channel Performance</div>' +
-          '<div class="pdfx-chrow"><span class="pdfx-chname">Walmart</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
-          '<div class="pdfx-kpis n3">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales by Month</div>' + pdfxChartBlock('_walmartChart') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
-            pdfxTableHtml(['#', 'Product', 'Units'], rows.map(function (r) { return r.slice(0, 3); })) +
-          '</div>' +
-          (insight ? '<div class="pdfx-insight"><strong>Key Insight:</strong> ' + pdfxEscape(insight) + '</div>' : '') +
-        '</div>' +
-      '</div>';
-  }
-
-  function buildStewardshipPage(monthYear) {
-    const kpis = ['kpi-pct-revenue-invested', 'kpi-amazon-fees', 'kpi-pct-units-ads', 'kpi-ad-clicks', 'kpi-ad-impressions'].map(pdfxKpi);
-    const ltdVal = pdfxText('#ltd-total-investments');
-    const checkCards = Array.prototype.map.call(document.querySelectorAll('#m-stewardship .check-card'), function (c) {
-      return {
-        title: pdfxText('.check-title', c),
-        status: pdfxText('.check-status', c)
-      };
-    });
-    const checksHtml = checkCards.map(function (c) {
-      return '<div class="pdfx-check"><div class="pdfx-check-icon">✓</div><div><div class="pdfx-check-title">' + pdfxEscape(c.title) + '</div><div class="pdfx-check-status">' + pdfxEscape(c.status) + '</div></div></div>';
-    }).join('');
-    return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Brand Stewardship') +
-          '<div class="pdfx-chlabel">Key Performance Metrics</div>' +
-          '<div class="pdfx-kpis" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-two-col">' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Investments</div>' + pdfxChartBlock('_investChart') +
-              '<div class="pdfx-ltd"><div class="pdfx-ltd-val">' + pdfxEscape(ltdVal || '—') + '</div><div class="pdfx-ltd-lbl">Launch to date · Total Investments</div></div>' +
-            '</div>' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Ad Impressions</div>' + pdfxChartBlock('_impressChart') + '</div>' +
-          '</div>' +
-          '<div class="pdfx-chlabel" style="margin-top:16px;">Marketing Strategy</div>' +
-          '<div class="pdfx-checks">' + checksHtml + '</div>' +
-        '</div>' +
-      '</div>';
-  }
-
-  function buildOpportunitiesPage(monthYear) {
-    const oppRoot = pdfxById('m-opportunities');
-    let subs = '—', retention = '—';
-    if (oppRoot) {
-      const vals = oppRoot.querySelectorAll('.kpi-row .kpi-value');
-      if (vals[0]) subs = vals[0].textContent.trim();
-      if (vals[1]) retention = vals[1].textContent.trim();
-    }
-    const kpis = [
-      { label: 'Active Subscriptions', value: subs, mom: '', momClass: 'flat' },
-      { label: 'Subscribe & Save Retention (90 Days)', value: retention, mom: '', momClass: 'flat' }
-    ];
-    return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Opportunities') +
-          '<div class="pdfx-chlabel">Subscribe &amp; Save</div>' +
-          '<div class="pdfx-kpis n2" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
-          pdfxFooter(monthYear) +
-        '</div>' +
-      '</div>';
-  }
-
-  // ---- main entry point ----------------------------------------------------
-
-  window.exportPartnerPDF = function () {
-    const btn = pdfxById('pdf-export-btn');
-    if (btn) { btn.disabled = true; btn.classList.add('pdfx-loading'); }
-
-    const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
-    const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
-
-    let root = pdfxById('pdfx-root');
-    if (!root) {
-      root = document.createElement('div');
-      root.id = 'pdfx-root';
-      document.body.appendChild(root);
-    }
-
-    root.innerHTML =
-      buildCoverPage(monthYear) +
-      buildAmazonPage(monthYear) +
-      buildWebsitePage(monthYear) +
-      buildWalmartPage(monthYear) +
-      buildStewardshipPage(monthYear) +
-      buildOpportunitiesPage(monthYear);
-
-    // Remove page-break-after on the very last page so html2pdf doesn't add a blank trailing page
-    const pages = root.querySelectorAll('.pdfx-page');
-    if (pages.length) pages[pages.length - 1].style.pageBreakAfter = 'auto';
-
-    const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
-
-    const opt = {
-      margin: 0,
-      filename: filename,
-      image: { type: 'jpeg', quality: 0.97 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] }
-    };
-
-    html2pdf().from(root).set(opt).save().then(function () {
-      if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
-    }).catch(function (err) {
-      console.error('[pdf-export] failed:', err);
-      if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
-      alert('PDF export failed — check the console for details.');
-    });
-  };
-
-})();
 </script>
 </body>
 </html>
