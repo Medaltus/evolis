@@ -3961,6 +3961,12 @@ function initSns() {
     return out;
   }
 
+  // NOTE (2026-07-10): the functions below (findAdRow, aggregateStewardshipMonth,
+  // vineMonthlyCost, getMonthRevenue, and the two STEWARDSHIP_*_FALLBACK objects)
+  // are DEAD CODE as of the sync-stewardship-summary.js rewrite — nothing calls
+  // them anymore. initStewardshipLive() now reads one pre-computed sheet instead.
+  // Left in place rather than deleted to keep that change low-risk; safe to
+  // remove in a future cleanup pass once the new approach is confirmed solid.
   function findAdRow(rows, year, month) {
     return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
   }
@@ -4078,78 +4084,49 @@ function initSns() {
     let prevMonth = month - 1, prevYear = year;
     if (prevMonth === 0) { prevMonth = 12; prevYear--; }
 
-    const SYNC_GID = '1163928587';
-    const HIST_GID = '1249281379';
+    // Pre-computed by sync-stewardship-summary.js (nightly cron) — one row
+    // per month, full history. This replaces fetching+scanning five heavy
+    // sheets (orders sync+historical, AD_SUMMARY, revenue, master SKU list)
+    // on every single page load — that work now happens once, server-side,
+    // overnight. This function just looks values up in the small result.
+    const SUMMARY_SHEET_ID = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0';
+    const SUMMARY_GID      = '1762221100'; // evolis tab
 
     try {
-      const [syncCsv, histCsv, adSummaryCsv, vineCsv, revCsv] = await Promise.all([
-        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(VINE_SHEET_ID, VINE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
-        fetch(sheetCsvUrl(REVENUE_SHEET_ID, REVENUE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-      ]);
+      const summaryCsv = await fetch(sheetCsvUrl(SUMMARY_SHEET_ID, SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+      const summaryRows = isCsv(summaryCsv) ? parseCsv(summaryCsv) : [];
 
-      const syncRows      = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
-      const histRows       = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
-      const allOrderRows   = [...syncRows, ...histRows];
-      // NOTE: no brand filter here — this GID is the "evolis" tab specifically
-      // (AD_SUMMARY is organized one tab per brand, same as orders/subscriptions).
-      // A brand-column filter was here before and silently dropped every
-      // backfilled historical row, since those rows don't have the brand
-      // column filled in (only the live-synced 2026 rows do) — confirmed
-      // 2026-07-10 when historical data was added but LTD didn't reflect it.
-      const adRows         = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv) : [];
-      // Vine: all rows from Product Short Name tab — vineMonthlyCost filters by brand internally
-      const vineRows       = isCsv(vineCsv) ? parseCsv(vineCsv) : [];
-      const vineMap = vineMonthlyCost(vineRows);
+      if (summaryRows.length === 0) {
+        console.warn('[Evolis] stewardship summary sheet returned no rows — check sync-stewardship-summary cron has run');
+        return;
+      }
+
+      const findRow = (y, m) => summaryRows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
 
       // ── Investments chart (13 trailing months) ──────────────────────────
       const invMonths = trailingMonths(year, month, 13);
       const investLabels = [], adsData = [], vineData = [], promosData = [];
       invMonths.forEach(({ year: y, month: m }) => {
-        const key = monthKey(y, m);
-        // Always include year suffix so months spanning two calendar years
-        // are unambiguous — 'Nov '25' vs 'Nov '26' instead of two 'Nov' bars.
         const label = `${monthAbbr[m - 1]} '${String(y).slice(2)}`;
         investLabels.push(label);
-        const adRow = findAdRow(adRows, y, m);
-        const ordersAgg = aggregateStewardshipMonth(allOrderRows, y, m);
-        const fallback = STEWARDSHIP_INVEST_FALLBACK[key] || { ads: 0, vine: 0, promos: 0 };
-        adsData.push(adRow ? parseAmt(adRow.spend) : fallback.ads);
-        // Vine NEVER falls back to STEWARDSHIP_INVEST_FALLBACK — unlike
-        // Ads/Promos (which have real gaps in live coverage), Vine's source
-        // (column F of the Product Short Name tab) has always covered full
-        // history with no time window. A missing vineMap entry genuinely
-        // means $0 that month, not "unknown, use the old placeholder." The
-        // fallback object still has stale mock vine values (Oct/Nov 2025 =
-        // $200, leftover from the very first hardcoded chart) — those were
-        // never real enrollments and must not be used. Confirmed 2026-07-10.
-        vineData.push(vineMap[key] || 0);
-        promosData.push(ordersAgg.hasData ? ordersAgg.promoDiscount : fallback.promos);
+        const row = findRow(y, m);
+        adsData.push(row ? parseAmt(row.ads_spend) : 0);
+        vineData.push(row ? parseAmt(row.vine_total) : 0);
+        promosData.push(row ? parseAmt(row.promos_total) : 0);
       });
 
       // ── Ad Impressions chart (monthly, Jan–Dec, this year vs last year) ─
-      // Previously sampled Jan/Mar/May/Jul/Sep/Nov only (ported from the old
-      // hardcoded 6-point series) — that meant even-numbered months, including
-      // whatever the current month happened to be, never got plotted. Switched
-      // to full monthly resolution so the current month always shows.
       const impMonthNums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
       const impLabels = impMonthNums.map(m => monthAbbr[m - 1]);
       const impCurr = [], impPrev = [];
       impMonthNums.forEach(m => {
         if (m > month) { impCurr.push(null); }
         else {
-          const row = findAdRow(adRows, year, m);
-          const key = monthKey(year, m);
-          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : (STEWARDSHIP_IMPRESSIONS_FALLBACK[key] ?? null));
+          const row = findRow(year, m);
+          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : null);
         }
-        const prevRow = findAdRow(adRows, year - 1, m);
-        const prevKey = monthKey(year - 1, m);
-        if (m <= 3) {
-          console.log(`[Evolis] impressions debug ${year-1}-${m}: prevRow found=`, !!prevRow, 'raw impressions value=', JSON.stringify(prevRow?.impressions), 'parsed=', parseInt(prevRow?.impressions, 10));
-        }
-        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : (STEWARDSHIP_IMPRESSIONS_FALLBACK[prevKey] ?? null));
+        const prevRow = findRow(year - 1, m);
+        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : null);
       });
 
       renderStewardshipCharts(
@@ -4158,20 +4135,20 @@ function initSns() {
       );
 
       // ── KPIs ─────────────────────────────────────────────────────────────
-      const adCurr = findAdRow(adRows, year, month);
-      const adPrev = findAdRow(adRows, prevYear, prevMonth);
-      const clicksCurr      = adCurr ? (parseInt(adCurr.clicks, 10) || 0) : null;
-      const clicksPrev      = adPrev ? (parseInt(adPrev.clicks, 10) || 0) : null;
-      const impressionsCurr = adCurr ? (parseInt(adCurr.impressions, 10) || 0) : null;
-      const impressionsPrev = adPrev ? (parseInt(adPrev.impressions, 10) || 0) : null;
-      const adUnitsCurr     = adCurr ? (parseInt(adCurr.ad_units, 10) || 0) : 0;
-      const adUnitsPrev     = adPrev ? (parseInt(adPrev.ad_units, 10) || 0) : 0;
+      const rowCurr = findRow(year, month);
+      const rowPrev = findRow(prevYear, prevMonth);
 
-      const ordersAggCurr = aggregateStewardshipMonth(allOrderRows, year, month);
-      const ordersAggPrev = aggregateStewardshipMonth(allOrderRows, prevYear, prevMonth);
+      const clicksCurr      = rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : null;
+      const clicksPrev      = rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : null;
+      const impressionsCurr = rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : null;
+      const impressionsPrev = rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : null;
+      const adUnitsCurr     = rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0;
+      const adUnitsPrev     = rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0;
+      const unitsCurr       = rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0;
+      const unitsPrev       = rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0;
 
-      const pctUnitsAdsCurr = ordersAggCurr.totalUnits > 0 ? Math.round((adUnitsCurr / ordersAggCurr.totalUnits) * 100) : null;
-      const pctUnitsAdsPrev = ordersAggPrev.totalUnits > 0 ? Math.round((adUnitsPrev / ordersAggPrev.totalUnits) * 100) : null;
+      const pctUnitsAdsCurr = unitsCurr > 0 ? Math.round((adUnitsCurr / unitsCurr) * 100) : null;
+      const pctUnitsAdsPrev = unitsPrev > 0 ? Math.round((adUnitsPrev / unitsPrev) * 100) : null;
 
       const fmt  = n => (n ?? 0).toLocaleString();
       const fmtK = n => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n ?? 0);
@@ -4186,30 +4163,21 @@ function initSns() {
       setKpiMom('kpi-pct-units-ads', pct(pctUnitsAdsCurr, pctUnitsAdsPrev));
 
       // % Revenue Invested — (Ads + Vine + Promos this month) ÷ Revenue this month
-      const currInvestTotal = (adCurr ? parseAmt(adCurr.spend) : 0)
-        + (vineMap[monthKey(year, month)] || 0)
-        + (ordersAggCurr.hasData ? ordersAggCurr.promoDiscount : 0);
-      const currRevenue = getMonthRevenue(revCsv, year, month);
+      const currInvestTotal = rowCurr
+        ? (parseAmt(rowCurr.ads_spend) + parseAmt(rowCurr.vine_total) + parseAmt(rowCurr.promos_total))
+        : 0;
+      const currRevenue = rowCurr ? parseAmt(rowCurr.revenue) : 0;
       if (currRevenue) {
         const pctRevenueInvested = Math.round((currInvestTotal / currRevenue) * 100);
         setKpiVal('kpi-pct-revenue-invested', pctRevenueInvested + '%');
       }
 
-      // ── Launch to Date ───────────────────────────────────────────────────
-      // Ads: sums ALL of adRows now — the brand-filter bug fix above means
-      // adRows genuinely contains full history (back to 2023-01, per the
-      // historical backfill added 2026-07-10), so this is now MORE complete
-      // than the 13-month chart window, not just matching it.
-      //
-      // Promos: still chart-blended (adsData/promosData, live-else-fallback)
-      // since there's no equivalent full historical backfill for orders/promo
-      // data yet — STEWARDSHIP_INVEST_FALLBACK only goes back to 2025-05.
-      //
-      // Vine: already complete — reads every enrollment date ever logged,
-      // regardless of how far back it goes (data confirmed back to 2023-08).
-      const ltdAds    = adRows.reduce((s, r) => s + parseAmt(r.spend), 0);
-      const ltdPromos = promosData.reduce((s, v) => s + v, 0);
-      const ltdVine   = Object.values(vineMap).reduce((s, v) => s + v, 0);
+      // ── Launch to Date — trivial now: sum every pre-computed row ────────
+      // (previously required scanning full order history + full master
+      // SKU list client-side; the cron already did that math overnight)
+      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0);
+      const ltdVine   = summaryRows.reduce((s, r) => s + parseAmt(r.vine_total), 0);
+      const ltdPromos = summaryRows.reduce((s, r) => s + parseAmt(r.promos_total), 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
       console.log('[Evolis] LTD: ads=', ltdAds, 'vine=', ltdVine, 'promos=', ltdPromos, 'total=', ltdTotal);
       const ltdEl = document.getElementById('ltd-total-investments');
