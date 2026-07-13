@@ -576,14 +576,14 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 
 /* Interior page header band */
 .pdfx-inner{padding:34px 46px 40px;}
-.pdfx-topband{display:flex;justify-content:space-between;align-items:center;background:var(--navy);margin:-34px -46px 20px -46px;padding:24px 46px 22px;}
+.pdfx-topband{display:block;background:var(--navy);margin:-34px -46px 20px -46px;padding:24px 46px 22px;}
 .pdfx-logo-navy{font-family:Georgia,'Times New Roman',serif;font-size:19px;font-style:italic;color:var(--navy);}
 .pdfx-tagright{text-align:right;}
 .pdfx-tagright .pdfx-hdr-tag{color:rgba(255,255,255,.55);}
 .pdfx-tagright .pdfx-hdr-month{color:#fff;font-size:15px;}
-.pdfx-tabs{display:flex;gap:22px;margin-bottom:20px;}
-.pdfx-tab{font-size:12px;font-weight:600;color:var(--muted);padding-bottom:7px;border-bottom:2px solid transparent;}
-.pdfx-tab.on{color:var(--navy);border-bottom-color:var(--green);}
+.pdfx-tabs{display:flex;gap:22px;}
+.pdfx-tab{font-size:12px;font-weight:600;color:rgba(255,255,255,.55);padding-bottom:7px;border-bottom:2px solid transparent;}
+.pdfx-tab.on{color:#fff;border-bottom-color:var(--green);}
 .pdfx-chlabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 .pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
 .pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-subheader);}
@@ -591,9 +591,9 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-bottom:18px;}
 .pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
 .pdfx-kpis.n2{grid-template-columns:repeat(2,1fr);}
-.pdfx-kpi{border:1px solid var(--border);border-radius:0;padding:16px 18px;background:#fbfbfd;margin-left:-1px;}
+.pdfx-kpi{border:1px solid var(--border);border-radius:0;padding:16px 14px;background:#fbfbfd;margin-left:-1px;}
 .pdfx-kpi:first-child{margin-left:0;}
-.pdfx-kpi-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+.pdfx-kpi-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px;white-space:nowrap;}
 .pdfx-kpi-val{font-size:26px;font-weight:700;font-family:var(--font-bold);color:var(--navy);letter-spacing:-.5px;line-height:1;}
 .pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:400;font-family:var(--font-body-light);}
 .pdfx-kpi-mom.up{color:var(--green);}
@@ -5962,7 +5962,7 @@ async function loadAuditResultsFromSheet() {
           // the cell. Bold number, non-bold colored %. Per requirements 2026-07-13.
           cellHtml = '<span style="display:inline-flex;align-items:baseline;justify-content:center;width:100%;">' +
             '<strong style="display:inline-block;min-width:22px;text-align:right;">' + pdfxEscape(c.text) + '</strong>' +
-            '<span style="font-weight:400;color:' + color + ';margin-left:5px;white-space:nowrap;">' + pdfxEscape(c.momText) + '</span>' +
+            '<span style="font-weight:400;font-size:10px;color:' + color + ';margin-left:5px;white-space:nowrap;">' + pdfxEscape(c.momText) + '</span>' +
             '</span>';
         } else {
           cellHtml = isNum
@@ -6019,10 +6019,12 @@ async function loadAuditResultsFromSheet() {
       return '<span class="pdfx-tab' + (t === activeTab ? ' on' : '') + '">' + t + '</span>';
     }).join('');
     return '<div class="pdfx-topband">' +
-      '<span class="pdfx-logo-navy"><img src="evolis logo.svg" alt="évolis" style="height:20px;width:auto;filter:brightness(0) invert(1);"></span>' +
-      '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
+        '<span class="pdfx-logo-navy"><img src="evolis logo.svg" alt="évolis" style="height:20px;width:auto;filter:brightness(0) invert(1);"></span>' +
+        '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
       '</div>' +
-      '<div class="pdfx-tabs">' + tabsHtml + '</div>';
+      '<div class="pdfx-tabs" style="margin-bottom:0;">' + tabsHtml + '</div>' +
+      '</div>';
   }
 
   function pdfxFooter(monthYear) {
