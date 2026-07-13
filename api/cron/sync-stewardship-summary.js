@@ -15,7 +15,9 @@
  *
  * Output sheet: SHEET_STEWARDSHIP_SUMMARY, one tab per brand.
  * Columns: year, month, ads_spend, impressions, clicks, ad_units,
- *          promos_total, vine_total, revenue, units, last_updated
+ *          promos_total, vine_total, revenue, units,
+ *          active_subscriptions, website_subscriptions, total_subscriptions,
+ *          last_updated
  *
  * One row per (brand, year, month) that has ANY data in ANY source —
  * covering full history, not just a trailing window. The dashboard can
@@ -30,6 +32,9 @@
  *   Revenue history — revenue, units.
  *   Master ASIN/SKU list, "Product Short Name" tab, column F — Vine:
  *     $200 x however many SKUs enrolled that month, per brand.
+ *   Subscriptions cache — active_subscriptions (Amazon). website_subscriptions
+ *     is a placeholder (0) until the Shopify subscriptions cron exists.
+ *     total_subscriptions = active_subscriptions + website_subscriptions.
  *
  * Runs nightly after the other syncs (advertising, revenue, orders) have
  * already updated their sheets for the day.
@@ -44,6 +49,13 @@ const REVENUE_SHEET_ID    = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank'; // r
 const AD_SUMMARY_SHEET_ID = process.env.SHEET_ADVERTISING || '13cN301QZxkEGy6-8LfdzB8zmsHhUKwZqz6lsXKUJcnI';
 const SUMMARY_SHEET_ID    = process.env.SHEET_STEWARDSHIP_SUMMARY; // NEW - must be created + set before deploying
 
+// Subscriptions cache — column C is "active_subscriptions" per brand tab.
+// ASSUMPTION pending confirmation: this tab has year/month columns to match
+// against like AD_SUMMARY does. If it's actually a live current-snapshot
+// with no month history, this will need a different join strategy — flag
+// this to Jaclyn before trusting this column's output.
+const SUBSCRIPTIONS_SHEET_ID = process.env.SHEET_SUBSCRIPTIONS || '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';
+
 const MASTER_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
 const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=ASIN, B=SKU, C=Name, D=Brand, E=Price, F=Date Enrolled in Vine
 
@@ -54,6 +66,7 @@ const HEADERS = [
   'ads_spend', 'impressions', 'clicks', 'ad_units',
   'promos_total', 'vine_total',
   'revenue', 'units',
+  'active_subscriptions', 'website_subscriptions', 'total_subscriptions',
   'last_updated',
 ];
 
@@ -79,11 +92,12 @@ module.exports = async (req, res) => {
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      const [syncRows, histRows, adRows, revRows] = await Promise.all([
+      const [syncRows, histRows, adRows, revRows, subRows] = await Promise.all([
         readRows(SYNC_SHEET_ID, brand.tabName).catch(() => []),
         readRows(HISTORICAL_SHEET_ID, brand.tabName).catch(() => []),
         readRows(AD_SUMMARY_SHEET_ID, brand.tabName).catch(() => []),
         readRows(REVENUE_SHEET_ID, brand.tabName).catch(() => []),
+        readRows(SUBSCRIPTIONS_SHEET_ID, brand.tabName).catch(() => []),
       ]);
 
       const allOrderRows = [...(syncRows || []), ...(histRows || [])];
@@ -103,22 +117,34 @@ module.exports = async (req, res) => {
       Object.keys(promosByMonth).forEach(k => allMonths.add(k));
       Object.keys(vineByMonth).forEach(k => allMonths.add(k));
       (revRows || []).forEach(r => { if (r.YEAR && r.MONTH) allMonths.add(monthKey(r.YEAR, r.MONTH)); });
+      (subRows || []).forEach(r => { if (r.year && r.month) allMonths.add(monthKey(r.year, r.month)); });
 
       const outRows = Array.from(allMonths).sort().map(ym => {
         const [y, m] = ym.split('-').map(n => parseInt(n, 10));
         const adRow = (adRows || []).find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
         const revRow = (revRows || []).find(r => parseInt(r.YEAR, 10) === y && parseInt(r.MONTH, 10) === m);
+        const subRow = (subRows || []).find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
+
+        const activeSubscriptions = subRow ? parseIntSafe(subRow.active_subscriptions) : 0;
+        // Placeholder until the Shopify website-subscriptions cron exists —
+        // once that's built, replace this 0 with a real lookup the same way
+        // activeSubscriptions is read above.
+        const websiteSubscriptions = 0;
+        const totalSubscriptions = activeSubscriptions + websiteSubscriptions;
 
         return [
           y, m,
           adRow ? parseAmt(adRow.spend) : 0,
-          adRow ? (parseInt(adRow.impressions, 10) || 0) : 0,
-          adRow ? (parseInt(adRow.clicks, 10) || 0) : 0,
-          adRow ? (parseInt(adRow.ad_units, 10) || 0) : 0,
+          adRow ? (parseIntSafe(adRow.impressions) || 0) : 0,
+          adRow ? (parseIntSafe(adRow.clicks) || 0) : 0,
+          adRow ? (parseIntSafe(adRow.ad_units) || 0) : 0,
           round2(promosByMonth[ym] || 0),
           vineByMonth[ym] || 0,
           revRow ? parseAmt(revRow.REVENUE) : 0,
-          revRow ? (parseInt(revRow['UNITS SOLD'], 10) || 0) : 0,
+          revRow ? (parseIntSafe(revRow['UNITS SOLD']) || 0) : 0,
+          activeSubscriptions,
+          websiteSubscriptions,
+          totalSubscriptions,
           now,
         ];
       });
@@ -195,6 +221,17 @@ function monthKey(year, month) {
 function parseAmt(val) {
   if (!val) return 0;
   return parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+}
+
+// parseInt(adRow.impressions, 10) on a formatted number like "65,935.00"
+// stops at the first comma and silently returns 65 instead of 65935 — this
+// is what was truncating impressions (and, less visibly, clicks/ad_units/
+// units sold, which are prone to the exact same formatting). Strip
+// thousands separators before parsing, same as parseAmt already does for
+// dollar amounts. FIXED 2026-07-13.
+function parseIntSafe(val) {
+  if (!val) return 0;
+  return Math.round(parseFloat(String(val).replace(/,/g, '')) || 0);
 }
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
