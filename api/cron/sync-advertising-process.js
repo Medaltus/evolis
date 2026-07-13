@@ -109,6 +109,17 @@ module.exports = async (req, res) => {
   const hasNewIds = asinCurrId || spCurrId || sbCurrId;
   const hasLegacyIds = legacyAsinId || legacySummaryId;
 
+  // A pending manual/backfill request (ad_backfill='true', written by
+  // sync-advertising-backfill.js) must win over the regular daily curr/prev
+  // IDs when both are present. Without this, the daily cron's IDs are
+  // ALWAYS present (it runs automatically every day), so `hasNewIds` is
+  // essentially always true — meaning a backfilled month could never be
+  // processed no matter how many times it succeeded at the request step.
+  // This bit was discovered when a successful May 2026 backfill's report
+  // IDs sat unused in _meta while every process call kept re-processing
+  // the regular daily curr/prev cycle instead. FIXED 2026-07-13.
+  const isBackfillPending = meta['ad_backfill'] === 'true' && hasLegacyIds;
+
   if (!hasNewIds && !hasLegacyIds) {
     return res.status(400).json({ error: 'No ad report IDs found in _meta — did sync-advertising-request run?' });
   }
@@ -150,7 +161,7 @@ module.exports = async (req, res) => {
   let asinPrevRows = [], spPrevRows = [], sbPrevRows = [];
   let legacyAsinRows = [], legacySummaryRows = [];
 
-  if (hasNewIds) {
+  if (hasNewIds && !isBackfillPending) {
     console.log(`[sync-advertising-process] processing new-format reports`);
     const results = await Promise.all([
       asinCurrId ? pollAndDownload(asinCurrId, token, profileId) : Promise.resolve([]),
@@ -194,7 +205,7 @@ module.exports = async (req, res) => {
     };
   }
 
-  const periods = hasNewIds
+  const periods = (hasNewIds && !isBackfillPending)
     ? [
         { label: 'curr', asinRows: asinCurrRows, spRows: spCurrRows, sbRows: sbCurrRows, ...yearMonthFromEndDate(endDateCurr) },
         { label: 'prev', asinRows: asinPrevRows, spRows: spPrevRows, sbRows: sbPrevRows, ...yearMonthFromEndDate(endDatePrev) },
