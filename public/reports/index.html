@@ -6220,8 +6220,9 @@ async function loadAuditResultsFromSheet() {
           // global was testing something that never existed. html2pdf.js's
           // own documented worker-chain API has a .toCanvas() step that
           // exposes its INTERNAL canvas correctly — using that instead.
-          html2pdf().from(root).set(opt).toCanvas().then(function (canvas) {
-            console.log('[pdf-export] DIAGNOSTIC internal canvas size via .toCanvas():', canvas.width, 'x', canvas.height);
+          html2pdf().from(root).set(opt).toContainer().toCanvas().then(function (canvas) {
+            console.log('[pdf-export] DIAGNOSTIC internal canvas size via .toContainer().toCanvas():', canvas ? (canvas.width + ' x ' + canvas.height) : 'canvas is ' + canvas);
+            if (!canvas) { console.error('[pdf-export] DIAGNOSTIC canvas is still falsy even after .toContainer().toCanvas() — stopping here.'); return; }
             canvas.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;border:6px solid lime;max-width:96vw;max-height:96vh;overflow:auto;background:#fff;';
             canvas.id = 'pdfx-debug-canvas';
             const existing = document.getElementById('pdfx-debug-canvas');
@@ -6230,7 +6231,7 @@ async function loadAuditResultsFromSheet() {
             console.log('[pdf-export] DIAGNOSTIC canvas appended — click it to remove.');
             canvas.addEventListener('click', function () { canvas.remove(); });
           }).catch(function (err) {
-            console.error('[pdf-export] DIAGNOSTIC .toCanvas() failed:', err);
+            console.error('[pdf-export] DIAGNOSTIC .toContainer().toCanvas() failed:', err);
           });
           // ── END TEMPORARY DIAGNOSTIC ──────────────────────────────────────
 
