@@ -70,6 +70,10 @@
       "schedule": "15 5 * * *"
     },
     {
+      "path": "/api/cron/sync-stewardship-summary",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/cron/sync-shopify-orders",
       "schedule": "0 7 * * *"
     },
@@ -169,6 +173,9 @@
       "maxDuration": 30
     },
     "api/cron/sync-revenue-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-stewardship-summary.js": {
       "maxDuration": 300
     },
     "api/cron/sync-shopify-orders.js": {
