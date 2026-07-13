@@ -673,7 +673,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
   <div class="topbar">
     <span class="topbar-title" id="topbar-title">Overview — Évolis</span>
     <div class="topbar-right">
-      <button class="pdf-export-btn" id="pdf-export-btn" onclick="exportPartnerPDF()">
+      <button class="pdf-export-btn" id="pdf-export-btn" onclick="exportPartnerPDF()" style="display:none;">
         <svg viewBox="0 0 16 16"><path d="M8 1v9M4.5 6.5L8 10l3.5-3.5"/><path d="M2 11v2.5a1 1 0 001 1h10a1 1 0 001-1V11"/></svg>
         <span class="pdfx-spin"></span>
         <span class="pdfx-label-text">Export PDF Report</span>
@@ -707,11 +707,11 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
     </div>
 
     <div class="two-col">
-      <div class="card">
+      <div class="card" style="margin-top:0;">
         <div class="card-title">Revenue by Channel — May 2026</div>
         <div class="chart-placeholder">[ Donut chart — Amazon 68% / Website 22% / Walmart 10% ]</div>
       </div>
-      <div class="card">
+      <div class="card" style="margin-top:0;">
         <div class="card-title">Monthly Revenue Trend</div>
         <div class="chart-placeholder">[ Line chart — 6-month trend across channels ]</div>
       </div>
@@ -1441,7 +1441,7 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <div class="two-col" style="margin-bottom:20px;">
         <!-- Star distribution -->
-        <div class="card">
+        <div class="card" style="margin-top:0;">
           <div class="card-title">Star Rating Distribution — Activators</div>
           <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">4.1 <span style="font-size:16px;color:var(--muted);font-weight:400;">/ 5</span></div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">63 total reviews · Reverse, Promote &amp; Prevent Activator</div>
@@ -1454,7 +1454,7 @@ As inventory availability improves, the current sales mix provides a strong foun
         </div>
 
         <!-- VOC Themes -->
-        <div class="card">
+        <div class="card" style="margin-top:0;">
           <div class="card-title">VOC Themes — Activators (63 reviews)</div>
           <div class="sec-lbl" style="margin-top:0;">Positive</div>
           <div class="voc-chips">
@@ -2855,6 +2855,16 @@ function showPage(id, btn) {
   document.getElementById('page-'+id).classList.add('active');
   btn.classList.add('active');
   document.getElementById('topbar-title').textContent = pageTitles[id] || id;
+
+  // Export PDF Report button — only shown on the three "performance" pages
+  // (Sales, Marketing, Events). Hidden everywhere else (Overview, Inventory,
+  // Fulfillment, Insights, Listing Audit, PPC, Organic).
+  const pdfBtn = document.getElementById('pdf-export-btn');
+  if (pdfBtn) {
+    const exportablePages = ['sales', 'marketing', 'events'];
+    pdfBtn.style.display = exportablePages.includes(id) ? 'flex' : 'none';
+  }
+
   // Auto-init first active channel when navigating to Sales or Marketing
   const pg = document.getElementById('page-'+id);
   const ac = pg && pg.querySelector('.channel-page.active');
@@ -6102,6 +6112,7 @@ async function loadAuditResultsFromSheet() {
     try {
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
+      console.log('[pdf-export] monthYear:', JSON.stringify(monthYear), 'rangeText:', JSON.stringify(rangeText));
 
       let root = pdfxById('pdfx-root');
       if (!root) {
@@ -6110,16 +6121,28 @@ async function loadAuditResultsFromSheet() {
         document.body.appendChild(root);
       }
 
-      root.innerHTML =
-        buildCoverPage(monthYear) +
-        buildAmazonPage(monthYear) +
-        buildWebsitePage(monthYear) +
-        buildWalmartPage(monthYear) +
-        buildStewardshipPage(monthYear) +
-        buildOpportunitiesPage(monthYear);
+      const coverHtml    = buildCoverPage(monthYear);
+      const amazonHtml   = buildAmazonPage(monthYear);
+      const websiteHtml  = buildWebsitePage(monthYear);
+      const walmartHtml  = buildWalmartPage(monthYear);
+      const stewardHtml  = buildStewardshipPage(monthYear);
+      const oppHtml      = buildOpportunitiesPage(monthYear);
+      console.log('[pdf-export] page HTML lengths:', {
+        cover: coverHtml.length, amazon: amazonHtml.length, website: websiteHtml.length,
+        walmart: walmartHtml.length, stewardship: stewardHtml.length, opportunities: oppHtml.length,
+      });
+
+      root.innerHTML = coverHtml + amazonHtml + websiteHtml + walmartHtml + stewardHtml + oppHtml;
+
+      console.log('[pdf-export] root.innerHTML.length:', root.innerHTML.length);
+      console.log('[pdf-export] root computed style — display:', getComputedStyle(root).display,
+        'position:', getComputedStyle(root).position, 'width:', getComputedStyle(root).width);
+      console.log('[pdf-export] root.scrollWidth/scrollHeight (before rAF):', root.scrollWidth, root.scrollHeight);
+      console.log('[pdf-export] typeof html2pdf:', typeof html2pdf, '| typeof window.jspdf:', typeof window.jspdf);
 
       // Remove page-break-after on the very last page so html2pdf doesn't add a blank trailing page
       const pages = root.querySelectorAll('.pdfx-page');
+      console.log('[pdf-export] .pdfx-page count found in root:', pages.length);
       if (pages.length) pages[pages.length - 1].style.pageBreakAfter = 'auto';
 
       const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
@@ -6141,12 +6164,15 @@ async function loadAuditResultsFromSheet() {
         jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
       };
+      console.log('[pdf-export] html2canvas windowWidth/windowHeight in opt:', opt.html2canvas.windowWidth, opt.html2canvas.windowHeight);
 
       // Give the browser a paint cycle to commit layout/styles for the newly
       // injected off-screen content before html2canvas measures it.
       requestAnimationFrame(function () {
         setTimeout(function () {
+          console.log('[pdf-export] root.scrollWidth/scrollHeight (at capture time, after rAF+timeout):', root.scrollWidth, root.scrollHeight);
           html2pdf().from(root).set(opt).save().then(function () {
+            console.log('[pdf-export] html2pdf().save() resolved successfully');
             if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
           }).catch(function (err) {
             console.error('[pdf-export] failed:', err);
