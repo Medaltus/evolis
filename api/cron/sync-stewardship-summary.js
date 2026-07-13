@@ -16,7 +16,7 @@
  * Output sheet: SHEET_STEWARDSHIP_SUMMARY, one tab per brand.
  * Columns: year, month, ads_spend, impressions, clicks, ad_units,
  *          promos_total, vine_total, revenue, units,
- *          active_subscriptions, website_subscriptions, total_subscriptions,
+ *          amazon_subscriptions, website_subscriptions, total_subscriptions,
  *          last_updated
  *
  * One row per (brand, year, month) that has ANY data in ANY source —
@@ -32,9 +32,10 @@
  *   Revenue history — revenue, units.
  *   Master ASIN/SKU list, "Product Short Name" tab, column F — Vine:
  *     $200 x however many SKUs enrolled that month, per brand.
- *   Subscriptions cache — active_subscriptions (Amazon). website_subscriptions
+ *   Subscriptions cache — written here as amazon_subscriptions (source
+ *     column is still named active_subscriptions). website_subscriptions
  *     is a placeholder (0) until the Shopify subscriptions cron exists.
- *     total_subscriptions = active_subscriptions + website_subscriptions.
+ *     total_subscriptions = amazon_subscriptions + website_subscriptions.
  *
  * Runs nightly after the other syncs (advertising, revenue, orders) have
  * already updated their sheets for the day.
@@ -66,7 +67,7 @@ const HEADERS = [
   'ads_spend', 'impressions', 'clicks', 'ad_units',
   'promos_total', 'vine_total',
   'revenue', 'units',
-  'active_subscriptions', 'website_subscriptions', 'total_subscriptions',
+  'amazon_subscriptions', 'website_subscriptions', 'total_subscriptions',
   'last_updated',
 ];
 
