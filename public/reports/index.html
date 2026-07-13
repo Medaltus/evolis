@@ -5975,22 +5975,155 @@ async function loadAuditResultsFromSheet() {
     return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
   }
 
-  // Pulls a base64 PNG snapshot from a live Chart.js instance stored on window.
-  // Returns '' if the chart hasn't been instantiated yet.
-  function pdfxChartImg(varName) {
+  // ── Chart image capture ────────────────────────────────────────────────
+  // ROOT CAUSE (confirmed via console evidence 2026-07-13): the "chart
+  // variable presence" poll showed every chart instance existed (true across
+  // the board) — so this was never a missing-chart problem. The real issue
+  // is that Website/Walmart/Subscriptions/Insights live inside tabs that
+  // are NOT the active one, so their <canvas> elements are display:none at
+  // that moment and Chart.js sizes them to 0×0. Confirmed directly in the
+  // DOM snapshot: <canvas id="chart-web" height="0" width="0">. Calling
+  // chart.toBase64Image() on a 0×0 canvas doesn't throw — it just returns a
+  // blank image, which is exactly the "only Amazon exported" symptom.
+  // (The "Unable to clone canvas as it is tainted" warnings in the console
+  // are a red herring: html2canvas clones the *entire* document — not just
+  // the .pdfx-page element passed to it — to preserve global styles, and it
+  // hits these same zero-size dashboard canvases while doing so. That
+  // cloning has nothing to do with our own capture, which only ever
+  // contains <img> tags.)
+  //
+  // Fix: before capturing, walk up from each hidden chart's canvas, force
+  // every display:none ancestor to display:block just long enough for
+  // Chart.js to resize() into real dimensions, grab the image, then put
+  // every ancestor's inline style back exactly as found.
+  const PDFX_CHART_CANVAS_IDS = {
+    _amazonChart: 'chart-amazon',
+    _webChart: 'chart-web',
+    _walmartChart: 'chart-walmart',
+    _investChart: 'chart-invest',
+    _impressChart: 'chart-impressions',
+    _snsChart: 'chart-sns'
+  };
+  let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages()
+
+  function pdfxRawChartImg(varName) {
     try {
       const chart = window[varName];
       if (chart && typeof chart.toBase64Image === 'function') {
         // PNG, not JPEG — JPEG has no alpha channel, so Chart.js's transparent
         // canvas background gets filled with BLACK by the browser before
-        // JPEG-encoding. That's what caused every chart to show a solid black
-        // background in the exported PDF. Confirmed 2026-07-13. Switched back
-        // to PNG now that the actual size-related error (useCORS, removed
-        // separately) is fixed — PNG was never really the problem.
+        // JPEG-encoding. Confirmed 2026-07-13.
         return chart.toBase64Image('image/png');
       }
     } catch (e) { /* noop */ }
     return '';
+  }
+
+  async function pdfxCaptureAllChartImages() {
+    const restore = []; // [{el, prevDisplay}]
+    const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
+
+    varNames.forEach(function (varName) {
+      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      const chart = window[varName];
+      if (!canvas || !chart) return;
+      if (canvas.width > 0 && canvas.height > 0) return; // already real size, leave alone
+
+      let node = canvas.parentElement;
+      while (node && node !== document.body) {
+        if (window.getComputedStyle(node).display === 'none') {
+          restore.push({ el: node, prevDisplay: node.style.display });
+          node.style.display = 'block';
+        }
+        node = node.parentElement;
+      }
+    });
+
+    if (restore.length) {
+      console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to size 0×0 chart canvases');
+      // Let the browser actually lay these out before asking Chart.js to resize into them
+      await new Promise(function (r) { requestAnimationFrame(r); });
+      varNames.forEach(function (varName) {
+        const chart = window[varName];
+        if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
+      });
+      await new Promise(function (r) { requestAnimationFrame(r); });
+    }
+
+    const images = {};
+    varNames.forEach(function (varName) {
+      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      images[varName] = pdfxRawChartImg(varName);
+      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', images[varName] ? images[varName].length : 0);
+    });
+
+    // Put every forced ancestor back exactly as found, then let Chart.js
+    // resize back down for whichever tab is actually visible right now.
+    restore.forEach(function (r) { r.el.style.display = r.prevDisplay; });
+    if (restore.length) {
+      await new Promise(function (r) { requestAnimationFrame(r); });
+      varNames.forEach(function (varName) {
+        const chart = window[varName];
+        if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
+      });
+    }
+
+    return images;
+  }
+
+  function pdfxChartImg(varName) {
+    if (PDFX_CHART_CACHE && Object.prototype.hasOwnProperty.call(PDFX_CHART_CACHE, varName)) {
+      return PDFX_CHART_CACHE[varName] || '';
+    }
+    return pdfxRawChartImg(varName);
+  }
+
+  // ── Logo / watermark asset resolution ──────────────────────────────────
+  // ROOT CAUSE (confirmed via console 2026-07-13): "evolis logo.svg" and
+  // "watermark.svg" both 404 — this was never a load-timing issue, the
+  // files simply don't exist at those paths. This page's own favicon is
+  // served from /reports/evolis_favicon.png, which tells us brand assets on
+  // this deployment live under /reports/, not site root. Rather than guess
+  // one filename again, probe a short list of the most likely real paths
+  // and use whichever one actually loads; if none do, fall back to clean
+  // styled text so the export never shows a broken-image icon while the
+  // exact filename gets confirmed.
+  const PDFX_LOGO_CANDIDATES = [
+    '/reports/evolis_logo.svg', '/reports/evolis-logo.svg', '/reports/evolis_logo.png',
+    '/evolis_logo.svg', '/evolis-logo.svg', 'evolis_logo.svg'
+  ];
+  const PDFX_WATERMARK_CANDIDATES = [
+    '/reports/evolis_watermark.svg', '/reports/evolis-watermark.svg', '/reports/watermark.svg',
+    '/evolis_watermark.svg', '/evolis-watermark.svg', 'evolis_watermark.svg'
+  ];
+  let PDFX_LOGO_SRC = '';
+  let PDFX_WATERMARK_SRC = '';
+
+  function pdfxProbeImage(url) {
+    return new Promise(function (resolve) {
+      const probe = new Image();
+      probe.onload = function () { resolve(url); };
+      probe.onerror = function () { resolve(null); };
+      probe.src = url;
+    });
+  }
+
+  async function pdfxResolveFirstWorking(candidates, label) {
+    for (let i = 0; i < candidates.length; i++) {
+      const ok = await pdfxProbeImage(candidates[i]);
+      if (ok) {
+        console.log('[pdf-export]', label, 'resolved to:', ok);
+        return ok;
+      }
+    }
+    console.warn('[pdf-export]', label, 'not found — tried:', candidates.join(', '), '— falling back to styled text.');
+    return '';
+  }
+
+  function pdfxLogoHtml(style) {
+    return PDFX_LOGO_SRC
+      ? '<img src="' + PDFX_LOGO_SRC + '" alt="évolis" style="' + style + '">'
+      : '<span style="font-family:Georgia,\'Times New Roman\',serif;font-style:italic;">évolis<sup style="font-size:.5em;">®</sup></span>';
   }
 
   function pdfxChartBlock(varName, fallbackLabel) {
@@ -6020,7 +6153,7 @@ async function loadAuditResultsFromSheet() {
     }).join('');
     return '<div class="pdfx-topband">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
-        '<span class="pdfx-logo-navy"><img src="evolis logo.svg" alt="évolis" style="height:20px;width:auto;filter:brightness(0) invert(1);"></span>' +
+        '<span class="pdfx-logo-navy">' + pdfxLogoHtml('height:20px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
         '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
       '</div>' +
       '<div class="pdfx-tabs" style="margin-bottom:0;">' + tabsHtml + '</div>' +
@@ -6043,9 +6176,9 @@ async function loadAuditResultsFromSheet() {
     return '' +
       '<div class="pdfx-page pdfx-cover">' +
         '<div class="pdfx-cover-navy">' +
-          '<img src="watermark.svg" alt="" style="position:absolute;right:-40px;top:-40px;width:340px;height:auto;opacity:0.12;pointer-events:none;">' +
+          (PDFX_WATERMARK_SRC ? '<img src="' + PDFX_WATERMARK_SRC + '" alt="" style="position:absolute;right:-40px;top:-40px;width:340px;height:auto;opacity:0.12;pointer-events:none;">' : '') +
           '<div class="pdfx-cover-toprow">' +
-            '<span class="pdfx-logo-white"><img src="evolis logo.svg" alt="évolis" style="height:24px;width:auto;filter:brightness(0) invert(1);"></span>' +
+            '<span class="pdfx-logo-white">' + pdfxLogoHtml('height:24px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
             '<div class="pdfx-hdr-right"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
           '</div>' +
           '<div class="pdfx-cover-eyebrow">Monthly Overview</div>' +
@@ -6232,6 +6365,14 @@ async function loadAuditResultsFromSheet() {
         await new Promise(r => setTimeout(r, 150));
       }
       console.log('[pdf-export] chart variable presence after poll:', expectedCharts.map(v => v + '=' + !!window[v]).join(', '));
+
+      // Resolve the real logo/watermark URLs (probed against several
+      // candidate paths — see PDFX_LOGO_CANDIDATES comment above) and
+      // force-render + snapshot every chart's canvas BEFORE any page HTML
+      // is built, since buildXPage() calls read from these synchronously.
+      PDFX_LOGO_SRC = await pdfxResolveFirstWorking(PDFX_LOGO_CANDIDATES, 'logo');
+      PDFX_WATERMARK_SRC = await pdfxResolveFirstWorking(PDFX_WATERMARK_CANDIDATES, 'watermark');
+      PDFX_CHART_CACHE = await pdfxCaptureAllChartImages();
 
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
