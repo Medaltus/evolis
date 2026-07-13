@@ -562,13 +562,13 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-hdr-right{text-align:right;}
 .pdfx-hdr-tag{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);font-family:var(--font-subheader);}
 .pdfx-hdr-month{font-family:var(--font-subheader);font-size:17px;color:#fff;margin-top:3px;}
-.pdfx-cover-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:12px;}
-.pdfx-cover-title{font-family:var(--font-header);font-size:38px;line-height:1.14;margin-bottom:18px;}
+.pdfx-cover-eyebrow{font-size:10px;font-weight:400;font-family:var(--font-body-light);letter-spacing:.16em;text-transform:uppercase;color:var(--green);margin-bottom:12px;}
+.pdfx-cover-title{font-family:var(--font-subheader);font-weight:700;font-size:38px;line-height:1.14;margin-bottom:18px;}
 .pdfx-cover-rule{width:44px;height:2px;background:var(--green);margin-bottom:20px;}
 .pdfx-cover-desc{font-size:12.5px;color:rgba(255,255,255,.68);line-height:1.65;max-width:520px;}
 /* flex:1 fills all remaining vertical space below the navy block (up to the full 11in page); justify-content:center vertically centers the pill/headline/columns within that remaining space, per the request to justify this content to the middle of the space below the navy area. */
 .pdfx-cover-white{padding:40px 60px;flex:1;display:flex;flex-direction:column;justify-content:center;}
-.pdfx-pill{display:inline-block;align-self:flex-start;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:20px;padding:5px 16px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--green);margin-bottom:24px;}
+.pdfx-pill{display:inline-block;align-self:flex-start;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:20px;padding:5px 16px;font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--green);margin-bottom:24px;}
 .pdfx-cover-headline{font-family:var(--font-subheader);font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:28px;}
 .pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:8px;}
 .pdfx-cover-col{font-size:12px;color:#48557a;line-height:1.75;}
@@ -588,12 +588,13 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-chrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;}
 .pdfx-chname{font-size:17px;font-weight:600;color:var(--navy);font-family:var(--font-subheader);}
 .pdfx-chdate{font-size:11px;color:var(--muted);}
-.pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
+.pdfx-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-bottom:18px;}
 .pdfx-kpis.n3{grid-template-columns:repeat(3,1fr);}
 .pdfx-kpis.n2{grid-template-columns:repeat(2,1fr);}
-.pdfx-kpi{border:1px solid var(--border);border-radius:8px;padding:12px 13px;background:#fbfbfd;}
-.pdfx-kpi-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;}
-.pdfx-kpi-val{font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-.5px;line-height:1;}
+.pdfx-kpi{border:1px solid var(--border);border-radius:0;padding:16px 18px;background:#fbfbfd;margin-left:-1px;}
+.pdfx-kpi:first-child{margin-left:0;}
+.pdfx-kpi-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+.pdfx-kpi-val{font-size:26px;font-weight:700;font-family:var(--font-bold);color:var(--navy);letter-spacing:-.5px;line-height:1;}
 .pdfx-kpi-mom{font-size:10px;margin-top:5px;font-weight:400;font-family:var(--font-body-light);}
 .pdfx-kpi-mom.up{color:var(--green);}
 .pdfx-kpi-mom.dn{color:var(--danger);}
@@ -603,12 +604,12 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-chart-img{width:100%;display:block;}
 .pdfx-table{width:100%;border-collapse:collapse;font-size:11px;}
 .pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
-.pdfx-table thead th.num{text-align:right;}
+.pdfx-table thead th.num{text-align:center;}
 .pdfx-table tbody td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--navy);}
-.pdfx-table tbody td.num{text-align:right;}
+.pdfx-table tbody td.num{text-align:center;}
 .pdfx-table tbody tr:nth-child(even){background:#f7f8fb;}
 .pdfx-insight{background:var(--sand);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
-.pdfx-insight strong{color:var(--warn);}
+.pdfx-insight strong{color:#000;}
 .pdfx-two-col{display:grid;grid-template-columns:1fr;gap:16px;}
 .pdfx-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
 .pdfx-check{display:flex;align-items:center;gap:10px;background:#F5F6F9;border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
@@ -1053,7 +1054,7 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-title">Active Subscriptions by Month</div>
-        <div style="position:relative;height:200px;"><canvas id="chart-sns"></canvas></div>
+        <div style="position:relative;height:320px;"><canvas id="chart-sns"></canvas></div>
       </div>
 
       <div class="section-label" style="color:var(--green);">Future Opportunities</div>
@@ -3008,7 +3009,7 @@ function lineChart(id, datasets, yFmt) {
     data:{ labels:months12, datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:20, padding:12 } } },
+      plugins:{ legend:{ position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:24, padding:14, font:{ size:13 } } } },
       scales:{
         x:{ grid:{ color:'rgba(0,0,0,0.04)' } },
         y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback: yFmt } }
@@ -3061,7 +3062,7 @@ function renderStewardshipCharts(investData, impressData) {
         { label: impressData.prevYearLabel, data: impressData.prev, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3, spanGaps:true },
       ]
     },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v>=1000?(v/1000).toFixed(v%1000===0?0:1)+'K':v } } } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v===0?'0':(v/1000).toFixed(v%1000===0?0:1)+'K' } } } }
   });
 }
 function initSns() {
@@ -3074,7 +3075,7 @@ function initSns() {
         { label:'2026', data:[null,null,null,null,null,null,null,null,null,null,null,null,178,163,135], backgroundColor:'#001f60' },
       ]
     },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top', labels:{ usePointStyle:true, boxWidth:10, padding:12 } } }, scales:{ x:{ grid:{display:false} }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, min:0, max:250 } } }
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top', align:'start', labels:{ usePointStyle:true, boxWidth:14, padding:14, font:{ size:13 } } } }, scales:{ x:{ grid:{display:false} }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, min:0, max:250 } } }
   });
 }
 
@@ -3471,7 +3472,7 @@ function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12 } },
+          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 14, font: { size: 13 } } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -3907,7 +3908,7 @@ function initSns() {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position:'top', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:20, padding:12 } },
+          legend: { position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:24, padding:14, font:{ size:13 } } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -4295,7 +4296,7 @@ function initSns() {
       const pctUnitsAdsPrev = unitsPrev > 0 ? Math.round((adUnitsPrev / unitsPrev) * 100) : null;
 
       const fmt  = n => (n ?? 0).toLocaleString();
-      const fmtK = n => n >= 1000 ? Math.round(n / 1000) + 'K' : String(n ?? 0);
+      const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n ?? 0);
 
       if (clicksCurr != null) setKpiVal('kpi-ad-clicks', fmt(clicksCurr));
       setKpiMom('kpi-ad-clicks', pct(clicksCurr, clicksPrev));
@@ -4613,7 +4614,7 @@ function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 20, padding: 12 } },
+          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 14, font: { size: 13 } } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -5955,10 +5956,18 @@ async function loadAuditResultsFromSheet() {
         let cellHtml;
         if (c.momText) {
           const color = c.momClass === 'up' ? 'var(--green)' : c.momClass === 'dn' ? 'var(--danger)' : 'rgba(107,123,162,.4)';
-          // Bold number, NOT-bold colored MOM% — per requirements 2026-07-13
-          cellHtml = '<strong>' + pdfxEscape(c.text) + '</strong> <span style="font-weight:400;color:' + color + ';">' + pdfxEscape(c.momText) + '</span>';
+          // Number in a fixed-min-width right-aligned inner span so digits
+          // line up vertically across rows regardless of digit count; MOM
+          // badge sits exactly 5px to its right, whole group centered in
+          // the cell. Bold number, non-bold colored %. Per requirements 2026-07-13.
+          cellHtml = '<span style="display:inline-flex;align-items:baseline;justify-content:center;width:100%;">' +
+            '<strong style="display:inline-block;min-width:22px;text-align:right;">' + pdfxEscape(c.text) + '</strong>' +
+            '<span style="font-weight:400;color:' + color + ';margin-left:5px;white-space:nowrap;">' + pdfxEscape(c.momText) + '</span>' +
+            '</span>';
         } else {
-          cellHtml = isNum ? '<strong>' + pdfxEscape(c.text) + '</strong>' : pdfxEscape(c.text);
+          cellHtml = isNum
+            ? '<span style="display:inline-flex;justify-content:center;width:100%;"><strong>' + pdfxEscape(c.text) + '</strong></span>'
+            : pdfxEscape(c.text);
         }
         return '<td' + (isNum ? ' class="num"' : '') + '>' + cellHtml + '</td>';
       }).join('') + '</tr>';
@@ -5993,10 +6002,15 @@ async function loadAuditResultsFromSheet() {
 
   // Derives "June 2026" style label from a date-range string like
   // "📅 June 1 – June 30, 2026" or "June 1, 2026 - June 30, 2026"
+  const MONTH_ABBR_TO_FULL = {
+    Jan: 'January', Feb: 'February', Mar: 'March', Apr: 'April', May: 'May', Jun: 'June',
+    Jul: 'July', Aug: 'August', Sep: 'September', Oct: 'October', Nov: 'November', Dec: 'December',
+  };
   function pdfxMonthYear(rangeText) {
     const m = rangeText.match(/([A-Za-z]+)\s+\d{1,2}.*?(\d{4})/);
-    if (m) return m[1] + ' ' + m[2];
-    return '';
+    if (!m) return '';
+    const full = MONTH_ABBR_TO_FULL[m[1]] || m[1]; // expand "Jun" -> "June"; already-full names pass through
+    return full + ' ' + m[2];
   }
 
   function pdfxHeaderBand(monthYear, activeTab) {
@@ -6130,10 +6144,22 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Key Performance Metrics</div>' +
           '<div class="pdfx-kpis" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-two-col">' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Investments</div>' + pdfxChartBlock('_investChart') +
+            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Investments</div>' +
+              '<div style="display:flex;gap:14px;font-size:10px;color:var(--muted);margin-bottom:10px;">' +
+                '<span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>' +
+                '<span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>' +
+                '<span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>' +
+              '</div>' +
+              pdfxChartBlock('_investChart') +
               '<div class="pdfx-ltd"><div class="pdfx-ltd-val">' + pdfxEscape(ltdVal || '—') + '</div><div class="pdfx-ltd-lbl">Launch to date · Total Investments</div></div>' +
             '</div>' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Ad Impressions</div>' + pdfxChartBlock('_impressChart') + '</div>' +
+            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Ad Impressions</div>' +
+              '<div style="display:flex;gap:14px;font-size:10px;color:var(--muted);margin-bottom:10px;">' +
+                '<span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;display:inline-block;"></span>' + new Date().getFullYear() + '</span>' +
+                '<span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--sand);border-radius:2px;display:inline-block;"></span>' + (new Date().getFullYear() - 1) + '</span>' +
+              '</div>' +
+              pdfxChartBlock('_impressChart') +
+            '</div>' +
           '</div>' +
           '<div class="pdfx-chlabel" style="margin-top:16px;">Marketing Strategy</div>' +
           '<div class="pdfx-checks">' + checksHtml + '</div>' +
@@ -6191,6 +6217,20 @@ async function loadAuditResultsFromSheet() {
         await Promise.all(initPromises);
       }
 
+      // Extra safety net: the init functions' own returned promise resolving
+      // doesn't guarantee the chart variable itself exists yet if there's an
+      // internal async step not part of that promise's chain (a bug inside
+      // those functions, not this export code). Poll briefly for each
+      // expected chart variable directly, since Amazon worked but
+      // Website/Walmart didn't even after awaiting their init promises —
+      // exactly the signature of this class of bug. Confirmed 2026-07-13.
+      const expectedCharts = ['_amazonChart', '_webChart', '_walmartChart', '_investChart', '_impressChart', '_snsChart'];
+      const pollStart = Date.now();
+      while (Date.now() - pollStart < 4000 && expectedCharts.some(v => !window[v])) {
+        await new Promise(r => setTimeout(r, 150));
+      }
+      console.log('[pdf-export] chart variable presence after poll:', expectedCharts.map(v => v + '=' + !!window[v]).join(', '));
+
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
       console.log('[pdf-export] monthYear:', JSON.stringify(monthYear));
@@ -6233,6 +6273,16 @@ async function loadAuditResultsFromSheet() {
         img.addEventListener('error', () => { console.warn('[pdf-export] image failed to load:', img.src); res(); }, { once: true });
       })));
       console.log('[pdf-export] all images settled');
+
+      // Custom @font-face fonts (GT Walsheim, Plantin) ALSO load
+      // asynchronously — same race condition class as images. This is very
+      // likely why bold/serif weren't rendering correctly even when the
+      // markup was right. document.fonts.ready resolves once every
+      // requested font-face has actually finished loading.
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+        console.log('[pdf-export] fonts ready, loaded count:', document.fonts.size);
+      }
 
       const pageEls = Array.from(root.querySelectorAll('.pdfx-page'));
       console.log('[pdf-export] .pdfx-page count:', pageEls.length);
