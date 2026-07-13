@@ -6213,25 +6213,25 @@ async function loadAuditResultsFromSheet() {
           console.log('[pdf-export] root.scrollWidth/scrollHeight (at capture time, after rAF+timeout):', root.scrollWidth, root.scrollHeight);
 
           // ── TEMPORARY DIAGNOSTIC ──────────────────────────────────────────
-          console.log('[pdf-export] DIAGNOSTIC typeof window.html2canvas:', typeof window.html2canvas,
-            '| typeof window.jsPDF:', typeof window.jsPDF, '| typeof window.jspdf:', typeof window.jspdf,
-            '| Object.keys(window).filter(pdf/canvas):', Object.keys(window).filter(function(k){ return /pdf|canvas/i.test(k); }));
-          try {
-            html2canvas(root, { scale: 2, backgroundColor: '#ffffff' }).then(function (canvas) {
-              console.log('[pdf-export] DIAGNOSTIC raw html2canvas capture size:', canvas.width, 'x', canvas.height);
-              canvas.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;border:6px solid lime;max-width:96vw;max-height:96vh;overflow:auto;background:#fff;';
-              canvas.id = 'pdfx-debug-canvas';
-              const existing = document.getElementById('pdfx-debug-canvas');
-              if (existing) existing.remove();
-              document.body.appendChild(canvas);
-              console.log('[pdf-export] DIAGNOSTIC canvas appended — click it to remove.');
-              canvas.addEventListener('click', function () { canvas.remove(); });
-            }).catch(function (err) {
-              console.error('[pdf-export] DIAGNOSTIC html2canvas() call rejected:', err);
-            });
-          } catch (e) {
-            console.error('[pdf-export] DIAGNOSTIC html2canvas is not callable as a global:', e.message);
-          }
+          // html2canvas/jsPDF are NOT global — this bundle keeps them fully
+          // private inside its own closure (confirmed: calling html2canvas()
+          // directly throws "html2canvas is not defined", a real
+          // ReferenceError). Every previous attempt to call it as a bare
+          // global was testing something that never existed. html2pdf.js's
+          // own documented worker-chain API has a .toCanvas() step that
+          // exposes its INTERNAL canvas correctly — using that instead.
+          html2pdf().from(root).set(opt).toCanvas().then(function (canvas) {
+            console.log('[pdf-export] DIAGNOSTIC internal canvas size via .toCanvas():', canvas.width, 'x', canvas.height);
+            canvas.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647;border:6px solid lime;max-width:96vw;max-height:96vh;overflow:auto;background:#fff;';
+            canvas.id = 'pdfx-debug-canvas';
+            const existing = document.getElementById('pdfx-debug-canvas');
+            if (existing) existing.remove();
+            document.body.appendChild(canvas);
+            console.log('[pdf-export] DIAGNOSTIC canvas appended — click it to remove.');
+            canvas.addEventListener('click', function () { canvas.remove(); });
+          }).catch(function (err) {
+            console.error('[pdf-export] DIAGNOSTIC .toCanvas() failed:', err);
+          });
           // ── END TEMPORARY DIAGNOSTIC ──────────────────────────────────────
 
           html2pdf().from(root).set(opt).save().then(function () {
