@@ -74,6 +74,14 @@
       "schedule": "30 5 * * *"
     },
     {
+      "path": "/api/cron/sync-business-report-request",
+      "schedule": "35 5 * * *"
+    },
+    {
+      "path": "/api/cron/sync-business-report-process",
+      "schedule": "50 5 * * *"
+    },
+    {
       "path": "/api/cron/sync-shopify-orders",
       "schedule": "0 7 * * *"
     },
@@ -177,6 +185,15 @@
     },
     "api/cron/sync-stewardship-summary.js": {
       "maxDuration": 300
+    },
+    "api/cron/sync-business-report-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-business-report-process.js": {
+      "maxDuration": 300
+    },
+    "api/upload-keyword-tracker.js": {
+      "maxDuration": 60
     },
     "api/cron/sync-shopify-orders.js": {
       "maxDuration": 300
