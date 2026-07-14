@@ -95,8 +95,8 @@ module.exports = async (req, res) => {
         if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
       }
 
-      if (metaMap['report_status'] === 'PROCESSED') {
-        return res.status(200).json({ message: 'Already processed today', meta: metaMap });
+      if (metaMap['report_status'] === 'PROCESSED' && !req.query.force) {
+        return res.status(200).json({ message: 'Already processed today. Pass ?force=true to re-run anyway (e.g. after a bugfix).', meta: metaMap });
       }
 
       const targetMonths = (metaMap['target_months'] || '').split(',').filter(Boolean);
@@ -201,6 +201,19 @@ module.exports = async (req, res) => {
 
   for (const brand of brands.filter(b => b.active)) {
     try {
+      // Amazon's Sales and Traffic report has NO sku field — only
+      // parentAsin/childAsin (confirmed via ?debug=true). Brand matching by
+      // SKU prefix (as revenue.js does) doesn't work here for that reason.
+      // Instead: since Products Cache already has one tab per brand, an
+      // ASIN's presence in THIS brand's tab is itself the brand match — no
+      // prefix logic needed. getBrandAsinSet reads only the most recent
+      // sync date (this sheet is a daily-snapshot cron, so every ASIN
+      // repeats once per sync date).
+      const asinSet = await getBrandAsinSet(brand);
+      if (asinSet.size === 0) {
+        console.warn(`[sync-business-report-process] ${brand.id} — Products Cache tab returned 0 ASINs, check sheets.products / tab name`);
+      }
+
       const token       = await ensureTab(sheets.businessReport, brand.tabName, HEADERS);
       const rawExisting = await readRows(sheets.businessReport, brand.tabName);
 
@@ -228,8 +241,8 @@ module.exports = async (req, res) => {
 
         const asinRows = monthAsinRows[targetMonth] || [];
         const brandRows = asinRows.filter(row => {
-          const sku = (row.sku || '').toUpperCase();
-          return sku.startsWith(brand.skuPrefix.toUpperCase());
+          const asin = (row.childAsin || row.parentAsin || '').toUpperCase();
+          return asinSet.has(asin);
         });
 
         console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — ${brandRows.length} matching SKU rows`);
@@ -306,3 +319,19 @@ module.exports = async (req, res) => {
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
+
+// Products Cache is a daily-snapshot cron — every ASIN repeats once per
+// sync date, so only the most recent date's rows should count. Column C
+// is `asin` (confirmed via screenshot, 2026-07-14).
+async function getBrandAsinSet(brand) {
+  try {
+    const rows = await readRows(sheets.products, brand.tabName);
+    if (!rows || !rows.length) return new Set();
+    const latestDate = rows.reduce((max, r) => ((r['date'] || '') > max ? r['date'] : max), '');
+    const latestRows = latestDate ? rows.filter(r => r['date'] === latestDate) : rows;
+    return new Set(latestRows.map(r => (r['asin'] || '').trim().toUpperCase()).filter(Boolean));
+  } catch (err) {
+    console.warn(`[sync-business-report-process] ${brand.id} — failed to read Products Cache tab:`, err.message);
+    return new Set();
+  }
+}
