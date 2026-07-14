@@ -202,7 +202,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .brand-hero-left .brand-tagline{font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px;}
 .brand-hero-right{display:flex;gap:20px;}
 .hero-stat{text-align:center;}
-.hero-stat-val{font-size:20px;font-weight:600;color:var(--green);line-height:1;font-family:var(--font-subheader);}
+.hero-stat-val{font-size:28px;font-weight:700;color:var(--green);line-height:1;font-family:var(--font-subheader);}
 .hero-stat-lbl{font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em;margin-top:3px;}
 
 /* ── Responsive ── */
@@ -730,7 +730,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
   <div class="page active" id="page-overview">
     <div class="brand-hero">
       <div class="brand-hero-left">
-        <div class="brand-name">Évolis Professional</div>
+        <div class="brand-name" style="font-family:var(--font-subheader);font-weight:700;font-size:28px;">évolis</div>
         <div class="brand-tagline">Hair care · evolisproducts.com · Amazon · Walmart</div>
       </div>
       <div class="brand-hero-right">
@@ -748,7 +748,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
       <div class="kpi-card" id="ov-kpi-acos"><div class="kpi-label">Blended ACOS</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
     </div>
 
-    <div class="two-col">
+    <div class="two-col" style="margin-bottom:22px;">
       <div class="card" style="margin-top:0;">
         <div class="card-title" id="ov-donut-title">Revenue by Channel — Month to Date</div>
         <div style="position:relative;height:200px;"><canvas id="chart-ov-donut"></canvas></div>
@@ -778,24 +778,6 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
       </table>
     </div>
 
-    <div class="insight-bar" style="margin-top:14px;">
-      <strong>Key Insight:</strong>
-      <span class="insight-text" id="overview-insight-text">May performance declined slightly MOM driven by Amazon unit softness (-6%) while Website rebounded strongly (+27%). Blended AOV held above $45, indicating no pricing pressure.</span>
-      <div class="insight-actions">
-        <span class="live-note">● Live</span>
-        <button class="btn-edit" onclick="toggleEditor('overview')">✏️ Edit</button>
-        <button class="btn-stage" onclick="stageInsight('overview')">Push to Staging</button>
-        <button class="btn-approve" onclick="openApproveModal('overview')">Approve → Live</button>
-      </div>
-    </div>
-    <div class="insight-editor" id="editor-overview">
-      <textarea id="textarea-overview" placeholder="Enter the key insight to display on the partner dashboard…">May performance declined slightly MOM driven by Amazon unit softness (-6%) while Website rebounded strongly (+27%). Blended AOV held above $45, indicating no pricing pressure.</textarea>
-      <div class="editor-footer">
-        <span class="editor-note">💡 Saved edits go to <strong>Staging</strong> for review before going live to partners.</span>
-        <button class="btn-cancel" onclick="toggleEditor('overview')">Cancel</button>
-        <button class="btn-save-stage" onclick="saveToStaging('overview')">Save to Staging</button>
-      </div>
-    </div>
   </div>
 
   <!-- ══ INVENTORY ══ -->
@@ -3205,7 +3187,7 @@ async function initSns() {
       withDate.forEach(x => {
         const r = x.row;
         const total = num(r.total_subscriptions ?? r.total_subs ?? r.subscriptions ?? r.active_subscriptions);
-        if (total === null) { skipped.push(x.y + '-' + x.m); return; }
+        if (total === null || total === 0) { skipped.push(x.y + '-' + x.m); return; }
         const label = (!isNaN(x.y) && !isNaN(x.m)) ? `${monthAbbr[x.m - 1]} '${String(x.y).slice(2)}` : (r.month_label || r.month || r.date || '');
         labels.push(label);
         values.push(total);
@@ -6743,12 +6725,23 @@ async function loadAuditResultsFromSheet() {
   // grouping by SKU alone silently splits a single product into two rows
   // and undercounts seller-fulfilled sales). ASIN is the same across both
   // fulfillment types, so it's the safe key here.
-  function unitsByAsin(filteredRows) {
+  //
+  // Website/Walmart order rows only ever carry a SKU, never an ASIN. When
+  // that's the case, skuToAsinMap (built from the same product-names sheet,
+  // col B SKU → col A ASIN) resolves it to the real ASIN so it groups with
+  // Amazon's data for the same product instead of becoming its own
+  // separate, unnamed row. Falls back to the raw SKU only if the crosswalk
+  // has no entry for it either.
+  function unitsByAsin(filteredRows, skuToAsinMap) {
     const map = {};
     filteredRows.forEach(r => {
-      const asin = (r.asin || r.sku || '').trim().toUpperCase();
-      if (!asin) return;
-      map[asin] = (map[asin] || 0) + (parseInt(r.unit_count, 10) || 0);
+      let key = (r.asin || '').trim().toUpperCase();
+      if (!key) {
+        const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+        key = (skuToAsinMap && skuToAsinMap[sku]) || sku;
+      }
+      if (!key) return;
+      map[key] = (map[key] || 0) + (parseInt(r.unit_count, 10) || 0);
     });
     return map;
   }
@@ -6827,18 +6820,16 @@ async function loadAuditResultsFromSheet() {
       const heroSkuEl = document.getElementById('ov-hero-skus');
       if (heroSkuEl && skuCount > 0) heroSkuEl.textContent = String(skuCount);
 
-      // -- Combined product table: units per ASIN per channel, MTD, with MOM + Amazon ads/organic split --
-      const amzUnitsByAsin = unitsByAsin(amzMtd.filteredRows);
-      const webUnitsByAsin = unitsByAsin(webMtd.filteredRows);
-      const wmtUnitsByAsin = unitsByAsin(wmtMtd.filteredRows);
-      const amzPrevUnitsByAsin = unitsByAsin(amzPrev.filteredRows);
-      const webPrevUnitsByAsin = unitsByAsin(webPrev.filteredRows);
-      const wmtPrevUnitsByAsin = unitsByAsin(wmtPrev.filteredRows);
-      const allAsins = new Set([...Object.keys(amzUnitsByAsin), ...Object.keys(webUnitsByAsin), ...Object.keys(wmtUnitsByAsin)]);
-
-      // Product names — col A = ASIN, col C = Name (same lookup sheet/tab
-      // used by the Amazon channel page's own top-sellers table).
+      // Product names + SKU→ASIN crosswalk — col A = ASIN, col B = SKU
+      // (base, no -SF), col C = Name. Same lookup sheet/tab used by the
+      // Amazon channel page's own top-sellers table. Fetched BEFORE
+      // grouping units below, because Website/Walmart order rows only
+      // carry a SKU (no ASIN) — without resolving SKU→ASIN first, those
+      // rows group under a different key than Amazon's ASIN-keyed rows
+      // for the exact same product, splitting it into two table rows and
+      // showing the raw SKU instead of a name. Per Jaclyn 2026-07-14.
       let asinNameMap = {};
+      let skuToAsinMap = {};
       try {
         const namesCsv = await fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
         if (isCsv(namesCsv)) {
@@ -6846,11 +6837,23 @@ async function loadAuditResultsFromSheet() {
           for (let i = 1; i < lines.length; i++) {
             const cols = parseCsvLine(lines[i]);
             const asin = (cols[0] || '').replace(/^"|"$/g, '').trim().toUpperCase();
+            const sku = (cols[1] || '').replace(/^"|"$/g, '').trim().toUpperCase().replace(/-SF$/i, '');
             const name = (cols[2] || '').replace(/^"|"$/g, '').trim();
             if (asin && name) asinNameMap[asin] = name;
+            if (sku && asin) skuToAsinMap[sku] = asin;
           }
+          console.log('[Evolis][overview] product name lookup: ', Object.keys(asinNameMap).length, 'ASINs,', Object.keys(skuToAsinMap).length, 'SKU→ASIN mappings');
         }
       } catch (e) { console.warn('[Evolis][overview] product name lookup failed:', e.message); }
+
+      // -- Combined product table: units per ASIN per channel, MTD, with MOM + Amazon ads/organic split --
+      const amzUnitsByAsin = unitsByAsin(amzMtd.filteredRows, skuToAsinMap);
+      const webUnitsByAsin = unitsByAsin(webMtd.filteredRows, skuToAsinMap);
+      const wmtUnitsByAsin = unitsByAsin(wmtMtd.filteredRows, skuToAsinMap);
+      const amzPrevUnitsByAsin = unitsByAsin(amzPrev.filteredRows, skuToAsinMap);
+      const webPrevUnitsByAsin = unitsByAsin(webPrev.filteredRows, skuToAsinMap);
+      const wmtPrevUnitsByAsin = unitsByAsin(wmtPrev.filteredRows, skuToAsinMap);
+      const allAsins = new Set([...Object.keys(amzUnitsByAsin), ...Object.keys(webUnitsByAsin), ...Object.keys(wmtUnitsByAsin)]);
 
       // Ads vs Organic — Amazon only. The ad_orders sheet is pre-aggregated
       // by whole month, not by day, so this reflects the CURRENT month's ad
@@ -6925,28 +6928,44 @@ async function loadAuditResultsFromSheet() {
         });
       }
 
-      // \u2500\u2500 Ad Spend / Blended ACOS \u2014 prorated estimate, Amazon only \u2500\u2500\u2500\u2500
+      // -- Ad Spend / Blended ACOS -- prorated estimate, Amazon only --
       // See file-level comment above this IIFE for why this isn't a true
-      // day-level MTD figure.
+      // day-level MTD figure. MOM here compares this month's prorated
+      // estimate against LAST month's actual total prorated by the exact
+      // same day-fraction (days elapsed / days in that month) -- i.e. an
+      // apples-to-apples "estimated MTD vs estimated MTD one month back"
+      // comparison, same logic as the other MTD KPIs, just built from
+      // monthly-only ad data instead of day-level order rows.
       if (isCsv(adOrdersCsv)) {
         const adRows = parseCsv(adOrdersCsv);
         let lm = now.getMonth(), ly = now.getFullYear();
         lm -= 1; if (lm === 0) { lm = 12; ly--; }
+        let lm2 = lm - 1, ly2 = ly;
+        if (lm2 === 0) { lm2 = 12; ly2--; }
+
         const lastMonthAdRows = adRows.filter(r => parseInt(r.year, 10) === ly && parseInt(r.month, 10) === lm);
+        const twoMonthsAgoAdRows = adRows.filter(r => parseInt(r.year, 10) === ly2 && parseInt(r.month, 10) === lm2);
+
         const lastMonthSpend = lastMonthAdRows.reduce((s, r) => s + parseAmt(r.spend), 0);
         const lastMonthSales = lastMonthAdRows.reduce((s, r) => s + parseAmt(r.sales), 0);
+        const twoMonthsAgoSpend = twoMonthsAgoAdRows.reduce((s, r) => s + parseAmt(r.spend), 0);
+        const twoMonthsAgoSales = twoMonthsAgoAdRows.reduce((s, r) => s + parseAmt(r.sales), 0);
+
         const daysInLastMonth = new Date(ly, lm, 0).getDate();
+        const daysInTwoMonthsAgo = new Date(ly2, lm2, 0).getDate();
+
         const proratedSpend = lastMonthSpend * (daysElapsed / daysInLastMonth);
         const proratedSales = lastMonthSales * (daysElapsed / daysInLastMonth);
+        const proratedSpendPrev = twoMonthsAgoSpend * (daysElapsed / daysInTwoMonthsAgo);
+        const proratedSalesPrev = twoMonthsAgoSales * (daysElapsed / daysInTwoMonthsAgo);
+
         const acos = proratedSales > 0 ? (proratedSpend / proratedSales) * 100 : 0;
-        setKpi('ov-kpi-adspend', '$' + proratedSpend.toLocaleString(undefined, { maximumFractionDigits: 0 }), null);
-        setKpi('ov-kpi-acos', acos.toFixed(1) + '%', null);
-        const adSpendMom = document.querySelector('#ov-kpi-adspend .kpi-mom');
-        if (adSpendMom) { adSpendMom.className = 'kpi-mom flat'; adSpendMom.textContent = 'Amazon only \u00b7 prorated (Est.)'; }
-        const acosMom = document.querySelector('#ov-kpi-acos .kpi-mom');
-        if (acosMom) { acosMom.className = 'kpi-mom flat'; acosMom.textContent = 'Amazon only \u00b7 prorated (Est.)'; }
+        const acosPrev = proratedSalesPrev > 0 ? (proratedSpendPrev / proratedSalesPrev) * 100 : 0;
+
+        setKpi('ov-kpi-adspend', '$' + proratedSpend.toLocaleString(undefined, { maximumFractionDigits: 0 }), pctChange(proratedSpend, proratedSpendPrev), ' vs MTD last month (Amazon, Est.)');
+        setKpi('ov-kpi-acos', acos.toFixed(1) + '%', pctChange(Math.round(acos * 10), Math.round(acosPrev * 10)), ' vs MTD last month (Amazon, Est.)');
       } else {
-        console.warn('[Evolis][overview] ad orders sheet did not return CSV \u2014 Ad Spend/ACOS left blank.');
+        console.warn('[Evolis][overview] ad orders sheet did not return CSV — Ad Spend/ACOS left blank.');
       }
 
       // -- Trend: trailing 6 COMPLETED months, blended revenue across channels --
