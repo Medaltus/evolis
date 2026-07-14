@@ -16,6 +16,7 @@
  * SHEET_KEYWORD_STRATEGY    keyword strategy per brand
  * SHEET_INSIGHTS            brand insights / monthly takeaways
  * SHEET_UPLOADS             file uploads tracking (Evolis GID etc)
+ * SHEET_BUSINESS_REPORT     Sales & Traffic business report (sessions/units by brand, monthly)
  */
 
 module.exports = {
@@ -31,4 +32,5 @@ module.exports = {
   keywordStrategy:  process.env.SHEET_KEYWORD_STRATEGY,
   insights:         process.env.SHEET_INSIGHTS,
   uploads:          process.env.SHEET_UPLOADS,
+  businessReport:   process.env.SHEET_BUSINESS_REPORT,
 };
