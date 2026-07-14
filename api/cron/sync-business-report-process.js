@@ -75,6 +75,10 @@ module.exports = async (req, res) => {
         dataEndTime:    end,
         reportOptions: { dateGranularity: 'MONTH', asinGranularity: 'CHILD' },
       });
+      if (!createResp || !createResp.reportId) {
+        console.error(`[sync-business-report-process] backfill ${req.query.month} — no reportId in response:`, JSON.stringify(createResp));
+        return res.status(500).json({ error: `Amazon returned no reportId for ${req.query.month}`, detail: createResp });
+      }
       jobs = [{ month: req.query.month, reportId: createResp.reportId, start, end }];
       console.log(`[sync-business-report-process] backfill report requested: ${createResp.reportId}`);
     } catch (err) {
