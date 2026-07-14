@@ -1068,18 +1068,20 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div style="position:relative;height:320px;"><canvas id="chart-sns"></canvas></div>
       </div>
 
-      <div class="section-label" style="color:var(--green);">Future Opportunities</div>
-      <div class="opp-grid">
-        <div class="opp-card">
-          <div class="opp-channel">Amazon</div>
-          <div class="opp-event">Prime Day <span style="color:var(--muted);font-size:11px;font-weight:400;">· Dates TBD</span></div>
-          <div class="opp-promo">20% off Full-Sized Products</div>
-          <div class="opp-body">This event drives a high volume of traffic to Amazon. Early planning for deals and sponsored placements is recommended to maximize visibility during the sales window.</div>
-        </div>
-        <div class="opp-card">
-          <div class="opp-channel">Website</div>
-          <div class="opp-event">Upcoming Promos</div>
-          <div class="opp-body" style="margin-top:8px;">Our promotional strategy is focused on activators, leveraging their strong inventory position and high-performance formulations to drive results and maximize conversion during upcoming promotions.</div>
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px;">Future Opportunities</div>
+        <div class="opp-grid">
+          <div class="opp-card">
+            <div class="opp-channel">Amazon</div>
+            <div class="opp-event">Prime Day <span style="color:var(--muted);font-size:11px;font-weight:400;">· Dates TBD</span></div>
+            <div class="opp-promo">20% off Full-Sized Products</div>
+            <div class="opp-body">This event drives a high volume of traffic to Amazon. Early planning for deals and sponsored placements is recommended to maximize visibility during the sales window.</div>
+          </div>
+          <div class="opp-card">
+            <div class="opp-channel">Website</div>
+            <div class="opp-event">Upcoming Promos</div>
+            <div class="opp-body" style="margin-top:8px;">Our promotional strategy is focused on activators, leveraging their strong inventory position and high-performance formulations to drive results and maximize conversion during upcoming promotions.</div>
+          </div>
         </div>
       </div>
 
@@ -6950,6 +6952,29 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  function pdfxFutureOpportunitiesBlock() {
+    const cards = Array.prototype.map.call(document.querySelectorAll('#m-opportunities .opp-card'), function (card) {
+      const channel = pdfxText('.opp-channel', card);
+      const event = pdfxText('.opp-event', card);
+      const promo = pdfxText('.opp-promo', card);
+      const body = pdfxText('.opp-body', card);
+      return '<div>' +
+        '<div style="font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--green);margin-bottom:6px;">' + pdfxEscape(channel) + '</div>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">' + pdfxEscape(event) + '</div>' +
+        (promo ? '<div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px;">' + pdfxEscape(promo) + '</div>' : '') +
+        '<div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + pdfxEscape(body) + '</div>' +
+        '</div>';
+    }).join('');
+    if (!cards) return '';
+    // Same pill-badge + headline pattern as Executive Summary on the cover
+    // page (.pdfx-pill / .pdfx-cover-cols), so the two sections match
+    // exactly as designed on the live dashboard. Per Jaclyn 2026-07-14.
+    return '<div class="pdfx-card" style="margin-top:14px;">' +
+      '<span class="pdfx-pill" style="margin-bottom:16px;">Future Opportunities</span>' +
+      '<div class="pdfx-cover-cols">' + cards + '</div>' +
+      '</div>';
+  }
+
   function buildOpportunitiesPage(monthYear) {
     const oppRoot = pdfxById('m-opportunities');
     let subs = '—', retention = '—';
@@ -6969,6 +6994,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Subscribe &amp; Save</div>' +
           '<div class="pdfx-kpis n2" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
+          pdfxFutureOpportunitiesBlock() +
           pdfxFooter(monthYear) +
         '</div>' +
       '</div>';
