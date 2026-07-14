@@ -6650,6 +6650,7 @@ async function loadAuditResultsFromSheet() {
   function pdfxWithScaledAxisFonts(options, captureWidthPx) {
     const fontScale = captureWidthPx / PDFX_CARD_WIDTH_PX;
     const scaledSize = Math.max(6, Math.round(10 * fontScale));
+    console.log('[pdf-export][qa] font scale — captureWidthPx:', captureWidthPx, '÷ cardWidth:', PDFX_CARD_WIDTH_PX, '= scale', fontScale.toFixed(2), '→ scaledSize:', scaledSize + 'px');
     const origScales = options.scales || {};
     const newScales = Object.assign({}, origScales);
     ['x', 'y'].forEach(function (axisKey) {
@@ -6680,15 +6681,20 @@ async function loadAuditResultsFromSheet() {
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
-      if (!canvas || !chart) return;
+      if (!canvas) { console.log('[pdf-export][qa]', varName, '— canvas element not found in DOM at all'); return; }
+      if (!chart) { console.log('[pdf-export][qa]', varName, '— canvas exists but window.' + varName + ' chart object does not exist yet'); return; }
+      const ancestorLog = [];
       let node = canvas.parentElement;
       while (node && node !== document.body) {
-        if (window.getComputedStyle(node).display === 'none') {
+        const disp = window.getComputedStyle(node).display;
+        ancestorLog.push((node.id || node.className || node.tagName) + ':' + disp);
+        if (disp === 'none') {
           restore.push({ el: node, prop: 'display', prevValue: node.style.display });
           node.style.display = 'block';
         }
         node = node.parentElement;
       }
+      console.log('[pdf-export][qa]', varName, '— ancestor chain (before fix):', ancestorLog.join(' > '));
     });
 
     console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to read real chart sizes');
@@ -6722,7 +6728,10 @@ async function loadAuditResultsFromSheet() {
       const targetW = Math.round((rectValid && rect.width) || liveCanvas.width || 700);
       const targetH = Math.round((rectValid && rect.height) || liveCanvas.height || 300);
       const dpr = window.devicePixelRatio || 1;
-      console.log('[pdf-export][qa]', varName, '— measured size source:', rectValid ? 'live rect' : 'fallback (rect was 0 — check force-visible)', '— target:', targetW + 'x' + targetH);
+      const rawDataInfo = liveChart.data && liveChart.data.datasets
+        ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
+        : 'no datasets';
+      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null wrapper', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using target:', targetW + 'x' + targetH, '— data:', rawDataInfo);
 
       let img = '';
       try {
