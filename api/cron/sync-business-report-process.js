@@ -34,7 +34,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 
-const HEADERS      = ['MONTH', 'YEAR', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE'];
+const HEADERS      = ['MONTH', 'YEAR', 'ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE'];
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
@@ -206,11 +206,11 @@ module.exports = async (req, res) => {
       // SKU prefix (as revenue.js does) doesn't work here for that reason.
       // Instead: since Products Cache already has one tab per brand, an
       // ASIN's presence in THIS brand's tab is itself the brand match — no
-      // prefix logic needed. getBrandAsinSet reads only the most recent
+      // prefix logic needed. getBrandAsinMap reads only the most recent
       // sync date (this sheet is a daily-snapshot cron, so every ASIN
-      // repeats once per sync date).
-      const asinSet = await getBrandAsinSet(brand);
-      if (asinSet.size === 0) {
+      // repeats once per sync date) and also gives us the SKU to write.
+      const asinMap = await getBrandAsinMap(brand);
+      if (asinMap.size === 0) {
         console.warn(`[sync-business-report-process] ${brand.id} — Products Cache tab returned 0 ASINs, check sheets.products / tab name`);
       }
 
@@ -221,13 +221,15 @@ module.exports = async (req, res) => {
         Array.isArray(r)
           ? r
           : [
-              r['MONTH']                  ?? '',
-              r['YEAR']                   ?? '',
-              r['SESSIONS']                ?? '',
-              r['PAGE_VIEWS']               ?? '',
-              r['UNITS_ORDERED']            ?? '',
-              r['ORDERED_PRODUCT_SALES']    ?? '',
-              r['CONVERSION_RATE']          ?? '',
+              r['MONTH']                 ?? '',
+              r['YEAR']                  ?? '',
+              r['ASIN']                  ?? '',
+              r['SKU']                   ?? '',
+              r['SESSIONS']              ?? '',
+              r['PAGE_VIEWS']             ?? '',
+              r['UNITS_ORDERED']         ?? '',
+              r['ORDERED_PRODUCT_SALES'] ?? '',
+              r['CONVERSION_RATE']       ?? '',
             ]
       );
 
@@ -240,41 +242,51 @@ module.exports = async (req, res) => {
         const tYearNum  = parseInt(tYear,  10);
 
         const asinRows = monthAsinRows[targetMonth] || [];
-        const brandRows = asinRows.filter(row => {
+
+        // Sum per ASIN (defensive — normally one row per ASIN per report,
+        // but sum rather than overwrite in case Amazon ever sends more).
+        const perAsin = new Map(); // ASIN -> { sessions, pageViews, unitsOrdered, orderedProductSales }
+        for (const row of asinRows) {
           const asin = (row.childAsin || row.parentAsin || '').toUpperCase();
-          return asinSet.has(asin);
-        });
+          if (!asinMap.has(asin)) continue; // not this brand's ASIN
 
-        console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — ${brandRows.length} matching SKU rows`);
-
-        let sessions = 0, pageViews = 0, unitsOrdered = 0, orderedProductSales = 0;
-        for (const row of brandRows) {
-          sessions            += parseInt(row.trafficByAsin?.sessions ?? 0, 10) || 0;
-          pageViews           += parseInt(row.trafficByAsin?.pageViews ?? 0, 10) || 0;
-          unitsOrdered        += parseInt(row.salesByAsin?.unitsOrdered ?? 0, 10) || 0;
-          orderedProductSales += parseFloat(row.salesByAsin?.orderedProductSales?.amount ?? 0) || 0;
-        }
-        orderedProductSales = round2(orderedProductSales);
-        const conversionRate = sessions > 0 ? round2((unitsOrdered / sessions) * 100) : 0;
-
-        console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — sessions=${sessions} units=${unitsOrdered} conv=${conversionRate}%`);
-
-        const newRow = [tMonthNum, tYearNum, sessions, pageViews, unitsOrdered, orderedProductSales, conversionRate];
-
-        const idx = workingRows.findIndex(r =>
-          parseInt(r[0], 10) === tMonthNum &&
-          parseInt(r[1], 10) === tYearNum
-        );
-
-        if (idx >= 0) {
-          workingRows[idx] = newRow;
-          console.log(`[sync-business-report-process] ${brand.id} — overwrote ${targetMonth}`);
-        } else {
-          workingRows.push(newRow);
-          console.log(`[sync-business-report-process] ${brand.id} — appended ${targetMonth}`);
+          if (!perAsin.has(asin)) perAsin.set(asin, { sessions: 0, pageViews: 0, unitsOrdered: 0, orderedProductSales: 0 });
+          const acc = perAsin.get(asin);
+          acc.sessions            += parseInt(row.trafficByAsin?.sessions ?? 0, 10) || 0;
+          acc.pageViews           += parseInt(row.trafficByAsin?.pageViews ?? 0, 10) || 0;
+          acc.unitsOrdered        += parseInt(row.salesByAsin?.unitsOrdered ?? 0, 10) || 0;
+          acc.orderedProductSales += parseFloat(row.salesByAsin?.orderedProductSales?.amount ?? 0) || 0;
         }
 
-        brandResults.push({ month: targetMonth, sessions, unitsOrdered, conversionRate });
+        // Every ASIN in this brand's catalog gets a row, even if the report
+        // had zero traffic for it — otherwise "no row" is ambiguous between
+        // "zero sessions" and "not synced yet."
+        let brandTotalSessions = 0, brandTotalUnits = 0;
+        for (const [asin, sku] of asinMap.entries()) {
+          const acc = perAsin.get(asin) || { sessions: 0, pageViews: 0, unitsOrdered: 0, orderedProductSales: 0 };
+          const orderedProductSales = round2(acc.orderedProductSales);
+          const conversionRate = acc.sessions > 0 ? round2((acc.unitsOrdered / acc.sessions) * 100) : 0;
+
+          brandTotalSessions += acc.sessions;
+          brandTotalUnits    += acc.unitsOrdered;
+
+          const newRow = [tMonthNum, tYearNum, asin, sku, acc.sessions, acc.pageViews, acc.unitsOrdered, orderedProductSales, conversionRate];
+
+          const idx = workingRows.findIndex(r =>
+            parseInt(r[0], 10) === tMonthNum &&
+            parseInt(r[1], 10) === tYearNum &&
+            (r[2] || '').toUpperCase() === asin
+          );
+
+          if (idx >= 0) {
+            workingRows[idx] = newRow;
+          } else {
+            workingRows.push(newRow);
+          }
+        }
+
+        console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — ${asinMap.size} ASIN rows written, sessions=${brandTotalSessions} units=${brandTotalUnits}`);
+        brandResults.push({ month: targetMonth, asinCount: asinMap.size, sessions: brandTotalSessions, unitsOrdered: brandTotalUnits });
       }
 
       workingRows.sort((a, b) => {
@@ -282,7 +294,9 @@ module.exports = async (req, res) => {
         const by = parseInt(b[1], 10) || 0;
         const am = parseInt(a[0], 10) || 0;
         const bm = parseInt(b[0], 10) || 0;
-        return ay !== by ? ay - by : am - bm;
+        if (ay !== by) return ay - by;
+        if (am !== bm) return am - bm;
+        return (a[2] || '').localeCompare(b[2] || ''); // ASIN, for stable ordering within a month
       });
 
       await replaceRows(sheets.businessReport, brand.tabName, HEADERS, workingRows, token);
@@ -322,16 +336,24 @@ const round2 = n  => Math.round(n * 100) / 100;
 
 // Products Cache is a daily-snapshot cron — every ASIN repeats once per
 // sync date, so only the most recent date's rows should count. Column C
-// is `asin` (confirmed via screenshot, 2026-07-14).
-async function getBrandAsinSet(brand) {
+// is `asin`, column B is `sku` (confirmed via screenshot, 2026-07-14).
+// Returns a Map so we get both the brand-membership check AND the SKU to
+// write per row, in one read.
+async function getBrandAsinMap(brand) {
   try {
     const rows = await readRows(sheets.products, brand.tabName);
-    if (!rows || !rows.length) return new Set();
+    if (!rows || !rows.length) return new Map();
     const latestDate = rows.reduce((max, r) => ((r['date'] || '') > max ? r['date'] : max), '');
     const latestRows = latestDate ? rows.filter(r => r['date'] === latestDate) : rows;
-    return new Set(latestRows.map(r => (r['asin'] || '').trim().toUpperCase()).filter(Boolean));
+    const map = new Map();
+    latestRows.forEach(r => {
+      const asin = (r['asin'] || '').trim().toUpperCase();
+      const sku  = (r['sku']  || '').trim();
+      if (asin) map.set(asin, sku);
+    });
+    return map;
   } catch (err) {
     console.warn(`[sync-business-report-process] ${brand.id} — failed to read Products Cache tab:`, err.message);
-    return new Set();
+    return new Map();
   }
 }
