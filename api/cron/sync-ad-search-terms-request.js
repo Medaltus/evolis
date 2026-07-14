@@ -86,7 +86,7 @@ module.exports = async (req, res) => {
       { label: 'sb_prev', reportTypeId: 'sbSearchTerm', adProduct: 'SPONSORED_BRANDS',   dateRange: prev, columns: SB_COLUMNS },
     ];
 
-    const STAGGER_MS = 1500;
+    const STAGGER_MS = 6000;
     const reportIds  = {};
     for (let i = 0; i < jobs.length; i++) {
       if (i > 0) await sleep(STAGGER_MS);
@@ -142,7 +142,7 @@ module.exports = async (req, res) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 async function requestReportWithRetry(token, profileId, reportTypeId, adProduct, dateRange, groupBy, columns, label) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -173,7 +173,7 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
 
     const isThrottled = statusCode === 429 || body?.code === '429';
     if (isThrottled && attempt < MAX_RETRIES) {
-      const waitSec = retryAfterSec ?? (2 * attempt);
+      const waitSec = retryAfterSec ?? (2 * Math.pow(2, attempt - 1));
       console.warn(`[sync-ad-search-terms-request] ${label} throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${waitSec}s`);
       await sleep(waitSec * 1000);
       continue;
