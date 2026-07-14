@@ -3646,7 +3646,19 @@ async function initSns() {
       const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,''), 10);
       const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,''), 10);
       const rev     = parseFloat((cols[revenueIdx] || '').replace(/^"|"$/g,'').replace(/[$,]/g,'')) || 0;
-      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
     }
 
     // Last full month = last full calendar month relative to current year param
@@ -4090,7 +4102,19 @@ async function initSns() {
       const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
       const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
-      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
     }
     console.log('[WebChart][qa] total parsed rows:', parsed.length, '— last 4 parsed rows:', JSON.stringify(parsed.slice(-4)), '— first 4 parsed rows:', JSON.stringify(parsed.slice(0, 4)));
     console.log('[WebChart][qa] raw header row:', headers.join(' | '));
@@ -4560,7 +4584,13 @@ async function initSns() {
           const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
           const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
           const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
-          if (yr && mo >= 1 && mo <= 12) rows.push({ year: yr, month: mo, revenue: rev });
+          if (yr && mo >= 1 && mo <= 12) {
+            if (yr < 2015 || yr > 2035) {
+              console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source). Revenue was:', rev);
+            } else {
+              rows.push({ year: yr, month: mo, revenue: rev });
+            }
+          }
         }
         return rows;
       }
@@ -4841,7 +4871,19 @@ async function initSns() {
       const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
       const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
-      if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
     }
 
     const now       = new Date();
@@ -7456,7 +7498,13 @@ async function loadAuditResultsFromSheet() {
           const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
           const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
           const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
-          if (yr && mo >= 1 && mo <= 12) rows.push({ year: yr, month: mo, revenue: rev });
+          if (yr && mo >= 1 && mo <= 12) {
+            if (yr < 2015 || yr > 2035) {
+              console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source). Revenue was:', rev);
+            } else {
+              rows.push({ year: yr, month: mo, revenue: rev });
+            }
+          }
         }
         return rows;
       }
