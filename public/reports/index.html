@@ -6639,14 +6639,7 @@ async function loadAuditResultsFromSheet() {
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
     // Force any 0×0 (hidden-tab) canvas ancestor visible so it has a real
-    // on-screen size to capture at all — but nothing more than that. The
-    // last two rounds tried to force every chart to an artificially taller
-    // capture height (first a fixed px, then a computed target aspect
-    // ratio), which required compensating axis-font scaling and introduced
-    // a resize-timing bug that left charts only partially drawn. Simpler
-    // and more reliable: just capture each chart at whatever size it
-    // already renders at on the live dashboard — that sizing already looks
-    // right, so there's nothing to compensate for. Per Jaclyn 2026-07-14.
+    // on-screen size to capture at all.
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
@@ -6664,27 +6657,49 @@ async function loadAuditResultsFromSheet() {
     });
 
     console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to size 0×0 chart canvases');
+    // Let the browser actually settle the layout from any display:none →
+    // block changes above before reading container sizes for real.
     await new Promise(function (r) { requestAnimationFrame(r); });
-    varNames.forEach(function (varName) {
-      const chart = window[varName];
-      if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
-    });
-    // Let the browser actually finish the layout pass resize() just
-    // triggered before touching the charts again, then force a full
-    // no-animation redraw — resize() can trigger Chart.js's normal
-    // animated re-render (grid/axes paint first, datasets animate in over
-    // several frames), so capturing too soon grabs a chart mid-animation.
-    // update('none') paints the complete final frame immediately with no
-    // animation to race against.
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { setTimeout(r, 30); });
+
+    // THE ACTUAL FIX, confirmed by hard evidence this time (not a guess):
+    // the per-page QA log showed every single chart's displayed width was
+    // correctly, uniformly 686px — proving the display/CSS layer was never
+    // the problem. Yet the source PNG's own drawn content still only filled
+    // a fraction of its declared canvas width. That can only mean Chart.js's
+    // resize() was carrying over stale internal scale/geometry computed
+    // against an earlier, smaller container size — no amount of waiting
+    // before calling resize() fixes that, because resize() itself is the
+    // thing re-using bad state. Destroying each chart and constructing a
+    // brand new instance — AFTER the container is already at its real,
+    // final size — means there is no prior state to inherit at all; a new
+    // Chart.js instance reads the container's current size exactly once,
+    // correctly, by definition. animation:false so the fresh instance's
+    // first render is already its complete final frame, not a mid-animation
+    // one. The chart's live .data/.options are reused as-is (including
+    // every prior customization: legend styling, colors, scale formatting),
+    // only animation is overridden. Confirmed 2026-07-14.
+    const rebuilt = {}; // varName -> { type, data, options } of the ORIGINAL, for restoring afterward
     varNames.forEach(function (varName) {
-      const chart = window[varName];
-      if (chart && typeof chart.update === 'function') { try { chart.update('none'); } catch (e) { /* noop */ } }
+      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      const oldChart = window[varName];
+      if (!canvas || !oldChart) return;
+      try {
+        const type = oldChart.config.type;
+        const data = oldChart.data;
+        const originalOptions = oldChart.options;
+        rebuilt[varName] = { type: type, data: data, options: originalOptions };
+        oldChart.destroy();
+        window[varName] = new Chart(canvas, { type: type, data: data, options: Object.assign({}, originalOptions, { animation: false }) });
+      } catch (e) {
+        console.warn('[pdf-export] could not rebuild', varName, '— capturing existing instance as-is:', e.message);
+      }
     });
+    // A fresh Chart.js instance's constructor draws synchronously, but give
+    // it one frame of margin before reading pixels regardless.
     await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { setTimeout(r, 50); });
+    await new Promise(function (r) { setTimeout(r, 30); });
 
     const images = {};
     varNames.forEach(function (varName) {
@@ -6701,8 +6716,19 @@ async function loadAuditResultsFromSheet() {
       console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', img ? img.length : 0, '— datasets:', dataInfo);
     });
 
-    // Put every override back exactly as found, then let Chart.js resize
-    // back down for whichever tab is actually visible right now.
+    // Rebuild each chart back to its TRUE original config (real animation
+    // setting restored) so the live dashboard isn't left with a
+    // permanently-de-animated chart, then restore ancestor visibility.
+    varNames.forEach(function (varName) {
+      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      const orig = rebuilt[varName];
+      const currentChart = window[varName];
+      if (!canvas || !orig || !currentChart) return;
+      try {
+        currentChart.destroy();
+        window[varName] = new Chart(canvas, { type: orig.type, data: orig.data, options: orig.options });
+      } catch (e) { /* noop */ }
+    });
     restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
     await new Promise(function (r) { requestAnimationFrame(r); });
     varNames.forEach(function (varName) {
