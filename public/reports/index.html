@@ -1162,25 +1162,25 @@ As inventory availability improves, the current sales mix provides a strong foun
           <div class="ms-value">10.4%</div>
           <div class="ms-sub">↑ from 8.6% Apr</div>
         </div>
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-active-skus">
           <div class="ms-label">Active SKUs</div>
-          <div class="ms-value">12</div>
-          <div class="ms-sub">with sales this month</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
         <div class="metric-strip-card">
           <div class="ms-label">Top 50 Organic</div>
           <div class="ms-value">18</div>
           <div class="ms-sub">keywords ranked</div>
         </div>
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-peak-month">
           <div class="ms-label">Peak Month</div>
-          <div class="ms-value">Mar '26</div>
-          <div class="ms-sub">highest units sold</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-total-skus">
           <div class="ms-label">Total SKUs</div>
-          <div class="ms-value">24</div>
-          <div class="ms-sub">in active catalog</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
       </div>
 
@@ -1194,11 +1194,9 @@ As inventory availability improves, the current sales mix provides a strong foun
       <div class="glance-grid">
         <div class="card">
           <div class="card-title">Brand at a Glance</div>
-          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Reverse Shampoo Travel Size is the #1 SKU by units — 59 units on Amazon in May</div></div>
-          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Website rebounded +27% MOM driven by subscription renewals and organic traffic</div></div>
-          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Subscribe &amp; Save retention held at 70% (90-day) — above category average</div></div>
-          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Ad impressions down 38% MOM — organic units increased 8% as a result</div></div>
-          <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Promote and Reverse Activators continue as top performers across all channels</div></div>
+          <div id="glance-list">
+            <div class="glance-item"><div class="glance-dot"></div><div class="glance-text">Loading…</div></div>
+          </div>
         </div>
         <div class="card">
           <div class="card-title">This Month's Priority Actions</div>
@@ -5024,28 +5022,10 @@ async function initSns() {
     // Stewardship and SNS are plain functions defined at script scope
     if (typeof window.initStewardshipLive === 'function') window.initStewardshipLive();
     if (typeof initSns         === 'function') initSns();
-    // Insights overview — units per month bar chart (solid, all channels combined)
-    (function() {
-      const ctx = document.getElementById('chart-ins-units');
-      if (!ctx) return;
-      new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],
-          datasets: [
-            { label:'Units Sold', data:[285,275,325,243,307,348,222,268,304,374,358,387],
-              backgroundColor:'#001f60', borderRadius:4, barPercentage:0.75 }
-          ]
-        },
-        options: { responsive:true, maintainAspectRatio:false,
-          plugins:{ legend:{ display:false } },
-          scales: {
-            x:{ grid:{ display:false } },
-            y:{ grid:{ color:'rgba(0,0,0,.04)' }, ticks:{ callback: v => v } }
-          }
-        }
-      });
-    })();
+    // Insights overview — units chart, Active/Peak/Total SKU KPIs, Brand at a Glance.
+    // Defined later in the file (needs INSIGHTS_SHEET_ID etc which are declared
+    // further down) and exposed on window so it can be called from here.
+    if (typeof window.initInsightsOverview === 'function') window.initInsightsOverview();
   });
 
 })();
@@ -5107,6 +5087,245 @@ const SKU_KW_GID_MAP = {
   'EVO0009': '1211203597',
 };
 const LISTING_AUDIT_EVOLIS_GID = '2075287627';
+
+// ═══════════════════════════════════════════════════════════════════
+// INSIGHTS OVERVIEW — units chart, Active/Peak/Total SKU KPIs, and
+// Brand at a Glance, pulled live instead of hardcoded.
+//
+// Sources:
+//   - Stewardship Summary sheet (units, col J) → units chart, Peak Month
+//   - Amazon Products Cache sheet (evolis tab) → Total SKUs
+//   - sync-orders sheet                        → Active SKUs (per-ASIN units)
+//   - Insights + Listing Audit sheets          → Brand at a Glance
+//
+// Uses the last full completed calendar month everywhere, matching the
+// getLastFullMonth() convention used by the rest of this dashboard — NOT
+// a literal partial tally of the month still in progress.
+//
+// Deferred (not built here — see conversation): Total Sessions and
+// Blended Conv % (no sessions data exists in any sheet yet — blocked on
+// the Business Reports cron), Top 50 Organic (Helium 10 MCP automation
+// not wired up yet), and This Month's Priority Actions (waiting on
+// severity flags to be added to the listing audit cron).
+// ═══════════════════════════════════════════════════════════════════
+
+const OV_SUMMARY_SHEET_ID        = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0';
+const OV_SUMMARY_GID             = '1762221100';  // evolis tab
+const OV_PRODUCTS_CACHE_SHEET_ID = '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s';
+const OV_PRODUCTS_CACHE_GID      = '1672819862';  // evolis tab
+const OV_ORDER_SYNC_SHEET_ID     = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (same sheet the Sales tab uses)
+const OV_ORDER_SYNC_GID          = '1163928587';
+
+function ovCsvUrl(id, gid) {
+  return 'https://docs.google.com/spreadsheets/d/' + id + '/export?format=csv&gid=' + gid + '&_cb=' + Date.now();
+}
+
+function ovGetLastFullMonth() {
+  const now = new Date();
+  let year = now.getFullYear(), month = now.getMonth(); // 0-indexed = last month's 1-indexed number
+  if (month === 0) { month = 12; year--; }
+  return { year, month };
+}
+
+function ovNormalizeDate(val) {
+  if (!val) return '';
+  if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+  const parts = val.split('/');
+  if (parts.length === 3) {
+    const m = parts[0].padStart(2, '0');
+    const d = parts[1].padStart(2, '0');
+    const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  return val;
+}
+
+const OV_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ── Units chart + Peak Month (peak within the displayed 12-month window) ──
+async function ovLoadUnitsAndPeakMonth() {
+  const { year, month } = ovGetLastFullMonth();
+  try {
+    const csv = await fetch(ovCsvUrl(OV_SUMMARY_SHEET_ID, OV_SUMMARY_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { console.warn('[InsightsOverview] summary sheet returned no rows'); return null; }
+
+    const months = [];
+    let y = year, m = month;
+    for (let i = 0; i < 12; i++) { months.unshift({ year: y, month: m }); m--; if (m === 0) { m = 12; y--; } }
+
+    const findRow = (yy, mm) => rows.find(r => parseInt(r.year, 10) === yy && parseInt(r.month, 10) === mm);
+    const labels = months.map(({ month: mm }) => OV_MONTH_ABBR[mm - 1]);
+    const data = months.map(({ year: yy, month: mm }) => { const r = findRow(yy, mm); return r ? (parseInt(r.units, 10) || 0) : 0; });
+
+    const ctx = document.getElementById('chart-ins-units');
+    if (ctx) {
+      if (window._insUnitsChart) window._insUnitsChart.destroy();
+      window._insUnitsChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Units Sold', data, backgroundColor: '#001f60', borderRadius: 4, barPercentage: 0.75 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { grid: { color: 'rgba(0,0,0,.04)' }, ticks: { callback: v => v } } },
+        },
+      });
+    }
+
+    // Peak Month — highest bar within the displayed 12-month window.
+    let peakIdx = -1, peakVal = -1;
+    data.forEach((v, i) => { if (v > peakVal) { peakVal = v; peakIdx = i; } });
+    const peakEl = document.getElementById('ms-peak-month');
+    if (peakEl && peakIdx >= 0) {
+      const peakMonth = months[peakIdx];
+      peakEl.querySelector('.ms-value').textContent = `${OV_MONTH_ABBR[peakMonth.month - 1]} '${String(peakMonth.year).slice(2)}`;
+      peakEl.querySelector('.ms-sub').textContent = 'highest units sold';
+    }
+
+    return { year, month };
+  } catch (err) {
+    console.warn('[InsightsOverview] units/peak month failed:', err.message);
+    return null;
+  }
+}
+
+// ── Total SKUs — DISCOVERABLE listings as of the most recent daily snapshot ──
+// (Assumption: "in active catalog" = currently live on Amazon. This sheet is
+// a daily cron snapshot, so every SKU repeats once per sync date — filtering
+// to only the latest date avoids inflating the count by however many days of
+// history are in the sheet. Flag if you'd rather count every catalog row
+// regardless of status.)
+async function ovLoadTotalSkus() {
+  const totalEl = document.getElementById('ms-total-skus');
+  try {
+    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { if (totalEl) totalEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+
+    const latestDate = rows.reduce((max, r) => (r.date && r.date > max ? r.date : max), '');
+    const latestRows = rows.filter(r => r.date === latestDate);
+    const discoverable = latestRows.filter(r => (r.status || '').toUpperCase().includes('DISCOVERABLE'));
+
+    if (totalEl) {
+      totalEl.querySelector('.ms-value').textContent = String(discoverable.length);
+      totalEl.querySelector('.ms-sub').textContent = 'in active catalog';
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] total SKUs failed:', err.message);
+    if (totalEl) totalEl.querySelector('.ms-sub').textContent = 'Error loading';
+  }
+}
+
+// ── Active SKUs — distinct ASINs with units > 0 in the target month ──
+// Same filtering rules (exclude cancelled/pending, exclude Vine) as the
+// Sales tab's top-products table, so the two numbers stay consistent.
+async function ovLoadActiveSkus(year, month) {
+  const activeEl = document.getElementById('ms-active-skus');
+  if (!year || !month) { if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+  try {
+    const csv = await fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+
+    function unitsByAsin(yy, mm) {
+      const prefix = `${yy}-${String(mm).padStart(2, '0')}`;
+      const out = {};
+      rows.forEach(r => {
+        if (ovNormalizeDate(r.date).substring(0, 7) !== prefix) return;
+        const status = (r.status || '').toLowerCase();
+        if (status === 'cancelled' || status === 'pending') return;
+        if ((r.promotion_ids || '').toLowerCase().includes('vine')) return;
+        const asin = (r.asin || '').trim().toUpperCase();
+        if (!asin) return;
+        const qty = parseInt(r.unit_count, 10) || 0;
+        if (!qty) return;
+        out[asin] = (out[asin] || 0) + qty;
+      });
+      return out;
+    }
+
+    const curr = unitsByAsin(year, month);
+    let prevY = year, prevM = month - 1; if (prevM === 0) { prevM = 12; prevY--; }
+    const prev = unitsByAsin(prevY, prevM);
+    const currCount = Object.keys(curr).length;
+    const prevCount = Object.keys(prev).length;
+
+    if (activeEl) {
+      activeEl.querySelector('.ms-value').textContent = String(currCount);
+      let sub = 'with sales this month';
+      if (prevCount) {
+        const diff = currCount - prevCount;
+        sub = diff === 0 ? 'flat vs last month' : (diff > 0 ? `↑ ${diff} vs last month` : `↓ ${Math.abs(diff)} vs last month`);
+      }
+      activeEl.querySelector('.ms-sub').textContent = sub;
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] active SKUs failed:', err.message);
+    if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'Error loading';
+  }
+}
+
+// ── Brand at a Glance — combination of latest Insights row + Listing Audit ──
+// Deliberately factual/descriptive rather than judgment calls (no severity
+// classification here — that's the deferred listing-audit cron work).
+async function ovLoadBrandGlance() {
+  const listEl = document.getElementById('glance-list');
+  if (!listEl) return;
+  const bullets = [];
+
+  try {
+    const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, INSIGHTS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (rows.length) {
+      const latest = rows[0]; // most-recent-first, same assumption loadInsightsFromSheet makes
+      const organic = safeJson(latest['organic_json']);
+      const ppc     = safeJson(latest['ppc_json']);
+      const listing = safeJson(latest['listing_json']);
+      if (organic && organic.wins && organic.wins[0]) bullets.push(organic.wins[0]);
+      if (ppc && ppc.wins && ppc.wins[0]) bullets.push(ppc.wins[0]);
+      if (organic && organic.wins && organic.wins[1]) bullets.push(organic.wins[1]);
+      if (listing && listing.summary) bullets.push(listing.summary);
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] insights fetch failed:', err.message);
+  }
+
+  try {
+    const csv = await fetch(ovCsvUrl(LISTING_AUDIT_SHEET_ID, LISTING_AUDIT_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    const auditRows = rows.filter(r => r['action'] === 'audit_run' && r['sku']);
+    if (auditRows.length) {
+      const latestBySku = {};
+      auditRows.forEach(r => {
+        const sku = r['sku'], ts = r['audited_at'] || '';
+        if (!latestBySku[sku] || ts > latestBySku[sku]['audited_at']) latestBySku[sku] = r;
+      });
+      const skus = Object.values(latestBySku);
+      const mostRecentTs = skus.reduce((max, r) => (r['audited_at'] > max ? r['audited_at'] : max), '');
+      const dateStr = mostRecentTs ? new Date(mostRecentTs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      bullets.push(`Most recent listing audit${dateStr ? ' (' + dateStr + ')' : ''} covered ${skus.length} SKU${skus.length === 1 ? '' : 's'} — see Listing Audit tab for details`);
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] listing audit fetch failed:', err.message);
+  }
+
+  if (!bullets.length) {
+    listEl.innerHTML = '<div class="glance-item"><div class="glance-dot"></div><div class="glance-text">No insights logged yet.</div></div>';
+    return;
+  }
+
+  listEl.innerHTML = bullets.slice(0, 5).map(b =>
+    '<div class="glance-item"><div class="glance-dot"></div><div class="glance-text">' + b + '</div></div>'
+  ).join('');
+}
+
+window.initInsightsOverview = async function() {
+  const result = await ovLoadUnitsAndPeakMonth();
+  await ovLoadTotalSkus();
+  await ovLoadActiveSkus(result && result.year, result && result.month);
+  await ovLoadBrandGlance();
+};
+
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
 
 function getListingSkill() { try { return atob(LISTING_SKILL_B64); } catch(e) { return ''; } }
