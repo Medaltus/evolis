@@ -609,7 +609,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-kpi-mom.flat{color:var(--muted);}
 .pdfx-card{border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px;}
 .pdfx-card-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:10px;font-family:var(--font-subheader);}
-.pdfx-chart-img{width:100%;display:block;}
+.pdfx-chart-img{width:100%;height:230px;object-fit:contain;display:block;}
 .pdfx-table{width:100%;border-collapse:collapse;font-size:11px;}
 .pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
 .pdfx-table thead th.num{text-align:left;}
@@ -6509,10 +6509,13 @@ async function loadAuditResultsFromSheet() {
     if (!rows.length) {
       return '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:10px 2px;">No sales data for this period.</div>';
     }
+    const MAX_ROWS = 7;
+    const truncated = rows.length > MAX_ROWS;
+    const shownRows = truncated ? rows.slice(0, MAX_ROWS) : rows;
     let thead = '<tr>' + headers.map(function (h, i) {
       return '<th' + (i > 1 ? ' class="num"' : '') + '>' + pdfxEscape(h) + '</th>';
     }).join('') + '</tr>';
-    let tbody = rows.map(function (cells) {
+    let tbody = shownRows.map(function (cells) {
       return '<tr>' + cells.map(function (c, i) {
         const isNum = i > 1;
         let cellHtml;
@@ -6535,7 +6538,8 @@ async function loadAuditResultsFromSheet() {
         return '<td' + (isNum ? ' class="num"' : '') + '>' + cellHtml + '</td>';
       }).join('') + '</tr>';
     }).join('');
-    return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+    return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>' +
+      (truncated ? '<div style="font-size:10px;color:var(--muted);padding:6px 10px 0;font-style:italic;">+ ' + (rows.length - MAX_ROWS) + ' more product' + (rows.length - MAX_ROWS === 1 ? '' : 's') + ' not shown</div>' : '');
   }
 
   // ── Chart image capture ────────────────────────────────────────────────
@@ -7001,6 +7005,19 @@ async function loadAuditResultsFromSheet() {
 
       for (let i = 0; i < pageEls.length; i++) {
         const el = pageEls[i];
+        // Amazon (page 2, the FIRST content page) rendering correctly while
+        // every later page's chart images came out blank — despite all of
+        // them decoding successfully in the one big batch at the top of
+        // this function — is the signature of decoded image readiness not
+        // surviving several sequential heavy (scale:2, full-page) html2canvas
+        // render() calls. Re-decoding each page's own images immediately
+        // before ITS capture (not just once, upfront, for everything)
+        // guards against that regardless of the exact browser mechanism
+        // behind it. This resolves near-instantly if nothing was actually
+        // evicted, so it's cheap insurance either way.
+        const pageImgs = Array.from(el.querySelectorAll('img'));
+        await Promise.all(pageImgs.map(img => (typeof img.decode === 'function') ? img.decode().catch(() => {}) : Promise.resolve()));
+
         const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
         console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
         const imgData = canvas.toDataURL('image/jpeg', 0.97);
