@@ -1,30 +1,52 @@
 /**
  * api/cron/sync-ad-search-terms-process.js
- * Step 2 of 2 — polls for the search term reports requested by
- * sync-ad-search-terms-request.js, downloads them, and writes to
- * SHEET_AD_SEARCH_TERMS — one tab per brand, one row per
- * (search term + matched keyword + match type + ad type).
+ * Step 2 of 2 — checks on the search term reports requested by
+ * sync-ad-search-terms-request.js, downloads any that are ready, and
+ * writes to SHEET_AD_SEARCH_TERMS — one tab per brand, one row per
+ * (search term + matched keyword + match type + ad type + DAY).
+ *
+ * CHANGED (2026-07-14) — two changes:
+ *
+ * 1. Daily grain. Reports are now requested with timeUnit: DAILY (see
+ *    sync-ad-search-terms-request.js), so each row carries its own `date`
+ *    field. Rows are bucketed/upserted by that per-row date, not by the
+ *    report's overall curr/prev period. year/month are still stored
+ *    alongside `date` for convenience, but derived from the row's date.
+ *
+ * 2. Non-blocking polling. The OLD version looped inside a single
+ *    invocation, sleeping for up to POLL_TIMEOUT_MS (240s) waiting for
+ *    COMPLETED. That's the wrong shape for a Vercel serverless function:
+ *    reports can take 5–90 minutes (per Amazon_Ads_Search_Term_API_Guide.md),
+ *    which is far longer than any Vercel execution-time ceiling. Blocking
+ *    and sleeping just gets the function killed by the platform, which
+ *    looks identical to "stuck in PENDING" from the outside — this was
+ *    very likely the real cause of the reports that "never" completed.
+ *
+ *    Now each invocation makes ONE status check per not-yet-processed
+ *    report, persists status/processed flags to _meta, and returns
+ *    immediately. Progress happens across MULTIPLE invocations — schedule
+ *    this endpoint to run every ~5 minutes in vercel.json (instead of the
+ *    old single one-off run ~10-15 min after the request step) until
+ *    st_report_status flips to PROCESSED. Each report is downloaded and
+ *    written to the sheet at most once (tracked via st_processed_<label>).
  *
  * SP and SB report different native columns for the same concepts (see
  * sync-ad-search-terms-request.js for the full confirmed column lists).
  * This step normalizes both into the same output shape:
  *   search_term, keyword, match_type, ad_type, campaign_name,
- *   ad_group_name, year, month, impressions, clicks, ctr, cost, cpc, cpm,
- *   purchases, sales, acos, conversion_rate, current_bid, last_updated
+ *   ad_group_name, date, year, month, impressions, clicks, ctr, cost, cpc,
+ *   cpm, purchases, sales, acos, conversion_rate, current_bid, last_updated
  *
- * CPC, ACOS, conversion rate, and CTR are taken directly from SP's report
- * where available (costPerClick, acosClicks14d, purchaseClickRate14d,
- * clickThroughRate); for SB, which has no such direct columns, they're
- * derived from cost/clicks/sales/purchases/impressions. CPM is always
- * derived (cost ÷ impressions × 1000) — neither report has it as a
- * literal column.
+ * Conversion rate: SP reports it directly (purchaseClickRate14d, requested
+ * as a column in sync-ad-search-terms-request.js) so it's used as-is. SB
+ * has no equivalent column, so it's calculated here as
+ * (purchases / clicks) * 100. Both paths already existed in the prior
+ * version of this file — unchanged by the daily-grain rewrite.
  *
- * Upsert, not full replace: existing rows for months OUTSIDE this run's
- * curr/prev window are preserved. Only curr and prev month's rows get
- * overwritten — same accumulate-history pattern used elsewhere in this
- * codebase (e.g. sync-subscriptions.js).
- *
- * Runs a few minutes after sync-ad-search-terms-request.
+ * Upsert, not full replace: rows are keyed by
+ * (search_term, keyword, match_type, ad_type, date), so re-running this
+ * for a report that's already been processed, or for a different report,
+ * never touches unrelated dates.
  */
 
 const { getAdToken }                                   = require('../_spauth');
@@ -38,14 +60,19 @@ const META_TAB               = '_meta';
 
 const HEADERS = [
   'search_term', 'keyword', 'match_type', 'ad_type',
-  'campaign_name', 'ad_group_name', 'year', 'month',
+  'campaign_name', 'ad_group_name', 'date', 'year', 'month',
   'impressions', 'clicks', 'ctr', 'cost', 'cpc', 'cpm',
   'purchases', 'sales', 'acos', 'conversion_rate', 'current_bid',
   'last_updated',
 ];
 
-const POLL_TIMEOUT_MS  = 240_000;
-const POLL_INTERVAL_MS = 10_000;
+// One check per invocation, no sleeping — see header comment.
+const LABELS = [
+  { label: 'sp_curr', adType: 'SP' },
+  { label: 'sb_curr', adType: 'SB' },
+  { label: 'sp_prev', adType: 'SP' },
+  { label: 'sb_prev', adType: 'SB' },
+];
 
 // Same brand-matching list as sync-advertising-process.js, kept in sync
 // intentionally — if that list changes, update both places.
@@ -98,111 +125,142 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
-  const spCurrId  = meta['st_report_id_sp_curr'];
-  const sbCurrId  = meta['st_report_id_sb_curr'];
-  const spPrevId  = meta['st_report_id_sp_prev'];
-  const sbPrevId  = meta['st_report_id_sb_prev'];
   const profileId = meta['st_profile_id'];
-
-  if (!spCurrId && !sbCurrId && !spPrevId && !sbPrevId) {
+  const hasAnyReportId = LABELS.some(({ label }) => meta[`st_report_id_${label}`]);
+  if (!hasAnyReportId) {
     return res.status(400).json({ error: 'No search term report IDs found in _meta — did sync-ad-search-terms-request run?' });
   }
 
   if (meta['st_report_status'] === 'PROCESSED' && !req.query.force) {
-    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-poll anyway (e.g. if this got marked processed before any report actually finished).' });
+    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-check anyway.' });
   }
 
   const token = await getAdToken();
-
-  console.log('[sync-ad-search-terms-process] polling reports');
-  const [spCurrRows, sbCurrRows, spPrevRows, sbPrevRows] = await Promise.all([
-    spCurrId ? pollAndDownload(spCurrId, token, profileId) : [],
-    sbCurrId ? pollAndDownload(sbCurrId, token, profileId) : [],
-    spPrevId ? pollAndDownload(spPrevId, token, profileId) : [],
-    sbPrevId ? pollAndDownload(sbPrevId, token, profileId) : [],
-  ]);
-
-  const periods = [
-    { label: 'curr', rows: [...(spCurrRows || []).map(r => ({ ...r, adType: 'SP' })), ...(sbCurrRows || []).map(r => ({ ...r, adType: 'SB' }))], endDate: meta['st_end_date_curr'] },
-    { label: 'prev', rows: [...(spPrevRows || []).map(r => ({ ...r, adType: 'SP' })), ...(sbPrevRows || []).map(r => ({ ...r, adType: 'SB' }))], endDate: meta['st_end_date_prev'] },
-  ];
-
+  const metaUpdates = {}; // KEY -> VALUE, applied once at the end
   const results = [];
 
-  for (const period of periods) {
-    if (period.rows.length === 0) {
-      console.log(`[sync-ad-search-terms-process] ${period.label} — no rows`);
+  for (const { label, adType } of LABELS) {
+    const reportId = meta[`st_report_id_${label}`];
+    if (!reportId) continue;
+
+    const alreadyProcessed = meta[`st_processed_${label}`] === 'true';
+    if (alreadyProcessed) {
+      results.push({ label, status: 'already_processed' });
       continue;
     }
 
-    const { year, month } = yearMonthFromEndDate(period.endDate);
-    console.log(`[sync-ad-search-terms-process] ${period.label} (${year}-${month}) — ${period.rows.length} raw rows`);
-
-    // Bucket rows by brand via campaign name, same as the campaign-level sync
-    const byBrand = {};
-    period.rows.forEach(row => {
-      const tabName = identifyBrand(row.campaignName);
-      if (!tabName) {
-        console.log(`[sync-ad-search-terms-process] unmatched campaign: "${row.campaignName}"`);
-        return;
-      }
-      if (!byBrand[tabName]) byBrand[tabName] = [];
-      byBrand[tabName].push(row);
-    });
-
-    for (const [tabName, rows] of Object.entries(byBrand)) {
-      try {
-        const normalized = rows.map(row => normalizeRow(row, year, month, now));
-
-        const token1     = await ensureTab(SHEET_AD_SEARCH_TERMS, tabName, HEADERS);
-        const existing    = await readRows(SHEET_AD_SEARCH_TERMS, tabName);
-        const existingObj = existing.map(normalizeExisting);
-
-        // Upsert keyed by (search_term, keyword, match_type, ad_type, year, month) —
-        // preserves every row outside this period untouched.
-        const merged = new Map();
-        existingObj.forEach(r => merged.set(rowKey(r), r));
-        normalized.forEach(r => merged.set(rowKey(r), r));
-
-        const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(SHEET_AD_SEARCH_TERMS, tabName, HEADERS, outRows, token1);
-
-        console.log(`[sync-ad-search-terms-process] ${period.label} ${tabName}: upserted ${normalized.length} rows`);
-        results.push({ period: period.label, brand: tabName, status: 'ok', rows: normalized.length });
-      } catch (err) {
-        console.error(`[sync-ad-search-terms-process] ${period.label} ${tabName} failed:`, err.message);
-        results.push({ period: period.label, brand: tabName, status: 'error', error: err.message });
-      }
-    }
-  }
-
-  // Only mark PROCESSED if at least one report actually produced real data.
-  // Previously this ran unconditionally — a run where every report was
-  // still PENDING would still mark itself done, permanently blocking any
-  // future retry even though nothing was ever written.
-  const gotRealData = results.some(r => r.status === 'ok' && r.rows > 0);
-  if (gotRealData) {
+    let statusResp;
     try {
-      const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
-      const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
-      const mm  = {};
-      ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-      mm['st_report_status'] = ['st_report_status', 'PROCESSED', now];
-      await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
+      statusResp = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
     } catch (err) {
-      console.warn('[sync-ad-search-terms-process] failed to mark processed:', err.message);
+      console.error(`[sync-ad-search-terms-process] ${label} status check failed:`, err.message);
+      results.push({ label, status: 'check_failed', error: err.message });
+      continue;
     }
-  } else {
-    console.warn('[sync-ad-search-terms-process] no real data written this run — leaving status as REQUESTED so a retry can happen');
+
+    const status = statusResp.status;
+    console.log(`[sync-ad-search-terms-process] ${label} (${reportId}): ${status}`);
+    metaUpdates[`st_status_${label}`] = status;
+
+    if (status === 'COMPLETED') {
+      let rows;
+      try {
+        rows = await downloadAdReport(statusResp.url);
+      } catch (err) {
+        console.error(`[sync-ad-search-terms-process] ${label} download failed:`, err.message);
+        results.push({ label, status: 'download_failed', error: err.message });
+        continue; // don't mark processed — retry download next invocation
+      }
+
+      const writeResult = await writeRowsForLabel(rows, adType, now);
+      metaUpdates[`st_processed_${label}`] = 'true';
+      results.push({ label, status: 'ok', ...writeResult });
+
+    } else if (status === 'FAILED' || status === 'CANCELLED') {
+      // Terminal failure states — stop retrying this label, but don't let
+      // it block the other 3 labels from being marked PROCESSED.
+      console.warn(`[sync-ad-search-terms-process] ${label} terminal status: ${status}`);
+      metaUpdates[`st_processed_${label}`] = 'true';
+      results.push({ label, status: status.toLowerCase() });
+
+    } else {
+      // PENDING / IN_PROGRESS / etc — nothing to do, check again next invocation.
+      results.push({ label, status: 'pending' });
+    }
   }
 
-  res.status(200).json({ synced: results, timestamp: now });
+  // Persist per-label status/processed flags.
+  try {
+    const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
+    const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
+    const mm  = {};
+    ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+    Object.entries(metaUpdates).forEach(([k, v]) => { mm[k] = [k, v, now]; });
+
+    // Overall PROCESSED only once every requested label has been processed
+    // (successfully or terminally-failed) — mirrors mm's just-updated values.
+    const allProcessed = LABELS
+      .filter(({ label }) => meta[`st_report_id_${label}`]) // only ones actually requested
+      .every(({ label }) => (mm[`st_processed_${label}`]?.[1] ?? meta[`st_processed_${label}`]) === 'true');
+
+    mm['st_report_status'] = ['st_report_status', allProcessed ? 'PROCESSED' : 'REQUESTED', now];
+    await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
+
+    res.status(200).json({ checked: results, overallStatus: allProcessed ? 'PROCESSED' : 'REQUESTED', timestamp: now });
+  } catch (err) {
+    console.error('[sync-ad-search-terms-process] failed to persist _meta:', err.message);
+    res.status(200).json({ checked: results, warning: 'meta persist failed: ' + err.message, timestamp: now });
+  }
 };
 
-// ── Row normalization ──────────────────────────────────────────────────────
+// ── Sheet writing ────────────────────────────────────────────────────────
+
+async function writeRowsForLabel(rawRows, adType, now) {
+  const rows = (rawRows || []).map(r => ({ ...r, adType }));
+
+  const byBrand = {};
+  let unmatched = 0;
+  rows.forEach(row => {
+    const tabName = identifyBrand(row.campaignName);
+    if (!tabName) { unmatched++; return; }
+    if (!byBrand[tabName]) byBrand[tabName] = [];
+    byBrand[tabName].push(row);
+  });
+  if (unmatched > 0) {
+    console.log(`[sync-ad-search-terms-process] ${unmatched} rows had unmatched campaign names`);
+  }
+
+  const perBrand = [];
+  for (const [tabName, brandRows] of Object.entries(byBrand)) {
+    try {
+      const normalized = brandRows.map(row => normalizeRow(row, now)).filter(Boolean);
+
+      const token1     = await ensureTab(SHEET_AD_SEARCH_TERMS, tabName, HEADERS);
+      const existing    = await readRows(SHEET_AD_SEARCH_TERMS, tabName);
+      const existingObj = existing.map(normalizeExisting);
+
+      // Upsert keyed by (search_term, keyword, match_type, ad_type, date) —
+      // preserves every row for other dates untouched.
+      const merged = new Map();
+      existingObj.forEach(r => merged.set(rowKey(r), r));
+      normalized.forEach(r => merged.set(rowKey(r), r));
+
+      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
+      await replaceRows(SHEET_AD_SEARCH_TERMS, tabName, HEADERS, outRows, token1);
+
+      console.log(`[sync-ad-search-terms-process] ${tabName}: upserted ${normalized.length} rows`);
+      perBrand.push({ brand: tabName, rows: normalized.length });
+    } catch (err) {
+      console.error(`[sync-ad-search-terms-process] ${tabName} failed:`, err.message);
+      perBrand.push({ brand: tabName, error: err.message });
+    }
+  }
+
+  return { rawRows: rows.length, unmatched, perBrand };
+}
 
 function rowKey(r) {
-  return `${r.search_term}||${r.keyword}||${r.match_type}||${r.ad_type}||${r.year}||${r.month}`;
+  return `${r.search_term}||${r.keyword}||${r.match_type}||${r.ad_type}||${r.date}`;
 }
 
 function normalizeExisting(r) {
@@ -211,8 +269,14 @@ function normalizeExisting(r) {
   return r;
 }
 
-function normalizeRow(row, year, month, now) {
+function normalizeRow(row, now) {
   const isSP = row.adType === 'SP';
+
+  const date = row.date || '';
+  if (!date) return null; // shouldn't happen with DAILY timeUnit, but skip rather than write a garbage key
+  const [yearStr, monthStr] = date.split('-');
+  const year  = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
 
   const impressions = parseInt(row.impressions || '0', 10);
   const clicks       = parseInt(row.clicks || '0', 10);
@@ -221,6 +285,8 @@ function normalizeRow(row, year, month, now) {
   const purchases = isSP ? parseInt(row.purchases14d || '0', 10) : parseInt(row.purchases || '0', 10);
   const sales      = isSP ? parseFloat(row.sales14d || '0')       : parseFloat(row.sales || '0');
 
+  // Conversion rate: SP reports this directly (purchaseClickRate14d); SB
+  // has no equivalent column so it's calculated from purchases/clicks.
   const cpc  = isSP && row.costPerClick != null ? parseFloat(row.costPerClick) : (clicks > 0 ? round2(cost / clicks) : 0);
   const ctr  = isSP && row.clickThroughRate != null ? parseFloat(row.clickThroughRate) : (impressions > 0 ? round2((clicks / impressions) * 100) : 0);
   const acos = isSP && row.acosClicks14d != null ? parseFloat(row.acosClicks14d) : (sales > 0 ? round2((cost / sales) * 100) : null);
@@ -236,7 +302,7 @@ function normalizeRow(row, year, month, now) {
     ad_type:            row.adType,
     campaign_name:      row.campaignName || '',
     ad_group_name:      row.adGroupName || '',
-    year, month,
+    date, year, month,
     impressions, clicks, ctr,
     cost: round2(cost), cpc, cpm,
     purchases, sales: round2(sales), acos, conversion_rate: conversionRate,
@@ -245,28 +311,9 @@ function normalizeRow(row, year, month, now) {
   };
 }
 
-function yearMonthFromEndDate(endDateStr) {
-  const d = new Date(endDateStr);
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
-}
-
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
-// ── Report polling/download (same pattern as sync-advertising-process.js) ──
-
-async function pollAndDownload(reportId, token, profileId) {
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const resp   = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
-    const status = resp.status;
-    console.log(`[sync-ad-search-terms-process] poll ${reportId}: ${status}`);
-    if (status === 'COMPLETED') return downloadAdReport(resp.url);
-    if (status === 'FAILED')    return [];
-    await sleep(POLL_INTERVAL_MS);
-  }
-  console.warn(`[sync-ad-search-terms-process] ${reportId} not ready after ${POLL_TIMEOUT_MS}ms`);
-  return [];
-}
+// ── Amazon API calls ────────────────────────────────────────────────────
 
 function downloadAdReport(url) {
   return new Promise((resolve, reject) => {
@@ -310,5 +357,3 @@ function adRequest(method, path, token, profileId, body) {
     req.end();
   });
 }
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
