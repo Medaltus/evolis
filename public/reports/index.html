@@ -1152,15 +1152,15 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <!-- 2. Metric strip — 6 cards -->
       <div class="metric-strip">
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-total-sessions">
           <div class="ms-label">Total Sessions</div>
-          <div class="ms-value">557</div>
-          <div class="ms-sub">Amazon · May 2026</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-blended-conv">
           <div class="ms-label">Blended Conv %</div>
-          <div class="ms-value">10.4%</div>
-          <div class="ms-sub">↑ from 8.6% Apr</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
         <div class="metric-strip-card" id="ms-active-skus">
           <div class="ms-label">Active SKUs</div>
@@ -5093,26 +5093,28 @@ const LISTING_AUDIT_EVOLIS_GID = '2075287627';
 // Brand at a Glance, pulled live instead of hardcoded.
 //
 // Sources:
-//   - Stewardship Summary sheet (units, col J) → units chart, Peak Month
-//   - Amazon Products Cache sheet (evolis tab) → Total SKUs
-//   - sync-orders sheet                        → Active SKUs (per-ASIN units)
-//   - Insights + Listing Audit sheets          → Brand at a Glance
+//   - Stewardship Summary sheet (units, col J)   → units chart, Peak Month
+//   - Amazon Products Cache sheet (evolis tab)   → Total SKUs
+//   - sync-orders sheet                          → Active SKUs (per-ASIN units)
+//   - Insights + Listing Audit sheets            → Brand at a Glance
+//   - Business Report sheet (evolis tab)         → Total Sessions, Blended Conv %
 //
 // Uses the last full completed calendar month everywhere, matching the
 // getLastFullMonth() convention used by the rest of this dashboard — NOT
 // a literal partial tally of the month still in progress.
 //
-// Deferred (not built here — see conversation): Total Sessions and
-// Blended Conv % (no sessions data exists in any sheet yet — blocked on
-// the Business Reports cron), Top 50 Organic (Helium 10 MCP automation
-// not wired up yet), and This Month's Priority Actions (waiting on
-// severity flags to be added to the listing audit cron).
+// Deferred (not built here — see conversation): Top 50 Organic (Helium 10
+// automation still landing manually, not on the dashboard's read path yet),
+// and This Month's Priority Actions (waiting on severity flags to be added
+// to the listing audit cron).
 // ═══════════════════════════════════════════════════════════════════
 
 const OV_SUMMARY_SHEET_ID        = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0';
 const OV_SUMMARY_GID             = '1762221100';  // evolis tab
 const OV_PRODUCTS_CACHE_SHEET_ID = '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s';
 const OV_PRODUCTS_CACHE_GID      = '1672819862';  // evolis tab
+const OV_BUSINESS_REPORT_SHEET_ID = '1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww';
+const OV_BUSINESS_REPORT_GID      = '310979287';  // evolis tab — one row per ASIN per month
 const OV_ORDER_SYNC_SHEET_ID     = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (same sheet the Sales tab uses)
 const OV_ORDER_SYNC_GID          = '1163928587';
 
@@ -5319,10 +5321,74 @@ async function ovLoadBrandGlance() {
   ).join('');
 }
 
+// ── Total Sessions + Blended Conv % — summed across all ASIN rows ──
+// Business Report sheet is one row per ASIN per month (see
+// sync-business-report-process.js). Sum SESSIONS and UNITS_ORDERED across
+// every ASIN row for the target month to get the brand-level totals; conv%
+// is derived from those two sums, not averaged from each row's own
+// conversion_rate (averaging per-row percentages would be wrong — a
+// low-traffic ASIN's rate would count as much as a high-traffic one's).
+async function ovLoadSessionsAndConversion(year, month) {
+  const sessEl = document.getElementById('ms-total-sessions');
+  const convEl = document.getElementById('ms-blended-conv');
+  if (!year || !month) {
+    if (sessEl) sessEl.querySelector('.ms-sub').textContent = 'No data';
+    if (convEl) convEl.querySelector('.ms-sub').textContent = 'No data';
+    return;
+  }
+  try {
+    const csv = await fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) {
+      if (sessEl) sessEl.querySelector('.ms-sub').textContent = 'No data';
+      if (convEl) convEl.querySelector('.ms-sub').textContent = 'No data';
+      return;
+    }
+
+    function sumsFor(yy, mm) {
+      const matching = rows.filter(r => parseInt(r.month, 10) === mm && parseInt(r.year, 10) === yy);
+      const sessions = matching.reduce((s, r) => s + (parseInt(r.sessions, 10) || 0), 0);
+      const units    = matching.reduce((s, r) => s + (parseInt(r.units_ordered, 10) || 0), 0);
+      return { sessions, units, rowCount: matching.length };
+    }
+
+    const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const curr = sumsFor(year, month);
+    let prevY = year, prevM = month - 1; if (prevM === 0) { prevM = 12; prevY--; }
+    const prev = sumsFor(prevY, prevM);
+
+    const currConv = curr.sessions > 0 ? (curr.units / curr.sessions) * 100 : 0;
+    const prevConv = prev.sessions > 0 ? (prev.units / prev.sessions) * 100 : 0;
+
+    if (sessEl) {
+      sessEl.querySelector('.ms-value').textContent = curr.sessions.toLocaleString();
+      let sub = `Amazon · ${monthAbbr[month - 1]} ${year}`;
+      if (curr.rowCount === 0) sub = 'No data synced yet';
+      sessEl.querySelector('.ms-sub').textContent = sub;
+    }
+    if (convEl) {
+      convEl.querySelector('.ms-value').textContent = curr.sessions > 0 ? currConv.toFixed(1) + '%' : '—';
+      let sub = 'No data synced yet';
+      if (prev.sessions > 0 && curr.sessions > 0) {
+        const arrow = currConv > prevConv ? '↑' : (currConv < prevConv ? '↓' : '→');
+        sub = `${arrow} from ${prevConv.toFixed(1)}% ${monthAbbr[prevM - 1]}`;
+      } else if (curr.sessions > 0) {
+        sub = `${monthAbbr[month - 1]} ${year}`;
+      }
+      convEl.querySelector('.ms-sub').textContent = sub;
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] sessions/conversion failed:', err.message);
+    if (sessEl) sessEl.querySelector('.ms-sub').textContent = 'Error loading';
+    if (convEl) convEl.querySelector('.ms-sub').textContent = 'Error loading';
+  }
+}
+
 window.initInsightsOverview = async function() {
   const result = await ovLoadUnitsAndPeakMonth();
   await ovLoadTotalSkus();
   await ovLoadActiveSkus(result && result.year, result && result.month);
+  await ovLoadSessionsAndConversion(result && result.year, result && result.month);
   await ovLoadBrandGlance();
 };
 
