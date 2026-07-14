@@ -6570,8 +6570,15 @@ async function loadAuditResultsFromSheet() {
     const images = {};
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      const chart = window[varName];
       images[varName] = pdfxRawChartImg(varName);
-      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', images[varName] ? images[varName].length : 0);
+      let dataInfo = 'no chart';
+      if (chart && chart.data && chart.data.datasets) {
+        dataInfo = chart.data.datasets.map(function (ds) {
+          return (ds.label || '?') + ':' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + 'pts';
+        }).join(', ');
+      }
+      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', images[varName] ? images[varName].length : 0, '— datasets:', dataInfo);
     });
 
     // Put every forced ancestor back exactly as found, then let Chart.js
@@ -6836,7 +6843,7 @@ async function loadAuditResultsFromSheet() {
       if (!window._webLiveInit        && typeof window.initWebLive === 'function')        initPromises.push(window.initWebLive());
       if (!window._walmartLiveInit    && typeof window.initWalmartLive === 'function')     initPromises.push(window.initWalmartLive());
       if (!window._stewardshipLiveInit && typeof window.initStewardshipLive === 'function') initPromises.push(window.initStewardshipLive());
-      if (!window._snsChart           && typeof initSns === 'function')                    initSns();
+      if (!window._snsChart           && typeof initSns === 'function')                    initPromises.push(initSns());
       if (initPromises.length) {
         console.log('[pdf-export] awaiting', initPromises.length, 'lazy chart init(s) before building PDF');
         await Promise.all(initPromises);
