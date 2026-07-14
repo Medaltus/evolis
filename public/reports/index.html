@@ -6634,6 +6634,34 @@ async function loadAuditResultsFromSheet() {
     return '';
   }
 
+  // Every chart shares the same 10px axis-tick font in its own source
+  // config, but each page's layout gives charts different natural
+  // container widths (Sales pages ~2238px full-width vs Stewardship's
+  // ~1091px two-column) — and since every chart ends up displayed at the
+  // SAME fixed ~686px width in the PDF, the wider ones get downscaled much
+  // more than the narrower ones, so the identical 10px source font ends up
+  // looking noticeably smaller on Amazon/Website/Walmart/Subscriptions than
+  // on Investments/Ad Impressions. Scaling the SOURCE font size up in
+  // proportion to how much downscaling THIS chart specifically will
+  // undergo makes the EFFECTIVE size land the same everywhere. Only ever
+  // applied to the temporary capture chart's options, never the live one.
+  // Per Jaclyn 2026-07-14.
+  const PDFX_CARD_WIDTH_PX = 686; // matches pdfxChartBlock's own target display width
+  function pdfxWithScaledAxisFonts(options, captureWidthPx) {
+    const fontScale = captureWidthPx / PDFX_CARD_WIDTH_PX;
+    const scaledSize = Math.max(6, Math.round(10 * fontScale));
+    const origScales = options.scales || {};
+    const newScales = Object.assign({}, origScales);
+    ['x', 'y'].forEach(function (axisKey) {
+      const origAxis = origScales[axisKey] || {};
+      const origTicks = origAxis.ticks || {};
+      newScales[axisKey] = Object.assign({}, origAxis, {
+        ticks: Object.assign({}, origTicks, { font: Object.assign({}, origTicks.font, { size: scaledSize }) })
+      });
+    });
+    return Object.assign({}, options, { scales: newScales });
+  }
+
   async function pdfxCaptureAllChartImages() {
     const restore = []; // [{el, prop, prevValue}] — only ever touches display:none ancestors, nothing chart-related
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
@@ -6700,7 +6728,7 @@ async function loadAuditResultsFromSheet() {
         tempCanvas.style.top = '0';
         tempCanvases.push(tempCanvas);
 
-        const tempOptions = Object.assign({}, liveChart.options, {
+        const tempOptions = Object.assign({}, pdfxWithScaledAxisFonts(liveChart.options, targetW), {
           responsive: false,
           maintainAspectRatio: false,
           animation: false,
