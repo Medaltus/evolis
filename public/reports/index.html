@@ -4092,6 +4092,9 @@ async function initSns() {
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) parsed.push({ year: yr, month: mo, revenue: rev });
     }
+    console.log('[WebChart][qa] total parsed rows:', parsed.length, '— last 4 parsed rows:', JSON.stringify(parsed.slice(-4)), '— first 4 parsed rows:', JSON.stringify(parsed.slice(0, 4)));
+    console.log('[WebChart][qa] raw header row:', headers.join(' | '));
+    console.log('[WebChart][qa] raw last 2 CSV lines (unparsed):', JSON.stringify(lines.slice(-2)));
 
     const now       = new Date();
     const stopYear  = now.getFullYear();
@@ -4574,6 +4577,7 @@ async function initSns() {
         ]);
         const webRevRows = parseRevenueHistoryLocal(webRevCsv);
         const wmtRevRows = parseRevenueHistoryLocal(wmtRevCsv);
+        console.log('[Evolis][qa] % Revenue Invested — target year/month:', year, '/', month, '— webRevRows count:', webRevRows.length, '— last 4:', JSON.stringify(webRevRows.slice(-4)), '— first 4:', JSON.stringify(webRevRows.slice(0, 4)));
         const webRevThisMonth = (webRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
         const wmtRevThisMonth = (wmtRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
         allChannelRevenue = amzRevenueThisMonth + webRevThisMonth + wmtRevThisMonth;
@@ -7018,7 +7022,35 @@ async function loadAuditResultsFromSheet() {
         const pageImgs = Array.from(el.querySelectorAll('img'));
         await Promise.all(pageImgs.map(img => (typeof img.decode === 'function') ? img.decode().catch(() => {}) : Promise.resolve()));
 
-        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+        // Better QA for next time this breaks: log each image's real pixel
+        // data size (naturalWidth/Height) alongside its actual laid-out
+        // size on THIS page right before capture. A blank chart with
+        // naturalWidth>0 but rect width/height 0 means a layout problem;
+        // naturalWidth 0 means the image itself never had real data.
+        pageImgs.forEach((img, idx) => {
+          const rect = img.getBoundingClientRect();
+          console.log('[pdf-export][qa] page', i + 1, 'img#' + idx, '— natural:', img.naturalWidth + 'x' + img.naturalHeight, '— laid out:', Math.round(rect.width) + 'x' + Math.round(rect.height), '— src:', img.src.slice(0, 40));
+        });
+
+        // html2canvas clones the ENTIRE document by default, not just `el`
+        // — it needs the full page for accurate global style computation.
+        // That clone pass was tripping over whatever live-dashboard chart
+        // canvas happened to be 0×0/tainted at that exact moment, and it
+        // wasn't just logging a harmless warning: comparing two consecutive
+        // export runs, the SPECIFIC charts that failed to render matched
+        // exactly which canvases were listed as tainted each time — when
+        // Investments/Impressions were hidden (0×0) they failed and Amazon
+        // rendered; next run Investments/Impressions happened to still be
+        // visible from the last-viewed tab, and THEY rendered while Amazon/
+        // Website/Walmart/Subscriptions (now hidden) failed instead. That's
+        // not noise, that's this. ignoreElements tells html2canvas to skip
+        // every live-dashboard canvas entirely — it only ever needs to see
+        // our own <img>-only #pdfx-root content anyway. Confirmed 2026-07-14.
+        const canvas = await html2canvas(el, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          ignoreElements: (node) => node.tagName === 'CANVAS' && !node.closest('#pdfx-root')
+        });
         console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
         const imgData = canvas.toDataURL('image/jpeg', 0.97);
         if (i > 0) pdf.addPage();
