@@ -97,9 +97,9 @@ nav{flex:1;padding:8px 8px 0;}
 
 /* ── KPI row ── */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:22px;}
-.kpi-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;height:88px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-start;}
-.kpi-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;}
-.kpi-value{font-size:26px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--navy);font-family:var(--font-subheader);}
+.kpi-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px 20px;height:116px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-start;}
+.kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px;}
+.kpi-value{font-size:30px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--navy);font-family:var(--font-subheader);}
 .kpi-value.sm{font-size:20px;}
 .kpi-mom{font-size:14px;margin-top:5px;}
 .kpi-mom.up{color:#1db88a;}
@@ -873,7 +873,7 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
-        <div style="position:relative;height:200px;"><canvas id="chart-amazon"></canvas></div>
+        <div style="position:relative;height:320px;"><canvas id="chart-amazon"></canvas></div>
       </div>
       <div class="card" id="top-products-card">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
@@ -918,7 +918,7 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
-        <div style="position:relative;height:200px;"><canvas id="chart-web"></canvas></div>
+        <div style="position:relative;height:320px;"><canvas id="chart-web"></canvas></div>
       </div>
       <div class="card" id="web-top-products-card">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
@@ -963,7 +963,7 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="card">
         <div class="card-title">Sales Revenue by Month</div>
-        <div style="position:relative;height:200px;"><canvas id="chart-walmart"></canvas></div>
+        <div style="position:relative;height:320px;"><canvas id="chart-walmart"></canvas></div>
       </div>
       <div class="card" id="walmart-top-products-card">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
@@ -3067,18 +3067,145 @@ function renderStewardshipCharts(investData, impressData) {
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v===0?'0':(v/1000).toFixed(v%1000===0?0:1)+'K' } } } }
   });
 }
-function initSns() {
-  window._snsChart = new Chart(document.getElementById('chart-sns'), {
-    type:'bar',
-    data:{
-      labels:['Jan 25','Feb 25','Mar 25','Apr 25','May 25','Jun 25','Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25','Jan 26','Feb 26','Mar 26'],
-      datasets:[
-        { label:'2025', data:[196,183,210,210,209,220,222,212,210,210,204,186,null,null,null], backgroundColor:'#6b7ba2' },
-        { label:'2026', data:[null,null,null,null,null,null,null,null,null,null,null,null,178,163,135], backgroundColor:'#001f60' },
-      ]
-    },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top', align:'start', labels:{ usePointStyle:true, boxWidth:18, padding:16, font:{ size:16 } } } }, scales:{ x:{ grid:{display:false} }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, min:0, max:250 } } }
-  });
+// Subscribe & Save — was fully hardcoded mock data (chart + both KPIs).
+// Now fetches real numbers from two sheets:
+//   • Total/active subscriptions per month → Stewardship Summary sheet
+//     (same spreadsheet already used by initStewardshipLive, different tab)
+//   • Retention % → separate Subscriptions Cache sheet
+// Column names in both tabs are guessed defensively (several plausible
+// variants tried per field) since I can't independently browse the live
+// sheet from here — every fetch logs the actual column headers it found,
+// so if a guess is wrong it's immediately visible in the console rather
+// than requiring another blind round-trip. Per Jaclyn 2026-07-14.
+async function initSns() {
+  const canvas = document.getElementById('chart-sns');
+  if (!canvas) return;
+
+  function csvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  }
+  function looksLikeCsv(t) {
+    t = (t || '').trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+  function splitCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') { inQ = false; }
+        else { cur += ch; }
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+  function csvToRows(text) {
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.length > 0);
+    if (lines.length < 2) return [];
+    const headers = splitCsvLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    return lines.slice(1).map(line => {
+      const cells = splitCsvLine(line);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = (cells[i] || '').trim(); });
+      return row;
+    });
+  }
+  function num(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+    return isNaN(n) ? null : n;
+  }
+  function isEvolisRow(row) {
+    const b = (row.brand || '').toLowerCase().trim();
+    return !row.brand || b === 'evolis' || b.endsWith('volis');
+  }
+
+  // Same spreadsheet as initStewardshipLive's SUMMARY_SHEET_ID, different tab.
+  const TOTALS_SHEET_ID    = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0'; // Stewardship Summary
+  const TOTALS_GID         = '346552515';                                    // per Jaclyn 2026-07-14
+  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache
+  const RETENTION_GID      = '1742224413';                                   // per Jaclyn 2026-07-14
+
+  const kpiValues = document.querySelectorAll('#m-opportunities .kpi-value');
+  const subsKpiEl = kpiValues[0] || null;
+  const retentionKpiEl = kpiValues[1] || null;
+
+  try {
+    const [totalsCsv, retentionCsv] = await Promise.all([
+      fetch(csvUrl(TOTALS_SHEET_ID, TOTALS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis][subscriptions] totals sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis][subscriptions] totals sheet fetch error:', e.message), '')),
+      fetch(csvUrl(RETENTION_SHEET_ID, RETENTION_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis][subscriptions] retention sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis][subscriptions] retention sheet fetch error:', e.message), '')),
+    ]);
+
+    // ── Active Subscriptions: bar chart + KPI ───────────────────────────
+    if (looksLikeCsv(totalsCsv)) {
+      const rows = csvToRows(totalsCsv);
+      console.log('[Evolis][subscriptions] totals sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
+
+      const brandRows = rows.filter(isEvolisRow);
+      const useRows = brandRows.length ? brandRows : rows;
+
+      const withDate = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
+      const sortable = withDate.length > 0 && withDate.every(x => !isNaN(x.y) && !isNaN(x.m));
+      if (sortable) withDate.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+
+      const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const labels = [], values = [];
+      withDate.forEach(x => {
+        const r = x.row;
+        const total = num(r.total_subscriptions ?? r.total_subs ?? r.subscriptions ?? r.active_subscriptions);
+        if (total === null) return;
+        const label = (!isNaN(x.y) && !isNaN(x.m)) ? `${monthAbbr[x.m - 1]} '${String(x.y).slice(2)}` : (r.month_label || r.month || r.date || '');
+        labels.push(label);
+        values.push(total);
+      });
+
+      if (values.length) {
+        const bg = labels.map((_, i) => i >= labels.length - 12 ? '#001f60' : '#6b7ba2');
+        window._snsChart = new Chart(canvas, {
+          type: 'bar',
+          data: { labels, datasets: [{ label: 'Active Subscriptions', data: values, backgroundColor: bg }] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { grid: { display: false } }, y: { grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true } }
+          }
+        });
+        if (subsKpiEl) subsKpiEl.textContent = Math.round(values[values.length - 1]).toLocaleString();
+      } else {
+        console.warn('[Evolis][subscriptions] no total_subscriptions values matched in totals sheet — check TOTALS_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
+      }
+    } else {
+      console.warn('[Evolis][subscriptions] totals sheet did not return CSV (check it is published/shared, and TOTALS_GID is correct).');
+    }
+
+    // ── Subscribe & Save Retention KPI ───────────────────────────────────
+    if (looksLikeCsv(retentionCsv)) {
+      const rows = csvToRows(retentionCsv);
+      console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
+      const brandRow = rows.find(isEvolisRow) || rows[0];
+      let retentionVal = brandRow ? num(brandRow.retention_90 ?? brandRow.retention ?? brandRow.retention_rate ?? brandRow.subscribe_save_retention) : null;
+      if (retentionVal !== null) {
+        // Defensive: sheet might store this as a fraction (0.70) or already
+        // as a whole percent (70). Log the raw value either way so it's
+        // obvious if this heuristic guessed wrong.
+        console.log('[Evolis][subscriptions] raw retention value:', retentionVal);
+        if (retentionVal > 0 && retentionVal <= 1) retentionVal = retentionVal * 100;
+        if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
+      } else {
+        console.warn('[Evolis][subscriptions] no retention value matched in retention sheet — check RETENTION_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
+      }
+    } else {
+      console.warn('[Evolis][subscriptions] retention sheet did not return CSV (check it is published/shared, and RETENTION_GID is correct).');
+    }
+  } catch (err) {
+    console.error('[Evolis][subscriptions] fetch/parse failed:', err);
+  }
 }
 
 // Amazon page initialises via initAmazonLive() on first nav click
