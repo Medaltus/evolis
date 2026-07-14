@@ -770,9 +770,11 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
             <th style="text-align:left;padding:8px 10px;">Website</th>
             <th style="text-align:left;padding:8px 10px;">Walmart</th>
             <th style="text-align:left;padding:8px 10px;">Total Units</th>
+            <th style="text-align:left;padding:8px 10px;">Ads (Amazon)</th>
+            <th style="text-align:left;padding:8px 10px;">Organic</th>
           </tr>
         </thead>
-        <tbody id="ov-products-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
+        <tbody id="ov-products-tbody"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -3165,7 +3167,7 @@ async function initSns() {
 
   // Same spreadsheet as initStewardshipLive's SUMMARY_SHEET_ID, different tab.
   const TOTALS_SHEET_ID    = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0'; // Stewardship Summary
-  const TOTALS_GID         = '346552515';                                    // per Jaclyn 2026-07-14
+  const TOTALS_GID         = '1762221100';                                   // évolis tab — corrected per Jaclyn 2026-07-14 (was 346552515, wrong tab)
   const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache
   const RETENTION_GID      = '1742224413';                                   // per Jaclyn 2026-07-14
 
@@ -3183,24 +3185,35 @@ async function initSns() {
     if (looksLikeCsv(totalsCsv)) {
       const rows = csvToRows(totalsCsv);
       console.log('[Evolis][subscriptions] totals sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
+      console.log('[Evolis][subscriptions] totals sheet total row count (before any filtering):', rows.length);
 
       const brandRows = rows.filter(isEvolisRow);
       const useRows = brandRows.length ? brandRows : rows;
+      console.log('[Evolis][subscriptions] rows after brand filter:', useRows.length, '(', rows.length - useRows.length, 'dropped by brand filter )');
 
       const withDate = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
       const sortable = withDate.length > 0 && withDate.every(x => !isNaN(x.y) && !isNaN(x.m));
       if (sortable) withDate.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+      if (withDate.length) {
+        console.log('[Evolis][subscriptions] full year/month range present in sheet (regardless of whether total_subscriptions is populated):',
+          withDate[0].y + '-' + withDate[0].m, 'to', withDate[withDate.length - 1].y + '-' + withDate[withDate.length - 1].m);
+      }
 
       const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const labels = [], values = [];
+      const skipped = [];
       withDate.forEach(x => {
         const r = x.row;
         const total = num(r.total_subscriptions ?? r.total_subs ?? r.subscriptions ?? r.active_subscriptions);
-        if (total === null) return;
+        if (total === null) { skipped.push(x.y + '-' + x.m); return; }
         const label = (!isNaN(x.y) && !isNaN(x.m)) ? `${monthAbbr[x.m - 1]} '${String(x.y).slice(2)}` : (r.month_label || r.month || r.date || '');
         labels.push(label);
         values.push(total);
       });
+      if (skipped.length) {
+        console.warn('[Evolis][subscriptions] skipped', skipped.length, 'row(s) with no usable total_subscriptions value — these months are NOT in the chart:', skipped.join(', '));
+      }
+      console.log('[Evolis][subscriptions] months actually plotted on the chart:', labels.join(', '));
 
       if (values.length) {
         const bg = labels.map((_, i) => i >= labels.length - 12 ? '#001f60' : '#6b7ba2');
@@ -6724,12 +6737,18 @@ async function loadAuditResultsFromSheet() {
   // Sums unit_count per SKU (stripping the -SF seller-fulfilled suffix so
   // FBA and SF variants of the same product merge into one row — same
   // convention used everywhere else in this dashboard).
-  function unitsBySku(filteredRows) {
+  //
+  // Keyed by ASIN, not SKU — per this project's own convention (each
+  // product has an FBA SKU and a separate "-SF" seller-fulfilled SKU;
+  // grouping by SKU alone silently splits a single product into two rows
+  // and undercounts seller-fulfilled sales). ASIN is the same across both
+  // fulfillment types, so it's the safe key here.
+  function unitsByAsin(filteredRows) {
     const map = {};
     filteredRows.forEach(r => {
-      const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
-      if (!sku) return;
-      map[sku] = (map[sku] || 0) + (parseInt(r.unit_count, 10) || 0);
+      const asin = (r.asin || r.sku || '').trim().toUpperCase();
+      if (!asin) return;
+      map[asin] = (map[asin] || 0) + (parseInt(r.unit_count, 10) || 0);
     });
     return map;
   }
@@ -6808,45 +6827,87 @@ async function loadAuditResultsFromSheet() {
       const heroSkuEl = document.getElementById('ov-hero-skus');
       if (heroSkuEl && skuCount > 0) heroSkuEl.textContent = String(skuCount);
 
-      // -- Combined product table: units per SKU per channel, MTD --
-      const amzUnitsBySku = unitsBySku(amzMtd.filteredRows);
-      const webUnitsBySku = unitsBySku(webMtd.filteredRows);
-      const wmtUnitsBySku = unitsBySku(wmtMtd.filteredRows);
-      const allSkus = new Set([...Object.keys(amzUnitsBySku), ...Object.keys(webUnitsBySku), ...Object.keys(wmtUnitsBySku)]);
+      // -- Combined product table: units per ASIN per channel, MTD, with MOM + Amazon ads/organic split --
+      const amzUnitsByAsin = unitsByAsin(amzMtd.filteredRows);
+      const webUnitsByAsin = unitsByAsin(webMtd.filteredRows);
+      const wmtUnitsByAsin = unitsByAsin(wmtMtd.filteredRows);
+      const amzPrevUnitsByAsin = unitsByAsin(amzPrev.filteredRows);
+      const webPrevUnitsByAsin = unitsByAsin(webPrev.filteredRows);
+      const wmtPrevUnitsByAsin = unitsByAsin(wmtPrev.filteredRows);
+      const allAsins = new Set([...Object.keys(amzUnitsByAsin), ...Object.keys(webUnitsByAsin), ...Object.keys(wmtUnitsByAsin)]);
 
-      let skuNameMap = {};
+      // Product names — col A = ASIN, col C = Name (same lookup sheet/tab
+      // used by the Amazon channel page's own top-sellers table).
+      let asinNameMap = {};
       try {
         const namesCsv = await fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
         if (isCsv(namesCsv)) {
           const lines = namesCsv.trim().split('\n');
           for (let i = 1; i < lines.length; i++) {
             const cols = parseCsvLine(lines[i]);
-            const sku = (cols[1] || '').replace(/^"|"$/g, '').trim().toUpperCase().replace(/-SF$/i, '');
+            const asin = (cols[0] || '').replace(/^"|"$/g, '').trim().toUpperCase();
             const name = (cols[2] || '').replace(/^"|"$/g, '').trim();
-            if (sku && name) skuNameMap[sku] = name;
+            if (asin && name) asinNameMap[asin] = name;
           }
         }
       } catch (e) { console.warn('[Evolis][overview] product name lookup failed:', e.message); }
 
-      const productRows = Array.from(allSkus).map(sku => {
-        const a = amzUnitsBySku[sku] || 0, w = webUnitsBySku[sku] || 0, m = wmtUnitsBySku[sku] || 0;
-        return { sku, name: skuNameMap[sku] || sku, amazon: a, website: w, walmart: m, total: a + w + m };
+      // Ads vs Organic — Amazon only. The ad_orders sheet is pre-aggregated
+      // by whole month, not by day, so this reflects the CURRENT month's ad
+      // units as tracked so far (same caveat as the Ad Spend/ACOS estimate
+      // above) rather than a precise MTD figure. Website/Walmart ad units
+      // use a differently-shaped, non-ASIN-keyed source, so they aren't
+      // merged in here — their units all fall under "Organic" below rather
+      // than being misrepresented as attributed either way.
+      let adUnitsByAsin = {};
+      try {
+        const adOrdersCsv2 = await fetch(sheetCsvUrl('1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI', '158578426') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+        if (isCsv(adOrdersCsv2)) {
+          const adRows2 = parseCsv(adOrdersCsv2).filter(r => parseInt(r.year, 10) === now.getFullYear() && parseInt(r.month, 10) === now.getMonth() + 1);
+          adRows2.forEach(r => {
+            const asin = (r.asin || '').trim().toUpperCase();
+            if (!asin) return;
+            adUnitsByAsin[asin] = (adUnitsByAsin[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+          });
+        }
+      } catch (e) { console.warn('[Evolis][overview] ad units lookup failed:', e.message); }
+
+      function momBadge(curr, prevVal) {
+        if (!prevVal) return '';
+        const p = Math.round(((curr - prevVal) / prevVal) * 100);
+        if (p > 0) return `<span class="tp-mom-up">▲ ${p}%</span>`;
+        if (p < 0) return `<span class="tp-mom-dn">▼ ${Math.abs(p)}%</span>`;
+        return `<span class="tp-mom-flat">—</span>`;
+      }
+      function unitCell(curr, prevVal) {
+        if (!curr) return '<span class="tp-dash">—</span>';
+        return `<span class="tp-units">${curr.toLocaleString()}</span>${momBadge(curr, prevVal)}`;
+      }
+
+      const productRows = Array.from(allAsins).map(asin => {
+        const a = amzUnitsByAsin[asin] || 0, w = webUnitsByAsin[asin] || 0, m = wmtUnitsByAsin[asin] || 0;
+        const aPrev = amzPrevUnitsByAsin[asin] || 0, wPrev = webPrevUnitsByAsin[asin] || 0, mPrev = wmtPrevUnitsByAsin[asin] || 0;
+        const total = a + w + m, totalPrev = aPrev + wPrev + mPrev;
+        const adUnits = Math.min(adUnitsByAsin[asin] || 0, a); // never exceed Amazon's own MTD units
+        const orgUnits = total - adUnits;
+        return { asin, name: asinNameMap[asin] || asin, amazon: a, amazonPrev: aPrev, website: w, websitePrev: wPrev, walmart: m, walmartPrev: mPrev, total, totalPrev, adUnits, orgUnits };
       }).sort((x, y) => y.total - x.total).slice(0, 15);
 
       const tbody = document.getElementById('ov-products-tbody');
       if (tbody) {
         if (!productRows.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
         } else {
-          const cell = n => n > 0 ? `<span class="tp-units">${n.toLocaleString()}</span>` : '<span class="tp-dash">—</span>';
           tbody.innerHTML = productRows.map((r, i) => `
             <tr>
               <td style="padding:7px 10px;">${i + 1}.</td>
               <td style="padding:7px 10px;">${r.name}</td>
-              <td style="padding:7px 10px;">${cell(r.amazon)}</td>
-              <td style="padding:7px 10px;">${cell(r.website)}</td>
-              <td style="padding:7px 10px;">${cell(r.walmart)}</td>
-              <td style="padding:7px 10px;"><span class="tp-units">${r.total.toLocaleString()}</span></td>
+              <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.amazon, r.amazonPrev)}</div></td>
+              <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.website, r.websitePrev)}</div></td>
+              <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.walmart, r.walmartPrev)}</div></td>
+              <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.total, r.totalPrev)}</div></td>
+              <td style="padding:7px 10px;">${r.adUnits > 0 ? `<span class="tp-units">${r.adUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
+              <td style="padding:7px 10px;">${r.orgUnits > 0 ? `<span class="tp-units">${r.orgUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
             </tr>`).join('');
         }
       }
@@ -6935,18 +6996,31 @@ async function loadAuditResultsFromSheet() {
         const row = rows.find(r => r.year === y && r.month === m);
         return row ? row.revenue : 0;
       }
-      const trendLabels = [], trendData = [];
+      const trendLabels = [], amzTrend = [], webTrend = [], wmtTrend = [];
       let ty = now.getFullYear(), tm = now.getMonth();
       for (let i = 0; i < 6; i++) {
         tm -= 1; if (tm === 0) { tm = 12; ty--; }
         trendLabels.unshift(`${monthNames[tm - 1]} '${String(ty).slice(2)}`);
-        trendData.unshift(monthlyRevenue(amzRevRows, ty, tm) + monthlyRevenue(webRevRows, ty, tm) + monthlyRevenue(wmtRevRows, ty, tm));
+        amzTrend.unshift(monthlyRevenue(amzRevRows, ty, tm));
+        webTrend.unshift(monthlyRevenue(webRevRows, ty, tm));
+        wmtTrend.unshift(monthlyRevenue(wmtRevRows, ty, tm));
       }
-      if (trendData.some(v => v > 0)) {
+      if ([...amzTrend, ...webTrend, ...wmtTrend].some(v => v > 0)) {
         window._ovTrendChart = new Chart(document.getElementById('chart-ov-trend'), {
           type: 'line',
-          data: { labels: trendLabels, datasets: [{ label: 'Blended Revenue', data: trendData, borderColor: '#001f60', backgroundColor: 'rgba(0,31,96,0.08)', borderWidth: 2.5, pointRadius: 3, tension: 0.3, fill: true }] },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'K' } } } }
+          data: {
+            labels: trendLabels,
+            datasets: [
+              { label: 'Amazon', data: amzTrend, borderColor: '#001f60', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3 },
+              { label: 'Website', data: webTrend, borderColor: '#24e9a3', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3 },
+              { label: 'Walmart', data: wmtTrend, borderColor: '#6b7ba2', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.3 },
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 24, padding: 12, font: { size: 13 }, generateLabels: bigLegendLabels } } },
+            scales: { y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'K' } } }
+          }
         });
       } else {
         console.warn('[Evolis][overview] no non-zero months found for trend chart — check revenue-history sheet gids (expects UPPERCASE columns: MONTH, YEAR, REVENUE).');
