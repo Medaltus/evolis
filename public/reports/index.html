@@ -83,7 +83,7 @@ nav{flex:1;padding:8px 8px 0;}
 .page{display:none;flex:1;padding:28px;}
 .page.active{display:block;}
 .page-hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:22px;gap:12px;flex-wrap:wrap;}
-.page-title{font-size:20px;font-weight:600;letter-spacing:-.5px;color:var(--navy);font-family:var(--font-header);}
+.page-title{font-size:20px;font-weight:700;letter-spacing:-.5px;color:var(--navy);font-family:var(--font-subheader);}
 .page-sub{font-size:12px;color:var(--muted);margin-top:3px;}
 
 /* ── Channel tabs (Sales/Marketing/Events) ── */
@@ -410,6 +410,12 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ppc-priority-text{font-size:12.5px;color:var(--navy);line-height:1.6;flex:1;}
 .ppc-kw-targets{margin-top:14px;padding-top:12px;border-top:1px solid var(--border2);display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
 .ppc-kw-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);width:100%;margin-bottom:4px;}
+.opp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;}
+.opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;}
+.opp-channel{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--green);margin-bottom:8px;}
+.opp-event{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.opp-promo{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;}
+.opp-body{font-size:12.5px;color:var(--muted);line-height:1.6;}
 .ppc-opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
 .ppc-opp-card.high{border-left:4px solid var(--warn);}
@@ -799,7 +805,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
   <!-- ══ SALES ══ -->
   <div class="page" id="page-sales">
     <div class="page-hd">
-      <div><div class="page-title">Sales</div><div class="page-sub">May 1 – May 31, 2026 · Last full month</div></div>
+      <div><div class="page-title">Sales</div><div class="page-sub" id="sales-page-sub">May 1 – May 31, 2026 · Last full month</div></div>
     </div>
 
     <div class="channel-tabs">
@@ -2991,7 +2997,7 @@ Chart.defaults.font.size = 10;
 Chart.defaults.color = '#6b7ba2';
 
 const months12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const lineDefaults = { pointRadius:2, tension:0.3, borderWidth:2 };
+const lineDefaults = { pointRadius:2, tension:0.3, borderWidth:2.5 };
 
 // ── NAV ──
 // pageTitles defined in shell JS above
@@ -3060,8 +3066,8 @@ function renderStewardshipCharts(investData, impressData) {
     data:{
       labels: impressData.labels,
       datasets:[
-        { label: impressData.currYearLabel, data: impressData.curr, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.1)', borderWidth:2, pointRadius:2, tension:0.3, fill:true, spanGaps:true },
-        { label: impressData.prevYearLabel, data: impressData.prev, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:1.5, pointRadius:2, tension:0.3, spanGaps:true },
+        { label: impressData.currYearLabel, data: impressData.curr, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.1)', borderWidth:2.5, pointRadius:2, tension:0.3, fill:true, spanGaps:true },
+        { label: impressData.prevYearLabel, data: impressData.prev, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:2, pointRadius:2, tension:0.3, spanGaps:true },
       ]
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v===0?'0':(v/1000).toFixed(v%1000===0?0:1)+'K' } } } }
@@ -3443,6 +3449,16 @@ async function initSns() {
     if (amzHdrEl) {
       const lastDay = new Date(year, month, 0).getDate();
       amzHdrEl.textContent = `📅 ${monthNamesAmz[month-1]} 1, ${year} – ${monthNamesAmz[month-1]} ${lastDay}, ${year}`;
+      // Visually hidden — this duplicated the page-sub date above it (and
+      // had a calendar icon nobody wanted). Kept in the DOM rather than
+      // removed because the PDF export still reads its textContent to get
+      // the date range for each Sales-channel page. Per Jaclyn 2026-07-14.
+      amzHdrEl.style.display = 'none';
+    }
+    const salesPageSubEl = document.getElementById('sales-page-sub');
+    if (salesPageSubEl) {
+      const lastDaySub = new Date(year, month, 0).getDate();
+      salesPageSubEl.textContent = `${monthNamesAmz[month-1]} 1 – ${monthNamesAmz[month-1]} ${lastDaySub}, ${year} · Last full month`;
     }
     const topbarDateEl = document.getElementById('topbar-date');
     if (topbarDateEl) {
@@ -3905,6 +3921,7 @@ async function initSns() {
     if (hdrEl) {
       const lastDay = new Date(year, month, 0).getDate();
       hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${lastDay}, ${year}`;
+      hdrEl.style.display = 'none'; // duplicated page-sub above; kept in DOM for PDF export only
     }
 
     try {
@@ -4609,7 +4626,7 @@ async function initSns() {
     // Update header date
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const hdrEl = document.getElementById('walmart-hdr-date');
-    if (hdrEl) hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${new Date(year, month, 0).getDate()}, ${year}`;
+    if (hdrEl) { hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${new Date(year, month, 0).getDate()}, ${year}`; hdrEl.style.display = 'none'; }
 
     try {
       const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
