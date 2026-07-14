@@ -609,7 +609,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-kpi-mom.flat{color:var(--muted);}
 .pdfx-card{border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:14px;}
 .pdfx-card-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:10px;font-family:var(--font-subheader);}
-.pdfx-chart-img{width:100%;height:230px;object-fit:contain;display:block;}
+.pdfx-chart-img{width:100%;display:block;}
 .pdfx-table{width:100%;border-collapse:collapse;font-size:11px;}
 .pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
 .pdfx-table thead th.num{text-align:left;}
@@ -6617,7 +6617,7 @@ async function loadAuditResultsFromSheet() {
     _impressChart: 'chart-impressions',
     _snsChart: 'chart-sns'
   };
-  let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages()
+  let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages() — now {varName: {img, width, height}}
 
   function pdfxRawChartImg(varName) {
     try {
@@ -6633,9 +6633,10 @@ async function loadAuditResultsFromSheet() {
   }
 
   async function pdfxCaptureAllChartImages() {
-    const restore = []; // [{el, prevDisplay}]
+    const restore = []; // [{el, prop, prevValue}]
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
+    // (1) Force any 0×0 (hidden-tab) canvas ancestor visible, same as before.
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
@@ -6645,57 +6646,85 @@ async function loadAuditResultsFromSheet() {
       let node = canvas.parentElement;
       while (node && node !== document.body) {
         if (window.getComputedStyle(node).display === 'none') {
-          restore.push({ el: node, prevDisplay: node.style.display });
+          restore.push({ el: node, prop: 'display', prevValue: node.style.display });
           node.style.display = 'block';
         }
         node = node.parentElement;
       }
     });
 
-    if (restore.length) {
-      console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to size 0×0 chart canvases');
-      // Let the browser actually lay these out before asking Chart.js to resize into them
-      await new Promise(function (r) { requestAnimationFrame(r); });
-      varNames.forEach(function (varName) {
-        const chart = window[varName];
-        if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
-      });
-      await new Promise(function (r) { requestAnimationFrame(r); });
-    }
+    // (2) Temporarily give every chart's immediate wrapper a taller height
+    // than its normal on-screen size, REGARDLESS of whether it needed
+    // force-visible above. This is what actually fixes chart legibility in
+    // the PDF: previously the PDF template forced every chart image into
+    // the SAME fixed-height box (230px) via CSS regardless of its real
+    // captured aspect ratio, and object-fit:contain — which would normally
+    // prevent distortion — isn't reliably honored by html2canvas, so
+    // charts came out visibly stretched. The real fix is to capture each
+    // chart at a taller NATIVE resolution to begin with (so no CSS-level
+    // aspect-ratio correction is even needed later), not to try to
+    // compensate for a short capture after the fact. Confirmed 2026-07-14.
+    const CAPTURE_HEIGHT = 420;
+    varNames.forEach(function (varName) {
+      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      if (!canvas) return;
+      const wrapper = canvas.parentElement;
+      if (!wrapper) return;
+      restore.push({ el: wrapper, prop: 'height', prevValue: wrapper.style.height });
+      wrapper.style.height = CAPTURE_HEIGHT + 'px';
+    });
+
+    console.log('[pdf-export] forced', restore.length, 'style override(s) (hidden ancestors + taller capture wrappers)');
+    await new Promise(function (r) { requestAnimationFrame(r); });
+    varNames.forEach(function (varName) {
+      const chart = window[varName];
+      if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
+    });
+    await new Promise(function (r) { requestAnimationFrame(r); });
 
     const images = {};
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
-      images[varName] = pdfxRawChartImg(varName);
+      const img = pdfxRawChartImg(varName);
+      images[varName] = { img: img, width: canvas ? canvas.width : 0, height: canvas ? canvas.height : 0 };
       let dataInfo = 'no chart';
       if (chart && chart.data && chart.data.datasets) {
         dataInfo = chart.data.datasets.map(function (ds) {
           return (ds.label || '?') + ':' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + 'pts';
         }).join(', ');
       }
-      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', images[varName] ? images[varName].length : 0, '— datasets:', dataInfo);
+      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', img ? img.length : 0, '— datasets:', dataInfo);
     });
 
-    // Put every forced ancestor back exactly as found, then let Chart.js
-    // resize back down for whichever tab is actually visible right now.
-    restore.forEach(function (r) { r.el.style.display = r.prevDisplay; });
-    if (restore.length) {
-      await new Promise(function (r) { requestAnimationFrame(r); });
-      varNames.forEach(function (varName) {
-        const chart = window[varName];
-        if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
-      });
-    }
+    // Put every override back exactly as found, then let Chart.js resize
+    // back down for whichever tab is actually visible right now.
+    restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
+    await new Promise(function (r) { requestAnimationFrame(r); });
+    varNames.forEach(function (varName) {
+      const chart = window[varName];
+      if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
+    });
 
     return images;
   }
 
   function pdfxChartImg(varName) {
     if (PDFX_CHART_CACHE && Object.prototype.hasOwnProperty.call(PDFX_CHART_CACHE, varName)) {
-      return PDFX_CHART_CACHE[varName] || '';
+      const entry = PDFX_CHART_CACHE[varName];
+      return entry ? entry.img : '';
     }
     return pdfxRawChartImg(varName);
+  }
+
+  // Returns the real captured aspect ratio (height ÷ width) for a chart, or
+  // null if unknown. Used to size the <img> in the PDF without distortion —
+  // see pdfxChartBlock.
+  function pdfxChartAspect(varName) {
+    if (PDFX_CHART_CACHE && PDFX_CHART_CACHE[varName] && PDFX_CHART_CACHE[varName].width) {
+      return PDFX_CHART_CACHE[varName].height / PDFX_CHART_CACHE[varName].width;
+    }
+    return null;
   }
 
   // ── Logo / watermark assets ────────────────────────────────────────
@@ -6720,7 +6749,23 @@ async function loadAuditResultsFromSheet() {
 
   function pdfxChartBlock(varName, fallbackLabel) {
     const img = pdfxChartImg(varName);
-    if (img) return '<img class="pdfx-chart-img" src="' + img + '">';
+    if (img) {
+      // Height computed from the chart's OWN real captured aspect ratio at
+      // a fixed 100% width, rather than forcing every chart into an
+      // identical fixed-height CSS box. That fixed-height approach (with
+      // object-fit:contain to prevent distortion) is what caused the
+      // stretching in the first place — html2canvas doesn't reliably honor
+      // object-fit, so it just stretched every chart to fill the box
+      // regardless of its real proportions. Sizing the box to already
+      // match the image's real proportions makes distortion impossible
+      // regardless of what html2canvas does or doesn't support. Card is
+      // ~700px wide in the final PDF; height is that times the real
+      // captured aspect ratio. Confirmed 2026-07-14.
+      const aspect = pdfxChartAspect(varName);
+      const cardWidthPx = 700;
+      const heightPx = aspect ? Math.round(cardWidthPx * aspect) : 230;
+      return '<img class="pdfx-chart-img" src="' + img + '" style="height:' + heightPx + 'px;">';
+    }
     return '<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);font-style:italic;">' +
       pdfxEscape(fallbackLabel || 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') + '</div>';
   }
