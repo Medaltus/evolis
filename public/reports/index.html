@@ -1059,8 +1059,8 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <div class="section-label">Subscribe &amp; Save</div>
       <div class="kpi-row" style="margin-bottom:20px;">
-        <div class="kpi-card"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">123</div></div>
-        <div class="kpi-card"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div></div>
+        <div class="kpi-card"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">123</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-title">Active Subscriptions by Month</div>
@@ -3182,7 +3182,7 @@ async function initSns() {
       }
 
       const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const labels = [], values = [];
+      const labels = [], values = [], years = [];
       const skipped = [];
       withDate.forEach(x => {
         const r = x.row;
@@ -3191,6 +3191,7 @@ async function initSns() {
         const label = (!isNaN(x.y) && !isNaN(x.m)) ? `${monthAbbr[x.m - 1]} '${String(x.y).slice(2)}` : (r.month_label || r.month || r.date || '');
         labels.push(label);
         values.push(total);
+        years.push(x.y);
       });
       if (skipped.length) {
         console.warn('[Evolis][subscriptions] skipped', skipped.length, 'row(s) with no usable total_subscriptions value — these months are NOT in the chart:', skipped.join(', '));
@@ -3198,7 +3199,16 @@ async function initSns() {
       console.log('[Evolis][subscriptions] months actually plotted on the chart:', labels.join(', '));
 
       if (values.length) {
-        const bg = labels.map((_, i) => i >= labels.length - 12 ? '#001f60' : '#6b7ba2');
+        // Color by calendar year: 2024 sand, 2025 slate, 2026 navy. Falls
+        // back gracefully for any other year (older -> sand-ish, newer ->
+        // navy) so this doesn't quietly break once 2027 data shows up.
+        const YEAR_COLORS = { 2024: '#f4dfd0', 2025: '#6b7ba2', 2026: '#001f60' };
+        const distinctYears = [...new Set(years)].sort((a, b) => a - b);
+        const bg = years.map(y => {
+          if (YEAR_COLORS[y]) return YEAR_COLORS[y];
+          const idx = distinctYears.indexOf(y);
+          return idx <= 0 ? '#f4dfd0' : (idx === distinctYears.length - 1 ? '#001f60' : '#6b7ba2');
+        });
         window._snsChart = new Chart(canvas, {
           type: 'bar',
           data: { labels, datasets: [{ label: 'Active Subscriptions', data: values, backgroundColor: bg }] },
@@ -3209,6 +3219,19 @@ async function initSns() {
           }
         });
         if (subsKpiEl) subsKpiEl.textContent = Math.round(values[values.length - 1]).toLocaleString();
+        const subsMomEl = document.querySelector('#m-opportunities .kpi-row .kpi-card:nth-child(1) .kpi-mom');
+        if (subsMomEl) {
+          if (values.length >= 2 && values[values.length - 2]) {
+            const p = Math.round(((values[values.length - 1] - values[values.length - 2]) / values[values.length - 2]) * 100);
+            const cls = p === 0 ? 'flat' : p > 0 ? 'up' : 'dn';
+            const arrow = p === 0 ? '' : p > 0 ? '▲ ' : '▼ ';
+            subsMomEl.className = 'kpi-mom ' + cls;
+            subsMomEl.textContent = `${arrow}${Math.abs(p)}% MOM`;
+          } else {
+            subsMomEl.className = 'kpi-mom flat';
+            subsMomEl.textContent = '—';
+          }
+        }
       } else {
         console.warn('[Evolis][subscriptions] no total_subscriptions values matched in totals sheet — check TOTALS_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
       }
@@ -3220,15 +3243,46 @@ async function initSns() {
     if (looksLikeCsv(retentionCsv)) {
       const rows = csvToRows(retentionCsv);
       console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
-      const brandRow = rows.find(isEvolisRow) || rows[0];
-      let retentionVal = brandRow ? num(brandRow.retention_90 ?? brandRow.retention ?? brandRow.retention_rate ?? brandRow.subscribe_save_retention) : null;
+      const brandRows = rows.filter(isEvolisRow);
+      const useRows = brandRows.length ? brandRows : rows;
+
+      // MOM only works if this sheet actually has more than one dated row
+      // per brand (i.e. it's historical, not a single current snapshot).
+      // Detecting that rather than assuming it, so this doesn't silently
+      // show a fabricated MOM if the sheet turns out to be snapshot-only.
+      const withDateR = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
+      const hasHistory = withDateR.length > 1 && withDateR.every(x => !isNaN(x.y) && !isNaN(x.m));
+      if (hasHistory) withDateR.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+
+      const brandRow = hasHistory ? withDateR[withDateR.length - 1].row : (useRows[0] || rows[0]);
+      const prevBrandRow = hasHistory && withDateR.length >= 2 ? withDateR[withDateR.length - 2].row : null;
+
+      function readRetention(r) {
+        if (!r) return null;
+        let v = num(r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
+        if (v !== null && v > 0 && v <= 1) v = v * 100;
+        return v;
+      }
+      let retentionVal = readRetention(brandRow);
+      const retentionPrevVal = readRetention(prevBrandRow);
+
       if (retentionVal !== null) {
-        // Defensive: sheet might store this as a fraction (0.70) or already
-        // as a whole percent (70). Log the raw value either way so it's
-        // obvious if this heuristic guessed wrong.
-        console.log('[Evolis][subscriptions] raw retention value:', retentionVal);
-        if (retentionVal > 0 && retentionVal <= 1) retentionVal = retentionVal * 100;
+        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory);
         if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
+        const retMomEl = document.querySelector('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom');
+        if (retMomEl) {
+          if (retentionPrevVal) {
+            const ppDiff = Math.round(retentionVal - retentionPrevVal);
+            const cls = ppDiff === 0 ? 'flat' : ppDiff > 0 ? 'up' : 'dn';
+            const arrow = ppDiff === 0 ? '' : ppDiff > 0 ? '▲ ' : '▼ ';
+            retMomEl.className = 'kpi-mom ' + cls;
+            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}pp MOM`;
+          } else {
+            retMomEl.className = 'kpi-mom flat';
+            retMomEl.textContent = '—';
+            if (!hasHistory) console.warn('[Evolis][subscriptions] retention sheet appears to be a single current-value snapshot (no year/month history per brand) — MOM left blank rather than fabricated.');
+          }
+        }
       } else {
         console.warn('[Evolis][subscriptions] no retention value matched in retention sheet — check RETENTION_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
       }
