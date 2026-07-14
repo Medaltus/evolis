@@ -57,8 +57,8 @@ module.exports = async (req, res) => {
     // ── 2. One real contract, broad guessed field set. Some of these may
     //    not exist / may error — that's fine, it tells us what's real. ──
     const sampleQuery = `
-      query GetOneContract {
-        subscriptionContracts(first: 1) {
+      query GetSomeContracts {
+        subscriptionContracts(first: 50) {
           edges {
             node {
               id
@@ -76,21 +76,23 @@ module.exports = async (req, res) => {
               originOrder { id name }
             }
           }
+          pageInfo { hasNextPage }
         }
       }
     `;
-    let sampleContract = null;
+    let rawSubscriptionContractsResponse = null;
     let sampleError = null;
     try {
       const sampleResult = await shopifyGraphQL(token, sampleQuery, {});
-      sampleContract = sampleResult?.subscriptionContracts?.edges?.[0]?.node || null;
+      rawSubscriptionContractsResponse = sampleResult?.subscriptionContracts ?? 'FIELD_ITSELF_WAS_NULL_OR_UNDEFINED';
     } catch (err) {
       sampleError = err.message;
     }
 
     return res.status(200).json({
       availableFields: fieldList,
-      sampleContract,
+      rawSubscriptionContractsResponse,
+      edgeCount: Array.isArray(rawSubscriptionContractsResponse?.edges) ? rawSubscriptionContractsResponse.edges.length : 'N/A',
       sampleQueryError: sampleError,
     });
   } catch (err) {
