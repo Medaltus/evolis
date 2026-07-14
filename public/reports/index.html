@@ -214,7 +214,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .tp-mom-up{display:inline-flex;align-items:center;color:#1db88a;font-size:10px;font-weight:400;margin-left:6px;white-space:nowrap;}
 .tp-mom-dn{display:inline-flex;align-items:center;color:var(--danger);font-size:10px;font-weight:400;margin-left:6px;white-space:nowrap;}
 .tp-mom-flat{display:inline-flex;align-items:center;color:rgba(107,123,162,.4);font-size:10px;margin-left:6px;}
-.tp-units{font-weight:700;}
+.tp-units{font-weight:700;font-family:var(--font-bold);}
 
 /* ════════════════════════════════════════
    INSIGHTS + LISTING AUDIT — page CSS
@@ -614,6 +614,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .pdfx-table thead th{background:#6B7BA2;color:#fff;text-align:left;font-weight:600;padding:7px 10px;font-size:10.5px;}
 .pdfx-table thead th.num{text-align:left;}
 .pdfx-table tbody td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--navy);}
+.pdfx-table tbody td strong{font-family:var(--font-bold);}
 .pdfx-table tbody td.num{text-align:left;}
 .pdfx-table tbody tr:nth-child(even){background:#f7f8fb;}
 .pdfx-insight{background:var(--sand);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;padding:12px 16px;font-size:11.5px;color:var(--navy);line-height:1.55;margin-top:2px;}
@@ -756,6 +757,23 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
         <div class="card-title">Monthly Revenue Trend</div>
         <div style="position:relative;height:200px;"><canvas id="chart-ov-trend"></canvas></div>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units, all channels, Month to Date)</span></div>
+      <table class="tp-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--navy);color:#fff;">
+            <th style="text-align:left;padding:8px 10px;">#</th>
+            <th style="text-align:left;padding:8px 10px;">Product</th>
+            <th style="text-align:left;padding:8px 10px;">Amazon</th>
+            <th style="text-align:left;padding:8px 10px;">Website</th>
+            <th style="text-align:left;padding:8px 10px;">Walmart</th>
+            <th style="text-align:left;padding:8px 10px;">Total Units</th>
+          </tr>
+        </thead>
+        <tbody id="ov-products-tbody"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
+      </table>
     </div>
 
     <div class="insight-bar" style="margin-top:14px;">
@@ -6700,7 +6718,20 @@ async function loadAuditResultsFromSheet() {
     filtered.forEach(r => { if (!r.order_id) return; orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price); });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const skuSet = new Set(filtered.map(r => (r.sku || '').trim()).filter(Boolean));
-    return { totalUnits, totalOrders, totalRevenue, skuSet };
+    return { totalUnits, totalOrders, totalRevenue, skuSet, filteredRows: filtered };
+  }
+
+  // Sums unit_count per SKU (stripping the -SF seller-fulfilled suffix so
+  // FBA and SF variants of the same product merge into one row — same
+  // convention used everywhere else in this dashboard).
+  function unitsBySku(filteredRows) {
+    const map = {};
+    filteredRows.forEach(r => {
+      const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      if (!sku) return;
+      map[sku] = (map[sku] || 0) + (parseInt(r.unit_count, 10) || 0);
+    });
+    return map;
   }
 
   function setKpi(cardId, value, pctVal, suffix) {
@@ -6777,7 +6808,50 @@ async function loadAuditResultsFromSheet() {
       const heroSkuEl = document.getElementById('ov-hero-skus');
       if (heroSkuEl && skuCount > 0) heroSkuEl.textContent = String(skuCount);
 
-      // \u2500\u2500 Donut: revenue share by channel (real MTD revenue) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+      // -- Combined product table: units per SKU per channel, MTD --
+      const amzUnitsBySku = unitsBySku(amzMtd.filteredRows);
+      const webUnitsBySku = unitsBySku(webMtd.filteredRows);
+      const wmtUnitsBySku = unitsBySku(wmtMtd.filteredRows);
+      const allSkus = new Set([...Object.keys(amzUnitsBySku), ...Object.keys(webUnitsBySku), ...Object.keys(wmtUnitsBySku)]);
+
+      let skuNameMap = {};
+      try {
+        const namesCsv = await fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+        if (isCsv(namesCsv)) {
+          const lines = namesCsv.trim().split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCsvLine(lines[i]);
+            const sku = (cols[1] || '').replace(/^"|"$/g, '').trim().toUpperCase().replace(/-SF$/i, '');
+            const name = (cols[2] || '').replace(/^"|"$/g, '').trim();
+            if (sku && name) skuNameMap[sku] = name;
+          }
+        }
+      } catch (e) { console.warn('[Evolis][overview] product name lookup failed:', e.message); }
+
+      const productRows = Array.from(allSkus).map(sku => {
+        const a = amzUnitsBySku[sku] || 0, w = webUnitsBySku[sku] || 0, m = wmtUnitsBySku[sku] || 0;
+        return { sku, name: skuNameMap[sku] || sku, amazon: a, website: w, walmart: m, total: a + w + m };
+      }).sort((x, y) => y.total - x.total).slice(0, 15);
+
+      const tbody = document.getElementById('ov-products-tbody');
+      if (tbody) {
+        if (!productRows.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
+        } else {
+          const cell = n => n > 0 ? `<span class="tp-units">${n.toLocaleString()}</span>` : '<span class="tp-dash">—</span>';
+          tbody.innerHTML = productRows.map((r, i) => `
+            <tr>
+              <td style="padding:7px 10px;">${i + 1}.</td>
+              <td style="padding:7px 10px;">${r.name}</td>
+              <td style="padding:7px 10px;">${cell(r.amazon)}</td>
+              <td style="padding:7px 10px;">${cell(r.website)}</td>
+              <td style="padding:7px 10px;">${cell(r.walmart)}</td>
+              <td style="padding:7px 10px;"><span class="tp-units">${r.total.toLocaleString()}</span></td>
+            </tr>`).join('');
+        }
+      }
+
+      // -- Donut: revenue share by channel (real MTD revenue) --
       const donutTotal = amzMtd.totalRevenue + webMtd.totalRevenue + wmtMtd.totalRevenue;
       if (donutTotal > 0) {
         window._ovDonutChart = new Chart(document.getElementById('chart-ov-donut'), {
@@ -6814,20 +6888,52 @@ async function loadAuditResultsFromSheet() {
         console.warn('[Evolis][overview] ad orders sheet did not return CSV \u2014 Ad Spend/ACOS left blank.');
       }
 
-      // \u2500\u2500 Trend: trailing 6 COMPLETED months, blended revenue across channels \u2500\u2500
+      // -- Trend: trailing 6 COMPLETED months, blended revenue across channels --
+      // ROOT CAUSE of the blank chart: these revenue-history sheets use
+      // UPPERCASE positional headers (MONTH/YEAR/REVENUE), the same
+      // convention already confirmed working in buildRevenueChart() /
+      // buildWebChart() elsewhere in this file. My generic lowercase-keyed
+      // parseCsv() was looking up row.year/row.month/row.revenue against a
+      // sheet whose real keys are YEAR/MONTH/REVENUE -- every lookup
+      // silently returned undefined -> 0, so "no non-zero months" fired
+      // for the wrong reason. Parsing by column index now, matching the
+      // already-proven pattern exactly.
+      function parseRevenueHistory(csvText) {
+        if (!isCsv(csvText)) return [];
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) return [];
+        const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toUpperCase());
+        const monthIdx = headers.indexOf('MONTH');
+        const yearIdx = headers.indexOf('YEAR');
+        const revenueIdx = headers.indexOf('REVENUE');
+        if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) {
+          console.warn('[Evolis][overview] revenue sheet missing MONTH/YEAR/REVENUE columns -- found:', headers);
+          return [];
+        }
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvLine(lines[i]);
+          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
+          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+          const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
+          if (yr && mo >= 1 && mo <= 12) rows.push({ year: yr, month: mo, revenue: rev });
+        }
+        return rows;
+      }
+
       const [amzRevCsv, webRevCsv, wmtRevCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMZ_REVENUE_SHEET_ID, AMZ_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_REVENUE_SHEET_ID, WMT_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
-      const amzRevRows = isCsv(amzRevCsv) ? parseCsv(amzRevCsv) : [];
-      const webRevRows = isCsv(webRevCsv) ? parseCsv(webRevCsv) : [];
-      const wmtRevRows = isCsv(wmtRevCsv) ? parseCsv(wmtRevCsv) : [];
-      console.log('[Evolis][overview] revenue-history row counts \u2014 amazon:', amzRevRows.length, 'web:', webRevRows.length, 'walmart:', wmtRevRows.length);
+      const amzRevRows = parseRevenueHistory(amzRevCsv);
+      const webRevRows = parseRevenueHistory(webRevCsv);
+      const wmtRevRows = parseRevenueHistory(wmtRevCsv);
+      console.log('[Evolis][overview] revenue-history row counts -- amazon:', amzRevRows.length, 'web:', webRevRows.length, 'walmart:', wmtRevRows.length);
 
       function monthlyRevenue(rows, y, m) {
-        const row = rows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
-        return row ? parseAmt(row.revenue) : 0;
+        const row = rows.find(r => r.year === y && r.month === m);
+        return row ? row.revenue : 0;
       }
       const trendLabels = [], trendData = [];
       let ty = now.getFullYear(), tm = now.getMonth();
@@ -6843,7 +6949,7 @@ async function loadAuditResultsFromSheet() {
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'K' } } } }
         });
       } else {
-        console.warn('[Evolis][overview] no non-zero months found for trend chart \u2014 check revenue-history sheet gids/fields (expects columns: year, month, revenue).');
+        console.warn('[Evolis][overview] no non-zero months found for trend chart — check revenue-history sheet gids (expects UPPERCASE columns: MONTH, YEAR, REVENUE).');
       }
     } catch (err) {
       console.error('[Evolis][overview] fetch/parse failed:', err);
