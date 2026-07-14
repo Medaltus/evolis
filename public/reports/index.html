@@ -6764,9 +6764,17 @@ async function loadAuditResultsFromSheet() {
       // ~700px wide in the final PDF; height is that times the real
       // captured aspect ratio. Confirmed 2026-07-14.
       const aspect = pdfxChartAspect(varName);
-      const cardWidthPx = 700;
+      const cardWidthPx = 686; // exact .pdfx-card inner width: 816px page − 92px page padding − 38px card padding/border
       const heightPx = aspect ? Math.round(cardWidthPx * aspect) : 230;
-      return '<img class="pdfx-chart-img" src="' + img + '" style="height:' + heightPx + 'px;">';
+      // Explicit pixel WIDTH too, not just height — the img was relying on
+      // an external width:100% CSS rule for its width, and html2canvas has
+      // already proven unreliable resolving percentage-based sizing on
+      // this exact element once before (object-fit had the same class of
+      // problem). If it falls back to the image's natural intrinsic pixel
+      // width instead of stretching to fill the card, that's exactly "full
+      // data span, squeezed into less than half the card width." No
+      // ambiguity left for html2canvas to get wrong here. Confirmed 2026-07-14.
+      return '<img src="' + img + '" style="display:block;width:' + cardWidthPx + 'px;height:' + heightPx + 'px;">';
     }
     return '<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);font-style:italic;">' +
       pdfxEscape(fallbackLabel || 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') + '</div>';
