@@ -6636,7 +6636,15 @@ async function loadAuditResultsFromSheet() {
     const restore = []; // [{el, prop, prevValue}]
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
-    // (1) Force any 0×0 (hidden-tab) canvas ancestor visible, same as before.
+    // Force any 0×0 (hidden-tab) canvas ancestor visible so it has a real
+    // on-screen size to capture at all — but nothing more than that. The
+    // last two rounds tried to force every chart to an artificially taller
+    // capture height (first a fixed px, then a computed target aspect
+    // ratio), which required compensating axis-font scaling and introduced
+    // a resize-timing bug that left charts only partially drawn. Simpler
+    // and more reliable: just capture each chart at whatever size it
+    // already renders at on the live dashboard — that sizing already looks
+    // right, so there's nothing to compensate for. Per Jaclyn 2026-07-14.
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
@@ -6653,63 +6661,25 @@ async function loadAuditResultsFromSheet() {
       }
     });
 
-    // (2) Temporarily give every chart's immediate wrapper a taller height
-    // than its normal on-screen size, REGARDLESS of whether it needed
-    // force-visible above. This is what actually fixes chart legibility in
-    // the PDF: previously the PDF template forced every chart image into
-    // the SAME fixed-height box (230px) via CSS regardless of its real
-    // captured aspect ratio, and object-fit:contain — which would normally
-    // prevent distortion — isn't reliably honored by html2canvas, so
-    // charts came out visibly stretched. The real fix is to capture each
-    // chart at a taller NATIVE resolution to begin with (so no CSS-level
-    // aspect-ratio correction is even needed later), not to try to
-    // compensate for a short capture after the fact. Confirmed 2026-07-14.
-    //
-    // 2026-07-14 (later same day): a FIXED capture height was still wrong —
-    // Sales-page charts (Amazon/Website/Walmart/Subscriptions) sit in a
-    // full-width single-column layout (~2238px wide), while Stewardship's
-    // charts sit two-to-a-row (~1091px wide). Forcing every chart to the
-    // same 420px height meant the wide ones ended up with a much flatter
-    // aspect ratio than the narrow ones — confirmed exactly by the numbers:
-    // 2238×420 scaled to the PDF's ~700px card width comes out at only
-    // 131px tall (illegible), while 1091×420 comes out at a good 269px.
-    // Fixing this at the source: measure each chart's OWN real width first,
-    // then set its height to hit a consistent target aspect ratio (~2.6:1,
-    // matching what the narrower Stewardship charts already looked good
-    // at) — so every chart ends up equally legible regardless of how wide
-    // its particular page layout happens to make it.
-    const TARGET_ASPECT = 2.6; // width ÷ height
-    varNames.forEach(function (varName) {
-      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
-      if (!canvas) return;
-      const wrapper = canvas.parentElement;
-      if (!wrapper) return;
-      const measuredWidth = wrapper.getBoundingClientRect().width || canvas.width || 700;
-      const targetHeight = Math.round(measuredWidth / TARGET_ASPECT);
-      restore.push({ el: wrapper, prop: 'height', prevValue: wrapper.style.height });
-      wrapper.style.height = targetHeight + 'px';
-    });
-
-    console.log('[pdf-export] forced', restore.length, 'style override(s) (hidden ancestors + taller capture wrappers)');
+    console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to size 0×0 chart canvases');
     await new Promise(function (r) { requestAnimationFrame(r); });
     varNames.forEach(function (varName) {
       const chart = window[varName];
       if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
     });
-    // THE ACTUAL FIX for missing data lines/bars: resize() can trigger
-    // Chart.js's normal animated re-render (grid/axes paint first, then
-    // datasets animate in over several frames). Capturing after only one
-    // requestAnimationFrame was grabbing charts mid-animation — gridlines
-    // present, data not yet drawn, which is exactly "the graph shows but
-    // there's nothing on it." update('none') forces every chart to paint
-    // its COMPLETE final frame immediately, with no animation to race
-    // against, before we ever call toBase64Image(). Confirmed 2026-07-14.
+    // Let the browser actually finish the layout pass resize() just
+    // triggered before touching the charts again, then force a full
+    // no-animation redraw — resize() can trigger Chart.js's normal
+    // animated re-render (grid/axes paint first, datasets animate in over
+    // several frames), so capturing too soon grabs a chart mid-animation.
+    // update('none') paints the complete final frame immediately with no
+    // animation to race against.
+    await new Promise(function (r) { requestAnimationFrame(r); });
+    await new Promise(function (r) { setTimeout(r, 30); });
     varNames.forEach(function (varName) {
       const chart = window[varName];
       if (chart && typeof chart.update === 'function') { try { chart.update('none'); } catch (e) { /* noop */ } }
     });
-    // Multiple frames, not just one — gives the browser's actual paint
-    // (not just the JS-side update() call returning) time to catch up.
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { setTimeout(r, 50); });
