@@ -6635,17 +6635,17 @@ async function loadAuditResultsFromSheet() {
   }
 
   async function pdfxCaptureAllChartImages() {
-    const restore = []; // [{el, prop, prevValue}]
+    const restore = []; // [{el, prop, prevValue}] — only ever touches display:none ancestors, nothing chart-related
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
-    // Force any 0×0 (hidden-tab) canvas ancestor visible so it has a real
-    // on-screen size to capture at all.
+    // Force any 0×0 (hidden-tab) canvas ancestor visible just long enough
+    // to read a real on-screen size from it below — the live canvas itself
+    // is never touched, only read from.
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
       if (!canvas || !chart) return;
-      if (canvas.width > 0 && canvas.height > 0) return; // already real size, leave alone
-
+      if (canvas.width > 0 && canvas.height > 0) return;
       let node = canvas.parentElement;
       while (node && node !== document.body) {
         if (window.getComputedStyle(node).display === 'none') {
@@ -6656,74 +6656,84 @@ async function loadAuditResultsFromSheet() {
       }
     });
 
-    console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to size 0×0 chart canvases');
-    // Let the browser actually settle the layout from any display:none →
-    // block changes above before reading container sizes for real.
+    console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to read real chart sizes');
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { setTimeout(r, 30); });
 
-    // Fix for the content-not-filling-its-own-canvas-width bug, WITHOUT the
-    // risk of the previous attempt (which destroyed and rebuilt live chart
-    // instances — if anything in that sequence didn't complete cleanly, the
-    // dashboard was left with broken/blank charts, which is exactly what
-    // happened). This version never destroys anything.
+    // Fully isolated capture: build a brand-new, fully DETACHED canvas per
+    // chart and a brand-new Chart.js instance on it — the live
+    // window._xChart instances and their own <canvas> elements are never
+    // touched, read from only (for their current size, data, and options).
+    // This can't affect the dashboard even in a worst-case failure, because
+    // nothing live is ever destroyed or reassigned.
     //
-    // chart.resize() accepts EXPLICIT width/height arguments — Chart.js
-    // will draw at exactly the dimensions you give it rather than
-    // auto-detecting the container's current size. I had only ever called
-    // it with no arguments, relying on that auto-detection; passing the
-    // measured dimensions explicitly removes whatever ambiguity was making
-    // that detection go stale, with no destroy/rebuild and therefore no way
-    // to corrupt the live chart's identity or state. Confirmed 2026-07-14.
-    varNames.forEach(function (varName) {
-      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
-      const chart = window[varName];
-      if (!canvas || !chart || typeof chart.resize !== 'function') return;
-      const wrapper = canvas.parentElement;
-      const rect = wrapper ? wrapper.getBoundingClientRect() : null;
-      const w = Math.round((rect && rect.width) || canvas.width || 0);
-      const h = Math.round((rect && rect.height) || canvas.height || 0);
-      try {
-        if (w > 0 && h > 0) chart.resize(w, h);
-        else chart.resize();
-      } catch (e) { /* noop */ }
-    });
-    await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { setTimeout(r, 30); });
-    varNames.forEach(function (varName) {
-      const chart = window[varName];
-      if (chart && typeof chart.update === 'function') { try { chart.update('none'); } catch (e) { /* noop */ } }
-    });
-    await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { setTimeout(r, 50); });
-
+    // responsive:false + explicit numeric canvas.width/height (not CSS
+    // percentages, not a container to auto-detect from) removes the entire
+    // class of "container size wasn't what Chart.js thought it was" bug
+    // that's been behind every version of this problem — there's no
+    // container involved at all for this temporary chart to get confused
+    // about. Confirmed 2026-07-14.
+    const tempCanvases = [];
     const images = {};
     varNames.forEach(function (varName) {
-      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
-      const chart = window[varName];
-      const img = pdfxRawChartImg(varName);
-      images[varName] = { img: img, width: canvas ? canvas.width : 0, height: canvas ? canvas.height : 0 };
+      const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
+      const liveChart = window[varName];
+      if (!liveCanvas || !liveChart) { images[varName] = { img: '', width: 0, height: 0 }; return; }
+
+      const wrapper = liveCanvas.parentElement;
+      const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+      const targetW = Math.round((rect && rect.width) || liveCanvas.width || 700);
+      const targetH = Math.round((rect && rect.height) || liveCanvas.height || 300);
+      const dpr = window.devicePixelRatio || 1;
+
+      let img = '';
+      try {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = Math.round(targetW * dpr);
+        tempCanvas.height = Math.round(targetH * dpr);
+        tempCanvas.style.width = targetW + 'px';
+        tempCanvas.style.height = targetH + 'px';
+        document.body.appendChild(tempCanvas); // detached from any visible layout via position, but must be in the DOM for Chart.js to render into it reliably
+        tempCanvas.style.position = 'fixed';
+        tempCanvas.style.left = '-99999px';
+        tempCanvas.style.top = '0';
+        tempCanvases.push(tempCanvas);
+
+        const tempOptions = Object.assign({}, liveChart.options, {
+          responsive: false,
+          maintainAspectRatio: false,
+          animation: false,
+          devicePixelRatio: dpr
+        });
+        const tempChart = new Chart(tempCanvas.getContext('2d'), {
+          type: liveChart.config.type,
+          data: liveChart.data,
+          options: tempOptions
+        });
+        img = tempChart.toBase64Image('image/png');
+        images[varName] = { img: img, width: tempCanvas.width, height: tempCanvas.height };
+        tempChart.destroy(); // only ever destroys the TEMPORARY chart, never the live one
+      } catch (e) {
+        console.warn('[pdf-export] isolated capture failed for', varName, '— falling back to live chart image as-is:', e.message);
+        img = pdfxRawChartImg(varName);
+        images[varName] = { img: img, width: liveCanvas.width, height: liveCanvas.height };
+      }
+
       let dataInfo = 'no chart';
-      if (chart && chart.data && chart.data.datasets) {
-        dataInfo = chart.data.datasets.map(function (ds) {
+      if (liveChart.data && liveChart.data.datasets) {
+        dataInfo = liveChart.data.datasets.map(function (ds) {
           return (ds.label || '?') + ':' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + 'pts';
         }).join(', ');
       }
-      console.log('[pdf-export] captured', varName, '— canvas', canvas ? canvas.width + 'x' + canvas.height : 'missing', '— image length', img ? img.length : 0, '— datasets:', dataInfo);
+      console.log('[pdf-export] captured', varName, '— isolated canvas', images[varName].width + 'x' + images[varName].height, '— image length', img ? img.length : 0, '— datasets:', dataInfo);
     });
 
-    // Put every override back exactly as found, then let Chart.js resize
-    // (no explicit args, back to auto-detecting) for whichever tab is
-    // actually visible right now. The live chart instances were never
-    // destroyed, so there's nothing to rebuild — just resize back down.
+    // Clean up every temporary canvas — none of this ever touched the live
+    // dashboard, so all that's left to do is restore hidden-ancestor
+    // visibility.
+    tempCanvases.forEach(function (c) { try { c.remove(); } catch (e) { /* noop */ } });
     restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
-    await new Promise(function (r) { requestAnimationFrame(r); });
-    varNames.forEach(function (varName) {
-      const chart = window[varName];
-      if (chart && typeof chart.resize === 'function') { try { chart.resize(); } catch (e) { /* noop */ } }
-    });
 
     return images;
   }
