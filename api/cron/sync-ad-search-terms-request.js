@@ -3,6 +3,12 @@
  * Step 1 of 2 — requests Amazon Advertising SEARCH TERM reports and stores
  * report IDs in the SHEET_AD_SEARCH_TERMS sheet's _meta tab.
  *
+ * CHANGED (2026-07-14): timeUnit switched from SUMMARY to DAILY, and 'date'
+ * added to both column lists. This matches the pattern in the coworker's
+ * Amazon_Ads_Search_Term_API_Guide.md, and is required for the dashboard's
+ * "today vs 30-day avg CPC" / CPC-trend panels — those can't be built from
+ * monthly-summary rows since there's no "today" inside a SUMMARY row.
+ *
  * Fires 4 report requests per run (mirrors sync-advertising-request.js's
  * curr/prev pattern):
  *   Current month MTD (1st of this month → yesterday):
@@ -12,11 +18,10 @@
  *     3. spSearchTerm
  *     4. sbSearchTerm
  *
- * Columns requested — confirmed via the invalid-column probe trick
- * (test-search-term-columns.js, 2026-07-09) against Amazon's real schema
- * for each report type. Notably: `keywordBid` IS a real column on both
- * report types, so current bid comes from the SAME report as everything
- * else — no separate Keywords API call needed.
+ * Each report now returns ONE ROW PER (search term + matched keyword +
+ * match type + DAY) rather than one row per month. sync-ad-search-terms-process.js
+ * uses the per-row `date` field, not the report's overall date range, to
+ * bucket rows.
  *
  * SP and SB use different column names for the same concepts (same
  * pattern already seen on the campaign-level sync):
@@ -26,10 +31,8 @@
  *       cost/clicks/sales/purchases in the process step. keywordText
  *       (not keyword).
  *
- * Row grain is (search term + matched keyword + match type) — NOT
- * collapsed to one row per search term — since bid and match type are
- * properties of the KEYWORD relationship, not the search term itself.
- * Matches the Campaign Manager UI's own search term report structure.
+ * `keywordBid` IS a real column on both report types, so current bid comes
+ * from the SAME report as everything else — no separate Keywords API call.
  *
  * Runs daily — stagger the actual cron schedule a few minutes apart from
  * sync-advertising-request to avoid both hitting the Ads API at once.
@@ -45,7 +48,7 @@ const META_TAB              = '_meta';
 const META_HEADERS          = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 const SP_COLUMNS = [
-  'searchTerm', 'keyword', 'matchType', 'keywordId', 'keywordBid',
+  'date', 'searchTerm', 'keyword', 'matchType', 'keywordId', 'keywordBid',
   'campaignName', 'campaignId', 'adGroupName', 'adGroupId',
   'impressions', 'clicks', 'clickThroughRate',
   'cost', 'costPerClick', 'purchases14d', 'sales14d',
@@ -53,7 +56,7 @@ const SP_COLUMNS = [
 ];
 
 const SB_COLUMNS = [
-  'searchTerm', 'keywordText', 'matchType', 'keywordId', 'keywordBid',
+  'date', 'searchTerm', 'keywordText', 'matchType', 'keywordId', 'keywordBid',
   'campaignName', 'campaignId', 'adGroupName', 'adGroupId',
   'impressions', 'clicks', 'cost', 'purchases', 'sales',
 ];
@@ -98,12 +101,20 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: 'All previous month report requests failed' });
     }
 
+    // NOTE: st_processed_<label> / st_status_<label> are intentionally NOT
+    // set here — they're owned by the process step. Resetting them on every
+    // request run means a fresh request always starts fully unprocessed,
+    // which is correct behavior (new reportId = new data to fetch).
     const metaRows = [
       ['st_report_id_sp_curr', reportIds.sp_curr || '', now],
       ['st_report_id_sb_curr', reportIds.sb_curr || '', now],
       ['st_report_id_sp_prev', reportIds.sp_prev || '', now],
       ['st_report_id_sb_prev', reportIds.sb_prev || '', now],
       ['st_report_status',     'REQUESTED',             now],
+      ['st_processed_sp_curr', 'false',                 now],
+      ['st_processed_sb_curr', 'false',                 now],
+      ['st_processed_sp_prev', 'false',                 now],
+      ['st_processed_sb_prev', 'false',                 now],
       ['st_start_date_curr',   curr.startDate,          now],
       ['st_end_date_curr',     curr.endDate,            now],
       ['st_start_date_prev',   prev.startDate,          now],
@@ -121,7 +132,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       reportIds,
       curr, prev,
-      note: 'Run sync-ad-search-terms-process in 10-15 minutes',
+      note: 'sync-ad-search-terms-process now checks status once per invocation — schedule it to run every ~5 minutes in vercel.json until st_report_status flips to PROCESSED, rather than a single one-off call.',
     });
   } catch (err) {
     console.error('[sync-ad-search-terms-request] fatal:', err.message);
@@ -144,7 +155,7 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
         groupBy,
         columns,
         reportTypeId,
-        timeUnit: 'SUMMARY',
+        timeUnit: 'DAILY',
         format:   'GZIP_JSON',
       },
     });
