@@ -6666,14 +6666,21 @@ async function loadAuditResultsFromSheet() {
     const restore = []; // [{el, prop, prevValue}] — only ever touches display:none ancestors, nothing chart-related
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
-    // Force any 0×0 (hidden-tab) canvas ancestor visible just long enough
-    // to read a real on-screen size from it below — the live canvas itself
-    // is never touched, only read from.
+    // Force EVERY chart's ancestor chain visible during the capture window,
+    // not just ones currently measuring 0×0 — a canvas can carry a leftover
+    // nonzero width/height attribute from the last time its tab was open,
+    // even while that tab is hidden right now. Skipping the force-visible
+    // step for those meant getBoundingClientRect() below would read 0 for
+    // any tab not recently visited (wrapper still display:none), silently
+    // falling back to that stale attribute value instead of a real
+    // measurement — which is exactly why this only worked after manually
+    // opening every sales tab first, and why the font-size scaling
+    // (computed from that same bad width) came out backwards. Confirmed
+    // 2026-07-14.
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
       if (!canvas || !chart) return;
-      if (canvas.width > 0 && canvas.height > 0) return;
       let node = canvas.parentElement;
       while (node && node !== document.body) {
         if (window.getComputedStyle(node).display === 'none') {
@@ -6711,9 +6718,11 @@ async function loadAuditResultsFromSheet() {
 
       const wrapper = liveCanvas.parentElement;
       const rect = wrapper ? wrapper.getBoundingClientRect() : null;
-      const targetW = Math.round((rect && rect.width) || liveCanvas.width || 700);
-      const targetH = Math.round((rect && rect.height) || liveCanvas.height || 300);
+      const rectValid = !!(rect && rect.width > 0 && rect.height > 0);
+      const targetW = Math.round((rectValid && rect.width) || liveCanvas.width || 700);
+      const targetH = Math.round((rectValid && rect.height) || liveCanvas.height || 300);
       const dpr = window.devicePixelRatio || 1;
+      console.log('[pdf-export][qa]', varName, '— measured size source:', rectValid ? 'live rect' : 'fallback (rect was 0 — check force-visible)', '— target:', targetW + 'x' + targetH);
 
       let img = '';
       try {
