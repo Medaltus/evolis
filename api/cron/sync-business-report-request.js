@@ -79,6 +79,15 @@ module.exports = async (req, res) => {
           asinGranularity: 'CHILD', // gives per-SKU sessions/units for brand matching, same skuPrefix pattern as revenue
         },
       });
+      if (!createResp || !createResp.reportId) {
+        // Amazon sometimes returns 200 with an error-shaped body instead of
+        // throwing — don't silently store `undefined` as this month's reportId.
+        console.error(`[sync-business-report-request] ${range.month} — no reportId in response:`, JSON.stringify(createResp));
+        return res.status(500).json({
+          error: `Amazon returned no reportId for ${range.month}`,
+          detail: createResp,
+        });
+      }
       reportIds[range.month] = createResp.reportId;
       console.log(`[sync-business-report-request] ${range.month} report requested: ${createResp.reportId}`);
     } catch (err) {
@@ -88,6 +97,7 @@ module.exports = async (req, res) => {
   }
 
   // ── Write metadata to _meta tab ────────────────────────────────────────────
+  let metaWriteError = null;
   try {
     const token   = await ensureTab(sheets.businessReport, META_TAB, META_HEADERS);
     const rawMeta = await readRows(sheets.businessReport, META_TAB);
@@ -109,6 +119,19 @@ module.exports = async (req, res) => {
     console.log(`[sync-business-report-request] meta written`);
   } catch (err) {
     console.error('[sync-business-report-request] failed to write meta:', err.message);
+    metaWriteError = err.message;
+  }
+
+  if (metaWriteError) {
+    // Reports were successfully requested with Amazon at this point — don't
+    // waste them — but make the sheet-write failure visible instead of
+    // returning a plain 200 that looks fully successful.
+    return res.status(207).json({
+      warning: 'Reports requested successfully, but failed to write _meta — check SHEET_BUSINESS_REPORT / config/sheets.js',
+      metaWriteError,
+      reportIds,
+      targetMonths: Object.keys(reportIds),
+    });
   }
 
   res.status(200).json({ reportIds, targetMonths: Object.keys(reportIds) });
