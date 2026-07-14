@@ -100,7 +100,7 @@ nav{flex:1;padding:8px 8px 0;}
 .kpi-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px 20px;height:116px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-start;}
 .kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px;}
 .kpi-value{font-size:30px;font-weight:600;letter-spacing:-1px;line-height:1;color:var(--navy);font-family:var(--font-subheader);}
-.kpi-value.sm{font-size:20px;}
+.kpi-value.sm{font-size:30px;}
 .kpi-mom{font-size:14px;margin-top:5px;}
 .kpi-mom.up{color:#1db88a;}
 .kpi-mom.dn{color:var(--danger);}
@@ -733,28 +733,28 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
         <div class="brand-tagline">Hair care · evolisproducts.com · Amazon · Walmart</div>
       </div>
       <div class="brand-hero-right">
-        <div class="hero-stat"><div class="hero-stat-val">$48.2K</div><div class="hero-stat-lbl">Monthly Revenue</div></div>
+        <div class="hero-stat"><div class="hero-stat-val" id="ov-hero-revenue">$48.2K</div><div class="hero-stat-lbl">Month-to-Date Revenue</div></div>
         <div class="hero-stat"><div class="hero-stat-val">3</div><div class="hero-stat-lbl">Channels</div></div>
-        <div class="hero-stat"><div class="hero-stat-val">19</div><div class="hero-stat-lbl">Active SKUs</div></div>
+        <div class="hero-stat"><div class="hero-stat-val" id="ov-hero-skus">19</div><div class="hero-stat-lbl">Active SKUs</div></div>
       </div>
     </div>
 
     <div class="kpi-row">
-      <div class="kpi-card"><div class="kpi-label">Total Units Sold</div><div class="kpi-value">387</div><div class="kpi-mom dn">▼ 6% MOM</div></div>
-      <div class="kpi-card"><div class="kpi-label">Total Orders</div><div class="kpi-value">312</div><div class="kpi-mom dn">▼ 4% MOM</div></div>
-      <div class="kpi-card"><div class="kpi-label">Blended AOV</div><div class="kpi-value sm">$45.20</div><div class="kpi-mom up">▲ 2% MOM</div></div>
-      <div class="kpi-card"><div class="kpi-label">Ad Spend</div><div class="kpi-value sm">$1,240</div><div class="kpi-mom flat">0% MOM</div></div>
-      <div class="kpi-card"><div class="kpi-label">Blended ACOS</div><div class="kpi-value sm">8.4%</div><div class="kpi-mom up">▲ 1.2pp</div></div>
+      <div class="kpi-card" id="ov-kpi-units"><div class="kpi-label">Total Units Sold</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-aov"><div class="kpi-label">Blended AOV</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-adspend"><div class="kpi-label">Ad Spend</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-acos"><div class="kpi-label">Blended ACOS</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
     </div>
 
     <div class="two-col">
       <div class="card" style="margin-top:0;">
-        <div class="card-title">Revenue by Channel — May 2026</div>
-        <div class="chart-placeholder">[ Donut chart — Amazon 68% / Website 22% / Walmart 10% ]</div>
+        <div class="card-title" id="ov-donut-title">Revenue by Channel — Month to Date</div>
+        <div style="position:relative;height:200px;"><canvas id="chart-ov-donut"></canvas></div>
       </div>
       <div class="card" style="margin-top:0;">
         <div class="card-title">Monthly Revenue Trend</div>
-        <div class="chart-placeholder">[ Line chart — 6-month trend across channels ]</div>
+        <div style="position:relative;height:200px;"><canvas id="chart-ov-trend"></canvas></div>
       </div>
     </div>
 
@@ -2897,6 +2897,8 @@ function showPage(id, btn) {
   btn.classList.add('active');
   document.getElementById('topbar-title').textContent = pageTitles[id] || id;
 
+  if (id === 'overview' && !window._overviewLiveInit && typeof window.initOverviewLive === 'function') window.initOverviewLive();
+
   // Export PDF Report button — only shown on the three "performance" pages
   // (Sales, Marketing, Events). Hidden everywhere else (Overview, Inventory,
   // Fulfillment, Insights, Listing Audit, PPC, Organic).
@@ -2999,6 +3001,17 @@ Chart.defaults.color = '#6b7ba2';
 const months12 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const lineDefaults = { pointRadius:2, tension:0.3, borderWidth:2.5 };
 
+// Legend line-swatches default to the dataset's own (thinner) borderWidth,
+// which is why bumping the chart-line thickness didn't visibly thicken the
+// legend much. This decouples them — legend swatches always render at a
+// fixed heavier weight regardless of the actual line's borderWidth.
+// Per Jaclyn 2026-07-14.
+function bigLegendLabels(chart) {
+  const items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+  items.forEach(it => { it.lineWidth = 4; });
+  return items;
+}
+
 // ── NAV ──
 // pageTitles defined in shell JS above
 // nav() defined in shell JS above
@@ -3017,7 +3030,7 @@ function lineChart(id, datasets, yFmt) {
     data:{ labels:months12, datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:28, padding:16, font:{ size:16 } } } },
+      plugins:{ legend:{ position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:28, padding:16, font:{ size:16 }, generateLabels: bigLegendLabels } } },
       scales:{
         x:{ grid:{ color:'rgba(0,0,0,0.04)' } },
         y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback: yFmt } }
@@ -3617,7 +3630,7 @@ async function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 } } },
+          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 }, generateLabels: bigLegendLabels } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -4054,7 +4067,7 @@ async function initSns() {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:28, padding:16, font:{ size:16 } } },
+          legend: { position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:28, padding:16, font:{ size:16 }, generateLabels: bigLegendLabels } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -4760,7 +4773,7 @@ async function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 } } },
+          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 }, generateLabels: bigLegendLabels } },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -6588,6 +6601,261 @@ async function loadAuditResultsFromSheet() {
     }
   };
 
+})();
+</script>
+<!-- ══════════════════════════════════════════════════════════════
+     OVERVIEW PAGE — real Month-to-Date data
+     Was 100% hardcoded (hero stats, all 5 KPIs, both charts were
+     literal placeholder text). Replaced with real fetches across
+     all three channels, aggregated for the current month so far,
+     compared against the same number of elapsed days in the
+     previous month. Per Jaclyn 2026-07-14.
+
+     Honesty note on Ad Spend / Blended ACOS: the ad-data sheets
+     (AD_SUMMARY / ad_orders) are pre-aggregated by year+month, not
+     by day, so there's no real day-level ad spend to sum for a
+     true MTD figure. Rather than fabricate a precise-looking
+     number, this prorates last full month's REAL Amazon ad spend
+     by (days elapsed \u00f7 days in that month) and labels it "(Est.)"
+     in the KPI's MOM line so it's never mistaken for a hard number.
+     Website/Walmart ad spend isn't included \u2014 I don't have a
+     confirmed day-level or even reliably-attributed source for
+     either yet.
+     ══════════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  function sheetCsvUrl(id, gid) { return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`; }
+  function isCsv(t) { t = (t || '').trim(); return t.length > 0 && !t.startsWith('<') && !t.startsWith('{'); }
+  function parseCsvLine(line) {
+    const result = []; let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; }
+      else if (c === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur);
+    return result;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    return lines.slice(1).map(line => {
+      const vals = parseCsvLine(line);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (vals[i] || '').replace(/^"|"$/g, '').trim(); });
+      return obj;
+    });
+  }
+  function normalizeDate(val) {
+    if (!val) return '';
+    if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const m = parts[0].padStart(2, '0'), d = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+    return val;
+  }
+  function parseAmt(v) { if (!v) return 0; return parseFloat(String(v).replace(/[$,]/g, '')) || 0; }
+  function fmtDateStr(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function pctChange(curr, prevVal) { if (!prevVal) return null; return Math.round(((curr - prevVal) / prevVal) * 100); }
+
+  function isEvolisRow(row) {
+    const brand = (row.brand || '').toLowerCase().trim();
+    const skus = (row.sku || row.skus || '').toUpperCase();
+    return brand === 'evolis' || brand.endsWith('volis') || skus.split(',').some(s => s.trim().startsWith('EVO'));
+  }
+  function isValidAmazonRow(row) {
+    const status = (row.status || '').toLowerCase().trim();
+    if (status === 'cancelled' || status === 'pending') return false;
+    if ((row.promotion_ids || '').toLowerCase().includes('vine')) return false;
+    return true;
+  }
+  function isValidWebRow(row) {
+    const status = (row.financial_status || row.status || '').toLowerCase();
+    return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
+  }
+  function isValidWalmartRow(row) {
+    const status = (row.status || '').toLowerCase().trim();
+    return status !== 'cancelled' && status !== 'canceled';
+  }
+
+  // Aggregates rows whose (normalized) date falls within an inclusive
+  // [startStr, endStr] range \u2014 this is the piece that lets us do true
+  // month-to-date instead of only ever whole calendar months.
+  function aggregateRange(rows, startStr, endStr, validFn) {
+    const filtered = rows.filter(r => {
+      const d = normalizeDate(r.date);
+      return d && d >= startStr && d <= endStr && validFn(r);
+    });
+    const orderIds = new Set(filtered.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const orderTotals = {};
+    filtered.forEach(r => { if (!r.order_id) return; orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price); });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const skuSet = new Set(filtered.map(r => (r.sku || '').trim()).filter(Boolean));
+    return { totalUnits, totalOrders, totalRevenue, skuSet };
+  }
+
+  function setKpi(cardId, value, pctVal, suffix) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const valEl = card.querySelector('.kpi-value');
+    const momEl = card.querySelector('.kpi-mom');
+    if (valEl) valEl.textContent = value;
+    if (momEl) {
+      if (pctVal == null) { momEl.className = 'kpi-mom flat'; momEl.textContent = '\u2014'; return; }
+      const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+      const arrow = pctVal === 0 ? '' : pctVal > 0 ? '\u25b2 ' : '\u25bc ';
+      momEl.className = 'kpi-mom ' + cls;
+      momEl.textContent = `${arrow}${Math.abs(pctVal)}%${suffix || ' vs MTD last month'}`;
+    }
+  }
+
+  window.initOverviewLive = async function () {
+    if (window._overviewLiveInit) return;
+    window._overviewLiveInit = true;
+    console.log('[Evolis] initOverviewLive() called');
+
+    const AMAZON_SHEET_ID = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; const AMAZON_GID = '1163928587';
+    const WEB_SHEET_ID    = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw'; const WEB_GID    = '597852778';
+    const WMT_SHEET_ID    = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y'; const WMT_GID    = '1844526926';
+    const AD_ORDERS_SHEET_ID = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI'; const AD_ORDERS_GID = '158578426';
+    const AMZ_REVENUE_SHEET_ID = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank'; const AMZ_REVENUE_GID = '1237377804';
+    const WEB_REVENUE_GID = '7000599';
+    const WMT_REVENUE_SHEET_ID = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE'; const WMT_REVENUE_GID = '812984298';
+
+    const now = new Date();
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const daysElapsed = now.getDate();
+    const mtdStartStr = fmtDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+    const mtdEndStr   = fmtDateStr(now);
+    const prevStartStr = fmtDateStr(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const prevEndStr   = fmtDateStr(new Date(now.getFullYear(), now.getMonth() - 1, daysElapsed));
+
+    const titleEl = document.getElementById('ov-donut-title');
+    if (titleEl) titleEl.textContent = `Revenue by Channel \u2014 ${monthNames[now.getMonth()]} ${now.getFullYear()} MTD`;
+
+    try {
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv] = await Promise.all([
+        fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID, AD_ORDERS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      ]);
+
+      const amzRows = isCsv(amzCsv) ? parseCsv(amzCsv).filter(isEvolisRow) : [];
+      const webRows = isCsv(webCsv) ? parseCsv(webCsv) : [];
+      const wmtRows = isCsv(wmtCsv) ? parseCsv(wmtCsv) : [];
+      console.log('[Evolis][overview] row counts \u2014 amazon:', amzRows.length, 'web:', webRows.length, 'walmart:', wmtRows.length, '\u2014 MTD range:', mtdStartStr, 'to', mtdEndStr);
+
+      const amzMtd = aggregateRange(amzRows, mtdStartStr, mtdEndStr, isValidAmazonRow);
+      const webMtd = aggregateRange(webRows, mtdStartStr, mtdEndStr, isValidWebRow);
+      const wmtMtd = aggregateRange(wmtRows, mtdStartStr, mtdEndStr, isValidWalmartRow);
+      const amzPrev = aggregateRange(amzRows, prevStartStr, prevEndStr, isValidAmazonRow);
+      const webPrev = aggregateRange(webRows, prevStartStr, prevEndStr, isValidWebRow);
+      const wmtPrev = aggregateRange(wmtRows, prevStartStr, prevEndStr, isValidWalmartRow);
+
+      const mtd  = { units: amzMtd.totalUnits + webMtd.totalUnits + wmtMtd.totalUnits, orders: amzMtd.totalOrders + webMtd.totalOrders + wmtMtd.totalOrders, revenue: amzMtd.totalRevenue + webMtd.totalRevenue + wmtMtd.totalRevenue };
+      const prev = { units: amzPrev.totalUnits + webPrev.totalUnits + wmtPrev.totalUnits, orders: amzPrev.totalOrders + webPrev.totalOrders + wmtPrev.totalOrders, revenue: amzPrev.totalRevenue + webPrev.totalRevenue + wmtPrev.totalRevenue };
+      const aov = mtd.orders ? mtd.revenue / mtd.orders : 0;
+      const aovPrev = prev.orders ? prev.revenue / prev.orders : 0;
+      const skuCount = new Set([...amzMtd.skuSet, ...webMtd.skuSet, ...wmtMtd.skuSet]).size;
+
+      setKpi('ov-kpi-units',  mtd.units.toLocaleString(),  pctChange(mtd.units, prev.units));
+      setKpi('ov-kpi-orders', mtd.orders.toLocaleString(), pctChange(mtd.orders, prev.orders));
+      setKpi('ov-kpi-aov',    '$' + aov.toFixed(2),        pctChange(Math.round(aov * 100), Math.round(aovPrev * 100)));
+
+      const heroRevEl = document.getElementById('ov-hero-revenue');
+      if (heroRevEl) heroRevEl.textContent = mtd.revenue >= 1000 ? '$' + (mtd.revenue / 1000).toFixed(1) + 'K' : '$' + mtd.revenue.toFixed(0);
+      const heroSkuEl = document.getElementById('ov-hero-skus');
+      if (heroSkuEl && skuCount > 0) heroSkuEl.textContent = String(skuCount);
+
+      // \u2500\u2500 Donut: revenue share by channel (real MTD revenue) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+      const donutTotal = amzMtd.totalRevenue + webMtd.totalRevenue + wmtMtd.totalRevenue;
+      if (donutTotal > 0) {
+        window._ovDonutChart = new Chart(document.getElementById('chart-ov-donut'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Amazon', 'Website', 'Walmart'],
+            datasets: [{ data: [amzMtd.totalRevenue, webMtd.totalRevenue, wmtMtd.totalRevenue], backgroundColor: ['#001f60', '#24e9a3', '#6b7ba2'], borderWidth: 0 }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } } } }
+        });
+      }
+
+      // \u2500\u2500 Ad Spend / Blended ACOS \u2014 prorated estimate, Amazon only \u2500\u2500\u2500\u2500
+      // See file-level comment above this IIFE for why this isn't a true
+      // day-level MTD figure.
+      if (isCsv(adOrdersCsv)) {
+        const adRows = parseCsv(adOrdersCsv);
+        let lm = now.getMonth(), ly = now.getFullYear();
+        lm -= 1; if (lm === 0) { lm = 12; ly--; }
+        const lastMonthAdRows = adRows.filter(r => parseInt(r.year, 10) === ly && parseInt(r.month, 10) === lm);
+        const lastMonthSpend = lastMonthAdRows.reduce((s, r) => s + parseAmt(r.spend), 0);
+        const lastMonthSales = lastMonthAdRows.reduce((s, r) => s + parseAmt(r.sales), 0);
+        const daysInLastMonth = new Date(ly, lm, 0).getDate();
+        const proratedSpend = lastMonthSpend * (daysElapsed / daysInLastMonth);
+        const proratedSales = lastMonthSales * (daysElapsed / daysInLastMonth);
+        const acos = proratedSales > 0 ? (proratedSpend / proratedSales) * 100 : 0;
+        setKpi('ov-kpi-adspend', '$' + proratedSpend.toLocaleString(undefined, { maximumFractionDigits: 0 }), null);
+        setKpi('ov-kpi-acos', acos.toFixed(1) + '%', null);
+        const adSpendMom = document.querySelector('#ov-kpi-adspend .kpi-mom');
+        if (adSpendMom) { adSpendMom.className = 'kpi-mom flat'; adSpendMom.textContent = 'Amazon only \u00b7 prorated (Est.)'; }
+        const acosMom = document.querySelector('#ov-kpi-acos .kpi-mom');
+        if (acosMom) { acosMom.className = 'kpi-mom flat'; acosMom.textContent = 'Amazon only \u00b7 prorated (Est.)'; }
+      } else {
+        console.warn('[Evolis][overview] ad orders sheet did not return CSV \u2014 Ad Spend/ACOS left blank.');
+      }
+
+      // \u2500\u2500 Trend: trailing 6 COMPLETED months, blended revenue across channels \u2500\u2500
+      const [amzRevCsv, webRevCsv, wmtRevCsv] = await Promise.all([
+        fetch(sheetCsvUrl(AMZ_REVENUE_SHEET_ID, AMZ_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(sheetCsvUrl(WMT_REVENUE_SHEET_ID, WMT_REVENUE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      ]);
+      const amzRevRows = isCsv(amzRevCsv) ? parseCsv(amzRevCsv) : [];
+      const webRevRows = isCsv(webRevCsv) ? parseCsv(webRevCsv) : [];
+      const wmtRevRows = isCsv(wmtRevCsv) ? parseCsv(wmtRevCsv) : [];
+      console.log('[Evolis][overview] revenue-history row counts \u2014 amazon:', amzRevRows.length, 'web:', webRevRows.length, 'walmart:', wmtRevRows.length);
+
+      function monthlyRevenue(rows, y, m) {
+        const row = rows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
+        return row ? parseAmt(row.revenue) : 0;
+      }
+      const trendLabels = [], trendData = [];
+      let ty = now.getFullYear(), tm = now.getMonth();
+      for (let i = 0; i < 6; i++) {
+        tm -= 1; if (tm === 0) { tm = 12; ty--; }
+        trendLabels.unshift(`${monthNames[tm - 1]} '${String(ty).slice(2)}`);
+        trendData.unshift(monthlyRevenue(amzRevRows, ty, tm) + monthlyRevenue(webRevRows, ty, tm) + monthlyRevenue(wmtRevRows, ty, tm));
+      }
+      if (trendData.some(v => v > 0)) {
+        window._ovTrendChart = new Chart(document.getElementById('chart-ov-trend'), {
+          type: 'line',
+          data: { labels: trendLabels, datasets: [{ label: 'Blended Revenue', data: trendData, borderColor: '#001f60', backgroundColor: 'rgba(0,31,96,0.08)', borderWidth: 2.5, pointRadius: 3, tension: 0.3, fill: true }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'K' } } } }
+        });
+      } else {
+        console.warn('[Evolis][overview] no non-zero months found for trend chart \u2014 check revenue-history sheet gids/fields (expects columns: year, month, revenue).');
+      }
+    } catch (err) {
+      console.error('[Evolis][overview] fetch/parse failed:', err);
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const ov = document.getElementById('page-overview');
+    if (ov && ov.classList.contains('active')) {
+      window.initOverviewLive();
+    }
+  });
 })();
 </script>
 </body>
