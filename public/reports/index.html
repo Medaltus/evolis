@@ -6654,35 +6654,14 @@ async function loadAuditResultsFromSheet() {
     return '';
   }
 
-  // Chart.js attaches its own internal resolver/caching state directly onto
-  // the `options` (and dataset) object graph it's given at construction time
-  // — that's how it implements scriptable-option and scale-scope resolution.
-  // pdfxWithScaledAxisFonts only ever shallow-cloned the top level plus
-  // scales.x/scales.y; everything else (plugins, elements, etc.) was still
-  // the EXACT SAME object already instrumented by the LIVE chart. Handing
-  // that same object graph to a second `new Chart()` call breaks Chart.js's
-  // assumption that each chart's config objects are uniquely its own, and it
-  // throws internally — inconsistently, since which assertion trips first
-  // depends on internal resolution order. This is why every single isolated
-  // capture was failing and silently falling back to the raw (unscaled,
-  // 10px) live chart image — the font fix was computing the right number
-  // the whole time, it just never once reached a chart that survived
-  // construction. Root-caused 2026-07-15 from "Recursion detected:
-  // _scriptable->_scriptable" / "t.startsWith is not a function" in the
-  // console — both are symptoms of the same shared-identity bug, not two
-  // separate bugs. Fix: give the temp chart a fully independent object
-  // graph — plain objects/arrays are deep-copied, functions (scriptable
-  // callbacks like generateLabels) are left as-is since a shared function
-  // reference carries no Chart.js-attached state and isn't what caused this.
-  function pdfxDeepClone(val) {
-    if (Array.isArray(val)) return val.map(pdfxDeepClone);
-    if (val && typeof val === 'object' && val.constructor === Object) {
-      const out = {};
-      for (const k in val) out[k] = pdfxDeepClone(val[k]);
-      return out;
-    }
-    return val; // primitives, functions, Dates, etc. — nothing Chart.js instruments
-  }
+  // 2026-07-15: this used to be where a pdfxDeepClone() helper lived, meant
+  // to give a temporary Chart.js instance a fully independent options/data
+  // graph so it wouldn't collide with the live chart's. That turned out to
+  // be solving the wrong layer — Chart.js's colliding resolver state lives
+  // on the GLOBAL Chart.defaults scope cache, not on the per-chart
+  // options/data objects, so no amount of cloning those could isolate
+  // against it. See the comment in pdfxCaptureAllChartImages() below for
+  // the actual fix: capture in place on the live chart, no second instance.
 
 
   // config (Chart.defaults.font.size = 10), but each page's layout gives
@@ -6767,70 +6746,73 @@ async function loadAuditResultsFromSheet() {
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { setTimeout(r, 30); });
 
-    // Fully isolated capture: build a brand-new, fully DETACHED canvas per
-    // chart and a brand-new Chart.js instance on it — the live
-    // window._xChart instances and their own <canvas> elements are never
-    // touched, read from only (for their current size, data, and options).
-    // This can't affect the dashboard even in a worst-case failure, because
-    // nothing live is ever destroyed or reassigned.
+    // 2026-07-15: the isolated-temp-chart approach below this comment used to
+    // build a brand-new, fully detached Chart.js instance per chart purely to
+    // get a bigger axis font without ever touching the live one. That kept
+    // throwing inside Chart.js's own internals ("Recursion detected:
+    // _scriptable->_scriptable", "t.startsWith is not a function") — every
+    // single time, on every chart, even after deep-cloning options AND data
+    // so the temp chart shared no object graph with the live one. Root cause
+    // (confirmed by grepping Chart.js's own source for those exact
+    // .startsWith calls — both are Chart.js's INTERNAL `_scriptable`/
+    // `_indexable` scope descriptors): Chart.js attaches its option-
+    // resolution cache to the GLOBAL, shared `Chart.defaults` scope chain
+    // the first time any chart of a given type is created — not just to that
+    // one chart's own `options` object. By the time export runs, this page
+    // has already created a dozen+ other charts, so ANY second, independent
+    // Chart instance walks that same already-populated global cache and can
+    // trip its internal recursion guard — no amount of cloning the per-chart
+    // options/data can isolate against a cache that lives outside either of
+    // them. Cloning was solving the wrong layer.
     //
-    // responsive:false + explicit numeric canvas.width/height (not CSS
-    // percentages, not a container to auto-detect from) removes the entire
-    // class of "container size wasn't what Chart.js thought it was" bug
-    // that's been behind every version of this problem — there's no
-    // container involved at all for this temporary chart to get confused
-    // about. Confirmed 2026-07-14.
-    const tempCanvases = [];
+    // Fix: stop creating a second Chart instance at all. The force-visible
+    // step above already gets the LIVE chart's own canvas to its correct
+    // real size before this runs (confirmed directly: liveCanvas.width/height
+    // matches the measured wrapper rect exactly, every time). So for each
+    // chart: temporarily swap in bigger-font scales on the chart's OWN
+    // options, force a synchronous no-animation redraw, capture
+    // toBase64Image(), then swap the original scales object back and redraw
+    // again. Same single chart instance throughout — there is no second
+    // resolver context for Chart.js to collide with, so this entire class of
+    // bug can't occur here regardless of how many other charts exist on the
+    // page.
     const images = {};
     varNames.forEach(function (varName) {
       const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const liveChart = window[varName];
       if (!liveCanvas || !liveChart) { images[varName] = { img: '', width: 0, height: 0 }; return; }
 
-      const wrapper = liveCanvas.parentElement;
-      const rect = wrapper ? wrapper.getBoundingClientRect() : null;
+      const rect = liveCanvas.getBoundingClientRect();
       const rectValid = !!(rect && rect.width > 0 && rect.height > 0);
       const targetW = Math.round((rectValid && rect.width) || liveCanvas.width || 700);
-      const targetH = Math.round((rectValid && rect.height) || liveCanvas.height || 300);
-      const dpr = window.devicePixelRatio || 1;
       const rawDataInfo = liveChart.data && liveChart.data.datasets
         ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
         : 'no datasets';
-      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null wrapper', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using target:', targetW + 'x' + targetH, '— data:', rawDataInfo);
+      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using targetW:', targetW, '— data:', rawDataInfo);
 
       let img = '';
+      const hasScales = !!(liveChart.options && liveChart.options.scales);
+      const origScales = hasScales ? liveChart.options.scales : null;
       try {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = Math.round(targetW * dpr);
-        tempCanvas.height = Math.round(targetH * dpr);
-        tempCanvas.style.width = targetW + 'px';
-        tempCanvas.style.height = targetH + 'px';
-        document.body.appendChild(tempCanvas); // detached from any visible layout via position, but must be in the DOM for Chart.js to render into it reliably
-        tempCanvas.style.position = 'fixed';
-        tempCanvas.style.left = '-99999px';
-        tempCanvas.style.top = '0';
-        tempCanvases.push(tempCanvas);
-
-        const clonedOptions = pdfxDeepClone(liveChart.options);
-        const clonedData = pdfxDeepClone(liveChart.data);
-        const tempOptions = Object.assign({}, pdfxWithScaledAxisFonts(clonedOptions, targetW), {
-          responsive: false,
-          maintainAspectRatio: false,
-          animation: false,
-          devicePixelRatio: dpr
-        });
-        const tempChart = new Chart(tempCanvas.getContext('2d'), {
-          type: liveChart.config.type,
-          data: clonedData,
-          options: tempOptions
-        });
-        img = tempChart.toBase64Image('image/png');
-        images[varName] = { img: img, width: tempCanvas.width, height: tempCanvas.height };
-        tempChart.destroy(); // only ever destroys the TEMPORARY chart, never the live one
+        if (hasScales) {
+          // pdfxWithScaledAxisFonts only ever READS options.scales to build a
+          // brand-new scales object — it never mutates origScales itself —
+          // so origScales stays a pristine reference to swap back in below.
+          const scaled = pdfxWithScaledAxisFonts(liveChart.options, targetW);
+          liveChart.options.scales = scaled.scales;
+          liveChart.update('none'); // synchronous, no animation
+        }
+        img = liveChart.toBase64Image('image/png');
+        images[varName] = { img: img, width: liveCanvas.width, height: liveCanvas.height };
       } catch (e) {
-        console.warn('[pdf-export] isolated capture failed for', varName, '— falling back to live chart image as-is:', e.message);
+        console.warn('[pdf-export] scaled-font capture failed for', varName, '— falling back to whatever is currently rendered:', e.message);
         img = pdfxRawChartImg(varName);
         images[varName] = { img: img, width: liveCanvas.width, height: liveCanvas.height };
+      } finally {
+        if (hasScales) {
+          liveChart.options.scales = origScales; // restore the exact original reference
+          liveChart.update('none');
+        }
       }
 
       let dataInfo = 'no chart';
@@ -6839,13 +6821,12 @@ async function loadAuditResultsFromSheet() {
           return (ds.label || '?') + ':' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + 'pts';
         }).join(', ');
       }
-      console.log('[pdf-export] captured', varName, '— isolated canvas', images[varName].width + 'x' + images[varName].height, '— image length', img ? img.length : 0, '— datasets:', dataInfo);
+      console.log('[pdf-export] captured', varName, '— canvas', images[varName].width + 'x' + images[varName].height, '— image length', img ? img.length : 0, '— datasets:', dataInfo);
     });
 
-    // Clean up every temporary canvas — none of this ever touched the live
-    // dashboard, so all that's left to do is restore hidden-ancestor
-    // visibility.
-    tempCanvases.forEach(function (c) { try { c.remove(); } catch (e) { /* noop */ } });
+    // Nothing but hidden-ancestor visibility to restore now — the live
+    // chart's own scales were already swapped back in the finally-block
+    // above, per chart, immediately after its own capture.
     restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
 
     return images;
