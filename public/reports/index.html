@@ -2916,11 +2916,11 @@ function showPage(id, btn) {
   const ac = pg && pg.querySelector('.channel-page.active');
   if (ac) {
     const cid = ac.id;
-    if (cid==='s-amazon'        && !window._amazonLiveInit)  initAmazonLive();
-    if (cid==='s-website'       && !window._webLiveInit)     initWebLive();
-    if (cid==='s-walmart'       && !window._walmartLiveInit) initWalmartLive();
-    if (cid==='m-stewardship'   && !window._stewardshipLiveInit)  window.initStewardshipLive();
-    if (cid==='m-opportunities' && !window._snsChart)        initSns();
+    if (cid==='s-amazon')        initAmazonLive();
+    if (cid==='s-website')       initWebLive();
+    if (cid==='s-walmart')       initWalmartLive();
+    if (cid==='m-stewardship')   window.initStewardshipLive();
+    if (cid==='m-opportunities' && !window._snsChart) initSns();
   }
 }
 
@@ -2931,12 +2931,14 @@ function showChannel(page, channelId, btn) {
   document.getElementById(channelId).classList.add('active');
   btn.classList.add('active');
 
-    // lazy init evolis data
-    if (channelId === 's-amazon'        && !window._amazonLiveInit) initAmazonLive();
-    if (channelId === 's-website'       && !window._webLiveInit)    initWebLive();
-    if (channelId === 's-walmart'       && !window._walmartLiveInit)initWalmartLive();
-    if (channelId === 'm-stewardship'   && !window._stewardshipLiveInit)    window.initStewardshipLive();
-    if (channelId === 'm-opportunities' && !window._snsChart)       initSns();
+    // lazy init evolis data — each initXLive() is now idempotent (caches its
+    // own in-flight promise), so calling it again on repeat tab visits is
+    // just a cheap early-return, not a duplicate fetch.
+    if (channelId === 's-amazon')        initAmazonLive();
+    if (channelId === 's-website')       initWebLive();
+    if (channelId === 's-walmart')       initWalmartLive();
+    if (channelId === 'm-stewardship')   window.initStewardshipLive();
+    if (channelId === 'm-opportunities' && !window._snsChart) initSns();
   }
 
   // ── Sub-tab navigation (nested product/variation tabs) ──
@@ -3519,9 +3521,19 @@ async function initSns() {
   }
 
   // ── Main init ─────────────────────────────────────────────────────────────
-  window.initAmazonLive = async function () {
-    if (window._amazonLiveInit) return;
-    window._amazonLiveInit = true;
+  // PDF export awaits this function to guarantee the chart exists before
+  // capture. Previously this set window._amazonLiveInit = true SYNCHRONOUSLY
+  // before any of the fetch/render work below had run, and a repeat call
+  // (e.g. from exportPartnerPDF, after the page-load call already flipped
+  // the flag) just returned `undefined` — not a promise for the still-
+  // in-flight work. So "await window.initAmazonLive()" from the export
+  // function resolved instantly regardless of whether data had actually
+  // loaded yet. Caching the real promise (not a boolean) means every caller,
+  // no matter when it calls in, gets back something that only resolves once
+  // the chart is actually built. Confirmed 2026-07-14.
+  window.initAmazonLive = function () {
+    if (window._amazonLivePromise) return window._amazonLivePromise;
+    window._amazonLivePromise = (async function () {
     console.log('[Evolis] initAmazonLive() called');
 
     const { year, month } = getLastFullMonth();
@@ -3621,6 +3633,8 @@ async function initSns() {
     } catch (err) {
       showError(err.message);
     }
+    })();
+    return window._amazonLivePromise;
   };
 
   // ── Revenue chart ─────────────────────────────────────────────────────────
@@ -4000,9 +4014,9 @@ async function initSns() {
     return { totalConversions: Math.round(totalConversions), prevConversions: Math.round(prevConversions) };
   }
 
-  window.initWebLive = async function () {
-    if (window._webLiveInit) return;
-    window._webLiveInit = true;
+  window.initWebLive = function () {
+    if (window._webLivePromise) return window._webLivePromise;
+    window._webLivePromise = (async function () {
     console.log('[Evolis] initWebLive() called');
 
     const { year, month } = getLastFullMonth();
@@ -4080,6 +4094,8 @@ async function initSns() {
       console.error('[WebLive]', err.message);
       showWebError(`Error: ${err.message}`);
     }
+    })();
+    return window._webLivePromise;
   };
 
   // ── Revenue chart — computed from orders sheet ────────────────────────────
@@ -4473,9 +4489,9 @@ async function initSns() {
     badge.textContent = `${arrow}${Math.abs(pctVal)}% ${label}`;
   }
 
-  window.initStewardshipLive = async function () {
-    if (window._stewardshipLiveInit) return;
-    window._stewardshipLiveInit = true;
+  window.initStewardshipLive = function () {
+    if (window._stewardshipLivePromise) return window._stewardshipLivePromise;
+    window._stewardshipLivePromise = (async function () {
     console.log('[Evolis] initStewardshipLive() called');
 
     const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -4643,6 +4659,8 @@ async function initSns() {
     } catch (err) {
       console.warn('[Evolis] initStewardshipLive failed, charts/KPIs remain at last rendered values:', err.message);
     }
+    })();
+    return window._stewardshipLivePromise;
   };
 
 })();
@@ -4774,9 +4792,9 @@ async function initSns() {
     badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% MOM`;
   }
 
-  window.initWalmartLive = async function () {
-    if (window._walmartLiveInit) return;
-    window._walmartLiveInit = true;
+  window.initWalmartLive = function () {
+    if (window._walmartLivePromise) return window._walmartLivePromise;
+    window._walmartLivePromise = (async function () {
     console.log('[Evolis] initWalmartLive() called');
 
     const { year, month } = getLastFullMonth();
@@ -4846,6 +4864,8 @@ async function initSns() {
       console.error('[WalmartLive]', err.message);
       document.getElementById('wtp-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Error: ${err.message}</td></tr>`;
     }
+    })();
+    return window._walmartLivePromise;
   };
 
   // ── Walmart Revenue chart ──────────────────────────────────────────────────
@@ -6635,22 +6655,35 @@ async function loadAuditResultsFromSheet() {
   }
 
   // Every chart shares the same 10px axis-tick font in its own source
-  // config, but each page's layout gives charts different natural
-  // container widths (Sales pages ~2238px full-width vs Stewardship's
-  // ~1091px two-column) — and since every chart ends up displayed at the
-  // SAME fixed ~686px width in the PDF, the wider ones get downscaled much
-  // more than the narrower ones, so the identical 10px source font ends up
-  // looking noticeably smaller on Amazon/Website/Walmart/Subscriptions than
-  // on Investments/Ad Impressions. Scaling the SOURCE font size up in
-  // proportion to how much downscaling THIS chart specifically will
-  // undergo makes the EFFECTIVE size land the same everywhere. Only ever
-  // applied to the temporary capture chart's options, never the live one.
-  // Per Jaclyn 2026-07-14.
+  // config (Chart.defaults.font.size = 10), but each page's layout gives
+  // charts different natural container widths (Sales pages ~2238px
+  // full-width vs Stewardship's ~1091px two-column) — and since every chart
+  // ends up DISPLAYED at the same fixed ~686px width in the PDF, the wider
+  // ones get downscaled more than the narrower ones on the way there.
+  //
+  // 2026-07-14 fix scaled the SOURCE font up in proportion to
+  // captureWidthPx/PDFX_CARD_WIDTH_PX, based on the original 10px. That
+  // successfully made every chart's axis labels CONSISTENT with each other
+  // — but it never made them bigger: upscaling the source by exactly the
+  // factor that the image is later downscaled by (back to
+  // PDFX_CARD_WIDTH_PX) cancels out perfectly, every time, by construction.
+  // The effective printed size was always landing back at the same 10px-
+  // equivalent (~7.5pt on an 8.5x11 page) it started at — just uniformly so
+  // across charts instead of inconsistently. That's why labels were still
+  // unreadable after that fix: it solved a different problem than "too
+  // small." Root-caused 2026-07-15, confirmed against the June 2026 export.
+  //
+  // Fix: scale relative to a TARGET effective size instead of the original
+  // 10px. PDFX_CHART_AXIS_TARGET_PX is the size (CSS px) the tick labels
+  // should actually measure once printed at PDFX_CARD_WIDTH_PX — raise this
+  // constant to make every chart's axis labels bigger in the exported PDF;
+  // it's now fully decoupled from the live dashboard's own 10px tick size.
   const PDFX_CARD_WIDTH_PX = 686; // matches pdfxChartBlock's own target display width
+  const PDFX_CHART_AXIS_TARGET_PX = 16; // effective size at PDFX_CARD_WIDTH_PX display width — was landing at ~10 before this fix
   function pdfxWithScaledAxisFonts(options, captureWidthPx) {
     const fontScale = captureWidthPx / PDFX_CARD_WIDTH_PX;
-    const scaledSize = Math.max(6, Math.round(10 * fontScale));
-    console.log('[pdf-export][qa] font scale — captureWidthPx:', captureWidthPx, '÷ cardWidth:', PDFX_CARD_WIDTH_PX, '= scale', fontScale.toFixed(2), '→ scaledSize:', scaledSize + 'px');
+    const scaledSize = Math.max(6, Math.round(PDFX_CHART_AXIS_TARGET_PX * fontScale));
+    console.log('[pdf-export][qa] font scale — captureWidthPx:', captureWidthPx, '÷ cardWidth:', PDFX_CARD_WIDTH_PX, '= scale', fontScale.toFixed(2), '→ scaledSize:', scaledSize + 'px (target effective ' + PDFX_CHART_AXIS_TARGET_PX + 'px)');
     const origScales = options.scales || {};
     const newScales = Object.assign({}, origScales);
     ['x', 'y'].forEach(function (axisKey) {
@@ -6662,6 +6695,8 @@ async function loadAuditResultsFromSheet() {
     });
     return Object.assign({}, options, { scales: newScales });
   }
+
+
 
   async function pdfxCaptureAllChartImages() {
     const restore = []; // [{el, prop, prevValue}] — only ever touches display:none ancestors, nothing chart-related
@@ -7081,35 +7116,51 @@ async function loadAuditResultsFromSheet() {
 
     try {
       // A PDF export shouldn't silently produce blank chart cards just
-      // because the user hasn't clicked into Website/Walmart/Opportunities
-      // yet this session — those charts only exist once their tab's lazy
-      // init has run. Force all of them to run now, awaiting each, before
-      // building any page HTML. Confirmed 2026-07-13 — this is why Sales by
-      // Month (Website/Walmart) and Active Subscriptions were blank.
-      const initPromises = [];
-      if (!window._amazonLiveInit     && typeof window.initAmazonLive === 'function')     initPromises.push(window.initAmazonLive());
-      if (!window._webLiveInit        && typeof window.initWebLive === 'function')        initPromises.push(window.initWebLive());
-      if (!window._walmartLiveInit    && typeof window.initWalmartLive === 'function')     initPromises.push(window.initWalmartLive());
-      if (!window._stewardshipLiveInit && typeof window.initStewardshipLive === 'function') initPromises.push(window.initStewardshipLive());
-      if (!window._snsChart           && typeof initSns === 'function')                    initPromises.push(initSns());
+      // because the underlying Sheets fetch for a channel hasn't finished
+      // yet — whether that's because the tab was never opened, or because
+      // export was clicked soon after page load while the auto-init fetches
+      // (initAmazonLive/initWebLive/initWalmartLive/initStewardshipLive —
+      // fired unconditionally on DOMContentLoaded) are still in flight.
+      //
+      // Previously this gated each call on `!window._xLiveInit`, but that
+      // flag was set to `true` SYNCHRONOUSLY at the very top of each init
+      // function, before any of its await'd fetch/render work ran. Since
+      // page load already calls every one of these once, the flag was
+      // already `true` by the time export ran almost every time — so this
+      // block never actually called (or awaited) anything, and silently
+      // fell through to the 4-second poll below, which isn't always long
+      // enough (Sheets quota retry/backoff alone can exceed it). Opening
+      // each tab manually before exporting just gave the fetch enough wall
+      // clock time to finish in the background first — it never fixed the
+      // underlying await. Root-caused and fixed 2026-07-15: initAmazonLive/
+      // initWebLive/initWalmartLive/initStewardshipLive now cache and
+      // return their real in-flight promise on every call (see their
+      // definitions above), so calling them again here — regardless of
+      // whether page load already started them — always resolves once the
+      // chart is actually built.
+      const initPromises = [
+        (typeof window.initAmazonLive === 'function')      ? window.initAmazonLive()      : null,
+        (typeof window.initWebLive === 'function')         ? window.initWebLive()         : null,
+        (typeof window.initWalmartLive === 'function')     ? window.initWalmartLive()     : null,
+        (typeof window.initStewardshipLive === 'function') ? window.initStewardshipLive() : null,
+        (!window._snsChart && typeof initSns === 'function') ? initSns() : null
+      ].filter(Boolean);
       if (initPromises.length) {
-        console.log('[pdf-export] awaiting', initPromises.length, 'lazy chart init(s) before building PDF');
+        console.log('[pdf-export] awaiting', initPromises.length, 'chart data load(s) before building PDF');
         await Promise.all(initPromises);
       }
 
-      // Extra safety net: the init functions' own returned promise resolving
-      // doesn't guarantee the chart variable itself exists yet if there's an
-      // internal async step not part of that promise's chain (a bug inside
-      // those functions, not this export code). Poll briefly for each
-      // expected chart variable directly, since Amazon worked but
-      // Website/Walmart didn't even after awaiting their init promises —
-      // exactly the signature of this class of bug. Confirmed 2026-07-13.
+      // Defensive backstop only at this point — the real fix is the promise
+      // caching above. Raised from 4s to 12s: 4s was tuned for "already
+      // loaded, just re-verify," not "actually wait for a cold fetch,"
+      // which is what this was silently doing every time before today.
       const expectedCharts = ['_amazonChart', '_webChart', '_walmartChart', '_investChart', '_impressChart', '_snsChart'];
       const pollStart = Date.now();
-      while (Date.now() - pollStart < 4000 && expectedCharts.some(v => !window[v])) {
+      while (Date.now() - pollStart < 12000 && expectedCharts.some(v => !window[v])) {
         await new Promise(r => setTimeout(r, 150));
       }
       console.log('[pdf-export] chart variable presence after poll:', expectedCharts.map(v => v + '=' + !!window[v]).join(', '));
+
 
       // Logo/watermark are now embedded base64 constants (see PDFX_LOGO_SRC /
       // PDFX_WATERMARK_SRC above) — nothing to resolve at export time.
