@@ -6654,7 +6654,37 @@ async function loadAuditResultsFromSheet() {
     return '';
   }
 
-  // Every chart shares the same 10px axis-tick font in its own source
+  // Chart.js attaches its own internal resolver/caching state directly onto
+  // the `options` (and dataset) object graph it's given at construction time
+  // — that's how it implements scriptable-option and scale-scope resolution.
+  // pdfxWithScaledAxisFonts only ever shallow-cloned the top level plus
+  // scales.x/scales.y; everything else (plugins, elements, etc.) was still
+  // the EXACT SAME object already instrumented by the LIVE chart. Handing
+  // that same object graph to a second `new Chart()` call breaks Chart.js's
+  // assumption that each chart's config objects are uniquely its own, and it
+  // throws internally — inconsistently, since which assertion trips first
+  // depends on internal resolution order. This is why every single isolated
+  // capture was failing and silently falling back to the raw (unscaled,
+  // 10px) live chart image — the font fix was computing the right number
+  // the whole time, it just never once reached a chart that survived
+  // construction. Root-caused 2026-07-15 from "Recursion detected:
+  // _scriptable->_scriptable" / "t.startsWith is not a function" in the
+  // console — both are symptoms of the same shared-identity bug, not two
+  // separate bugs. Fix: give the temp chart a fully independent object
+  // graph — plain objects/arrays are deep-copied, functions (scriptable
+  // callbacks like generateLabels) are left as-is since a shared function
+  // reference carries no Chart.js-attached state and isn't what caused this.
+  function pdfxDeepClone(val) {
+    if (Array.isArray(val)) return val.map(pdfxDeepClone);
+    if (val && typeof val === 'object' && val.constructor === Object) {
+      const out = {};
+      for (const k in val) out[k] = pdfxDeepClone(val[k]);
+      return out;
+    }
+    return val; // primitives, functions, Dates, etc. — nothing Chart.js instruments
+  }
+
+
   // config (Chart.defaults.font.size = 10), but each page's layout gives
   // charts different natural container widths (Sales pages ~2238px
   // full-width vs Stewardship's ~1091px two-column) — and since every chart
@@ -6781,7 +6811,9 @@ async function loadAuditResultsFromSheet() {
         tempCanvas.style.top = '0';
         tempCanvases.push(tempCanvas);
 
-        const tempOptions = Object.assign({}, pdfxWithScaledAxisFonts(liveChart.options, targetW), {
+        const clonedOptions = pdfxDeepClone(liveChart.options);
+        const clonedData = pdfxDeepClone(liveChart.data);
+        const tempOptions = Object.assign({}, pdfxWithScaledAxisFonts(clonedOptions, targetW), {
           responsive: false,
           maintainAspectRatio: false,
           animation: false,
@@ -6789,7 +6821,7 @@ async function loadAuditResultsFromSheet() {
         });
         const tempChart = new Chart(tempCanvas.getContext('2d'), {
           type: liveChart.config.type,
-          data: liveChart.data,
+          data: clonedData,
           options: tempOptions
         });
         img = tempChart.toBase64Image('image/png');
