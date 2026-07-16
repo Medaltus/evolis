@@ -62,8 +62,8 @@ module.exports = async (req, res) => {
     console.warn('[sync-sqp-request] could not read _meta (probably first-ever run, tab does not exist yet):', err.message);
   }
 
-  if (metaMap[`report_id_${targetMonth}`]) {
-    console.log(`[sync-sqp-request] ${targetMonth} already requested (reportId ${metaMap[`report_id_${targetMonth}`]}, status ${metaMap['report_status'] || 'unknown'}) — skipping`);
+  if (metaMap[`report_id_${targetMonth}`] && !req.query.force) {
+    console.log(`[sync-sqp-request] ${targetMonth} already requested (reportId ${metaMap[`report_id_${targetMonth}`]}, status ${metaMap['report_status'] || 'unknown'}) — skipping. Pass ?force=true to request a fresh one anyway (e.g. after a FATAL report).`);
     return res.status(200).json({ ok: true, skipped: true, targetMonth, reportId: metaMap[`report_id_${targetMonth}`] });
   }
 
