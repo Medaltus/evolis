@@ -85,6 +85,7 @@ module.exports = async (req, res) => {
   // ── Poll until DONE ──────────────────────────────────────────────────────
   let documentId = null;
   let finalStatus = null;
+  let finalStatusBody = null;
   const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
@@ -92,6 +93,7 @@ module.exports = async (req, res) => {
     try {
       const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
       finalStatus = statusResp.processingStatus;
+      finalStatusBody = statusResp;
       console.log(`[sync-sqp-process] ${targetMonth} report ${reportId} status: ${finalStatus}`);
 
       if (finalStatus === 'DONE') {
@@ -99,7 +101,7 @@ module.exports = async (req, res) => {
         break;
       }
       if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
-        console.error(`[sync-sqp-process] ${targetMonth} report ${finalStatus}`);
+        console.error(`[sync-sqp-process] ${targetMonth} report ${finalStatus} — full response:`, JSON.stringify(statusResp));
         break;
       }
     } catch (err) {
@@ -114,7 +116,7 @@ module.exports = async (req, res) => {
       const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
       await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
     } catch (err) { /* best-effort — the real error already logged above */ }
-    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId });
+    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId, amazonResponse: finalStatusBody });
   }
 
   if (!documentId) {
