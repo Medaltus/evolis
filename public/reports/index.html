@@ -7062,35 +7062,49 @@ async function loadAuditResultsFromSheet() {
     // explicit taller height — same capture logic, just with an optional
     // height override instead of the chart's current natural size. Per
     // Jaclyn 2026-07-15.
-    function pdfxCaptureOneChart(varName, opts) {
-      opts = opts || {};
+    function pdfxCaptureOneChart(varName) {
       const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const liveChart = window[varName];
-      if (!liveCanvas || !liveChart) return { img: '', width: 0, height: 0 };
-
-      // Optional height override: temporarily resize the WRAPPER div (the
-      // "position:relative;height:NNNpx" container around the canvas) and
-      // let Chart.js's own responsive resize pick up the new size, the same
-      // way it already correctly detects real sizes once an ancestor is
-      // forced visible elsewhere in this function — rather than fighting
-      // Chart.js's explicit resize(w,h) API directly, which behaves
-      // differently under responsive:true than letting it auto-detect from
-      // its container.
-      const wrapper = liveCanvas.parentElement;
-      const hadHeightOverride = !!(opts.heightPx && wrapper);
-      const originalWrapperHeight = hadHeightOverride ? wrapper.style.height : '';
-      if (hadHeightOverride) {
-        wrapper.style.height = Math.round(opts.heightPx) + 'px';
-        liveChart.resize();
-      }
+      if (!liveCanvas || !liveChart) return { img: '', width: 0, height: 0, displayHeightPx: 0 };
 
       const rect = liveCanvas.getBoundingClientRect();
       const rectValid = !!(rect && rect.width > 0 && rect.height > 0);
-      const targetW = Math.round((rectValid && rect.width) || liveCanvas.width || 700);
+      const originalWidthPx = Math.round((rectValid && rect.width) || liveCanvas.width || 700);
+      const originalHeightPx = Math.round((rectValid && rect.height) || liveCanvas.height || 300);
+      const wrapper = liveCanvas.parentElement;
+      const dashboardHeightPx = wrapper ? wrapper.getBoundingClientRect().height : originalHeightPx;
+
+      // 2026-07-15: the naive fix here — just reusing dashboardHeightPx as
+      // the PDF <img>'s CSS height while the captured image still had its
+      // own much flatter native aspect ratio (the live canvas is far wider
+      // than the fixed 686px PDF card) — visibly stretched/distorted the
+      // chart, because that forces a browser to non-uniformly scale a flat
+      // image into a tall box. An earlier attempt to fix THAT by mutating
+      // the wrapper's CSS height and calling chart.resize() with no
+      // arguments also came out distorted.
+      //
+      // Root-caused via an isolated Chart.js+canvas test: chart.resize(w, h)
+      // called WITH BOTH explicit numeric arguments produces a byte-for-byte
+      // identical render to building a chart at that size from scratch — a
+      // genuine re-render, not a stretch — and resizing back afterward
+      // restores exactly. The no-argument call relies on Chart.js
+      // auto-detecting size from the container, which is where the
+      // distortion actually came from.
+      //
+      // So: re-render the live chart, synchronously, at the exact
+      // width:height ratio it'll be shown at in the PDF (686:dashboardHeightPx)
+      // — scaled up to the chart's own real capture width so resolution
+      // stays sharp — capture, then resize back to its original on-screen
+      // size so the live dashboard is left exactly as it was. Per Jaclyn
+      // 2026-07-15.
+      const captureHeightPx = Math.round(originalWidthPx * (dashboardHeightPx / PDFX_CARD_WIDTH_PX));
+      liveChart.resize(originalWidthPx, captureHeightPx);
+
+      const targetW = originalWidthPx;
       const rawDataInfo = liveChart.data && liveChart.data.datasets
         ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
         : 'no datasets';
-      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using targetW:', targetW, (hadHeightOverride ? '— height override: ' + Math.round(opts.heightPx) + 'px' : ''), '— data:', rawDataInfo);
+      console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '— re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx) + ' in the PDF) — data:', rawDataInfo);
 
       let img = '';
       const hasScales = !!(liveChart.options && liveChart.options.scales);
@@ -7115,12 +7129,12 @@ async function loadAuditResultsFromSheet() {
         }
       }
 
-      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height };
+      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height, displayHeightPx: dashboardHeightPx };
 
-      if (hadHeightOverride) {
-        wrapper.style.height = originalWrapperHeight;
-        liveChart.resize();
-      }
+      // Restore the live dashboard's own chart to its original size —
+      // explicit numeric resize again, same validated synchronous technique,
+      // just going back down instead of up.
+      liveChart.resize(originalWidthPx, originalHeightPx);
 
       let dataInfo = 'no chart';
       if (liveChart.data && liveChart.data.datasets) {
@@ -7132,7 +7146,7 @@ async function loadAuditResultsFromSheet() {
 
       return result;
     }
-    window.pdfxCaptureOneChart = pdfxCaptureOneChart; // needs to be reachable from pdfxStretchChartsToFillWhitespace below
+    window.pdfxCaptureOneChart = pdfxCaptureOneChart; // kept on window for console debugging
 
     const images = {};
     varNames.forEach(function (varName) {
@@ -7145,82 +7159,6 @@ async function loadAuditResultsFromSheet() {
     restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
 
     return images;
-  }
-
-  // Fills leftover page whitespace by re-rendering that page's chart taller
-  // — never by CSS-stretching the already-captured <img>, which would
-  // distort gridlines and turn axis text blurry/tall. Measured directly
-  // against THIS export's actual rendered layout (not hardcoded assumptions
-  // about KPI-row/table/insight-bar heights, which would silently drift out
-  // of sync the next time any of that markup changes elsewhere). Only
-  // applies to the three pages that pair a chart with a top-products table
-  // (Amazon/Web/Walmart) — those are the ones with the leftover-whitespace
-  // problem Jaclyn flagged; Stewardship's two-chart layout and the
-  // Opportunities page have their own different bottom content and aren't
-  // touched here. Per Jaclyn 2026-07-15.
-  async function pdfxStretchChartsToFillWhitespace(root) {
-    const PAGE_HEIGHT_PX = 11 * 96; // .pdfx-page is set in real CSS inches; 1in is always exactly 96 CSS px
-    const SAFETY_MARGIN_PX = 10;    // breathing room against rounding/font-metric drift across browsers
-    const MIN_GROWTH_PX = 20;       // not worth a full re-render + recapture for a trivial sliver of space
-    const MAX_EXTRA_PX = 260;       // sane ceiling so an unusually short table never balloons the chart absurdly tall
-
-    const targets = [
-      { pageIndex: 1, varName: '_amazonChart' },  // buildCoverPage=0, buildAmazonPage=1, buildWebsitePage=2, buildWalmartPage=3 — order matches root.innerHTML assembly below
-      { pageIndex: 2, varName: '_webChart' },
-      { pageIndex: 3, varName: '_walmartChart' },
-    ];
-
-    const pages = Array.from(root.querySelectorAll('.pdfx-page'));
-    const swappedImgs = [];
-
-    targets.forEach(function (t) {
-      const pageEl = pages[t.pageIndex];
-      if (!pageEl) { console.log('[pdf-export][qa] whitespace check —', t.varName, '— page index', t.pageIndex, 'not found, skipping'); return; }
-      const inner = pageEl.querySelector('.pdfx-inner');
-      if (!inner) return;
-
-      const usedHeight = inner.getBoundingClientRect().height;
-      const leftover = PAGE_HEIGHT_PX - usedHeight - SAFETY_MARGIN_PX;
-      console.log('[pdf-export][qa] whitespace check —', t.varName, '— page content height:', Math.round(usedHeight) + 'px', '— page budget:', PAGE_HEIGHT_PX + 'px', '— leftover:', Math.round(leftover) + 'px');
-      if (leftover < MIN_GROWTH_PX) { console.log('[pdf-export][qa]', t.varName, '— leftover below', MIN_GROWTH_PX + 'px threshold, leaving chart as-is'); return; }
-
-      const growth = Math.min(leftover, MAX_EXTRA_PX);
-      const imgEl = pageEl.querySelector('.pdfx-card img');
-      if (!imgEl) { console.log('[pdf-export][qa]', t.varName, '— no chart <img> found on this page, skipping'); return; }
-      const currentHeightPx = imgEl.getBoundingClientRect().height;
-      const newHeightPx = currentHeightPx + growth;
-
-      const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[t.varName]);
-      const wrapper = liveCanvas ? liveCanvas.parentElement : null;
-      const targetW = wrapper ? wrapper.getBoundingClientRect().width : (liveCanvas ? liveCanvas.width : 700);
-      const desiredLiveHeightPx = targetW * (newHeightPx / PDFX_CARD_WIDTH_PX);
-
-      console.log('[pdf-export][qa]', t.varName, '— stretching chart image from', Math.round(currentHeightPx) + 'px to', Math.round(newHeightPx) + 'px (growth', Math.round(growth) + 'px) — re-rendering live canvas at height', Math.round(desiredLiveHeightPx) + 'px before recapture');
-
-      const recaptured = window.pdfxCaptureOneChart(t.varName, { heightPx: desiredLiveHeightPx });
-      if (recaptured && recaptured.img) {
-        imgEl.src = recaptured.img;
-        imgEl.style.height = Math.round(newHeightPx) + 'px';
-        swappedImgs.push(imgEl);
-      } else {
-        console.warn('[pdf-export]', t.varName, '— recapture at taller height returned no image, leaving original chart image in place');
-      }
-    });
-
-    if (!swappedImgs.length) return;
-
-    // Same image-load/decode wait as the very first pass, scoped to just the
-    // handful of <img> tags we swapped a new src into above.
-    await Promise.all(swappedImgs.map(function (img) {
-      const loaded = img.complete ? Promise.resolve() : new Promise(function (res) {
-        img.addEventListener('load', res, { once: true });
-        img.addEventListener('error', res, { once: true });
-      });
-      return loaded.then(function () {
-        return (typeof img.decode === 'function') ? img.decode().catch(function () { /* rendered anyway */ }) : null;
-      });
-    }));
-    console.log('[pdf-export] stretched-chart images loaded and decoded —', swappedImgs.length, 'chart(s) re-rendered taller to fill page whitespace');
   }
 
   function pdfxChartImg(varName) {
@@ -7651,13 +7589,13 @@ async function loadAuditResultsFromSheet() {
         console.log('[pdf-export] fonts ready, loaded count:', document.fonts.size);
       }
 
-      // Fill leftover bottom-of-page whitespace on the Amazon/Web/Walmart
-      // pages by re-rendering their chart taller, now that the 8-row table
-      // (no more "+N more" note) has settled into its real, final height.
-      // Must run after the table/image/font waits above and before the
-      // html2canvas loop below, since it measures this export's actual
-      // rendered layout. Per Jaclyn 2026-07-15.
-      await pdfxStretchChartsToFillWhitespace(root);
+      // 2026-07-15: dynamically stretching the chart to fill leftover page
+      // whitespace (pdfxStretchChartsToFillWhitespace) produced visibly
+      // distorted, over-tall charts — removed per Jaclyn. Replaced with a
+      // much simpler, predictable rule: each chart's PDF height just matches
+      // its own live-dashboard height directly (see pdfxCaptureOneChart's
+      // displayHeightPx and pdfxChartBlock below). No dynamic measurement,
+      // no growth math, nothing left to go wrong here.
 
       const pageEls = Array.from(root.querySelectorAll('.pdfx-page'));
       console.log('[pdf-export] .pdfx-page count:', pageEls.length);
