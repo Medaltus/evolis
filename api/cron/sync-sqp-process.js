@@ -79,7 +79,23 @@ module.exports = async (req, res) => {
   const results = [];
   const debugResults = [];
 
+  // Time budget, not a brand-count cap — brands have varying batch counts
+  // (evolis needed 2 batches, others need 1), so a fixed "N brands per run"
+  // cap doesn't actually bound worst-case time the way it looks like it
+  // does. Checking elapsed time before starting each brand's poll/download
+  // work directly prevents the same class of unbounded-per-invocation
+  // timeout sync-sqp-request.js hit — with 15 brands and up to 60s of
+  // polling per batch, this file had no cap at all before this fix.
+  // Confirmed 2026-07-16.
+  const FUNCTION_TIME_BUDGET_MS = 4 * 60 * 1000; // leaves margin under a 5-min maxDuration
+  const startTime = Date.now();
+
   for (const brand of activeBrands) {
+    if (Date.now() - startTime > FUNCTION_TIME_BUDGET_MS) {
+      console.log(`[sync-sqp-process] time budget reached — ${brand.id} and any remaining brands will be picked up by the next scheduled run`);
+      results.push({ brand: brand.id, status: 'deferred-to-next-run' });
+      continue;
+    }
     try {
       if (metaMap[`report_status_${brand.id}`] === 'PROCESSED' && !req.query.force && !debugMode) {
         results.push({ brand: brand.id, status: 'already-processed' });
