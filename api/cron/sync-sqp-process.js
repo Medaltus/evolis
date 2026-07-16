@@ -1,61 +1,186 @@
-// /api/sync-sqp-process.js
-//
-// Step 2 of 2 — companion to sync-sqp-request.js. Finds any _meta rows still
-// in REQUESTED status, polls Amazon for completion, and once DONE, downloads
-// the report document and writes it to the sheet.
-//
-// SP-API Reports API flow after requesting a report:
-//   1. GET /reports/2021-06-30/reports/{reportId}  → check processingStatus
-//   2. Once DONE, it includes a reportDocumentId
-//   3. GET /reports/2021-06-30/documents/{reportDocumentId} → returns a
-//      short-lived, pre-signed S3 url (and possibly a compressionAlgorithm)
-//   4. Fetch that url directly (no SP-API auth headers — it's pre-signed)
-//   5. The SQP report body is TSV, one row per search query, with columns
-//      roughly: searchQuery, searchQueryScore, searchQueryVolume,
-//      impressions (total/brand/asin), clicks (total/brand/asin + rates),
-//      cartAdds (total/brand/asin + rates), purchases (total/brand/asin +
-//      rates) — the "full report" the user asked for, so every column is
-//      written through as-is rather than trimmed to a subset.
-//
-// IMPORTANT — auth: same note as sync-sqp-request.js. Reuses whatever
-// existing getSpApiAccessToken() helper sync-orders-process.js already
-// relies on. Verify/adjust the import path.
+/**
+ * api/cron/sync-sqp-process.js
+ * Step 2 of 2 — reads the reportId stored by sync-sqp-request.js, polls
+ * until DONE, downloads, and writes the full report to the
+ * search_query_performance tab of sheets.searchQueryPerformance.
+ *
+ * Runs twice daily across days 8-20 (see vercel.json) — Brand Analytics
+ * monthly reports can take longer to generate than the daily Business
+ * Report, so a single invocation's poll window (mirrors
+ * sync-business-report-process.js: 60s timeout, 4s interval) may not
+ * always catch DONE on the first check. If it times out, this just exits
+ * without marking anything PROCESSED, so the next scheduled run picks up
+ * the same still-pending reportId and checks again — no state is lost
+ * between runs.
+ *
+ * Debug mode — logs the raw TSV header row instead of writing to the
+ * sheet, so real Amazon column names can be confirmed before trusting the
+ * parse. Same defensive pattern as sync-business-report-process.js
+ * (?debug=true) — doubly worth using here since this is a brand-new report
+ * type; the column names below are my best documentation-based guess, not
+ * yet verified against a real response:
+ *   GET /api/cron/sync-sqp-process?debug=true
+ *   Authorization: Bearer <CRON_SECRET>
+ *
+ * Force re-process even if already marked PROCESSED:
+ *   GET /api/cron/sync-sqp-process?force=true
+ */
 
-import { ensureTab, readRows, replaceRows, getGoogleToken } from '../config/_sheets_client.js';
-import { getSpApiAccessToken } from '../_sp_api_client.js'; // ← verify/adjust this import
+const zlib                                 = require('zlib');
+const { spRequest }                        = require('../_spauth');
+const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
+const sheets                               = require('../config/sheets');
 
-const SP_API_BASE = 'https://sellingpartnerapi-na.amazon.com';
-const SHEET_SQP_ID = process.env.SHEET_SEARCH_QUERY_PERFORMANCE_ID;
-const META_TAB = '_meta';
-const DATA_TAB = 'search_query_performance';
+const META_TAB     = '_meta';
+const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
+const DATA_TAB      = 'search_query_performance';
 
-async function pollReportStatus(reportId, accessToken) {
-  const resp = await fetch(`${SP_API_BASE}/reports/2021-06-30/reports/${reportId}`, {
-    headers: { 'x-amz-access-token': accessToken }
-  });
-  if (!resp.ok) throw new Error(`report status check failed: ${resp.status} ${await resp.text()}`);
-  return resp.json(); // { processingStatus, reportDocumentId, ... }
-}
+// Same poll budget as sync-business-report-process.js — if this SPECIFIC
+// invocation's window isn't enough, the next scheduled run (see vercel.json)
+// tries again; nothing is lost by giving up after this timeout.
+const REPORT_POLL_TIMEOUT_MS  = 60_000;
+const REPORT_POLL_INTERVAL_MS = 4_000;
 
-async function downloadReportDocument(reportDocumentId, accessToken) {
-  const docResp = await fetch(`${SP_API_BASE}/reports/2021-06-30/documents/${reportDocumentId}`, {
-    headers: { 'x-amz-access-token': accessToken }
-  });
-  if (!docResp.ok) throw new Error(`document lookup failed: ${docResp.status} ${await docResp.text()}`);
-  const { url, compressionAlgorithm } = await docResp.json();
-
-  const fileResp = await fetch(url); // pre-signed — no auth headers needed/allowed here
-  if (!fileResp.ok) throw new Error(`document download failed: ${fileResp.status}`);
-
-  if (compressionAlgorithm === 'GZIP') {
-    // Reports API sometimes gzips large reports. Node's fetch gives us an
-    // ArrayBuffer; decompress with zlib.
-    const zlib = await import('zlib');
-    const buf = Buffer.from(await fileResp.arrayBuffer());
-    return zlib.gunzipSync(buf).toString('utf-8');
+module.exports = async (req, res) => {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-  return fileResp.text();
-}
+
+  const now = new Date();
+  const ts  = now.toISOString();
+  const debugMode = req.query.debug === 'true';
+
+  // ── Read _meta to find the pending reportId ─────────────────────────────
+  let metaMap = {};
+  try {
+    const rawMeta = await readRows(sheets.searchQueryPerformance, META_TAB);
+    for (const r of (rawMeta || [])) {
+      if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
+    }
+  } catch (err) {
+    console.error('[sync-sqp-process] failed to read _meta:', err.message);
+    return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
+  }
+
+  if (metaMap['report_status'] === 'PROCESSED' && !req.query.force && !debugMode) {
+    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-run anyway.', meta: metaMap });
+  }
+
+  const targetMonth = metaMap['target_month'];
+  const reportId    = targetMonth ? metaMap[`report_id_${targetMonth}`] : null;
+  if (!targetMonth || !reportId) {
+    return res.status(400).json({ error: 'No pending target_month/reportId in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
+  }
+
+  // ── Poll until DONE ──────────────────────────────────────────────────────
+  let documentId = null;
+  let finalStatus = null;
+  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(REPORT_POLL_INTERVAL_MS);
+    try {
+      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      finalStatus = statusResp.processingStatus;
+      console.log(`[sync-sqp-process] ${targetMonth} report ${reportId} status: ${finalStatus}`);
+
+      if (finalStatus === 'DONE') {
+        documentId = statusResp.reportDocumentId;
+        break;
+      }
+      if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
+        console.error(`[sync-sqp-process] ${targetMonth} report ${finalStatus}`);
+        break;
+      }
+    } catch (err) {
+      console.warn(`[sync-sqp-process] poll error (will retry): ${err.message}`);
+    }
+  }
+
+  if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
+    try {
+      const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+      metaMap['report_status'] = finalStatus;
+      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+      await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+    } catch (err) { /* best-effort — the real error already logged above */ }
+    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId });
+  }
+
+  if (!documentId) {
+    console.warn(`[sync-sqp-process] ${targetMonth} report not ready yet within this invocation's poll window — will check again next scheduled run`);
+    return res.status(200).json({ ok: true, notReadyYet: true, targetMonth, reportId, lastKnownStatus: finalStatus });
+  }
+
+  // ── Download & decompress ───────────────────────────────────────────────
+  // SQP is documented as a flat TSV file. Gzip fallback mirrors
+  // sync-business-report-process.js's defensive handling (some SP-API
+  // report types are gzipped, some aren't — try, fall back to plain text).
+  let tsvText;
+  try {
+    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const fileResp = await fetch(docResp.url); // pre-signed S3 url — no SP-API auth headers here
+    if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
+
+    const buffer = Buffer.from(await fileResp.arrayBuffer());
+    tsvText = await new Promise((resolve) => {
+      zlib.gunzip(buffer, (err, result) => {
+        if (err) resolve(buffer.toString('utf8'));
+        else resolve(result.toString('utf8'));
+      });
+    });
+  } catch (err) {
+    console.error(`[sync-sqp-process] failed to download ${targetMonth}:`, err.message);
+    return res.status(500).json({ error: 'Failed to download report document', detail: err.message, targetMonth, reportId });
+  }
+
+  const { headers: dataHeaders, rows: dataRows } = parseTsv(tsvText);
+
+  if (debugMode) {
+    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — column headers: ${dataHeaders.join(' | ')}`);
+    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — row count: ${dataRows.length}`);
+    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — first row: ${JSON.stringify(dataRows[0] || [])}`);
+    return res.status(200).json({
+      debug: true,
+      targetMonth,
+      columnHeaders: dataHeaders,
+      rowCount: dataRows.length,
+      firstRow: dataRows[0] || [],
+    });
+  }
+
+  // ── Write to sheet ───────────────────────────────────────────────────────
+  try {
+    const taggedHeaders = ['MONTH', ...dataHeaders];
+    const existingRows  = await readRows(sheets.searchQueryPerformance, DATA_TAB).catch(() => []);
+    // Idempotent re-run safety: drop any prior write of THIS month, keep every other month already in the tab.
+    const otherMonthsRows = (existingRows || [])
+      .filter(r => r['MONTH'] !== targetMonth)
+      .map(r => taggedHeaders.map(h => r[h] ?? ''));
+    const newRows = dataRows.map(r => [targetMonth, ...r]);
+
+    const token = await ensureTab(sheets.searchQueryPerformance, DATA_TAB, taggedHeaders);
+    await replaceRows(sheets.searchQueryPerformance, DATA_TAB, taggedHeaders, [...otherMonthsRows, ...newRows], token);
+    console.log(`[sync-sqp-process] ${targetMonth} — wrote ${newRows.length} rows`);
+
+    // Mark processed
+    const metaToken = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+    metaMap['report_status']     = 'PROCESSED';
+    metaMap['last_processed_at'] = ts;
+    const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+    await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, metaToken);
+
+    res.status(200).json({ ok: true, targetMonth, rowsWritten: newRows.length });
+  } catch (err) {
+    console.error(`[sync-sqp-process] failed to write ${targetMonth} to sheet:`, err.message);
+    res.status(500).json({ error: 'Failed to write report to sheet', detail: err.message, targetMonth });
+  }
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function parseTsv(text) {
   const lines = text.trim().split('\n').filter(Boolean);
@@ -63,72 +188,4 @@ function parseTsv(text) {
   const headers = lines[0].split('\t');
   const rows = lines.slice(1).map(line => line.split('\t'));
   return { headers, rows };
-}
-
-export default async function handler(req, res) {
-  const secret = req.headers['authorization']?.replace('Bearer ', '');
-  if (secret !== process.env.CRON_SECRET) return res.status(401).end();
-
-  try {
-    const accessToken = await getSpApiAccessToken();
-    const googleToken = await getGoogleToken();
-
-    const { headers: metaHeaders, rows: metaRows } = await readRows(SHEET_SQP_ID, META_TAB).catch(() => ({ headers: [], rows: [] }));
-    const keyIdx = metaHeaders.indexOf('key');
-    const reportIdIdx = metaHeaders.indexOf('reportId');
-    const statusIdx = metaHeaders.indexOf('status');
-    const processedAtIdx = metaHeaders.indexOf('processedAt');
-
-    const pending = metaRows.filter(r => r[statusIdx] === 'REQUESTED');
-    if (!pending.length) {
-      return res.status(200).json({ ok: true, message: 'no pending reports to process' });
-    }
-
-    const results = [];
-    for (const row of pending) {
-      const metaKey = row[keyIdx];
-      const reportId = row[reportIdIdx];
-      const statusResp = await pollReportStatus(reportId, accessToken);
-
-      if (statusResp.processingStatus === 'IN_QUEUE' || statusResp.processingStatus === 'IN_PROGRESS') {
-        console.log(`[sync-sqp-process] ${metaKey} still ${statusResp.processingStatus} — will check again next run`);
-        results.push({ metaKey, status: statusResp.processingStatus });
-        continue;
-      }
-
-      if (statusResp.processingStatus === 'CANCELLED' || statusResp.processingStatus === 'FATAL') {
-        row[statusIdx] = statusResp.processingStatus;
-        console.error(`[sync-sqp-process] ${metaKey} report failed: ${statusResp.processingStatus}`);
-        results.push({ metaKey, status: statusResp.processingStatus, error: true });
-        continue;
-      }
-
-      // DONE — download, parse, write.
-      const tsvText = await downloadReportDocument(statusResp.reportDocumentId, accessToken);
-      const { headers: dataHeaders, rows: dataRows } = parseTsv(tsvText);
-
-      // Tag each row with the month key so the sheet accumulates history
-      // across months in one tab rather than overwriting each time.
-      const taggedHeaders = ['month_key', ...dataHeaders];
-      const { headers: existingHeaders, rows: existingRows } = await readRows(SHEET_SQP_ID, DATA_TAB).catch(() => ({ headers: [], rows: [] }));
-      const otherMonthsRows = existingRows.filter(r => r[0] !== metaKey); // drop any prior write of this SAME month (idempotent re-run), keep all others
-      const newRows = dataRows.map(r => [metaKey, ...r]);
-
-      await ensureTab(SHEET_SQP_ID, DATA_TAB, taggedHeaders);
-      await replaceRows(SHEET_SQP_ID, DATA_TAB, taggedHeaders, [...otherMonthsRows, ...newRows], googleToken);
-
-      row[statusIdx] = 'DONE';
-      row[processedAtIdx] = new Date().toISOString();
-      console.log(`[sync-sqp-process] ${metaKey} — wrote ${newRows.length} rows`);
-      results.push({ metaKey, status: 'DONE', rowsWritten: newRows.length });
-    }
-
-    // Persist updated statuses back to _meta.
-    await replaceRows(SHEET_SQP_ID, META_TAB, metaHeaders, metaRows, googleToken);
-
-    res.status(200).json({ ok: true, results });
-  } catch (err) {
-    console.error('[sync-sqp-process] error:', err);
-    res.status(500).json({ error: err.message });
-  }
 }
