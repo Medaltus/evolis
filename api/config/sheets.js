@@ -19,6 +19,7 @@
  * SHEET_BUSINESS_REPORT           Sales & Traffic business report (sessions/units by brand, monthly)
  * SHEET_SEARCH_QUERY_PERFORMANCE  Brand Analytics Search Query Performance (full monthly report, per-brand tabs, sync-sqp-request/process)
  * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js
+ * SHEET_KEYWORD_TRACKER            Organic keyword rank tracking, per-brand tabs — used by run-analysis.js
  */
 
 module.exports = {
@@ -37,4 +38,5 @@ module.exports = {
   businessReport:         process.env.SHEET_BUSINESS_REPORT,
   searchQueryPerformance: process.env.SHEET_SEARCH_QUERY_PERFORMANCE,
   masterSkuList:          process.env.SHEET_MASTER_SKU_LIST,
+  keywordTracker:         process.env.SHEET_KEYWORD_TRACKER,
 };
