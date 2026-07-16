@@ -87,11 +87,17 @@ nav{flex:1;padding:8px 8px 0;}
 .page-sub{font-size:12px;color:var(--muted);margin-top:3px;}
 
 /* ── Channel tabs (Sales/Marketing/Events) ── */
-.channel-tabs{display:flex;gap:0;margin-bottom:24px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;align-self:flex-start;}
-.ch-tab{padding:8px 18px;border:none;background:none;font-family:var(--font);font-size:12.5px;color:var(--muted);cursor:pointer;transition:all .13s;border-right:1px solid var(--border);white-space:nowrap;}
-.ch-tab:last-child{border-right:none;}
-.ch-tab:hover{background:var(--bg);color:var(--navy);}
-.ch-tab.active{background:var(--navy);color:var(--white);font-weight:500;}
+/* 2026-07-16: switched from flat, hard-edged tabs (border-right dividers,
+   small-radius rectangle, active fill flush to the container edges) to a
+   rounded pill/segmented-control style — white pill-shaped container with
+   internal padding, each tab its own fully-rounded pill with a gap between,
+   active tab a solid navy pill floating inside rather than a flush
+   rectangle. Per Jaclyn 2026-07-16, matching the redesign mockup she
+   preferred over the dashboard's existing tab look everywhere else. */
+.channel-tabs{display:flex;gap:2px;margin-bottom:24px;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;overflow:hidden;align-self:flex-start;flex-wrap:wrap;}
+.ch-tab{padding:8px 18px;border:none;background:none;border-radius:999px;font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .13s;white-space:nowrap;}
+.ch-tab:hover{background:var(--bg2);color:var(--navy);}
+.ch-tab.active{background:var(--navy);color:var(--white);font-weight:600;}
 .channel-page{display:none;}
 .channel-page.active{display:block;}
 
@@ -221,11 +227,10 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
    ════════════════════════════════════════ */
 
 /* Shared sub-tab nav (inside a channel-page) */
-.sub-tabs{display:flex;gap:0;margin-bottom:22px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;flex-wrap:wrap;}
-.sub-tab{padding:7px 16px;border:none;background:none;font-family:var(--font);font-size:12px;color:var(--muted);cursor:pointer;border-right:1px solid var(--border);transition:all .13s;white-space:nowrap;}
-.sub-tab:last-child{border-right:none;}
-.sub-tab:hover{background:var(--bg);color:var(--navy);}
-.sub-tab.active{background:var(--navy);color:var(--white);font-weight:500;}
+.sub-tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;overflow:hidden;flex-wrap:wrap;}
+.sub-tab{padding:7px 16px;border:none;background:none;border-radius:999px;font-family:var(--font);font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .13s;white-space:nowrap;}
+.sub-tab:hover{background:var(--bg2);color:var(--navy);}
+.sub-tab.active{background:var(--navy);color:var(--white);font-weight:600;}
 
 /* Section label */
 .sec-lbl{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;margin-top:20px;}
@@ -301,6 +306,59 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .rank-mid{background:rgba(200,125,47,.1);color:var(--warn);}
 .rank-low{background:rgba(219,55,45,.1);color:var(--danger);}
 .rank-none{background:var(--bg);color:var(--muted);}
+
+/* ── Sectioned executive report (Insights > Products) ──────────────────
+   2026-07-16, per Jaclyn: consolidated performance comparison table
+   (replaces 3x repeated Amazon+Walmart scorecard blocks), executive
+   product cards (tag pills + collapsible INCI + price-bar competitive
+   pricing, replacing dense label:value rows), and numbered tier headers
+   for keyword strategy. Reuses existing .sc-badge/.rank-pill/.free-from-tag
+   color tokens throughout rather than inventing a parallel palette. */
+table.perf-compare{width:100%;border-collapse:collapse;}
+table.perf-compare th{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);}
+table.perf-compare th.prodcol{text-align:center;}
+table.perf-compare td{padding:12px 14px;border-bottom:1px solid var(--border2);font-size:13px;font-weight:700;color:var(--navy);text-align:center;}
+table.perf-compare td:first-child{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+table.perf-compare tr:last-child td{border-bottom:none;}
+.prodcol-name{font-family:var(--font-subheader);font-size:14px;font-weight:700;color:var(--navy);}
+.prodcol-sku{font-size:10px;color:var(--muted);font-weight:400;}
+
+.pcard-exec{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
+.pcard-exec:last-child{margin-bottom:0;}
+.pcard-exec-hd{padding:13px 20px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+.pcard-exec-hd b{font-family:var(--font-subheader);font-size:15px;font-weight:700;color:var(--navy);}
+.pcard-exec-hd .meta{font-size:11px;color:var(--muted);margin-left:8px;}
+.pcard-exec-body{padding:18px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:24px;}
+.hero-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--bg2);color:var(--navy);border:1px solid var(--border);margin:2px 3px 2px 0;}
+details.inci-toggle{margin:8px 0 14px;}
+details.inci-toggle summary{font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;list-style:none;}
+details.inci-toggle summary::-webkit-details-marker{display:none;}
+details.inci-toggle summary::before{content:'▸ ';font-size:9px;}
+details.inci-toggle[open] summary::before{content:'▾ ';}
+.inci-toggle-body{font-size:10px;line-height:1.7;color:var(--muted);margin-top:7px;padding:9px 11px;background:var(--bg);border-radius:6px;font-family:var(--mono);}
+.exec-fact{margin:10px 0;font-size:12px;line-height:1.55;color:var(--navy);}
+.exec-fact b{display:block;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;}
+.price-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.price-bar-name{font-size:11px;font-weight:600;color:var(--navy);width:150px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.price-bar-track{flex:1;height:7px;background:var(--bg2);border-radius:4px;overflow:hidden;}
+.price-bar-fill{height:100%;border-radius:4px;background:var(--border);}
+.price-bar-fill.ours{background:var(--navy);}
+.price-bar-tag{font-size:11px;font-weight:700;color:var(--navy);width:52px;text-align:right;flex-shrink:0;}
+.our-price-badge{font-size:8.5px;font-weight:700;text-transform:uppercase;color:var(--navy);background:var(--sand);padding:2px 6px;border-radius:4px;width:42px;text-align:center;flex-shrink:0;}
+.price-bar-delta{font-size:9.5px;font-weight:700;width:32px;text-align:right;flex-shrink:0;}
+.price-bar-delta.lower{color:#1db88a;} .price-bar-delta.same{color:var(--muted);} .price-bar-delta.higher{color:var(--danger);}
+
+.tier-hd2{display:flex;align-items:center;gap:10px;margin:22px 0 10px;}
+.tier-hd2:first-of-type{margin-top:0;}
+.tier-hd2 .tier-num{font-family:var(--font-subheader);font-size:19px;font-weight:700;color:var(--border);line-height:1;}
+.tier-hd2.tier-1 .tier-num{color:var(--navy);}
+.tier-hd2.tier-2 .tier-num{color:var(--warn);}
+.tier-hd2.tier-3 .tier-num{color:var(--muted);}
+.tier-hd2 .tier-title{font-size:12.5px;font-weight:700;color:var(--navy);}
+.tier-hd2 .tier-sub{font-size:10.5px;color:var(--muted);}
+.action-pill2{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+.action-pill2.priority{background:rgba(36,233,163,.13);color:#1db88a;}
+.action-pill2.neutral{background:var(--bg);color:var(--muted);}
 
 /* Reviews */
 .voc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
@@ -1283,124 +1341,133 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <!-- ── ACTIVATORS ── -->
       <div class="sub-page active" id="pt-activators">
-        <div class="sub-tabs" style="margin-bottom:18px;">
-          <button class="sub-tab active" onclick="showSubTab('pt-activators','act-keywords',this)">Keywords</button>
-          <button class="sub-tab" onclick="showSubTab('pt-activators','act-competitors',this)">Competitors</button>
+
+        <!-- Performance -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:2px;">Performance — April 2026</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Amazon</div>
+          <div style="overflow-x:auto;">
+            <table class="perf-compare">
+              <thead><tr><th></th><th class="prodcol"><div class="prodcol-name">Reverse</div><div class="prodcol-sku">EVO0001</div></th><th class="prodcol"><div class="prodcol-name">Promote</div><div class="prodcol-sku">EVO0005</div></th><th class="prodcol"><div class="prodcol-name">Prevent</div><div class="prodcol-sku">EVO0009</div></th></tr></thead>
+              <tbody>
+                <tr><td>BSR</td><td>#1,220</td><td>#1,220</td><td>#2,496</td></tr>
+                <tr><td>Sessions</td><td>122</td><td>1,125</td><td>15</td></tr>
+                <tr><td>Units — Apr</td><td>28</td><td>36</td><td style="color:var(--danger);">0</td></tr>
+                <tr><td>Revenue</td><td>$1,399.72</td><td>$1,799.14</td><td style="color:var(--danger);">$0.00</td></tr>
+                <tr><td>Conversion</td><td style="color:#1db88a;">22.95%</td><td style="color:var(--warn);">3.20%</td><td style="color:var(--danger);">0.00%</td></tr>
+                <tr><td>Rating</td><td>4.1 ★ (63)</td><td>4.1 ★ (63)</td><td>4.1 ★ (63)</td></tr>
+                <tr><td>Buy Box</td><td>89–100%</td><td>89–100%</td><td>89–100%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--border2);">Walmart: not tracked / data pending across all three SKUs — same 4.1★ rating carried over, everything else unavailable.</div>
         </div>
 
-        
-        <div class="product-card-block" id="act-reverse-product">
-          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
-          
-          <div class="scorecard-header">Amazon — April 2026</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#1,220</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">122</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">28</div><div class="sc-badge good">$1,399.72</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">22.95%</div><div class="sc-badge good"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
-          
-          <div class="scorecard-header">Walmart</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
-          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
-          <div class="formula-grid">
-            <div class="card">
-              <div class="card-title">Product &amp; Formula — Reverse Activator</div>
-              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0001 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B08BJBM77V</span></div></div>
-              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
-              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Hydrolyzed Keratin, Hydrolyzed Wheat Protein, Rosemary Leaf Oil, Vitamin E, Vitamin C</div></div>
-              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, SALICYLIC ACID, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, HYDROLYZED WHEAT PROTEIN, HYDROLYZED KERATIN, PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></div>
-              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily to scalp on wet or dry hair. Use self-dosing pipette — 1 tube front-to-back, 1 tube side-to-side. Targets thinning hair, postpartum shedding, age-related hair loss.</div></div>
-              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss"</div></div>
-              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
-            </div>
-            <div class="card">
-              <div class="card-title">Competitive Price Context</div>
-              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Reverse Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">IGK Scalp Treatment (2.1 fl oz)</div><div class="comp-price">$45.00</div><div class="comp-diff lower">-10%</div></div><div class="comp-row"><div class="comp-name">Philip Kingsley Scalp Foam (4oz)</div><div class="comp-price">$39.00</div><div class="comp-diff lower">-22%</div></div>
+        <!-- Products -->
+        <div class="card">
+          <div class="card-title">Product Portfolio</div>
+
+          <div class="pcard-exec">
+            <div class="pcard-exec-hd"><div><b>Reverse Activator</b><span class="meta">EVO0001 · B08BJBM77V · $49.99 · 1.7 fl oz</span></div><span class="sc-badge good">HEALTHY</span></div>
+            <div class="pcard-exec-body">
+              <div>
+                <span class="hero-tag">Sanguisorba Officinalis</span><span class="hero-tag">Swertia Chirata Extract</span><span class="hero-tag">Rosa Multiflora (FGF5 inhibitor)</span><span class="hero-tag">Hydrolyzed Keratin</span><span class="hero-tag">Hydrolyzed Wheat Protein</span><span class="hero-tag">Rosemary Leaf Oil</span><span class="hero-tag">Vitamin E</span><span class="hero-tag">Vitamin C</span>
+                <details class="inci-toggle"><summary>View full INCI</summary><div class="inci-toggle-body">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, SALICYLIC ACID, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, HYDROLYZED WHEAT PROTEIN, HYDROLYZED KERATIN, PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></details>
+                <div class="exec-fact"><b>Use</b>Apply twice daily to scalp on wet or dry hair. Use self-dosing pipette — 1 tube front-to-back, 1 tube side-to-side. Targets thinning hair, postpartum shedding, age-related hair loss.</div>
+                <div class="exec-fact"><b>Testing</b>3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss"</div>
+                <div style="margin-top:8px;"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div>
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Competitive Price Context</div>
+                <div class="price-bar-row"><span class="our-price-badge">OURS</span><span class="price-bar-name" style="font-weight:700;">évolis Reverse</span><div class="price-bar-track"><div class="price-bar-fill ours" style="width:100%;"></div></div><span class="price-bar-tag">$49.99</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−1%</span><span class="price-bar-name">Nutrafol Hair Serum</span><div class="price-bar-track"><div class="price-bar-fill" style="width:98%;"></div></div><span class="price-bar-tag">$49.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−10%</span><span class="price-bar-name">IGK Scalp Treatment</span><div class="price-bar-track"><div class="price-bar-fill" style="width:90%;"></div></div><span class="price-bar-tag">$45.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−16%</span><span class="price-bar-name">DS Labs Spectral DNC-N</span><div class="price-bar-track"><div class="price-bar-fill" style="width:84%;"></div></div><span class="price-bar-tag">$42.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−22%</span><span class="price-bar-name">Philip Kingsley Foam</span><div class="price-bar-track"><div class="price-bar-fill" style="width:78%;"></div></div><span class="price-bar-tag">$39.00</span></div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div class="product-card-block" id="act-promote-product">
-          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
-          
-          <div class="scorecard-header">Amazon — April 2026</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#1,220</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">1,125</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">36</div><div class="sc-badge warn">$1,799.14</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">3.20%</div><div class="sc-badge warn"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
-          
-          <div class="scorecard-header">Walmart</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
-          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
-          <div class="formula-grid">
-            <div class="card">
-              <div class="card-title">Product &amp; Formula — Promote Activator</div>
-              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0005 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B07SG6S4VV</span></div></div>
-              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
-              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Baobab Oil (Adansonia Digitata), Rosemary Leaf Oil, Green Tea Extract (Camellia Sinensis), Flaxseed Oil (Linum Usitatissimum), Pro-Vitamin B5 (Panthenyl Ethyl Ether)</div></div>
-              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">ALCOHOL, ASCORBYL PALMITATE, BUTYLENE GLYCOL, CAMELLIA SINENSIS LEAF EXTRACT, CANANGA ODORATA FLOWER OIL, CITRIC ACID, FRAGRANCE, GARCINIA MANGOSTANA PEEL EXTRACT, GLYCYRRHETINIC ACID, LAVANDULA ANGUSTIFOLIA OIL, LINUM USITATISSIMUM SEED OIL, LYCIUM BARBARUM FRUIT EXTRACT, PANTHENYL ETHYL ETHER, PUNICA GRANATUM EXTRACT, ROSA MULTIFLORA FRUIT EXTRACT, ROSMARINUS OFFICINALIS LEAF OIL, SANGUISORBA OFFICINALIS ROOT EXTRACT, SODIUM CITRATE, SWERTIA CHIRATA EXTRACT, TOCOPHERYL ACETATE, WATER (AQUA)</div></div>
-              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily to scalp. Use self-dosing pipette for precise application. Targets breakage prevention, promotes longer stronger hair. 1 bottle = 6–8 weeks.</div></div>
-              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" · 2024 People.com Lengthening Award</div></div>
-              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
-            </div>
-            <div class="card">
-              <div class="card-title">Competitive Price Context</div>
-              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Promote Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">IGK Scalp Treatment (2.1 fl oz)</div><div class="comp-price">$45.00</div><div class="comp-diff lower">-10%</div></div><div class="comp-row"><div class="comp-name">HairMax Acceler8 (4 fl oz)</div><div class="comp-price">$44.79</div><div class="comp-diff lower">-10%</div></div>
+
+          <div class="pcard-exec">
+            <div class="pcard-exec-hd"><div><b>Promote Activator</b><span class="meta">EVO0005 · B07SG6S4VV · $49.99 · 1.7 fl oz</span></div><span class="sc-badge warn">WATCH</span></div>
+            <div class="pcard-exec-body">
+              <div>
+                <span class="hero-tag">Sanguisorba Officinalis</span><span class="hero-tag">Rosa Multiflora (FGF5 inhibitor)</span><span class="hero-tag">Baobab Oil</span><span class="hero-tag">Rosemary Leaf Oil</span><span class="hero-tag">Green Tea Extract</span><span class="hero-tag">Flaxseed Oil</span><span class="hero-tag">Pro-Vitamin B5</span>
+                <details class="inci-toggle"><summary>View full INCI</summary><div class="inci-toggle-body">ALCOHOL, ASCORBYL PALMITATE, BUTYLENE GLYCOL, CAMELLIA SINENSIS LEAF EXTRACT, CANANGA ODORATA FLOWER OIL, CITRIC ACID, FRAGRANCE, GARCINIA MANGOSTANA PEEL EXTRACT, GLYCYRRHETINIC ACID, LAVANDULA ANGUSTIFOLIA OIL, LINUM USITATISSIMUM SEED OIL, LYCIUM BARBARUM FRUIT EXTRACT, PANTHENYL ETHYL ETHER, PUNICA GRANATUM EXTRACT, ROSA MULTIFLORA FRUIT EXTRACT, ROSMARINUS OFFICINALIS LEAF OIL, SANGUISORBA OFFICINALIS ROOT EXTRACT, SODIUM CITRATE, SWERTIA CHIRATA EXTRACT, TOCOPHERYL ACETATE, WATER (AQUA)</div></details>
+                <div class="exec-fact"><b>Use</b>Apply twice daily to scalp. Use self-dosing pipette for precise application. Targets breakage prevention, promotes longer stronger hair. 1 bottle = 6–8 weeks.</div>
+                <div class="exec-fact"><b>Testing</b>3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" · 2024 People.com Lengthening Award</div>
+                <div style="margin-top:8px;"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div>
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Competitive Price Context</div>
+                <div class="price-bar-row"><span class="our-price-badge">OURS</span><span class="price-bar-name" style="font-weight:700;">évolis Promote</span><div class="price-bar-track"><div class="price-bar-fill ours" style="width:100%;"></div></div><span class="price-bar-tag">$49.99</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−1%</span><span class="price-bar-name">Nutrafol Hair Serum</span><div class="price-bar-track"><div class="price-bar-fill" style="width:98%;"></div></div><span class="price-bar-tag">$49.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−10%</span><span class="price-bar-name">IGK Scalp Treatment</span><div class="price-bar-track"><div class="price-bar-fill" style="width:90%;"></div></div><span class="price-bar-tag">$45.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−10%</span><span class="price-bar-name">HairMax Acceler8</span><div class="price-bar-track"><div class="price-bar-fill" style="width:90%;"></div></div><span class="price-bar-tag">$44.79</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−16%</span><span class="price-bar-name">DS Labs Spectral DNC-N</span><div class="price-bar-track"><div class="price-bar-fill" style="width:84%;"></div></div><span class="price-bar-tag">$42.00</span></div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div class="product-card-block" id="act-prevent-product">
-          <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
-          
-          <div class="scorecard-header">Amazon — April 2026</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">#2,496</div><div class="sc-sub">Hair Regrowth Treatments</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">15</div><div class="sc-sub">April 2026</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">0</div><div class="sc-badge danger">$0.00</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">0.00%</div><div class="sc-badge danger"></div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">89–100%</div><div class="sc-sub">B2B eligible</div></div></div>
-          
-          <div class="scorecard-header">Walmart</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label">Units — Apr</div><div class="sc-value">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value">—</div><div class="sc-sub">Not available</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value">4.1 ★</div><div class="sc-sub">Same rating</div></div><div class="sc-card"><div class="sc-label">Top 20 Organic</div><div class="sc-value">—</div><div class="sc-sub">Not tracked</div></div></div>
-          <div class="sec-lbl" style="margin-top:4px;">Product Details</div>
-          <div class="formula-grid">
-            <div class="card">
-              <div class="card-title">Product &amp; Formula — Prevent Activator</div>
-              <div class="formula-row"><div class="formula-lbl">SKU / ASIN</div><div class="formula-val">EVO0009 &nbsp;·&nbsp; <span style="font-family:var(--mono);font-size:11px;">B07SJ8K9HS</span></div></div>
-              <div class="formula-row"><div class="formula-lbl">Price / Size</div><div class="formula-val">$49.99 &nbsp;·&nbsp; 1.7 fl oz</div></div>
-              <div class="formula-row"><div class="formula-lbl">Hero Actives</div><div class="formula-val">Sanguisorba Officinalis, Swertia Chirata Extract, Rosa Multiflora Extract (FGF5 inhibitors), Rosemary Leaf Oil (Rosmarinus Officinalis), Green Tea Extract (Camellia Sinensis), Mangosteen Extract (Garcinia Mangostana), Flaxseed Oil, Goji Berry Extract (Lycium Barbarum), Pomegranate Extract, Ylang Ylang Oil, Lavender Oil</div></div>
-              <div class="formula-row"><div class="formula-lbl">Full INCI</div><div class="formula-val" style="font-size:11px;font-family:var(--mono);line-height:1.6;">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, LYCIUM BARBARUM FRUIT EXTRACT, GARCINIA MANGOSTANA PEEL EXTRACT, LINUM USITATISSIMIM (FLAXSEED OIL), PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></div>
-              <div class="formula-row"><div class="formula-lbl">Use</div><div class="formula-val">Apply twice daily. For sensitive, dry, or oily scalps. Ideal for early signs of thinning or family history of hair loss. Use self-dosing pipette, 1 bottle = 6–8 weeks.</div></div>
-              <div class="formula-row"><div class="formula-lbl">Testing</div><div class="formula-val">3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" (2018)</div></div>
-              <div class="formula-row"><div class="formula-lbl">Clean / Free From</div><div class="formula-val"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div></div>
-            </div>
-            <div class="card">
-              <div class="card-title">Competitive Price Context</div>
-              <div class="comp-row comp-ours"><div class="comp-name"><strong>évolis Prevent Activator</strong></div><div class="comp-price">$49.99</div><div class="comp-diff same">Our price</div></div><div class="comp-row"><div class="comp-name">Nutrafol Hair Serum (1 fl oz)</div><div class="comp-price">$49.00</div><div class="comp-diff lower">-1%</div></div><div class="comp-row"><div class="comp-name">DS Labs Spectral DNC-N (2 fl oz)</div><div class="comp-price">$42.00</div><div class="comp-diff lower">-16%</div></div><div class="comp-row"><div class="comp-name">Philip Kingsley Scalp Foam (4oz)</div><div class="comp-price">$39.00</div><div class="comp-diff lower">-22%</div></div><div class="comp-row"><div class="comp-name">Stripes Beauty Scalp Serum (1.7oz)</div><div class="comp-price">$50.00</div><div class="comp-diff same">+0%</div></div>
+
+          <div class="pcard-exec">
+            <div class="pcard-exec-hd"><div><b>Prevent Activator</b><span class="meta">EVO0009 · B07SJ8K9HS · $49.99 · 1.7 fl oz</span></div><span class="sc-badge danger">CRITICAL</span></div>
+            <div class="pcard-exec-body">
+              <div>
+                <span class="hero-tag">Sanguisorba Officinalis</span><span class="hero-tag">Rosa Multiflora (FGF5 inhibitor)</span><span class="hero-tag">Rosemary Leaf Oil</span><span class="hero-tag">Green Tea Extract</span><span class="hero-tag">Mangosteen Extract</span><span class="hero-tag">Flaxseed Oil</span><span class="hero-tag">Goji Berry Extract</span><span class="hero-tag">Pomegranate Extract</span><span class="hero-tag">Ylang Ylang Oil</span><span class="hero-tag">Lavender Oil</span>
+                <details class="inci-toggle"><summary>View full INCI</summary><div class="inci-toggle-body">WATER (AQUA), ALCOHOL DENAT, BUTYLENE GLYCOL, ROSA MULTIFLORA EXTRACT, POTERIUM OFFICINALE ROOT EXTRACT, PANTHENYL ETHYL ETHER, FRAGRANCE, GLYCYRRHETINIC ACID, SWERTIA CHIRATA EXTRACT, CITRIC ACID, SODIUM CITRATE, LYCIUM BARBARUM FRUIT EXTRACT, GARCINIA MANGOSTANA PEEL EXTRACT, LINUM USITATISSIMIM (FLAXSEED OIL), PUNICA GRANATUM EXTRACT, CAMELLIA SINENSIS LEAF EXTRACT, TOCOPHERYL ACETATE, ASCORBYL PALMITATE, CANANGA ODORATA OIL, ROSMARINUS OFFICINALIS LEAF OIL, LAVANDULA ANGUSTIFOLIA OIL</div></details>
+                <div class="exec-fact"><b>Use</b>Apply twice daily. For sensitive, dry, or oily scalps. Ideal for early signs of thinning or family history of hair loss. Use self-dosing pipette, 1 bottle = 6–8 weeks.</div>
+                <div class="exec-fact"><b>Testing</b>3 independent clinical studies · AskMen Grooming Awards "Best Natural Alternative for Hair Loss" (2018)</div>
+                <div style="margin-top:8px;"><span class="free-from-tag">Paraben-Free</span><span class="free-from-tag">Sulfate-Free</span><span class="free-from-tag">Silicone-Free</span><span class="free-from-tag">Phthalate-Free</span><span class="free-from-tag">Color-Safe</span><span class="free-from-tag">Cruelty-Free</span></div>
+              </div>
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Competitive Price Context</div>
+                <div class="price-bar-row"><span class="our-price-badge">OURS</span><span class="price-bar-name" style="font-weight:700;">évolis Prevent</span><div class="price-bar-track"><div class="price-bar-fill ours" style="width:100%;"></div></div><span class="price-bar-tag">$49.99</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta same">+0%</span><span class="price-bar-name">Stripes Beauty Serum</span><div class="price-bar-track"><div class="price-bar-fill" style="width:100%;"></div></div><span class="price-bar-tag">$50.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−1%</span><span class="price-bar-name">Nutrafol Hair Serum</span><div class="price-bar-track"><div class="price-bar-fill" style="width:98%;"></div></div><span class="price-bar-tag">$49.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−16%</span><span class="price-bar-name">DS Labs Spectral DNC-N</span><div class="price-bar-track"><div class="price-bar-fill" style="width:84%;"></div></div><span class="price-bar-tag">$42.00</span></div>
+                <div class="price-bar-row"><span class="price-bar-delta lower">−22%</span><span class="price-bar-name">Philip Kingsley Foam</span><div class="price-bar-track"><div class="price-bar-fill" style="width:78%;"></div></div><span class="price-bar-tag">$39.00</span></div>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Keywords -->
-        <div class="sub-page active" id="act-keywords">
+        <div class="card" id="act-keywords">
+          <div class="card-title">Keyword Strategy</div>
           <div style="background:rgba(0,31,96,.04);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--muted);">
             ℹ All 59 keywords are tracked on ASIN B08BJBM77V (Reverse Activator). Organic rank shows only "evolis" (brand term, #4) has meaningful position — all non-brand terms are &gt;306. Brand is almost entirely dependent on PPC for non-brand traffic.
           </div>
-          <div class="sec-lbl" style="margin-top:0;">Tier 1 — Core High-Intent (Primary PPC + title/bullets)</div>
+
+          <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core High-Intent</div><div class="tier-sub">Primary PPC + Title/Bullets</div></div></div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Where in Listing</th><th>Action</th></tr></thead>
-              <tbody><tr><td>hair growth</td><td>131,492</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">PPC broad — competitive</td></tr><tr><td>rosemary oil for hair growth</td><td>131,425</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>47.6%</td><td style="color:var(--muted);font-size:11px;">Title, Backend</td><td style="font-size:11px;">✅ PPC exact match</td></tr><tr><td>hair growth serum</td><td>71,798</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">✅ Primary target</td></tr><tr><td>keratin hair treatment</td><td>43,011</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>27.0%</td><td style="color:var(--muted);font-size:11px;">Title, Bullet 3</td><td style="font-size:11px;">✅ PPC support</td></tr><tr><td>hair serum</td><td>34,835</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>20.1%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">PPC + backend</td></tr><tr><td>hair growth accelerator</td><td>20,925</td><td><span class="rank-pill rank-none">—</span></td><td>51.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">✅ LOW comp, HIGH ABA — priority</td></tr><tr><td>ordinary hair growth serum</td><td>29,521</td><td><span class="rank-pill rank-none">—</span></td><td>82.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">✅ Competitor halo, high ABA</td></tr><tr><td>scalp serum</td><td>14,567</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.5%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">✅ PPC + title (Prevent)</td></tr><tr><td>scalp oil</td><td>15,715</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>29.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td style="font-size:11px;">✅ Strong buying signal</td></tr><tr><td>scalp treatment</td><td>10,266</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>22.9%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">✅ Backend + PPC</td></tr><tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 1</td><td style="font-size:11px;">✅ 661 comps — high intent</td></tr><tr><td>activator</td><td>7,940</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>63.7%</td><td style="color:var(--muted);font-size:11px;">Title</td><td style="font-size:11px;">✅ 45 title density — winnable</td></tr><tr><td>hair thickening products for women</td><td>9,036</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.1%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td style="font-size:11px;">PPC secondary</td></tr><tr><td>hair loss treatments for women</td><td>9,031</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>11.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td style="font-size:11px;">PPC test</td></tr><tr><td>scalp serum for hair growth</td><td>2,909</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.0%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">Long-tail, low comp</td></tr><tr><td>hair serum for hair growth</td><td>8,012</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>17.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">Backend + PPC</td></tr><tr><td>hair loss serum</td><td>1,002</td><td><span class="rank-pill rank-none">—</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td style="font-size:11px;">Direct product match</td></tr><tr><td>hair oils for hair growth</td><td>15,755</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.7%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td style="font-size:11px;">Adjacent format</td></tr><tr><td>hair growth products</td><td>5,787</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>25.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td style="font-size:11px;">Category browse</td></tr><tr><td>scalp massager hair growth</td><td>23,650</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>15.7%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td style="font-size:11px;">Backend + PPC</td></tr></tbody>
+              <tbody><tr><td>hair growth</td><td>131,492</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td><span class="action-pill2 neutral">PPC broad — competitive</span></td></tr><tr><td>rosemary oil for hair growth</td><td>131,425</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>47.6%</td><td style="color:var(--muted);font-size:11px;">Title, Backend</td><td><span class="action-pill2 priority">PPC exact match</span></td></tr><tr><td>hair growth serum</td><td>71,798</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Title</td><td><span class="action-pill2 priority">Primary target</span></td></tr><tr><td>keratin hair treatment</td><td>43,011</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>27.0%</td><td style="color:var(--muted);font-size:11px;">Title, Bullet 3</td><td><span class="action-pill2 priority">PPC support</span></td></tr><tr><td>hair serum</td><td>34,835</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>20.1%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td><span class="action-pill2 neutral">PPC + backend</span></td></tr><tr><td>hair growth accelerator</td><td>20,925</td><td><span class="rank-pill rank-none">—</span></td><td>51.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td><span class="action-pill2 priority">LOW comp, HIGH ABA — priority</span></td></tr><tr><td>ordinary hair growth serum</td><td>29,521</td><td><span class="rank-pill rank-none">—</span></td><td>82.3%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td><span class="action-pill2 priority">Competitor halo, high ABA</span></td></tr><tr><td>scalp serum</td><td>14,567</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.5%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td><span class="action-pill2 priority">PPC + title (Prevent)</span></td></tr><tr><td>scalp oil</td><td>15,715</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>29.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td><span class="action-pill2 priority">Strong buying signal</span></td></tr><tr><td>scalp treatment</td><td>10,266</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>22.9%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td><span class="action-pill2 priority">Backend + PPC</span></td></tr><tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 1</td><td><span class="action-pill2 priority">661 comps — high intent</span></td></tr><tr><td>activator</td><td>7,940</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>63.7%</td><td style="color:var(--muted);font-size:11px;">Title</td><td><span class="action-pill2 priority">45 title density — winnable</span></td></tr><tr><td>hair thickening products for women</td><td>9,036</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>21.1%</td><td style="color:var(--muted);font-size:11px;">Bullet 4</td><td><span class="action-pill2 neutral">PPC secondary</span></td></tr><tr><td>hair loss treatments for women</td><td>9,031</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>11.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td><span class="action-pill2 neutral">PPC test</span></td></tr><tr><td>scalp serum for hair growth</td><td>2,909</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>23.0%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td><span class="action-pill2 neutral">Long-tail, low comp</span></td></tr><tr><td>hair serum for hair growth</td><td>8,012</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>17.0%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td><span class="action-pill2 neutral">Backend + PPC</span></td></tr><tr><td>hair loss serum</td><td>1,002</td><td><span class="rank-pill rank-none">—</span></td><td>21.0%</td><td style="color:var(--muted);font-size:11px;">Not in listing</td><td><span class="action-pill2 neutral">Direct product match</span></td></tr><tr><td>hair oils for hair growth</td><td>15,755</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>24.7%</td><td style="color:var(--muted);font-size:11px;">Backend</td><td><span class="action-pill2 neutral">Adjacent format</span></td></tr><tr><td>hair growth products</td><td>5,787</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>25.4%</td><td style="color:var(--muted);font-size:11px;">Bullet 5</td><td><span class="action-pill2 neutral">Category browse</span></td></tr><tr><td>scalp massager hair growth</td><td>23,650</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>15.7%</td><td style="color:var(--muted);font-size:11px;">Bullet 3</td><td><span class="action-pill2 neutral">Backend + PPC</span></td></tr></tbody>
             </table>
           </div>
-          <div class="sec-lbl">Tier 2 — Opportunity (High ABA, winnable, bullets 3–5 + backend)</div>
+
+          <div class="tier-hd2 tier-2"><span class="tier-num">02</span><div><div class="tier-title">Opportunity</div><div class="tier-sub">High ABA, winnable, Bullets 3–5 + Backend</div></div></div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Notes</th></tr></thead>
               <tbody><tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td style="font-size:11px;color:var(--muted);">661 comps — priority PPC exact match</td></tr><tr><td>dry scalp treatment</td><td>9,034</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>31.7%</td><td style="font-size:11px;color:var(--muted);">Prevent Activator exact match</td></tr><tr><td>thinning hair treatment</td><td>465</td><td><span class="rank-pill rank-none">—</span></td><td>50.0%</td><td style="font-size:11px;color:var(--muted);">Highest conv share in set</td></tr><tr><td>hair growth treatment</td><td>903</td><td><span class="rank-pill rank-none">—</span></td><td>44.4%</td><td style="font-size:11px;color:var(--muted);">High ABA — PPC test</td></tr><tr><td>hair growth oil spray</td><td>607</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>28.6%</td><td style="font-size:11px;color:var(--muted);">Very high click share, 2K comps</td></tr><tr><td>hair volumizer for fine hair</td><td>639</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>33.3%</td><td style="font-size:11px;color:var(--muted);">Promote angle — fine hair</td></tr><tr><td>hair treatment for dry damaged hair</td><td>2,474</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>31.2%</td><td style="font-size:11px;color:var(--muted);">Prevent angle — dry/damaged</td></tr><tr><td>oil for hair growth</td><td>2,568</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>20.3%</td><td style="font-size:11px;color:var(--muted);">445 competing — winnable</td></tr><tr><td>hair growth oil for women</td><td>1,934</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>22.9%</td><td style="font-size:11px;color:var(--muted);">9K comp, 0 title density</td></tr><tr><td>hair regrowth for men</td><td>2,568</td><td><span class="rank-pill rank-low">&gt;306</span></td><td>17.4%</td><td style="font-size:11px;color:var(--muted);">Male audience expansion</td></tr></tbody>
             </table>
           </div>
-          <div class="sec-lbl">Tier 3 — Reach / Long-Term (Track only — aspirational organic goals)</div>
+
+          <div class="tier-hd2 tier-3"><span class="tier-num">03</span><div><div class="tier-title">Reach / Long-Term</div><div class="tier-sub">Track only — aspirational organic goals</div></div></div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Conv%</th><th>Strategic Notes</th></tr></thead>
-              <tbody><tr><td>batana oil for hair growth</td><td>70,565</td><td>32.5%</td><td style="font-size:11px;color:var(--muted);">Trending ingredient — aspirational, >1K comps</td></tr><tr><td>hair skin and nails vitamins</td><td>96,816</td><td>31.5%</td><td style="font-size:11px;color:var(--muted);">Cross-category supplement buyers — backend only</td></tr><tr><td>hair growth supplements</td><td>45,917</td><td>16.8%</td><td style="font-size:11px;color:var(--muted);">Supplement category — different purchase intent</td></tr><tr><td>lilyeve hair growth serum</td><td>26,662</td><td>75.0%</td><td style="font-size:11px;color:var(--muted);">Dominant competitor brand halo — very high conv</td></tr><tr><td>spartan root activator shampoo</td><td>29,536</td><td>61.6%</td><td style="font-size:11px;color:var(--muted);">Competitor with "activator" in name — halo</td></tr><tr><td>wild growth hair oil</td><td>33,264</td><td>70.3%</td><td style="font-size:11px;color:var(--muted);">Competitor brand halo — very high conv, 997 comps</td></tr><tr><td>hair growth shampoo</td><td>27,361</td><td>15.0%</td><td style="font-size:11px;color:var(--muted);">Wrong format but high volume — brand awareness PPC</td></tr><tr><td>serum</td><td>34,820</td><td>19.8%</td><td style="font-size:11px;color:var(--muted);">40K competing ASINs — extremely broad index value</td></tr><tr><td>hair conditioner</td><td>33,224</td><td>24.3%</td><td style="font-size:11px;color:var(--muted);">Wrong format but brand discovery opportunity</td></tr><tr><td>hair growth</td><td>131,492</td><td>24.0%</td><td style="font-size:11px;color:var(--muted);">Long-term organic rank goal — must be in title</td></tr></tbody>
+              <tbody><tr><td>batana oil for hair growth</td><td>70,565</td><td>32.5%</td><td style="font-size:11px;color:var(--muted);">Trending ingredient — aspirational, &gt;1K comps</td></tr><tr><td>hair skin and nails vitamins</td><td>96,816</td><td>31.5%</td><td style="font-size:11px;color:var(--muted);">Cross-category supplement buyers — backend only</td></tr><tr><td>hair growth supplements</td><td>45,917</td><td>16.8%</td><td style="font-size:11px;color:var(--muted);">Supplement category — different purchase intent</td></tr><tr><td>lilyeve hair growth serum</td><td>26,662</td><td>75.0%</td><td style="font-size:11px;color:var(--muted);">Dominant competitor brand halo — very high conv</td></tr><tr><td>spartan root activator shampoo</td><td>29,536</td><td>61.6%</td><td style="font-size:11px;color:var(--muted);">Competitor with "activator" in name — halo</td></tr><tr><td>wild growth hair oil</td><td>33,264</td><td>70.3%</td><td style="font-size:11px;color:var(--muted);">Competitor brand halo — very high conv, 997 comps</td></tr><tr><td>hair growth shampoo</td><td>27,361</td><td>15.0%</td><td style="font-size:11px;color:var(--muted);">Wrong format but high volume — brand awareness PPC</td></tr><tr><td>serum</td><td>34,820</td><td>19.8%</td><td style="font-size:11px;color:var(--muted);">40K competing ASINs — extremely broad index value</td></tr><tr><td>hair conditioner</td><td>33,224</td><td>24.3%</td><td style="font-size:11px;color:var(--muted);">Wrong format but brand discovery opportunity</td></tr><tr><td>hair growth</td><td>131,492</td><td>24.0%</td><td style="font-size:11px;color:var(--muted);">Long-term organic rank goal — must be in title</td></tr></tbody>
             </table>
           </div>
         </div>
 
         <!-- Competitors -->
-        <div class="sub-page" id="act-competitors">
-          <div class="sec-lbl" style="margin-top:0;">Current Competitors — Data: Helium 10</div>
+        <div class="card">
+          <div class="card-title">Competitive Landscape</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10</div>
+          <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
