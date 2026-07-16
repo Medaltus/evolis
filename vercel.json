@@ -54,6 +54,14 @@
       "schedule": "25 3 * * *"
     },
     {
+      "path": "/api/cron/sync-sqp-request",
+      "schedule": "40 3 8-20 * *"
+    },
+    {
+      "path": "/api/cron/sync-sqp-process",
+      "schedule": "50 3,15 8-20 * *"
+    },
+    {
       "path": "/api/cron/sync-subscriptions",
       "schedule": "30 3 * * *"
     },
@@ -166,6 +174,12 @@
       "maxDuration": 30
     },
     "api/cron/sync-ad-search-terms-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-sqp-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-sqp-process.js": {
       "maxDuration": 300
     },
     "api/cron/sync-advertising-backfill.js": {
