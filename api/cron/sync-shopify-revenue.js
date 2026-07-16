@@ -116,12 +116,63 @@ module.exports = async (req, res) => {
     }
 
     // ── 4. Upsert target months only ────────────────────────────────────────
+    //
+    // 2026-07-16 — root cause confirmed for the "YEAR shows 1905" bug seen
+    // in this tab: column B (YEAR) has date-type cell formatting applied
+    // somewhere along the way. Google Sheets stores dates as a serial
+    // day-count from Dec 30, 1899 — and the literal integer 2026 (or
+    // 2023-2027, i.e. any year this cron would ever write), reinterpreted
+    // as that kind of serial number, lands on a date in mid-1905 — exactly:
+    // 2026 days after Dec 30 1899 is July 18 1905. Every year value this
+    // cron writes gets silently reinterpreted the same way, regardless of
+    // how carefully the value itself is sent, because cell FORMATTING is
+    // independent of the write. The actual fix for that is in the sheet,
+    // not in this file: select column B in this tab and set Format →
+    // Number → Number, clearing whatever date format is currently applied.
+    //
+    // Separately — a real bug in THIS file, independent of the formatting
+    // issue above: once a row's YEAR is corrupted, this upsert had no way
+    // to recognize "this is the same real month, just mis-keyed" — it keys
+    // existingMap by whatever YEAR the sheet currently shows, so a
+    // corrupted row for real month 2026-06 sits at key "1905-06", a
+    // DIFFERENT key than the "2026-06" this run computes fresh from real
+    // order data. The corrected entry got ADDED alongside it instead of
+    // replacing it, and the corrupted row was never removed — exactly the
+    // duplicate rows found in the sheet (1905/6 and 1905/7 sitting next to
+    // the correct 2026/6 and 2026/7).
+    //
+    // Fix: for each month this run is about to write a fresh, correct
+    // entry for, first look for and delete any EXISTING row with a
+    // plausible MONTH match but an implausible YEAR — same real month,
+    // stale mis-keyed data — before adding the new one. Deliberately
+    // scoped to only the months this run is already touching (current +
+    // previous), never anything older: this cron only ever recomputes a
+    // 2-month rolling window, so blindly discarding any implausible-year
+    // row regardless of month would have deleted May's data outright once
+    // it aged past that window, rather than leaving it for a manual fix.
+    // That's exactly why May's row never self-corrected the way June/July
+    // eventually did (they were still inside the rolling window when a
+    // later run added a corrected duplicate; May wasn't, by the very next
+    // run). Per Jaclyn 2026-07-16.
     let updatedCount = 0;
     for (const [key, data] of Object.entries(monthMap)) {
       const [yr, mo] = key.split('-');
+      const yrNum = parseInt(yr, 10);
+
+      Object.keys(existingMap).forEach(existingKey => {
+        const [existingYr, existingMo] = existingKey.split('-');
+        if (existingMo !== mo || existingKey === key) return;
+        const existingYrNum = parseInt(existingYr, 10);
+        const isImplausible = !existingYrNum || existingYrNum < yrNum - 15 || existingYrNum > yrNum + 2;
+        if (isImplausible) {
+          console.warn(`[sync-shopify-revenue] removing stale mis-keyed row for month ${mo} (was under key "${existingKey}", likely the date-formatting bug — see comment above) — replacing with correctly-keyed "${key}"`);
+          delete existingMap[existingKey];
+        }
+      });
+
       existingMap[key] = {
         MONTH:            parseInt(mo, 10),
-        YEAR:             parseInt(yr, 10),
+        YEAR:             yrNum,
         REVENUE:          Math.round(data.revenue * 100) / 100,
         'UNITS ORDERED':  data.units,
         'LAST UPDATED':   nowEst,
