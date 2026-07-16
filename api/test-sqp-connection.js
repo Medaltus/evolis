@@ -50,6 +50,15 @@ module.exports = async (req, res) => {
   }
 
   // ── Step 1: request ──────────────────────────────────────────────────────
+  // Amazon's own error (confirmed via a prior FATAL run's error document):
+  // "This report type requires the report option(s): asin." Accept a quick
+  // ?asins= query param here for testing — the real cron pulls this from
+  // sheets.products instead of a hardcoded/manual list.
+  const asinList = (req.query.asins || '').split(/[,\s]+/).filter(Boolean);
+  if (!asinList.length) {
+    return res.status(400).json({ error: 'This report requires ASINs. Pass ?asins=B0XXXXXXXX,B0YYYYYYYY (comma or space separated) to test.' });
+  }
+
   let reportId;
   try {
     const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
@@ -57,9 +66,9 @@ module.exports = async (req, res) => {
       marketplaceIds: [process.env.SP_MARKETPLACE_ID],
       dataStartTime,
       dataEndTime,
-      reportOptions: { reportPeriod: 'MONTH' },
+      reportOptions: { reportPeriod: 'MONTH', asin: asinList.join(' ') },
     });
-    trace.push({ step: 'create', request: { dataStartTime, dataEndTime, marketplaceIds: [process.env.SP_MARKETPLACE_ID] }, response: createResp });
+    trace.push({ step: 'create', request: { dataStartTime, dataEndTime, marketplaceIds: [process.env.SP_MARKETPLACE_ID], asin: asinList.join(' ') }, response: createResp });
     reportId = createResp?.reportId;
     if (!reportId) {
       return res.status(200).json({ ok: false, stoppedAt: 'create', reason: 'no reportId in create response', trace });
