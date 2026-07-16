@@ -17,7 +17,8 @@
  * SHEET_INSIGHTS                  brand insights / monthly takeaways
  * SHEET_UPLOADS                   file uploads tracking (Evolis GID etc)
  * SHEET_BUSINESS_REPORT           Sales & Traffic business report (sessions/units by brand, monthly)
- * SHEET_SEARCH_QUERY_PERFORMANCE  Brand Analytics Search Query Performance (full monthly report, sync-sqp-request/process)
+ * SHEET_SEARCH_QUERY_PERFORMANCE  Brand Analytics Search Query Performance (full monthly report, per-brand tabs, sync-sqp-request/process)
+ * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js
  */
 
 module.exports = {
@@ -35,4 +36,5 @@ module.exports = {
   uploads:                process.env.SHEET_UPLOADS,
   businessReport:         process.env.SHEET_BUSINESS_REPORT,
   searchQueryPerformance: process.env.SHEET_SEARCH_QUERY_PERFORMANCE,
+  masterSkuList:          process.env.SHEET_MASTER_SKU_LIST,
 };
