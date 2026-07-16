@@ -70,6 +70,52 @@ function chunkAsinsByCharLimit(asinList, maxLen = 200) {
   return chunkBatches;
 }
 
+// Amazon's own error (confirmed via a real multi-brand run): looping
+// through every brand's batch requests back-to-back with no delay
+// exhausted the createReport quota after the first couple of brands,
+// cascading QuotaExceeded across every brand after that. Same fix as
+// sync-ad-search-terms-request.js already uses for this exact problem —
+// stagger every request, and retry with backoff on QuotaExceeded rather
+// than giving up on the first hit. Confirmed 2026-07-16.
+const STAGGER_MS = 3000;
+const MAX_RETRIES = 5;
+let lastRequestAt = 0;
+
+async function requestReportWithRetry(dataStartTime, dataEndTime, asinBatch, label) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const waitMs = STAGGER_MS - (Date.now() - lastRequestAt);
+    if (waitMs > 0) await sleep(waitMs);
+    lastRequestAt = Date.now();
+
+    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
+      reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
+      marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+      dataStartTime,
+      dataEndTime,
+      reportOptions: { reportPeriod: 'MONTH', asin: asinBatch.join(' ') },
+    });
+
+    if (createResp?.reportId) {
+      console.log(`[sync-sqp-request] ${label}: ${createResp.reportId}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      return { reportId: createResp.reportId };
+    }
+
+    const isThrottled = createResp?.errors?.[0]?.code === 'QuotaExceeded';
+    if (isThrottled && attempt < MAX_RETRIES) {
+      const backoffSec = 5 * Math.pow(2, attempt - 1); // 5s, 10s, 20s, 40s
+      console.warn(`[sync-sqp-request] ${label} throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${backoffSec}s`);
+      await sleep(backoffSec * 1000);
+      continue;
+    }
+
+    console.error(`[sync-sqp-request] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(createResp));
+    return { error: createResp };
+  }
+  return { error: { errors: [{ code: 'MaxRetriesExceeded' }] } };
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 // Reads the Master SKU List once and groups ASINs by brand, matching each
 // row's SKU prefix (leading letters, e.g. "EVO0001" → "EVO", "EVO0001-SF"
 // → "EVO", "PBJ0027" → "PBJ") against each active brand's expected prefix.
@@ -178,21 +224,15 @@ module.exports = async (req, res) => {
     let brandFailed = false;
     for (let i = 0; i < batches.length; i++) {
       try {
-        const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-          reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
-          marketplaceIds: [process.env.SP_MARKETPLACE_ID],
-          dataStartTime,
-          dataEndTime,
-          reportOptions: { reportPeriod: 'MONTH', asin: batches[i].join(' ') },
-        });
-        if (!createResp || !createResp.reportId) {
-          console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} — no reportId in response:`, JSON.stringify(createResp));
-          results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: createResp });
+        const label = `${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs)`;
+        const result = await requestReportWithRetry(dataStartTime, dataEndTime, batches[i], label);
+        if (!result.reportId) {
+          console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} — no reportId after retries:`, JSON.stringify(result.error));
+          results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: result.error });
           brandFailed = true;
           break;
         }
-        reportIds.push(createResp.reportId);
-        console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs) requested: ${createResp.reportId}`);
+        reportIds.push(result.reportId);
       } catch (err) {
         console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} failed:`, err.message);
         results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: err.message });
@@ -207,22 +247,23 @@ module.exports = async (req, res) => {
     metaMap[`report_status_${brand.id}`]      = 'REQUESTED';
     metaMap[`last_requested_at_${brand.id}`]  = ts;
     results.push({ brand: brand.id, status: 'requested', batchCount: reportIds.length });
-  }
 
-  // ── Write metadata once, for every brand processed this run ─────────────
-  try {
-    const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-    const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
-    await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
-    console.log(`[sync-sqp-request] meta written for ${targetMonth}`);
-  } catch (err) {
-    console.error('[sync-sqp-request] failed to write meta:', err.message);
-    return res.status(207).json({
-      warning: 'Reports were requested with Amazon for at least some brands, but failed to write _meta — check sheets.searchQueryPerformance / config/sheets.js',
-      metaWriteError: err.message,
-      targetMonth,
-      results,
-    });
+    // Write immediately after EACH brand succeeds, not accumulated and
+    // written once after the whole loop — with retries potentially taking
+    // up to ~75s per throttled brand across many brands, a mid-run Vercel
+    // timeout would otherwise lose progress for brands that had already
+    // succeeded earlier in this same invocation. Confirmed 2026-07-16.
+    try {
+      const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+      await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+    } catch (err) {
+      console.error(`[sync-sqp-request] ${brand.id} — requested successfully but failed to write meta:`, err.message);
+      // Report was successfully requested with Amazon at this point — flag
+      // it in the results, but keep going with the remaining brands rather
+      // than aborting the whole run over one sheet-write hiccup.
+      results[results.length - 1] = { brand: brand.id, status: 'requested-but-meta-write-failed', batchCount: reportIds.length, metaWriteError: err.message };
+    }
   }
 
   res.status(200).json({ ok: true, targetMonth, results });
