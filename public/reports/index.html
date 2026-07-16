@@ -2197,39 +2197,18 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div>
       </div>
 
-      <!-- Performance snapshot table -->
       <div class="ppc-card">
-        <div class="ppc-card-title">April 2026 — Activator Performance Snapshot</div>
+        <div class="ppc-card-title">Product Performance — Last Full Month</div>
         <div style="overflow-x:auto;">
           <table class="data-table">
             <thead><tr><th>Product</th><th>Sessions</th><th>Units</th><th>Revenue</th><th>Conv%</th><th>Buy Box</th><th>PPC Priority</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><strong>Reverse Activator</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">EVO0001</span></td>
-                <td>122</td><td>28</td><td>$1,399.72</td>
-                <td><span class="rank-pill rank-top">22.95%</span></td>
-                <td>89.19%</td>
-                <td><span class="sc-badge warn">TRAFFIC</span></td>
-              </tr>
-              <tr>
-                <td><strong>Promote Activator</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">EVO0005</span></td>
-                <td>1,125</td><td>36</td><td>$1,799.14</td>
-                <td><span class="rank-pill rank-low">3.20%</span></td>
-                <td>95.46%</td>
-                <td><span class="sc-badge danger">LISTING FIX FIRST</span></td>
-              </tr>
-              <tr>
-                <td><strong>Prevent Activator</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">EVO0009</span></td>
-                <td>15</td><td>0</td><td>$0.00</td>
-                <td><span class="rank-pill rank-none">0.00%</span></td>
-                <td>100%</td>
-                <td><span class="sc-badge danger">IMMEDIATE PPC</span></td>
-              </tr>
+            <tbody id="ppc-product-tbody">
+              <tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr>
             </tbody>
           </table>
         </div>
         <div class="ppc-note">
-          ℹ Category ACoS benchmark: 30–40%. TACoS target: 10–15%. At current revenue levels, évolis should be spending $180–$380/mo across the three activators to hit benchmark TACoS while building organic rank velocity.
+          ℹ Sessions/Units/Revenue/Conv% pulled live from the Business Report sheet, every product in the catalog (not just activators). Buy Box % and PPC Priority are intentionally blank for now — Buy Box isn't captured by any cron yet, and PPC Priority is waiting on agreed thresholds.
         </div>
       </div>
 
@@ -2481,80 +2460,36 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ── DATA-INFORMED OPPORTUNITIES ── -->
     <div class="channel-page" id="ppc-opportunities">
-      <div class="ai-section-injected" id="ai-ppc-insight">
-        <div class="ai-section-injected-label">✦ AI PPC Insights — Last Upload</div>
-        <div id="ai-ppc-text" style="color:var(--muted);font-size:12px;">Loading insights…</div>
-      </div>
 
-      <div class="ppc-alert">
-        <span class="ppc-alert-icon">💡</span>
-        <div><strong>Data-Informed PPC Opportunities — Updated with each data upload.</strong> These are the highest-leverage PPC moves based on current metrics. Actioned items move to the Insights Log. Last updated: April 2026 data.</div>
-      </div>
+      <div class="ppc-card-title" style="margin-bottom:2px;">Search Terms — Last 30 Days</div>
+      <div class="ppc-note" style="margin-bottom:14px;">Pulled live from the Ad Search Terms sheet · up to 25 terms per panel, or fewer if fewer qualify</div>
 
-      <!-- Active opportunities -->
-      <div class="ppc-opp-card urgent">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge urgent">🚨 CRITICAL</div>
-          <div class="ppc-opp-title">Promote Activator: Fix Listing Before Scaling PPC</div>
-          <div class="ppc-opp-meta">EVO0005 · April 2026 · 1,125 sessions · 36 units · 3.20% conv</div>
+      <div id="ppc-search-terms-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+        <div class="ppc-card" style="margin-bottom:0;padding:16px;">
+          <div class="ppc-card-title" style="margin-bottom:2px;font-size:12.5px;">🏆 Top Performing</div>
+          <div class="ppc-note" style="margin-top:0;margin-bottom:10px;padding-top:0;border-top:none;">ACOS &lt; 40% · sorted by sales</div>
+          <div style="overflow-x:auto;"><table class="data-table" style="font-size:11px;"><thead><tr><th>Term</th><th>Sales</th><th>ACOS</th></tr></thead><tbody id="st-top-body"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody></table></div>
         </div>
-        <div class="ppc-opp-body">3.20% conversion on 1,125 monthly sessions represents a listing failure, not a traffic failure. At the category 15% benchmark, the same traffic = 169 units/month = ~$6,600 additional revenue. Rewrite Bullet 1 to lead with "95% of users reported visibly thicker hair within 90 days" — clinical stats convert educa</div>
-        <div class="ppc-opp-action">→ Action: Rewrite Bullet 1 to lead with clinical stats. Then retest conversion for 30 days before scaling spend.</div>
-      </div>
-
-      <div class="ppc-opp-card urgent">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge urgent">🚨 CRITICAL</div>
-          <div class="ppc-opp-title">Prevent Activator: Investigate Suppression + Launch PPC Immediately</div>
-          <div class="ppc-opp-meta">EVO0009 · April 2026 · 15 sessions · 0 units · 0.00% conv</div>
+        <div class="ppc-card" style="margin-bottom:0;padding:16px;">
+          <div class="ppc-card-title" style="margin-bottom:2px;font-size:12.5px;">🔥 Wasted Spend</div>
+          <div class="ppc-note" style="margin-top:0;margin-bottom:10px;padding-top:0;border-top:none;">No sales · sorted by spend</div>
+          <div style="overflow-x:auto;"><table class="data-table" style="font-size:11px;"><thead><tr><th>Term</th><th>Spend</th><th>Clicks</th></tr></thead><tbody id="st-waste-body"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody></table></div>
         </div>
-        <div class="ppc-opp-body">15 sessions and 0 units in April means this product is effectively invisible. There is no organic rank signal to protect — PPC is the only path to any traffic. Before spending: check if the listing is active, Buy Box-eligible, and not stranded/suppressed in Seller Central.</div>
-        <div class="ppc-opp-action">→ Action: (1) Verify listing status in Seller Central. (2) If active, launch exact match on "scalp treatment" + "dry scalp treatment" + "rosemary oil for hair growth" at $15–20/day immediately.</div>
-      </div>
-
-      <div class="ppc-opp-card high">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge high">⚡ HIGH</div>
-          <div class="ppc-opp-title">Reverse Activator: "Hair Growth Accelerator" — 51.3% ABA, 293 Competing ASINs</div>
-          <div class="ppc-opp-meta">EVO0001 · T1 Keyword · 20,925 vol/mo · 51.3% ABA · $1.60 CPC</div>
+        <div class="ppc-card" style="margin-bottom:0;padding:16px;">
+          <div class="ppc-card-title" style="margin-bottom:2px;font-size:12.5px;">💡 Opportunities</div>
+          <div class="ppc-note" style="margin-top:0;margin-bottom:10px;padding-top:0;border-top:none;">High conv, underinvested</div>
+          <div style="overflow-x:auto;"><table class="data-table" style="font-size:11px;"><thead><tr><th>Term</th><th>CVR</th><th>Spend</th></tr></thead><tbody id="st-opp-body"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody></table></div>
         </div>
-        <div class="ppc-opp-body">This is the highest-ABA term in the T1 set with the fewest competing products (293). The product IS an activator — relevance score will be maximum. "Hair growth accelerator" is not currently in the listing title but is present in bullet copy. At 22.95% conversion and $49.99 price, a $1.60 CPC yields ~$7 revenue per click at category average = 4.4x ROAS before organic lift.</div>
-        <div class="ppc-opp-action">→ Action: Launch exact match campaign. Set daily budget $10. Monitor for 2 weeks. If ACoS stays below 40%, scale to $20/day.</div>
-      </div>
-
-      <div class="ppc-opp-card high">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge high">⚡ HIGH</div>
-          <div class="ppc-opp-title">Reverse Activator: "Postpartum Hair Loss" — 661 Competing ASINs, 25% ABA</div>
-          <div class="ppc-opp-meta">EVO0001 · T2 Keyword · 1,084 vol/mo · 25% ABA · $2.25 CPC · Mentioned in Bullet 1</div>
+        <div class="ppc-card" style="margin-bottom:0;padding:16px;">
+          <div class="ppc-card-title" style="margin-bottom:2px;font-size:12.5px;">⚡ CPC Rising</div>
+          <div class="ppc-note" style="margin-top:0;margin-bottom:10px;padding-top:0;border-top:none;">Biggest jump vs prior month</div>
+          <div style="overflow-x:auto;"><table class="data-table" style="font-size:11px;"><thead><tr><th>Term</th><th>Prior</th><th>Current</th></tr></thead><tbody id="st-cpc-body"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody></table></div>
         </div>
-        <div class="ppc-opp-body">661 competing ASINs is extremely low for a keyword already mentioned in Bullet 1. Postpartum buyers are high-intent and brand-loyal — if the product works, they reorder. "Postpartum hair loss" is already in the bullet copy AND is the kind of high-emotion, specific-problem search that converts disproportionately. Reverse Activator's clinical claim ("97% reduced shedding") directly addresses this buyer.</div>
-        <div class="ppc-opp-action">→ Action: Launch exact match at $2.25 CPC. Budget $5/day. Sponsored Brand headline: "évolis Reverse — For Postpartum Hair Shedding".</div>
       </div>
 
-      <div class="ppc-opp-card med">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge med">📋 MEDIUM</div>
-          <div class="ppc-opp-title">"Ordinary Hair Growth Serum" — 82.3% ABA, 521 Competing ASINs</div>
-          <div class="ppc-opp-meta">T1 Keyword · 29,521 vol/mo · 82.3% ABA · $1.79 CPC · Competitor brand halo</div>
-        </div>
-        <div class="ppc-opp-body">Buyers searching "ordinary hair growth serum" are mid-funnel comparison shoppers looking at The Ordinary's Multi-Peptide Serum. 82.3% ABA means most people who click buy. 521 competing ASINs is extremely low for a 29K-volume keyword. évolis can capture these buyers by being present at the moment of comparison.</div>
-        <div class="ppc-opp-action">→ Action: Exact match on this term. Sponsored Product targeting ASIN B07PHRJKJ8 (The Ordinary Multi-Peptide). Budget $5/day. Ad copy: "Science-backed alternative — FGF5 technology."</div>
-      </div>
-
-      <div class="ppc-opp-card med">
-        <div class="ppc-opp-hd">
-          <div class="ppc-opp-badge med">📋 MEDIUM</div>
-          <div class="ppc-opp-title">Build "Spartan Root Activator Shampoo" Halo — 61.6% ABA, only 70 Competing ASINs</div>
-          <div class="ppc-opp-meta">T3 Reach Keyword · 29,536 vol/mo · 61.6% ABA · $1.68 CPC</div>
-        </div>
-        <div class="ppc-opp-body">Spartan Root Activator has "activator" in the product name — buyers searching it are already familiar with the activator format and actively comparing products. 70 competing ASINs for 29K volume is extraordinary. Only 1 brand in the title. Product comparison ad targeting Spartan Root ASIN could capture switchers at a premium. Long-term organic play.</div>
-        <div class="ppc-opp-action">→ Action: ASIN targeting campaign against Spartan Root ASIN. Start at $3/day. Monitor click share. Not an immediate priority — revisit after Reverse and Prevent are stabilized.</div>
-      </div>
-
-      <div class="insight-bar" style="margin-top:8px;">
-        <strong>Note:</strong>
-        <span class="insight-text">When new session/conversion/spend data is uploaded, update the metric row in each opportunity card and move actioned items to the Insights Log.</span>
+      <div class="ppc-card-title" style="margin-bottom:10px;">AI PPC Insights</div>
+      <div id="ppc-insights-cards">
+        <div class="ppc-opp-card"><div class="ppc-opp-body" style="color:var(--muted);">Loading insights…</div></div>
       </div>
 
     </div><!-- /ppc-opportunities -->
@@ -5188,6 +5123,7 @@ async function initSns() {
     // Defined later in the file (needs INSIGHTS_SHEET_ID etc which are declared
     // further down) and exposed on window so it can be called from here.
     if (typeof window.initInsightsOverview === 'function') window.initInsightsOverview();
+    if (typeof window.initPpcPage === 'function') window.initPpcPage();
   });
 
 })();
@@ -5552,6 +5488,175 @@ window.initInsightsOverview = async function() {
   await ovLoadActiveSkus(result && result.year, result && result.month);
   await ovLoadSessionsAndConversion(result && result.year, result && result.month);
   await ovLoadBrandGlance();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// PPC PAGE — Search Terms panels (Opportunities tab) + Product
+// Performance table (Blended Context tab), pulled live instead of
+// hardcoded.
+//
+// Sources:
+//   - Ad Search Terms sheet (evolis tab)     → 4 search-term panels
+//   - Business Report sheet (evolis tab,
+//     same one Insights Overview uses)       → Product Performance table
+//   - Amazon Products Cache sheet            → product display names
+//
+// NOT wired here (deliberately, per conversation):
+//   - Buy Box % — not captured by any cron yet, column left blank
+//   - PPC Priority tag — waiting on agreed thresholds, column left as "—"
+//   - Strategy by Product cards — left as authored static content; the
+//     Insights sheet's ppc_json is brand-level, not per-ASIN, so there's
+//     no clean way to split it across product cards yet
+//
+// "Last 30 days" here means the most recent (year, month) present in the
+// Ad Search Terms sheet — that sheet is monthly-grain, not daily, so a
+// literal 30-day rolling window isn't what the data actually supports.
+// ═══════════════════════════════════════════════════════════════════
+
+const PPC_SEARCH_TERMS_SHEET_ID = '1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o';
+const PPC_SEARCH_TERMS_GID      = '1865714213'; // evolis tab
+
+function ppcRenderPanel(elId, items, rowFn) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = items.length ? items.map(rowFn).join('') : '<tr><td colspan="3" style="color:var(--muted);">None this month</td></tr>';
+}
+
+async function ppcLoadSearchTermPanels() {
+  const panelIds = ['st-top-body', 'st-waste-body', 'st-opp-body', 'st-cpc-body'];
+  try {
+    const csv = await fetch(ovCsvUrl(PPC_SEARCH_TERMS_SHEET_ID, PPC_SEARCH_TERMS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) {
+      panelIds.forEach(id => ppcRenderPanel(id, [], () => ''));
+      return;
+    }
+
+    let latestY = 0, latestM = 0;
+    rows.forEach(r => {
+      const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
+      if (y > latestY || (y === latestY && m > latestM)) { latestY = y; latestM = m; }
+    });
+    let prevY = latestY, prevM = latestM - 1; if (prevM === 0) { prevM = 12; prevY--; }
+
+    function groupByTerm(y, m) {
+      const groups = {};
+      rows.forEach(r => {
+        if (parseInt(r.year, 10) !== y || parseInt(r.month, 10) !== m) return;
+        const term = r.search_term || '';
+        if (!term) return;
+        if (!groups[term]) groups[term] = { clicks: 0, cost: 0, sales: 0, purchases: 0, impressions: 0 };
+        const g = groups[term];
+        g.clicks      += parseInt(r.clicks, 10) || 0;
+        g.cost        += parseFloat(r.cost) || 0;
+        g.sales       += parseFloat(r.sales) || 0;
+        g.purchases   += parseInt(r.purchases, 10) || 0;
+        g.impressions += parseInt(r.impressions, 10) || 0;
+      });
+      return groups;
+    }
+
+    const curr = groupByTerm(latestY, latestM);
+    const prev = groupByTerm(prevY, prevM);
+
+    const currList = Object.entries(curr).map(([term, g]) => ({
+      term, ...g,
+      acos: g.sales > 0 ? (g.cost / g.sales) * 100 : null,
+      cvr:  g.clicks > 0 ? (g.purchases / g.clicks) * 100 : 0,
+      cpc:  g.clicks > 0 ? g.cost / g.clicks : 0,
+    }));
+
+    const N = 25;
+    const money = v => '$' + v.toFixed(2);
+    const pct   = v => v.toFixed(0) + '%';
+
+    // Top Performing — has sales, ACOS < 40%, sorted by sales desc
+    const topPerforming = currList.filter(t => t.sales > 0 && t.acos !== null && t.acos < 40)
+      .sort((a, b) => b.sales - a.sales).slice(0, N);
+    ppcRenderPanel('st-top-body', topPerforming, t =>
+      `<tr><td>${t.term}</td><td>${money(t.sales)}</td><td style="color:#1db88a;font-weight:600;">${pct(t.acos)}</td></tr>`);
+
+    // Wasted Spend — no sales, has cost, sorted by cost desc
+    const wastedSpend = currList.filter(t => t.sales === 0 && t.cost > 0)
+      .sort((a, b) => b.cost - a.cost).slice(0, N);
+    ppcRenderPanel('st-waste-body', wastedSpend, t =>
+      `<tr><td>${t.term}</td><td>${money(t.cost)}</td><td>${t.clicks}</td></tr>`);
+
+    // Opportunities — high CVR (≥15%, category benchmark floor), sorted by CVR desc
+    const opportunities = currList.filter(t => t.purchases > 0 && t.cvr >= 15)
+      .sort((a, b) => b.cvr - a.cvr).slice(0, N);
+    ppcRenderPanel('st-opp-body', opportunities, t =>
+      `<tr><td>${t.term}</td><td style="color:#1db88a;font-weight:600;">${pct(t.cvr)}</td><td>${money(t.cost)}</td></tr>`);
+
+    // CPC Rising — present in both months with clicks, CPC increased, sorted by delta desc
+    const prevCpcByTerm = {};
+    Object.entries(prev).forEach(([term, g]) => { prevCpcByTerm[term] = g.clicks > 0 ? g.cost / g.clicks : null; });
+    const cpcRising = currList
+      .filter(t => t.clicks > 0 && prevCpcByTerm[t.term] != null && prevCpcByTerm[t.term] > 0)
+      .map(t => ({ ...t, prevCpc: prevCpcByTerm[t.term], delta: t.cpc - prevCpcByTerm[t.term] }))
+      .filter(t => t.delta > 0)
+      .sort((a, b) => b.delta - a.delta).slice(0, N);
+    ppcRenderPanel('st-cpc-body', cpcRising, t =>
+      `<tr><td>${t.term}</td><td>${money(t.prevCpc)}</td><td style="color:var(--danger);font-weight:600;">${money(t.cpc)}</td></tr>`);
+
+  } catch (err) {
+    console.warn('[PPC] search term panels failed:', err.message);
+    panelIds.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<tr><td colspan="3" style="color:var(--muted);">Error loading</td></tr>'; });
+  }
+}
+
+async function ppcLoadProductPerformance() {
+  const tbody = document.getElementById('ppc-product-tbody');
+  if (!tbody) return;
+  try {
+    const [bizCsv, namesCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const bizRows = parseCsvToRows(bizCsv);
+    if (!bizRows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data</td></tr>'; return; }
+
+    const { year, month } = ovGetLastFullMonth();
+    const monthRows = bizRows.filter(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+    if (!monthRows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data synced for this month yet</td></tr>'; return; }
+
+    // ASIN -> product name, most recent Products Cache snapshot date only
+    const nameRows = parseCsvToRows(namesCsv);
+    const latestDate = nameRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const nameMap = {};
+    nameRows.filter(r => r.date === latestDate).forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (asin) nameMap[asin] = r.name || asin;
+    });
+
+    const sorted = [...monthRows].sort((a, b) => (parseInt(b.sessions, 10) || 0) - (parseInt(a.sessions, 10) || 0));
+
+    tbody.innerHTML = sorted.map(r => {
+      const asin       = (r.asin || '').toUpperCase();
+      const name       = nameMap[asin] || asin;
+      const sessions   = parseInt(r.sessions, 10) || 0;
+      const units      = parseInt(r.units_ordered, 10) || 0;
+      const revenue    = parseFloat(r.ordered_product_sales) || 0;
+      const conv       = parseFloat(r.conversion_rate) || 0;
+      const convClass  = conv >= 15 ? 'rank-top' : (conv > 0 ? 'rank-low' : 'rank-none');
+      return `<tr>
+        <td><strong>${name}</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">${r.sku || ''}</span></td>
+        <td>${sessions.toLocaleString()}</td><td>${units}</td><td>$${revenue.toFixed(2)}</td>
+        <td><span class="rank-pill ${convClass}">${conv.toFixed(2)}%</span></td>
+        <td style="color:var(--muted);">—</td>
+        <td style="color:var(--muted);font-size:10.5px;">Pending thresholds</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.warn('[PPC] product performance failed:', err.message);
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">Error loading</td></tr>';
+  }
+}
+
+window.initPpcPage = async function() {
+  await ppcLoadSearchTermPanels();
+  await ppcLoadProductPerformance();
 };
 
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
@@ -5970,13 +6075,9 @@ function injectInsightsBoxes(ins) {
       (ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length ? '<strong>Watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : '');
     
   }
-  const ppcEl = document.getElementById('ai-ppc-text');
-  if (ppcEl && ins.ppc && ins.ppc.summary) {
-    ppcEl.innerHTML = '<strong>' + (ins.ppc.summary||'') + '</strong>' +
-      (ins.ppc.wins&&ins.ppc.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.ppc.wins) : '') +
-      (ins.ppc.actions&&ins.ppc.actions.length ? '<strong>Actions:</strong>' + makeList(ins.ppc.actions) : '') +
-      (ins.ppc.opportunities&&ins.ppc.opportunities.length ? '<strong>Opportunities:</strong>' + makeList(ins.ppc.opportunities) : '');
-    
+  const ppcCardsEl = document.getElementById('ppc-insights-cards');
+  if (ppcCardsEl && ins.ppc) {
+    renderPpcInsightCards(ins.ppc, ppcCardsEl);
   }
   const laEl = document.getElementById('ai-listing-text');
   if (laEl && ins.listing && ins.listing.summary) {
@@ -5986,6 +6087,33 @@ function injectInsightsBoxes(ins) {
       (ins.listing.rewrites_recommended&&ins.listing.rewrites_recommended.length ? '<strong>Priority Rewrites:</strong>' + makeList(ins.listing.rewrites_recommended) : '');
     
   }
+}
+
+// Turns ins.ppc's flat summary/wins/actions/opportunities arrays into
+// individual cards, reusing the existing .ppc-opp-card anatomy. No
+// urgent/high/med severity coloring here — the Insights sheet doesn't
+// carry a severity field (same open item as the listing-audit severity
+// work discussed separately), so everything renders as a neutral card
+// rather than guessing at priority.
+function renderPpcInsightCards(ppc, container) {
+  const cards = [];
+
+  if (ppc.summary) {
+    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div><div class="ppc-opp-body">${ppc.summary}</div></div>`);
+  }
+  (ppc.opportunities || []).forEach(text => {
+    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">OPPORTUNITY</div></div><div class="ppc-opp-body">${text}</div></div>`);
+  });
+  (ppc.actions || []).forEach(text => {
+    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge high">ACTION</div></div><div class="ppc-opp-body">${text}</div></div>`);
+  });
+  (ppc.wins || []).forEach(text => {
+    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge" style="color:#1db88a;">WIN</div></div><div class="ppc-opp-body">${text}</div></div>`);
+  });
+
+  container.innerHTML = cards.length
+    ? cards.join('')
+    : '<div class="ppc-opp-card"><div class="ppc-opp-body" style="color:var(--muted);">No PPC insights logged yet.</div></div>';
 }
 
 // Append a single log card to the log element
