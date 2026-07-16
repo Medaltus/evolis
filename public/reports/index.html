@@ -328,7 +328,48 @@ table.perf-compare tr:last-child td{border-bottom:none;}
 .pcard-exec-hd{padding:16px 22px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
 .pcard-exec-hd b{font-family:var(--font-subheader);font-size:16px;font-weight:700;color:#fff;}
 .pcard-exec-hd .meta{font-size:11px;color:rgba(255,255,255,.65);margin-left:8px;}
-.pcard-exec-hd .sc-badge{background:rgba(255,255,255,.15);}
+.pcard-exec-hd .sc-badge,.ppc-strategy-hd .sc-badge{background:#fff;}
+
+/* ── Event Strategy page (Events > Strategy) ────────────────────────────
+   2026-07-16, per Jaclyn: hardcoded to match the exact reference layout
+   she provided. Content (Amazon Prime Day, phases, action items) is
+   static — this is a reusable playbook, not data-driven. */
+.evs-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:28px;flex-wrap:wrap;}
+.evs-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.evs-eyebrow::before{content:'— ';}
+.evs-headline{font-family:var(--font-subheader);font-size:32px;font-weight:700;color:var(--navy);line-height:1.15;margin-bottom:6px;}
+.evs-dates{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.02em;}
+.evs-badge{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);border-radius:var(--radius);padding:16px 20px;min-width:230px;flex-shrink:0;}
+.evs-badge-pct{font-size:30px;font-weight:800;color:var(--green);line-height:1;}
+.evs-badge-pct span{font-size:16px;font-weight:700;color:#fff;margin-left:4px;}
+.evs-badge-lbl{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5);margin:8px 0 3px;}
+.evs-badge-desc{font-size:11.5px;color:rgba(255,255,255,.85);font-weight:600;}
+
+.evs-phase{margin-bottom:30px;}
+.evs-phase-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:2px solid var(--border);margin-bottom:18px;flex-wrap:wrap;}
+.evs-phase-hd-left{display:flex;align-items:baseline;gap:14px;}
+.evs-phase-num{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.evs-phase-title{font-family:var(--font-subheader);font-size:26px;font-weight:700;line-height:1;}
+.evs-phase.lead-up .evs-phase-title{color:#1db88a;}
+.evs-phase.during .evs-phase-title{color:var(--navy);}
+.evs-phase.lead-out .evs-phase-title{color:var(--warn);}
+.evs-phase-pill{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 14px;border-radius:999px;white-space:nowrap;}
+.evs-phase.lead-up .evs-phase-pill{background:rgba(36,233,163,.13);color:#1db88a;}
+.evs-phase.during .evs-phase-pill{background:var(--bg2);color:var(--muted);}
+.evs-phase.lead-out .evs-phase-pill{background:rgba(200,125,47,.12);color:var(--warn);}
+.evs-items{display:grid;grid-template-columns:1fr 1fr;gap:16px 28px;}
+.evs-item{display:flex;gap:12px;}
+.evs-item-num{font-size:11px;font-weight:700;color:var(--muted);flex-shrink:0;padding-top:1px;}
+.evs-item-title{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:3px;}
+.evs-item-text{font-size:12px;color:var(--muted);line-height:1.55;}
+.evs-item-text strong{color:var(--navy);font-weight:700;}
+
+.evs-outlook{background:var(--success-tint,rgba(36,233,163,.08));border-left:3px solid #1db88a;border-radius:6px;padding:18px 22px;margin-top:6px;}
+.evs-outlook-lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#1db88a;margin-bottom:8px;}
+.evs-outlook-lbl::before{content:'— ';}
+.evs-outlook-text{font-size:13px;color:var(--navy);line-height:1.65;}
+.evs-outlook-text strong{font-weight:700;}
+
 .pcard-exec-body{padding:18px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:24px;}
 .hero-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--bg2);color:var(--navy);border:1px solid var(--border);margin:2px 3px 2px 0;}
 details.inci-toggle{margin:8px 0 14px;}
@@ -464,9 +505,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .ppc-metric-val{font-weight:600;color:var(--navy);}
 .ppc-note{font-size:11.5px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);line-height:1.65;}
 .ppc-strategy-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
-.ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(107,123,162,.08);} /* was var(--bg), same invisible-against-page-background issue as the insight cards — light wash of --slate (#6B7BA2) instead. Per Jaclyn 2026-07-16. */
-.ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:3px;}
-.ppc-strategy-name{font-size:15px;font-weight:700;color:var(--navy);}
+.ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);} /* 2026-07-16: matches the navy Listing Audit / Insights product-card header treatment — same "if we list a product specifically" rule extended to Strategy by Product. Per Jaclyn. */
+.ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.65);margin-bottom:3px;}
+.ppc-strategy-name{font-size:15px;font-weight:700;color:#fff;}
 .ppc-strategy-body{padding:18px 20px;}
 .ppc-priority-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border2);}
 .ppc-priority-row:last-of-type{border-bottom:none;}
@@ -1201,8 +1242,69 @@ As inventory availability improves, the current sales mix provides a strong foun
       <button class="ch-tab" onclick="showChannel('events','ev-bfcm',this)">BFCM '25</button>
     </div>
     <div class="channel-page active" id="ev-strategy">
-      <div class="placeholder-block"><div class="ph-icon">🗺️</div><div class="ph-title">Event Strategy</div><div class="ph-sub">Annual event calendar, prep checklists, deal planning</div></div>
+
+      <div class="evs-hero">
+        <div>
+          <div class="evs-eyebrow">Event Strategy</div>
+          <div class="evs-headline">Amazon Prime Day</div>
+          <div class="evs-dates">June 23 – 26, 2026</div>
+        </div>
+        <div class="evs-badge">
+          <div class="evs-badge-pct">20%<span>OFF</span></div>
+          <div class="evs-badge-lbl">Promotional Strategy</div>
+          <div class="evs-badge-desc">Full catalog · Prime Exclusive Discount</div>
+        </div>
+      </div>
+
+      <div class="evs-phase lead-up">
+        <div class="evs-phase-hd">
+          <div class="evs-phase-hd-left"><span class="evs-phase-num">Phase 01</span><span class="evs-phase-title">Lead Up</span></div>
+          <span class="evs-phase-pill">Prepare</span>
+        </div>
+        <div class="evs-items">
+          <div class="evs-item"><span class="evs-item-num">01</span><div><div class="evs-item-title">Listings &amp; SEO</div><div class="evs-item-text">Refresh listing content, images, and A+ Content to ensure <strong>maximum search visibility and conversion readiness</strong> before traffic surges.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">02</span><div><div class="evs-item-title">Advertising</div><div class="evs-item-text">Gradually <strong>increase budgets 1.5–3x and bids 10%+</strong> in the 7–14 days prior to warm the algorithm and activate event-specific campaigns.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">03</span><div><div class="evs-item-title">Promotions &amp; Pricing</div><div class="evs-item-text">Finalize Prime Exclusive Discounts and <strong>confirm all deals are submitted, eligible, and approved</strong> with sufficient lead time.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">04</span><div><div class="evs-item-title">Inventory &amp; Operations</div><div class="evs-item-text">Confirm FBA stock coverage, inbound timelines, and <strong>buffer inventory levels to prevent sell-outs</strong> during peak demand.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">05</span><div><div class="evs-item-title">Creative &amp; Storefront</div><div class="evs-item-text">Upload refreshed imagery and <strong>add promotional banners and curated storefront landing pages</strong> optimized for high-traffic event conditions.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">06</span><div><div class="evs-item-title">Content Health Check</div><div class="evs-item-text">Resolve any listing suppressions, Q&amp;A gaps, and negative review flags <strong>before traffic surges</strong> — a suppressed listing during Prime Day is a direct missed opportunity.</div></div></div>
+        </div>
+      </div>
+
+      <div class="evs-phase during">
+        <div class="evs-phase-hd">
+          <div class="evs-phase-hd-left"><span class="evs-phase-num">Phase 02</span><span class="evs-phase-title">During</span></div>
+          <span class="evs-phase-pill">Execute</span>
+        </div>
+        <div class="evs-items">
+          <div class="evs-item"><span class="evs-item-num">01</span><div><div class="evs-item-title">Real-Time Ad Optimization</div><div class="evs-item-text"><strong>Increase budgets 2–4x and bids 20%+</strong> as CPCs rise. Reallocate spend to top performers in real time across all ad placements.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">02</span><div><div class="evs-item-title">Deal &amp; Buy Box Monitoring</div><div class="evs-item-text">Ensure all discounts are active and the <strong>Buy Box is stable</strong>. Resolve any pricing issues immediately — lost Buy Box is direct lost revenue.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">03</span><div><div class="evs-item-title">Listing &amp; Inventory Health</div><div class="evs-item-text">Monitor for suppressed listings and <strong>low-inventory alerts in real time</strong> to prevent conversion interruptions across the event window.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">04</span><div><div class="evs-item-title">Performance Tracking</div><div class="evs-item-text">Watch sessions, conversion rate, ACOS, and sell-through velocity continuously. <strong>Make decisions from live data</strong>, not post-event analysis.</div></div></div>
+        </div>
+      </div>
+
+      <div class="evs-phase lead-out">
+        <div class="evs-phase-hd">
+          <div class="evs-phase-hd-left"><span class="evs-phase-num">Phase 03</span><span class="evs-phase-title">Lead Out</span></div>
+          <span class="evs-phase-pill">Capitalize</span>
+        </div>
+        <div class="evs-items">
+          <div class="evs-item"><span class="evs-item-num">01</span><div><div class="evs-item-title">Retargeting &amp; Display</div><div class="evs-item-text">Run Sponsored Display ads to <strong>re-engage shoppers who viewed but didn't convert</strong> during the event window.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">02</span><div><div class="evs-item-title">Listing Refinement</div><div class="evs-item-text">Update keywords and creatives using <strong>what actually converted</strong> during the event — real data is the best optimization input.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">03</span><div><div class="evs-item-title">Brand Halo Expansion</div><div class="evs-item-text">Capitalize on new-to-brand traffic with <strong>cross-sell and complementary product campaigns</strong> to increase basket size.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">04</span><div><div class="evs-item-title">Inventory Replenishment</div><div class="evs-item-text">Adjust restock strategies based on <strong>post-event velocity and new customer acquisition rates</strong>.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">05</span><div><div class="evs-item-title">Review Acceleration</div><div class="evs-item-text">Activate follow-up sequences to drive <strong>organic review growth from event purchasers</strong> — the highest-quality acquisition window of the year.</div></div></div>
+          <div class="evs-item"><span class="evs-item-num">06</span><div><div class="evs-item-title">Comprehensive Reporting</div><div class="evs-item-text">Deliver clear post-event analysis — <strong>what worked, what didn't, and how to capitalize</strong> on gains for the next event cycle.</div></div></div>
+        </div>
+      </div>
+
+      <div class="evs-outlook">
+        <div class="evs-outlook-lbl">Strategic Outlook</div>
+        <div class="evs-outlook-text">Prime Day is the highest-traffic sales event of the year on Amazon. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>
+      </div>
     </div>
+
     <div class="channel-page" id="ev-spring">
       <div class="placeholder-block"><div class="ph-icon">🌸</div><div class="ph-title">Big Spring Sale — March 2026</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
     </div>
