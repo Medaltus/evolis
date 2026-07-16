@@ -77,104 +77,57 @@ module.exports = async (req, res) => {
   }
 
   const targetMonth = metaMap['target_month'];
-  const reportId    = targetMonth ? metaMap[`report_id_${targetMonth}`] : null;
-  if (!targetMonth || !reportId) {
-    return res.status(400).json({ error: 'No pending target_month/reportId in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
+  const batchCount = targetMonth ? parseInt(metaMap[`report_batch_count_${targetMonth}`] || '0', 10) : 0;
+  if (!targetMonth || !batchCount) {
+    return res.status(400).json({ error: 'No pending target_month/batches in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
   }
-
-  // ── Poll until DONE ──────────────────────────────────────────────────────
-  let documentId = null;
-  let finalStatus = null;
-  let finalStatusBody = null;
-  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
-
-  while (Date.now() < deadline) {
-    await sleep(REPORT_POLL_INTERVAL_MS);
-    try {
-      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
-      finalStatus = statusResp.processingStatus;
-      finalStatusBody = statusResp;
-      console.log(`[sync-sqp-process] ${targetMonth} report ${reportId} status: ${finalStatus}`);
-
-      if (finalStatus === 'DONE') {
-        documentId = statusResp.reportDocumentId;
-        break;
-      }
-      if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
-        console.error(`[sync-sqp-process] ${targetMonth} report ${finalStatus} — full response:`, JSON.stringify(statusResp));
-        break;
-      }
-    } catch (err) {
-      console.warn(`[sync-sqp-process] poll error (will retry): ${err.message}`);
-    }
+  const batchReportIds = [];
+  for (let i = 0; i < batchCount; i++) {
+    const id = metaMap[`report_id_${targetMonth}_b${i}`];
+    if (!id) return res.status(400).json({ error: `Missing report_id_${targetMonth}_b${i} in _meta — _meta may be corrupted, try re-running sync-sqp-request with ?force=true` });
+    batchReportIds.push(id);
   }
+  console.log(`[sync-sqp-process] ${targetMonth} — ${batchCount} batch(es): ${batchReportIds.join(', ')}`);
 
-  if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
-    // Amazon sometimes still attaches a reportDocumentId even on FATAL —
-    // when it does, that document is usually an error-detail explanation
-    // of the actual failure, not the data report. Worth reading before
-    // giving up, since "FATAL" alone tells us nothing actionable.
-    let errorDocumentContent = null;
-    if (finalStatusBody?.reportDocumentId) {
+  // ── Poll + download every batch (re-checked every invocation — cheap,
+  // and avoids needing to persist downloaded content between runs) ───────
+  let allEntries = [];
+  const batchResults = [];
+  for (let i = 0; i < batchReportIds.length; i++) {
+    const reportId = batchReportIds[i];
+    const result = await pollReportUntilDone(reportId, targetMonth, i);
+    batchResults.push({ batchIndex: i, reportId, status: result.status });
+
+    if (result.status === 'FATAL' || result.status === 'CANCELLED') {
+      const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId);
       try {
-        const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${finalStatusBody.reportDocumentId}`);
-        const fileResp = await fetch(docResp.url);
-        if (fileResp.ok) {
-          const buffer = Buffer.from(await fileResp.arrayBuffer());
-          errorDocumentContent = await new Promise((resolve) => {
-            zlib.gunzip(buffer, (err, result) => {
-              if (err) resolve(buffer.toString('utf8'));
-              else resolve(result.toString('utf8'));
-            });
-          });
-          console.error(`[sync-sqp-process] ${targetMonth} FATAL error document content:`, errorDocumentContent.slice(0, 2000));
-        }
-      } catch (err) {
-        console.warn(`[sync-sqp-process] could not download FATAL error document:`, err.message);
-      }
+        const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+        metaMap['report_status'] = result.status;
+        const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+        await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+      } catch (err) { /* best-effort */ }
+      return res.status(500).json({ error: `Report ${result.status}`, targetMonth, batchIndex: i, reportId, amazonResponse: result.statusBody, errorDocumentContent });
     }
 
-    try {
-      const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-      metaMap['report_status'] = finalStatus;
-      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
-      await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
-    } catch (err) { /* best-effort — the real error already logged above */ }
-    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId, amazonResponse: finalStatusBody, errorDocumentContent });
+    if (result.status !== 'DONE') {
+      // Still IN_QUEUE/IN_PROGRESS after this invocation's poll window —
+      // stop here, next scheduled run re-checks ALL batches (including any
+      // already DONE ones, which will just resolve quickly this time).
+      console.warn(`[sync-sqp-process] ${targetMonth} batch ${i} not ready yet within this invocation's poll window — will check again next scheduled run`);
+      return res.status(200).json({ ok: true, notReadyYet: true, targetMonth, batchResults, lastKnownStatus: result.status });
+    }
+
+    const jsonText = await downloadReportJson(result.documentId);
+    if (jsonText === null) {
+      return res.status(500).json({ error: 'Failed to download report document', targetMonth, batchIndex: i, reportId });
+    }
+    let parsed;
+    try { parsed = JSON.parse(jsonText); } catch (e) { parsed = {}; }
+    allEntries = allEntries.concat(parsed.dataByAsin || []);
   }
 
-  if (!documentId) {
-    console.warn(`[sync-sqp-process] ${targetMonth} report not ready yet within this invocation's poll window — will check again next scheduled run`);
-    return res.status(200).json({ ok: true, notReadyYet: true, targetMonth, reportId, lastKnownStatus: finalStatus });
-  }
-
-  // ── Download & decompress ───────────────────────────────────────────────
-  // Confirmed via a real successful test run: this is gzipped JSON, NOT a
-  // flat TSV file (that was my wrong initial assumption from documentation
-  // — the real shape is { reportSpecification, dataByAsin: [...] }, one
-  // entry per ASIN+search-query combination, each with nested
-  // searchQueryData/impressionData/clickData/cartAddData/purchaseData
-  // objects). Gzip fallback still mirrors sync-business-report-process.js's
-  // defensive handling either way.
-  let reportJsonText;
-  try {
-    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
-    const fileResp = await fetch(docResp.url); // pre-signed S3 url — no SP-API auth headers here
-    if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
-
-    const buffer = Buffer.from(await fileResp.arrayBuffer());
-    reportJsonText = await new Promise((resolve) => {
-      zlib.gunzip(buffer, (err, result) => {
-        if (err) resolve(buffer.toString('utf8'));
-        else resolve(result.toString('utf8'));
-      });
-    });
-  } catch (err) {
-    console.error(`[sync-sqp-process] failed to download ${targetMonth}:`, err.message);
-    return res.status(500).json({ error: 'Failed to download report document', detail: err.message, targetMonth, reportId });
-  }
-
-  const { headers: dataHeaders, rows: dataRows } = flattenSqpReport(reportJsonText);
+  console.log(`[sync-sqp-process] ${targetMonth} — all ${batchCount} batch(es) DONE, ${allEntries.length} total entries`);
+  const { headers: dataHeaders, rows: dataRows } = flattenEntries(allEntries);
 
   if (debugMode) {
     console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — column headers: ${dataHeaders.join(' | ')}`);
@@ -183,6 +136,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       debug: true,
       targetMonth,
+      batchCount,
       columnHeaders: dataHeaders,
       rowCount: dataRows.length,
       firstRow: dataRows[0] || [],
@@ -221,11 +175,68 @@ module.exports = async (req, res) => {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Flattens one dataByAsin entry into a flat row. "Full report" per the
-// original ask — every field Amazon returns is included, not a trimmed
-// subset. Structure confirmed against a real successful response
-// (2026-07-16): { reportSpecification, dataByAsin: [ { startDate, endDate,
-// asin, searchQueryData: {...}, impressionData: {...}, clickData: {...},
+// Polls one batch's reportId until DONE/FATAL/CANCELLED, or gives up after
+// REPORT_POLL_TIMEOUT_MS (same budget as sync-business-report-process.js).
+async function pollReportUntilDone(reportId, targetMonth, batchIndex) {
+  let statusBody = null;
+  let status = null;
+  const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(REPORT_POLL_INTERVAL_MS);
+    try {
+      const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      status = resp.processingStatus;
+      statusBody = resp;
+      console.log(`[sync-sqp-process] ${targetMonth} batch ${batchIndex} report ${reportId} status: ${status}`);
+      if (status === 'DONE') return { status, documentId: resp.reportDocumentId, statusBody };
+      if (status === 'FATAL' || status === 'CANCELLED') {
+        console.error(`[sync-sqp-process] ${targetMonth} batch ${batchIndex} report ${status} — full response:`, JSON.stringify(resp));
+        return { status, documentId: null, statusBody };
+      }
+    } catch (err) {
+      console.warn(`[sync-sqp-process] batch ${batchIndex} poll error (will retry): ${err.message}`);
+    }
+  }
+  return { status: status || 'TIMEOUT', documentId: null, statusBody };
+}
+
+// Downloads and decompresses a report document, returning null on any
+// failure rather than throwing — callers decide how to handle that.
+async function downloadReportJson(documentId) {
+  if (!documentId) return null;
+  try {
+    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const fileResp = await fetch(docResp.url); // pre-signed S3 url — no SP-API auth headers here
+    if (!fileResp.ok) return null;
+    const buffer = Buffer.from(await fileResp.arrayBuffer());
+    return await new Promise((resolve) => {
+      zlib.gunzip(buffer, (err, result) => {
+        if (err) resolve(buffer.toString('utf8'));
+        else resolve(result.toString('utf8'));
+      });
+    });
+  } catch (err) {
+    console.warn('[sync-sqp-process] downloadReportJson failed:', err.message);
+    return null;
+  }
+}
+
+// Best-effort download used only for FATAL error-detail documents — never
+// throws, returns null if anything goes wrong (this is diagnostic-only).
+async function tryDownloadDocument(documentId) {
+  if (!documentId) return null;
+  const content = await downloadReportJson(documentId);
+  if (content) console.error('[sync-sqp-process] FATAL error document content:', content.slice(0, 2000));
+  return content;
+}
+
+// Flattens an ALREADY-MERGED array of dataByAsin entries (across every
+// batch for this month) into flat rows. "Full report" per the original
+// ask — every field Amazon returns is included, not a trimmed subset.
+// Structure confirmed against a real successful response (2026-07-16):
+// { reportSpecification, dataByAsin: [ { startDate, endDate, asin,
+// searchQueryData: {...}, impressionData: {...}, clickData: {...},
 // cartAddData: {...}, purchaseData: {...} } ] }.
 //
 // Several fields (asinCartAddShare, totalMedianCartAddPrice, etc.) come
@@ -246,15 +257,10 @@ const SQP_HEADERS = [
   'TOTAL_SAME_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_ONE_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_TWO_DAY_SHIPPING_PURCHASE_COUNT',
 ];
 
-function flattenSqpReport(jsonText) {
-  let parsed;
-  try { parsed = JSON.parse(jsonText); }
-  catch (e) { return { headers: SQP_HEADERS, rows: [] }; }
-
-  const entries = parsed.dataByAsin || [];
+function flattenEntries(entries) {
   const price = p => (p && p.amount != null) ? p.amount : '';
 
-  const rows = entries.map(e => {
+  const rows = (entries || []).map(e => {
     const sq = e.searchQueryData || {};
     const imp = e.impressionData || {};
     const clk = e.clickData || {};
