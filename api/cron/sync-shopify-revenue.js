@@ -40,14 +40,35 @@ module.exports = async (req, res) => {
   const currYear  = today.getUTCFullYear();
   const currMonth = today.getUTCMonth() + 1; // 1-indexed
 
-  let prevMonth = currMonth - 1;
-  let prevYear  = currYear;
-  if (prevMonth === 0) { prevMonth = 12; prevYear--; }
-
-  const targetKeys = new Set([
-    `${currYear}-${String(currMonth).padStart(2,'0')}`,
-    `${prevYear}-${String(prevMonth).padStart(2,'0')}`,
-  ]);
+  // 2026-07-16 — optional override: ?month=YYYY-MM processes ONLY that one
+  // month instead of the normal current+previous window. Needed because
+  // this script only ever recomputes the current+previous month relative
+  // to whenever it runs — a month like May, once July starts, falls
+  // permanently outside that window and can never self-heal again no
+  // matter how many times the normal cron fires. This is how May gets
+  // fixed by hand without waiting for (or faking) a different system
+  // clock. Combined with the existing mis-keyed-row cleanup below, this
+  // also removes May's corrupted "1905" row the same way it already
+  // cleaned up June/July's. Default (unparameterized) behavior, used by
+  // the actual scheduled cron trigger, is completely unchanged. Per
+  // Jaclyn 2026-07-16.
+  const monthOverride = req.query.month; // e.g. "2026-05"
+  let targetKeys;
+  if (monthOverride) {
+    if (!/^\d{4}-\d{2}$/.test(monthOverride)) {
+      return res.status(400).json({ error: 'month must be in YYYY-MM format, e.g. 2026-05' });
+    }
+    targetKeys = new Set([monthOverride]);
+    console.log(`[sync-shopify-revenue] month override active — processing ONLY ${monthOverride}, ignoring the normal current+previous window`);
+  } else {
+    let prevMonth = currMonth - 1;
+    let prevYear  = currYear;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+    targetKeys = new Set([
+      `${currYear}-${String(currMonth).padStart(2,'0')}`,
+      `${prevYear}-${String(prevMonth).padStart(2,'0')}`,
+    ]);
+  }
 
   console.log(`[sync-shopify-revenue] updating months: ${[...targetKeys].join(', ')}`);
 
