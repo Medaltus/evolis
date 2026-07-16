@@ -149,17 +149,21 @@ module.exports = async (req, res) => {
   }
 
   // ── Download & decompress ───────────────────────────────────────────────
-  // SQP is documented as a flat TSV file. Gzip fallback mirrors
-  // sync-business-report-process.js's defensive handling (some SP-API
-  // report types are gzipped, some aren't — try, fall back to plain text).
-  let tsvText;
+  // Confirmed via a real successful test run: this is gzipped JSON, NOT a
+  // flat TSV file (that was my wrong initial assumption from documentation
+  // — the real shape is { reportSpecification, dataByAsin: [...] }, one
+  // entry per ASIN+search-query combination, each with nested
+  // searchQueryData/impressionData/clickData/cartAddData/purchaseData
+  // objects). Gzip fallback still mirrors sync-business-report-process.js's
+  // defensive handling either way.
+  let reportJsonText;
   try {
     const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
     const fileResp = await fetch(docResp.url); // pre-signed S3 url — no SP-API auth headers here
     if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
     const buffer = Buffer.from(await fileResp.arrayBuffer());
-    tsvText = await new Promise((resolve) => {
+    reportJsonText = await new Promise((resolve) => {
       zlib.gunzip(buffer, (err, result) => {
         if (err) resolve(buffer.toString('utf8'));
         else resolve(result.toString('utf8'));
@@ -170,7 +174,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to download report document', detail: err.message, targetMonth, reportId });
   }
 
-  const { headers: dataHeaders, rows: dataRows } = parseTsv(tsvText);
+  const { headers: dataHeaders, rows: dataRows } = flattenSqpReport(reportJsonText);
 
   if (debugMode) {
     console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — column headers: ${dataHeaders.join(' | ')}`);
@@ -217,10 +221,60 @@ module.exports = async (req, res) => {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function parseTsv(text) {
-  const lines = text.trim().split('\n').filter(Boolean);
-  if (!lines.length) return { headers: [], rows: [] };
-  const headers = lines[0].split('\t');
-  const rows = lines.slice(1).map(line => line.split('\t'));
-  return { headers, rows };
+// Flattens one dataByAsin entry into a flat row. "Full report" per the
+// original ask — every field Amazon returns is included, not a trimmed
+// subset. Structure confirmed against a real successful response
+// (2026-07-16): { reportSpecification, dataByAsin: [ { startDate, endDate,
+// asin, searchQueryData: {...}, impressionData: {...}, clickData: {...},
+// cartAddData: {...}, purchaseData: {...} } ] }.
+//
+// Several fields (asinCartAddShare, totalMedianCartAddPrice, etc.) come
+// back as null when there's zero volume for that metric — .amount/
+// .currencyCode access below is null-safe for exactly that reason.
+const SQP_HEADERS = [
+  'ASIN', 'START_DATE', 'END_DATE',
+  'SEARCH_QUERY', 'SEARCH_QUERY_SCORE', 'SEARCH_QUERY_VOLUME',
+  'TOTAL_QUERY_IMPRESSION_COUNT', 'ASIN_IMPRESSION_COUNT', 'ASIN_IMPRESSION_SHARE',
+  'TOTAL_CLICK_COUNT', 'TOTAL_CLICK_RATE', 'ASIN_CLICK_COUNT', 'ASIN_CLICK_SHARE',
+  'TOTAL_MEDIAN_CLICK_PRICE', 'ASIN_MEDIAN_CLICK_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CLICK_COUNT',
+  'TOTAL_CART_ADD_COUNT', 'TOTAL_CART_ADD_RATE', 'ASIN_CART_ADD_COUNT', 'ASIN_CART_ADD_SHARE',
+  'TOTAL_MEDIAN_CART_ADD_PRICE', 'ASIN_MEDIAN_CART_ADD_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CART_ADD_COUNT',
+  'TOTAL_PURCHASE_COUNT', 'TOTAL_PURCHASE_RATE', 'ASIN_PURCHASE_COUNT', 'ASIN_PURCHASE_SHARE',
+  'TOTAL_MEDIAN_PURCHASE_PRICE', 'ASIN_MEDIAN_PURCHASE_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_ONE_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_TWO_DAY_SHIPPING_PURCHASE_COUNT',
+];
+
+function flattenSqpReport(jsonText) {
+  let parsed;
+  try { parsed = JSON.parse(jsonText); }
+  catch (e) { return { headers: SQP_HEADERS, rows: [] }; }
+
+  const entries = parsed.dataByAsin || [];
+  const price = p => (p && p.amount != null) ? p.amount : '';
+
+  const rows = entries.map(e => {
+    const sq = e.searchQueryData || {};
+    const imp = e.impressionData || {};
+    const clk = e.clickData || {};
+    const cart = e.cartAddData || {};
+    const pur = e.purchaseData || {};
+    return [
+      e.asin ?? '', e.startDate ?? '', e.endDate ?? '',
+      sq.searchQuery ?? '', sq.searchQueryScore ?? '', sq.searchQueryVolume ?? '',
+      imp.totalQueryImpressionCount ?? '', imp.asinImpressionCount ?? '', imp.asinImpressionShare ?? '',
+      clk.totalClickCount ?? '', clk.totalClickRate ?? '', clk.asinClickCount ?? '', clk.asinClickShare ?? '',
+      price(clk.totalMedianClickPrice), price(clk.asinMedianClickPrice),
+      clk.totalSameDayShippingClickCount ?? '', clk.totalOneDayShippingClickCount ?? '', clk.totalTwoDayShippingClickCount ?? '',
+      cart.totalCartAddCount ?? '', cart.totalCartAddRate ?? '', cart.asinCartAddCount ?? '', cart.asinCartAddShare ?? '',
+      price(cart.totalMedianCartAddPrice), price(cart.asinMedianCartAddPrice),
+      cart.totalSameDayShippingCartAddCount ?? '', cart.totalOneDayShippingCartAddCount ?? '', cart.totalTwoDayShippingCartAddCount ?? '',
+      pur.totalPurchaseCount ?? '', pur.totalPurchaseRate ?? '', pur.asinPurchaseCount ?? '', pur.asinPurchaseShare ?? '',
+      price(pur.totalMedianPurchasePrice), price(pur.asinMedianPurchasePrice),
+      pur.totalSameDayShippingPurchaseCount ?? '', pur.totalOneDayShippingPurchaseCount ?? '', pur.totalTwoDayShippingPurchaseCount ?? '',
+    ];
+  });
+
+  return { headers: SQP_HEADERS, rows };
 }
