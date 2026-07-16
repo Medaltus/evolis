@@ -397,7 +397,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ppc-metric-val{font-weight:600;color:var(--navy);}
 .ppc-note{font-size:11.5px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);line-height:1.65;}
 .ppc-strategy-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
-.ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg);}
+.ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(107,123,162,.08);} /* was var(--bg), same invisible-against-page-background issue as the insight cards — light wash of --slate (#6B7BA2) instead. Per Jaclyn 2026-07-16. */
 .ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:3px;}
 .ppc-strategy-name{font-size:15px;font-weight:700;color:var(--navy);}
 .ppc-strategy-body{padding:18px 20px;}
@@ -7097,33 +7097,44 @@ async function loadAuditResultsFromSheet() {
       // native aspect. Confirmed empirically by rendering both versions
       // side-by-side with the real production config.
       //
-      // Two changes, tuned together against that same comparison: (1) knock
-      // the height target down slightly (0.9x) — also addresses "I'd like
-      // it slightly less tall" directly, and reduces how extreme the aspect
-      // change is in the first place; (2) temporarily reduce each line
-      // dataset's tension during capture only (0.3 → 0.15) to counteract
-      // the taller-aspect curve exaggeration — restored immediately after,
-      // never touching how the live dashboard itself looks. Per Jaclyn
-      // 2026-07-16.
+      // 2026-07-16 (round 2): the first tension fix (0.15) also went in
+      // completely undoing the earlier "isolated capture" era's habit of
+      // scaling font size up to survive the eventual width downscale
+      // (686/originalWidthPx) — borderWidth/pointRadius were never part of
+      // that scaling, so after the same downscale they landed far thinner
+      // than the dashboard's own lines. Same fix as the axis font: define a
+      // TARGET effective size and scale the source up by fontScale so it
+      // survives the downscale intact — now applied to line weight and
+      // point size too, not just tick labels. Tension bumped 0.15 → 0.22
+      // once real line weight was back in the comparison — 0.15 alone read
+      // as too close to straight segments once thickness matched.
       const PDFX_HEIGHT_FACTOR = 0.9;
-      const PDFX_CAPTURE_TENSION = 0.15;
+      const PDFX_CAPTURE_TENSION = 0.22;
+      const PDFX_LINE_WIDTH_TARGET_PX = 3;   // dashboard's own is 2.5 — slightly heavier per Jaclyn's "increase the weight" ask
+      const PDFX_POINT_RADIUS_TARGET_PX = 2.2; // dashboard's own is 2
       const captureHeightPx = Math.round(originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX));
       liveChart.resize(originalWidthPx, captureHeightPx);
 
-      const origTensions = (liveChart.data && liveChart.data.datasets)
-        ? liveChart.data.datasets.map(function (ds) { return ds.tension; })
+      const targetW = originalWidthPx;
+      const fontScale = targetW / PDFX_CARD_WIDTH_PX;
+      const scaledBorderWidth = PDFX_LINE_WIDTH_TARGET_PX * fontScale;
+      const scaledPointRadius = PDFX_POINT_RADIUS_TARGET_PX * fontScale;
+
+      const origLineStyles = (liveChart.data && liveChart.data.datasets)
+        ? liveChart.data.datasets.map(function (ds) { return { tension: ds.tension, borderWidth: ds.borderWidth, pointRadius: ds.pointRadius }; })
         : [];
       if (liveChart.data && liveChart.data.datasets) {
         liveChart.data.datasets.forEach(function (ds) {
           if (typeof ds.tension === 'number') ds.tension = PDFX_CAPTURE_TENSION;
+          if (typeof ds.borderWidth === 'number') ds.borderWidth = scaledBorderWidth;
+          if (typeof ds.pointRadius === 'number') ds.pointRadius = scaledPointRadius;
         });
       }
 
-      const targetW = originalWidthPx;
       const rawDataInfo = liveChart.data && liveChart.data.datasets
         ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
         : 'no datasets';
-      console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '(x' + PDFX_HEIGHT_FACTOR + ' factor) — re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx * PDFX_HEIGHT_FACTOR) + ' in the PDF) — tension override:', PDFX_CAPTURE_TENSION, '— data:', rawDataInfo);
+      console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '(x' + PDFX_HEIGHT_FACTOR + ' factor) — re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx * PDFX_HEIGHT_FACTOR) + ' in the PDF) — tension:', PDFX_CAPTURE_TENSION, '— borderWidth target/scaled:', PDFX_LINE_WIDTH_TARGET_PX + '/' + scaledBorderWidth.toFixed(1), '— pointRadius target/scaled:', PDFX_POINT_RADIUS_TARGET_PX + '/' + scaledPointRadius.toFixed(1), '— data:', rawDataInfo);
 
       let img = '';
       const hasScales = !!(liveChart.options && liveChart.options.scales);
@@ -7147,7 +7158,11 @@ async function loadAuditResultsFromSheet() {
         }
         if (liveChart.data && liveChart.data.datasets) {
           liveChart.data.datasets.forEach(function (ds, i) {
-            if (typeof origTensions[i] === 'number') ds.tension = origTensions[i];
+            const orig = origLineStyles[i];
+            if (!orig) return;
+            if (typeof orig.tension === 'number') ds.tension = orig.tension;
+            if (typeof orig.borderWidth === 'number') ds.borderWidth = orig.borderWidth;
+            if (typeof orig.pointRadius === 'number') ds.pointRadius = orig.pointRadius;
           });
         }
         liveChart.update('none');
