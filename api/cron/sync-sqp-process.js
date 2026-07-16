@@ -110,13 +110,37 @@ module.exports = async (req, res) => {
   }
 
   if (finalStatus === 'FATAL' || finalStatus === 'CANCELLED') {
+    // Amazon sometimes still attaches a reportDocumentId even on FATAL —
+    // when it does, that document is usually an error-detail explanation
+    // of the actual failure, not the data report. Worth reading before
+    // giving up, since "FATAL" alone tells us nothing actionable.
+    let errorDocumentContent = null;
+    if (finalStatusBody?.reportDocumentId) {
+      try {
+        const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${finalStatusBody.reportDocumentId}`);
+        const fileResp = await fetch(docResp.url);
+        if (fileResp.ok) {
+          const buffer = Buffer.from(await fileResp.arrayBuffer());
+          errorDocumentContent = await new Promise((resolve) => {
+            zlib.gunzip(buffer, (err, result) => {
+              if (err) resolve(buffer.toString('utf8'));
+              else resolve(result.toString('utf8'));
+            });
+          });
+          console.error(`[sync-sqp-process] ${targetMonth} FATAL error document content:`, errorDocumentContent.slice(0, 2000));
+        }
+      } catch (err) {
+        console.warn(`[sync-sqp-process] could not download FATAL error document:`, err.message);
+      }
+    }
+
     try {
       const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
       metaMap['report_status'] = finalStatus;
       const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
       await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
     } catch (err) { /* best-effort — the real error already logged above */ }
-    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId, amazonResponse: finalStatusBody });
+    return res.status(500).json({ error: `Report ${finalStatus}`, targetMonth, reportId, amazonResponse: finalStatusBody, errorDocumentContent });
   }
 
   if (!documentId) {
