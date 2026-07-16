@@ -382,6 +382,14 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .char-pill.error{background:rgba(219,55,45,.1);color:var(--danger);}
 
 .sub-page{display:none;}.sub-page.active{display:block;}
+/* 2026-07-16: product-card-block is deliberately NOT part of the .sub-page
+   show/hide system — these should always render together, stacked, never
+   gated behind a tab click (that's exactly the bug this replaces: three
+   sibling .sub-page elements were all marked .active at once, which only
+   "worked" by accident and broke the instant anyone clicked a tab). Per
+   Jaclyn 2026-07-16. */
+.product-card-block{margin-bottom:28px;padding-top:20px;border-top:1px solid var(--border);}
+.product-card-block:first-of-type{padding-top:0;border-top:none;}
 
 /* ═══════════════════════════════════
    PPC PAGE
@@ -1276,15 +1284,12 @@ As inventory availability improves, the current sales mix provides a strong foun
       <!-- ── ACTIVATORS ── -->
       <div class="sub-page active" id="pt-activators">
         <div class="sub-tabs" style="margin-bottom:18px;">
-          <button class="sub-tab active" onclick="showSubTab('pt-activators','act-reverse-product',this)">Reverse (EVO0001)</button>
-          <button class="sub-tab" onclick="showSubTab('pt-activators','act-promote-product',this)">Promote (EVO0005)</button>
-          <button class="sub-tab" onclick="showSubTab('pt-activators','act-prevent-product',this)">Prevent (EVO0009)</button>
-          <button class="sub-tab" onclick="showSubTab('pt-activators','act-keywords',this)">Keywords</button>
+          <button class="sub-tab active" onclick="showSubTab('pt-activators','act-keywords',this)">Keywords</button>
           <button class="sub-tab" onclick="showSubTab('pt-activators','act-competitors',this)">Competitors</button>
         </div>
 
         
-        <div class="sub-page active" id="act-reverse-product">
+        <div class="product-card-block" id="act-reverse-product">
           <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
           
           <div class="scorecard-header">Amazon — April 2026</div>
@@ -1311,7 +1316,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           </div>
         </div>
         
-        <div class="sub-page active" id="act-promote-product">
+        <div class="product-card-block" id="act-promote-product">
           <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
           
           <div class="scorecard-header">Amazon — April 2026</div>
@@ -1338,7 +1343,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           </div>
         </div>
         
-        <div class="sub-page active" id="act-prevent-product">
+        <div class="product-card-block" id="act-prevent-product">
           <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
           
           <div class="scorecard-header">Amazon — April 2026</div>
@@ -1366,7 +1371,7 @@ As inventory availability improves, the current sales mix provides a strong foun
         </div>
 
         <!-- Keywords -->
-        <div class="sub-page" id="act-keywords">
+        <div class="sub-page active" id="act-keywords">
           <div style="background:rgba(0,31,96,.04);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--muted);">
             ℹ All 59 keywords are tracked on ASIN B08BJBM77V (Reverse Activator). Organic rank shows only "evolis" (brand term, #4) has meaningful position — all non-brand terms are &gt;306. Brand is almost entirely dependent on PPC for non-brand traffic.
           </div>
