@@ -325,9 +325,10 @@ table.perf-compare tr:last-child td{border-bottom:none;}
 
 .pcard-exec{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
 .pcard-exec:last-child{margin-bottom:0;}
-.pcard-exec-hd{padding:13px 20px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
-.pcard-exec-hd b{font-family:var(--font-subheader);font-size:15px;font-weight:700;color:var(--navy);}
-.pcard-exec-hd .meta{font-size:11px;color:var(--muted);margin-left:8px;}
+.pcard-exec-hd{padding:16px 22px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+.pcard-exec-hd b{font-family:var(--font-subheader);font-size:16px;font-weight:700;color:#fff;}
+.pcard-exec-hd .meta{font-size:11px;color:rgba(255,255,255,.65);margin-left:8px;}
+.pcard-exec-hd .sc-badge{background:rgba(255,255,255,.15);}
 .pcard-exec-body{padding:18px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:24px;}
 .hero-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--bg2);color:var(--navy);border:1px solid var(--border);margin:2px 3px 2px 0;}
 details.inci-toggle{margin:8px 0 14px;}
@@ -1156,8 +1157,8 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <div class="section-label">Subscribe &amp; Save</div>
       <div class="kpi-row" style="margin-bottom:20px;">
-        <div class="kpi-card"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">123</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="kpi-active-subs"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">123</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="kpi-retention"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -3285,7 +3286,7 @@ async function initSns() {
           }
         });
         if (subsKpiEl) subsKpiEl.textContent = Math.round(values[values.length - 1]).toLocaleString();
-        const subsMomEl = document.querySelector('#m-opportunities .kpi-row .kpi-card:nth-child(1) .kpi-mom');
+        const subsMomEl = subsKpiEl ? subsKpiEl.nextElementSibling : null;
         if (subsMomEl) {
           if (values.length >= 2 && values[values.length - 2]) {
             const p = Math.round(((values[values.length - 1] - values[values.length - 2]) / values[values.length - 2]) * 100);
@@ -3311,6 +3312,7 @@ async function initSns() {
       console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
       const brandRows = rows.filter(isEvolisRow);
       const useRows = brandRows.length ? brandRows : rows;
+      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after brand filter:', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
 
       // MOM only works if this sheet actually has more than one dated row
       // per brand (i.e. it's historical, not a single current snapshot).
@@ -3318,6 +3320,9 @@ async function initSns() {
       // show a fabricated MOM if the sheet turns out to be snapshot-only.
       const withDateR = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
       const hasHistory = withDateR.length > 1 && withDateR.every(x => !isNaN(x.y) && !isNaN(x.m));
+      if (!hasHistory) {
+        console.warn('[Evolis][subscriptions] hasHistory=false — reason:', withDateR.length <= 1 ? ('only ' + withDateR.length + ' row(s) after brand filter, need 2+') : 'year/month not parsing as numbers on every row — check column names/values above');
+      }
       if (hasHistory) withDateR.sort((a, b) => (a.y - b.y) || (a.m - b.m));
 
       const brandRow = hasHistory ? withDateR[withDateR.length - 1].row : (useRows[0] || rows[0]);
@@ -3335,7 +3340,18 @@ async function initSns() {
       if (retentionVal !== null) {
         console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory);
         if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
-        const retMomEl = document.querySelector('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom');
+        // 2026-07-16: was a fragile CSS positional selector
+        // ('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom') that
+        // silently returned null if anything about the surrounding markup
+        // didn't match exactly — leaving the static "Loading…" placeholder
+        // untouched forever, with no error anywhere to flag it. Deriving it
+        // from retentionKpiEl.nextElementSibling instead — since that same
+        // reference already correctly resolves (confirmed: the value itself
+        // displays correctly), its next sibling in the same .kpi-card is
+        // guaranteed to be the .kpi-mom div by construction, not by a
+        // selector string that has to happen to still match. Per Jaclyn
+        // 2026-07-16.
+        const retMomEl = retentionKpiEl ? retentionKpiEl.nextElementSibling : null;
         if (retMomEl) {
           if (retentionPrevVal) {
             const ppDiff = Math.round(retentionVal - retentionPrevVal);
@@ -3348,6 +3364,8 @@ async function initSns() {
             retMomEl.textContent = '—';
             if (!hasHistory) console.warn('[Evolis][subscriptions] retention sheet appears to be a single current-value snapshot (no year/month history per brand) — MOM left blank rather than fabricated.');
           }
+        } else {
+          console.warn('[Evolis][subscriptions] retMomEl not found — retentionKpiEl has no nextElementSibling, check #kpi-retention markup.');
         }
       } else {
         console.warn('[Evolis][subscriptions] no retention value matched in retention sheet — check RETENTION_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
@@ -7569,17 +7587,7 @@ async function loadAuditResultsFromSheet() {
   }
 
   function buildOpportunitiesPage(monthYear) {
-    const oppRoot = pdfxById('m-opportunities');
-    let subs = '—', retention = '—';
-    if (oppRoot) {
-      const vals = oppRoot.querySelectorAll('.kpi-row .kpi-value');
-      if (vals[0]) subs = vals[0].textContent.trim();
-      if (vals[1]) retention = vals[1].textContent.trim();
-    }
-    const kpis = [
-      { label: 'Active Subscriptions', value: subs, mom: '', momClass: 'flat' },
-      { label: 'Subscribe & Save Retention (90 Days)', value: retention, mom: '', momClass: 'flat' }
-    ];
+    const kpis = ['kpi-active-subs', 'kpi-retention'].map(pdfxKpi);
     return '' +
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
