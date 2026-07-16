@@ -52,6 +52,10 @@ module.exports = async (req, res) => {
   const debugMode = req.query.debug === 'true';
 
   // ── Read _meta to find the pending reportId ─────────────────────────────
+  // A missing _meta tab (Sheets API returns "Unable to parse range") means
+  // sync-sqp-request.js hasn't successfully run yet on this sheet — that's
+  // an expected state on a brand-new sheet, not a real failure, so this
+  // reads as "nothing to process" rather than a 500.
   let metaMap = {};
   try {
     const rawMeta = await readRows(sheets.searchQueryPerformance, META_TAB);
@@ -59,6 +63,11 @@ module.exports = async (req, res) => {
       if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
     }
   } catch (err) {
+    const tabMissing = /unable to parse range/i.test(err.message) || /Sheets GET failed \(400\)/i.test(err.message);
+    if (tabMissing) {
+      console.log('[sync-sqp-process] _meta tab does not exist yet — sync-sqp-request has not successfully run on this sheet yet');
+      return res.status(200).json({ ok: true, message: '_meta tab does not exist yet — run sync-sqp-request first', detail: err.message });
+    }
     console.error('[sync-sqp-process] failed to read _meta:', err.message);
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
