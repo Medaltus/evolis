@@ -420,6 +420,13 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
 .ppc-opp-card.high{border-left:4px solid var(--warn);}
 .ppc-opp-card.med{border-left:4px solid #6b7ba2;}
+.ppc-opp-card.action-type{border-left:4px solid var(--danger);background:rgba(219,55,45,.035);}
+.ppc-opp-card.action-type .ppc-opp-body{font-weight:600;font-size:13px;}
+.ppc-opp-card.opportunity-type{border-left:4px solid var(--warn);background:rgba(200,125,47,.03);}
+.ppc-opp-card.win-type{border-left:4px solid #1db88a;background:rgba(36,233,163,.03);}
+.ppc-opp-card.summary-type{background:var(--bg);border:1px dashed var(--border);box-shadow:none;}
+.ppc-opp-card.summary-type .ppc-opp-body{color:var(--muted);font-size:12px;}
+.kw-flag-wasted{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;color:var(--danger);background:rgba(219,55,45,.08);padding:2px 7px;border-radius:8px;margin-left:4px;}
 .ppc-opp-hd{padding:14px 18px 10px;background:var(--bg);border-bottom:1px solid var(--border);}
 .ppc-opp-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
 .ppc-opp-badge.urgent{color:var(--danger);}
@@ -2192,9 +2199,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
       <div class="ppc-alert">
         <span class="ppc-alert-icon">📊</span>
-        <div>
-          <strong>Blended Context — Activators April 2026.</strong> 1,262 total sessions across 3 activators. Promote drives 89% of traffic (1,125 sessions) but converts at only 3.2% — vs 22.95% for Reverse. Prevent has near-zero visibility (15 sessions, 0 units). The account needs three distinct PPC strategies for three distinct problems.
-        </div>
+        <div id="ppc-context-takeaway">Loading…</div>
       </div>
 
       <div class="ppc-card">
@@ -2461,7 +2466,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
     <!-- ── DATA-INFORMED OPPORTUNITIES ── -->
     <div class="channel-page" id="ppc-opportunities">
 
-      <div class="ppc-card-title" style="margin-bottom:2px;">Search Terms — Last 30 Days</div>
+      <div class="ppc-card-title" style="margin-bottom:2px;">Search Terms — Last Full Month</div>
       <div class="ppc-note" style="margin-bottom:14px;">Pulled live from the Ad Search Terms sheet · up to 25 terms per panel, or fewer if fewer qualify</div>
 
       <div id="ppc-search-terms-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
@@ -5532,11 +5537,16 @@ async function ppcLoadSearchTermPanels() {
       return;
     }
 
-    let latestY = 0, latestM = 0;
-    rows.forEach(r => {
-      const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
-      if (y > latestY || (y === latestY && m > latestM)) { latestY = y; latestM = m; }
-    });
+    // Use the last FULL completed month, same convention as the rest of
+    // this dashboard (ovGetLastFullMonth) — NOT the most recent month
+    // present in the sheet. That distinction matters here specifically:
+    // Amazon's ad attribution can take several days to register a sale
+    // after a click, so a still-in-progress current month will show real
+    // spend but understate sales/purchases that haven't attributed yet.
+    // That's why Wasted Spend (needs only spend) populated fine while
+    // Top Performing/Opportunities/CPC Rising (need recorded sales, or a
+    // full prior-month comparison) came up empty against a partial month.
+    const { year: latestY, month: latestM } = ovGetLastFullMonth();
     let prevY = latestY, prevM = latestM - 1; if (prevM === 0) { prevM = 12; prevY--; }
 
     function groupByTerm(y, m) {
@@ -5599,14 +5609,72 @@ async function ppcLoadSearchTermPanels() {
     ppcRenderPanel('st-cpc-body', cpcRising, t =>
       `<tr><td>${t.term}</td><td>${money(t.prevCpc)}</td><td style="color:var(--danger);font-weight:600;">${money(t.cpc)}</td></tr>`);
 
+    // Store for cross-checking against Strategy by Product's static keyword
+    // pills — see ppcFlagWastedKeywordsInStrategy below.
+    window._ppcWastedTerms = wastedSpend.map(t => t.term.toLowerCase());
+    if (typeof ppcFlagWastedKeywordsInStrategy === 'function') ppcFlagWastedKeywordsInStrategy();
+
   } catch (err) {
     console.warn('[PPC] search term panels failed:', err.message);
     panelIds.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<tr><td colspan="3" style="color:var(--muted);">Error loading</td></tr>'; });
   }
 }
 
+// QA check: Strategy by Product's recommendation text and keyword pills are
+// static/authored, but Wasted Spend is live — they WILL drift out of sync
+// as real spend data changes. Rather than trying to auto-rewrite authored
+// strategy text (risky), this just visibly flags any suggested-target pill
+// that's currently showing up as zero-sale spend, so the contradiction is
+// obvious instead of silent.
+function ppcFlagWastedKeywordsInStrategy() {
+  const wasted = window._ppcWastedTerms || [];
+  if (!wasted.length) return;
+  document.querySelectorAll('#ppc-strategy .rank-pill').forEach(pill => {
+    if (pill.dataset.wastedChecked) return; // don't re-flag on repeat calls
+    pill.dataset.wastedChecked = '1';
+    const text = pill.textContent.trim().toLowerCase();
+    const isWasted = wasted.some(term => term === text || term.includes(text) || text.includes(term));
+    if (isWasted) {
+      pill.insertAdjacentHTML('afterend', '<span class="kw-flag-wasted" title="Currently in Wasted Spend on the Opportunities tab — spend with zero sales, per live data">⚠ wasted spend</span>');
+    }
+  });
+}
+
+// Computed takeaway for the top banner — same "voice" as the old hardcoded
+// sentence, but built from real numbers each time instead of frozen text.
+function ppcBuildContextTakeaway(monthRows, nameMap, year, month) {
+  if (!monthRows.length) return 'No data synced for this month yet.';
+
+  const rows = monthRows.map(r => ({
+    name: nameMap[(r.asin || '').toUpperCase()] || (r.asin || '').toUpperCase(),
+    sessions: parseInt(r.sessions, 10) || 0,
+    units: parseInt(r.units_ordered, 10) || 0,
+    conv: parseFloat(r.conversion_rate) || 0,
+  }));
+
+  const totalSessions = rows.reduce((s, r) => s + r.sessions, 0);
+  const top = [...rows].sort((a, b) => b.sessions - a.sessions)[0];
+  const topShare = totalSessions > 0 ? Math.round((top.sessions / totalSessions) * 100) : 0;
+
+  // Only compare conversion against products with enough sessions to be
+  // a meaningful comparison, not a 2-session fluke.
+  const withEnoughData = rows.filter(r => r.sessions >= 10);
+  const bestConv = withEnoughData.length ? [...withEnoughData].sort((a, b) => b.conv - a.conv)[0] : null;
+  const lowVis = [...rows].sort((a, b) => a.sessions - b.sessions)[0];
+
+  const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let s = `<strong>Blended Context — ${monthAbbr[month - 1]} ${year}.</strong> ${totalSessions.toLocaleString()} total sessions across ${rows.length} products. `;
+  s += `${top.name} drives ${topShare}% of traffic (${top.sessions.toLocaleString()} sessions) but converts at ${top.conv.toFixed(1)}%`;
+  s += (bestConv && bestConv.name !== top.name) ? ` — vs ${bestConv.conv.toFixed(1)}% for ${bestConv.name}.` : '.';
+  if (lowVis.sessions < 20 && lowVis.name !== top.name) {
+    s += ` ${lowVis.name} has near-zero visibility (${lowVis.sessions} sessions, ${lowVis.units} units).`;
+  }
+  return s;
+}
+
 async function ppcLoadProductPerformance() {
   const tbody = document.getElementById('ppc-product-tbody');
+  const takeawayEl = document.getElementById('ppc-context-takeaway');
   if (!tbody) return;
   try {
     const [bizCsv, namesCsv] = await Promise.all([
@@ -5615,11 +5683,14 @@ async function ppcLoadProductPerformance() {
     ]);
 
     const bizRows = parseCsvToRows(bizCsv);
-    if (!bizRows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data</td></tr>'; return; }
+    if (!bizRows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data</td></tr>';
+      if (takeawayEl) takeawayEl.textContent = 'No data synced yet.';
+      return;
+    }
 
     const { year, month } = ovGetLastFullMonth();
     const monthRows = bizRows.filter(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
-    if (!monthRows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data synced for this month yet</td></tr>'; return; }
 
     // ASIN -> product name, most recent Products Cache snapshot date only
     const nameRows = parseCsvToRows(namesCsv);
@@ -5629,6 +5700,10 @@ async function ppcLoadProductPerformance() {
       const asin = (r.asin || '').trim().toUpperCase();
       if (asin) nameMap[asin] = r.name || asin;
     });
+
+    if (takeawayEl) takeawayEl.innerHTML = ppcBuildContextTakeaway(monthRows, nameMap, year, month);
+
+    if (!monthRows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data synced for this month yet</td></tr>'; return; }
 
     const sorted = [...monthRows].sort((a, b) => (parseInt(b.sessions, 10) || 0) - (parseInt(a.sessions, 10) || 0));
 
@@ -5651,6 +5726,7 @@ async function ppcLoadProductPerformance() {
   } catch (err) {
     console.warn('[PPC] product performance failed:', err.message);
     tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">Error loading</td></tr>';
+    if (takeawayEl) takeawayEl.textContent = 'Error loading.';
   }
 }
 
@@ -6098,22 +6174,32 @@ function injectInsightsBoxes(ins) {
 function renderPpcInsightCards(ppc, container) {
   const cards = [];
 
+  // Order: Actions first (most executable, most "pop"), then Opportunities,
+  // then Wins (lowest urgency — things already working), Summary as a
+  // de-emphasized context banner at the very top. Previously everything
+  // rendered in the same flat white-card style regardless of type, which
+  // is exactly why it read as "busy and hard to pull actionable stuff out."
   if (ppc.summary) {
-    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div><div class="ppc-opp-body">${ppc.summary}</div></div>`);
+    cards.unshift(`<div class="ppc-opp-card summary-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div><div class="ppc-opp-body">${ppc.summary}</div></div>`);
   }
-  (ppc.opportunities || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">OPPORTUNITY</div></div><div class="ppc-opp-body">${text}</div></div>`);
-  });
   (ppc.actions || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge high">ACTION</div></div><div class="ppc-opp-body">${text}</div></div>`);
+    cards.push(`<div class="ppc-opp-card action-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div><div class="ppc-opp-body">${text}</div></div>`);
+  });
+  (ppc.opportunities || []).forEach(text => {
+    cards.push(`<div class="ppc-opp-card opportunity-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div><div class="ppc-opp-body">${text}</div></div>`);
   });
   (ppc.wins || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card"><div class="ppc-opp-hd"><div class="ppc-opp-badge" style="color:#1db88a;">WIN</div></div><div class="ppc-opp-body">${text}</div></div>`);
+    cards.push(`<div class="ppc-opp-card win-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge" style="color:#1db88a;">✓ WIN</div></div><div class="ppc-opp-body">${text}</div></div>`);
   });
 
   container.innerHTML = cards.length
     ? cards.join('')
     : '<div class="ppc-opp-card"><div class="ppc-opp-body" style="color:var(--muted);">No PPC insights logged yet.</div></div>';
+
+  // QA cross-check: flag any keyword pill in Strategy by Product that's
+  // currently sitting in the live Wasted Spend panel — i.e. a place where
+  // the static authored recommendation and the live data now disagree.
+  if (typeof ppcFlagWastedKeywordsInStrategy === 'function') ppcFlagWastedKeywordsInStrategy();
 }
 
 // Append a single log card to the log element
