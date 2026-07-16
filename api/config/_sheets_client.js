@@ -55,6 +55,21 @@ async function getSheetsToken() {
 
 /**
  * Ensure a tab exists in the sheet. If not, create it and write headers.
+ *
+ * CHANGED (2026-07-16): previously only checked/wrote headers when the tab
+ * didn't exist yet — an existing tab's header row was never looked at
+ * again, ever. That silently broke two sheets so far (Business Report,
+ * Ad Search Terms Cache) after their cron's column shape changed:
+ * every column from the changed point onward quietly read as the wrong
+ * field, with no error anywhere, for however long it took someone to
+ * notice the numbers looked wrong.
+ *
+ * This does NOT auto-rewrite an existing header row — these sheets get
+ * hand-edited sometimes (someone adding a column, fixing a header by
+ * hand), and blind auto-correction could clobber that. It just reads
+ * row 1 and logs a loud, specific warning if it doesn't match what this
+ * call expects, so drift shows up in Vercel logs immediately instead of
+ * silently corrupting every read for weeks.
  */
 async function ensureTab(sheetId, tabName, headers) {
   const token = await getSheetsToken();
@@ -71,6 +86,28 @@ async function ensureTab(sheetId, tabName, headers) {
     // Write headers on row 1
     await writeRow(sheetId, tabName, 1, headers, token);
     console.log(`[sheets] created tab "${tabName}" in sheet ${sheetId}`);
+  } else {
+    // Tab already exists — check its actual header row against what this
+    // caller expects. Doesn't fix anything, just makes drift loud.
+    try {
+      const range = encodeURIComponent(`${tabName}!A1:ZZ1`);
+      const data  = await sheetsGet(token, `/${sheetId}/values/${range}`);
+      const actualHeaders = (data.values && data.values[0]) || [];
+
+      const mismatch = actualHeaders.length !== headers.length ||
+        headers.some((h, i) => (actualHeaders[i] || '').trim() !== h);
+
+      if (mismatch) {
+        console.error(
+          `[sheets] HEADER MISMATCH on tab "${tabName}" in sheet ${sheetId}. ` +
+          `This means every column read/write on this tab may be misaligned. ` +
+          `Expected: ${JSON.stringify(headers)} — Actual row 1: ${JSON.stringify(actualHeaders)}`
+        );
+      }
+    } catch (err) {
+      // Don't let a header-check failure block the actual sync — just log it.
+      console.warn(`[sheets] header check failed for tab "${tabName}":`, err.message);
+    }
   }
 
   return token;
