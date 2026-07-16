@@ -881,7 +881,10 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div class="kpi-card" id="kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Sales Revenue by Month</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-amazon" style="display:flex;align-items:center;"></div>
+        </div>
         <div style="position:relative;height:320px;"><canvas id="chart-amazon"></canvas></div>
       </div>
       <div class="card" id="top-products-card">
@@ -926,7 +929,10 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div class="kpi-card" id="web-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Sales Revenue by Month</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-web" style="display:flex;align-items:center;"></div>
+        </div>
         <div style="position:relative;height:320px;"><canvas id="chart-web"></canvas></div>
       </div>
       <div class="card" id="web-top-products-card">
@@ -971,7 +977,10 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Sales Revenue by Month</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-walmart" style="display:flex;align-items:center;"></div>
+        </div>
         <div style="position:relative;height:320px;"><canvas id="chart-walmart"></canvas></div>
       </div>
       <div class="card" id="walmart-top-products-card">
@@ -1026,11 +1035,13 @@ As inventory availability improves, the current sales mix provides a strong foun
 
       <div class="two-col" style="margin-bottom:20px;align-items:stretch;">
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
-          <div class="card-title">Investments</div>
-          <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);margin-bottom:14px;">
-            <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
-            <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
-            <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Investments</div>
+            <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>
+            </div>
           </div>
           <div class="chart-wrap-sm" style="height:254px;flex-shrink:0;position:relative;"><canvas id="chart-invest"></canvas></div>
           <div style="margin-top:12px;">
@@ -1039,10 +1050,12 @@ As inventory availability improves, the current sales mix provides a strong foun
           </div>
         </div>
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
-          <div class="card-title">Ad Impressions</div>
-          <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);margin-bottom:14px;">
-            <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
-            <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Ad Impressions</div>
+            <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
+            </div>
           </div>
           <div class="chart-wrap-sm" style="height:320px;flex-shrink:0;position:relative;"><canvas id="chart-impressions"></canvas></div>
         </div>
@@ -1064,7 +1077,10 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div class="kpi-card"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card" style="margin-bottom:20px;">
-        <div class="card-title">Active Subscriptions by Month</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Active Subscriptions by Month</div>
+          <div id="legend-sns" style="display:flex;align-items:center;"></div>
+        </div>
         <div style="position:relative;height:320px;"><canvas id="chart-sns"></canvas></div>
       </div>
 
@@ -3017,6 +3033,31 @@ function bigLegendLabels(chart) {
   return items;
 }
 
+// External HTML legend, rendered level with the card's own title instead of
+// inside the canvas. Chart.js's own top/start-aligned legend always sat
+// right above the plot area no matter what alignment was set, because it's
+// drawn INSIDE the canvas — there's no way to make it share a row with an
+// HTML title element that lives outside that canvas. Reuses bigLegendLabels
+// so colors/thickness/text match exactly what Chart.js would have drawn.
+// Explicitly on window since this needs to be callable from the PDF-export
+// script block too (a separate <script> tag further down the page).
+// Per Jaclyn 2026-07-15.
+window.renderExternalLegend = function (chart, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el || !chart) return;
+  let items = [];
+  try { items = bigLegendLabels(chart) || []; } catch (e) { items = []; }
+  el.innerHTML = items.map(function (it) {
+    const color = it.strokeStyle || it.fillStyle || '#6b7ba2';
+    const label = String(it.text == null ? '' : it.text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return '<span style="display:inline-flex;align-items:center;gap:6px;margin-left:16px;font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;">' +
+      '<span style="width:16px;height:3px;border-radius:2px;background:' + color + ';display:inline-block;flex-shrink:0;"></span>' +
+      label +
+      '</span>';
+  }).join('');
+};
+
 // ── NAV ──
 // pageTitles defined in shell JS above
 // nav() defined in shell JS above
@@ -3724,7 +3765,11 @@ async function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 }, generateLabels: bigLegendLabels } },
+          // Moved out of the canvas to the #legend-amazon header row so it
+          // can sit level with the card title instead of hugging the top of
+          // the plot area — position/align could only move it within the
+          // canvas, never up into the title's own row. Per Jaclyn 2026-07-15.
+          legend: { display: false },
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -3733,6 +3778,7 @@ async function initSns() {
         },
       },
     });
+    window.renderExternalLegend(window._amazonChart, 'legend-amazon');
   }
 
   // ── Top Products Table ────────────────────────────────────────────────────
@@ -4178,7 +4224,7 @@ async function initSns() {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position:'top', align:'start', labels:{ usePointStyle:true, pointStyle:'line', boxWidth:28, padding:16, font:{ size:16 }, generateLabels: bigLegendLabels } },
+          legend: { display: false }, // moved to #legend-web header row — see renderExternalLegend, Jaclyn 2026-07-15
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -4187,6 +4233,7 @@ async function initSns() {
         },
       },
     });
+    window.renderExternalLegend(window._webChart, 'legend-web');
   }
 
   // ── Top products table ────────────────────────────────────────────────────
@@ -4952,7 +4999,7 @@ async function initSns() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'start', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, padding: 16, font: { size: 16 }, generateLabels: bigLegendLabels } },
+          legend: { display: false }, // moved to #legend-walmart header row — see renderExternalLegend, Jaclyn 2026-07-15
           tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
         },
         scales: {
@@ -4961,6 +5008,7 @@ async function initSns() {
         },
       },
     });
+    window.renderExternalLegend(window._walmartChart, 'legend-walmart');
   }
 
   async function buildWalmartTopProducts(allRows, targetYear, targetMonth, prevYear, prevMonth) {
@@ -6542,6 +6590,15 @@ async function loadAuditResultsFromSheet() {
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // Reuses the exact legend HTML the live dashboard already rendered via
+  // window.renderExternalLegend (same colors/labels) rather than
+  // regenerating it — the dashboard's own copy is already up to date by the
+  // time export runs. Per Jaclyn 2026-07-15.
+  function pdfxLegendHtml(containerId) {
+    const el = document.getElementById(containerId);
+    return el ? el.innerHTML : '';
+  }
+
   // Reads a top-sellers table body into rows of [rank, name, ...numeric cols]
   // Returns cells as { text, momPct, momClass } instead of flat strings, so
   // the number and its MOM badge (if any) can be styled independently in
@@ -6577,9 +6634,14 @@ async function loadAuditResultsFromSheet() {
     if (!rows.length) {
       return '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:10px 2px;">No sales data for this period.</div>';
     }
-    const MAX_ROWS = 7;
-    const truncated = rows.length > MAX_ROWS;
-    const shownRows = truncated ? rows.slice(0, MAX_ROWS) : rows;
+    // 2026-07-15: bumped 7 → 8 rows (fewer if there simply aren't 8 products
+    // this period), and dropped the "+N more not shown" note entirely per
+    // Jaclyn — the page has room, and the note wasn't adding anything worth
+    // keeping. See pdfxCaptureAllChartImages/pdfxStretchChartToFillPage for
+    // where the freed-up space is now going instead (the chart, not left
+    // blank).
+    const MAX_ROWS = 8;
+    const shownRows = rows.length > MAX_ROWS ? rows.slice(0, MAX_ROWS) : rows;
     let thead = '<tr>' + headers.map(function (h, i) {
       return '<th' + (i > 1 ? ' class="num"' : '') + '>' + pdfxEscape(h) + '</th>';
     }).join('') + '</tr>';
@@ -6606,8 +6668,7 @@ async function loadAuditResultsFromSheet() {
         return '<td' + (isNum ? ' class="num"' : '') + '>' + cellHtml + '</td>';
       }).join('') + '</tr>';
     }).join('');
-    return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>' +
-      (truncated ? '<div style="font-size:10px;color:var(--muted);padding:6px 10px 0;font-style:italic;">+ ' + (rows.length - MAX_ROWS) + ' more product' + (rows.length - MAX_ROWS === 1 ? '' : 's') + ' not shown</div>' : '');
+    return '<table class="pdfx-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
   }
 
   // ── Chart image capture ────────────────────────────────────────────────
@@ -6776,11 +6837,34 @@ async function loadAuditResultsFromSheet() {
     // resolver context for Chart.js to collide with, so this entire class of
     // bug can't occur here regardless of how many other charts exist on the
     // page.
-    const images = {};
-    varNames.forEach(function (varName) {
+    //
+    // Pulled out into its own function (rather than inline in the forEach
+    // below) because the "stretch chart to fill leftover page whitespace"
+    // step needs to re-capture a SPECIFIC chart a second time, later, at an
+    // explicit taller height — same capture logic, just with an optional
+    // height override instead of the chart's current natural size. Per
+    // Jaclyn 2026-07-15.
+    function pdfxCaptureOneChart(varName, opts) {
+      opts = opts || {};
       const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const liveChart = window[varName];
-      if (!liveCanvas || !liveChart) { images[varName] = { img: '', width: 0, height: 0 }; return; }
+      if (!liveCanvas || !liveChart) return { img: '', width: 0, height: 0 };
+
+      // Optional height override: temporarily resize the WRAPPER div (the
+      // "position:relative;height:NNNpx" container around the canvas) and
+      // let Chart.js's own responsive resize pick up the new size, the same
+      // way it already correctly detects real sizes once an ancestor is
+      // forced visible elsewhere in this function — rather than fighting
+      // Chart.js's explicit resize(w,h) API directly, which behaves
+      // differently under responsive:true than letting it auto-detect from
+      // its container.
+      const wrapper = liveCanvas.parentElement;
+      const hadHeightOverride = !!(opts.heightPx && wrapper);
+      const originalWrapperHeight = hadHeightOverride ? wrapper.style.height : '';
+      if (hadHeightOverride) {
+        wrapper.style.height = Math.round(opts.heightPx) + 'px';
+        liveChart.resize();
+      }
 
       const rect = liveCanvas.getBoundingClientRect();
       const rectValid = !!(rect && rect.width > 0 && rect.height > 0);
@@ -6788,7 +6872,7 @@ async function loadAuditResultsFromSheet() {
       const rawDataInfo = liveChart.data && liveChart.data.datasets
         ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
         : 'no datasets';
-      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using targetW:', targetW, '— data:', rawDataInfo);
+      console.log('[pdf-export][qa]', varName, '— raw rect:', rect ? (Math.round(rect.width) + 'x' + Math.round(rect.height)) : 'null', '— rectValid:', rectValid, '— liveCanvas.width/height attr:', liveCanvas.width + 'x' + liveCanvas.height, '— using targetW:', targetW, (hadHeightOverride ? '— height override: ' + Math.round(opts.heightPx) + 'px' : ''), '— data:', rawDataInfo);
 
       let img = '';
       const hasScales = !!(liveChart.options && liveChart.options.scales);
@@ -6803,16 +6887,21 @@ async function loadAuditResultsFromSheet() {
           liveChart.update('none'); // synchronous, no animation
         }
         img = liveChart.toBase64Image('image/png');
-        images[varName] = { img: img, width: liveCanvas.width, height: liveCanvas.height };
       } catch (e) {
         console.warn('[pdf-export] scaled-font capture failed for', varName, '— falling back to whatever is currently rendered:', e.message);
         img = pdfxRawChartImg(varName);
-        images[varName] = { img: img, width: liveCanvas.width, height: liveCanvas.height };
       } finally {
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
           liveChart.update('none');
         }
+      }
+
+      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height };
+
+      if (hadHeightOverride) {
+        wrapper.style.height = originalWrapperHeight;
+        liveChart.resize();
       }
 
       let dataInfo = 'no chart';
@@ -6821,15 +6910,99 @@ async function loadAuditResultsFromSheet() {
           return (ds.label || '?') + ':' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + 'pts';
         }).join(', ');
       }
-      console.log('[pdf-export] captured', varName, '— canvas', images[varName].width + 'x' + images[varName].height, '— image length', img ? img.length : 0, '— datasets:', dataInfo);
+      console.log('[pdf-export] captured', varName, '— canvas', result.width + 'x' + result.height, '— image length', img ? img.length : 0, '— datasets:', dataInfo);
+
+      return result;
+    }
+    window.pdfxCaptureOneChart = pdfxCaptureOneChart; // needs to be reachable from pdfxStretchChartsToFillWhitespace below
+
+    const images = {};
+    varNames.forEach(function (varName) {
+      images[varName] = pdfxCaptureOneChart(varName);
     });
 
     // Nothing but hidden-ancestor visibility to restore now — the live
-    // chart's own scales were already swapped back in the finally-block
-    // above, per chart, immediately after its own capture.
+    // chart's own scales were already swapped back inside
+    // pdfxCaptureOneChart, per chart, immediately after its own capture.
     restore.forEach(function (r) { r.el.style[r.prop] = r.prevValue; });
 
     return images;
+  }
+
+  // Fills leftover page whitespace by re-rendering that page's chart taller
+  // — never by CSS-stretching the already-captured <img>, which would
+  // distort gridlines and turn axis text blurry/tall. Measured directly
+  // against THIS export's actual rendered layout (not hardcoded assumptions
+  // about KPI-row/table/insight-bar heights, which would silently drift out
+  // of sync the next time any of that markup changes elsewhere). Only
+  // applies to the three pages that pair a chart with a top-products table
+  // (Amazon/Web/Walmart) — those are the ones with the leftover-whitespace
+  // problem Jaclyn flagged; Stewardship's two-chart layout and the
+  // Opportunities page have their own different bottom content and aren't
+  // touched here. Per Jaclyn 2026-07-15.
+  async function pdfxStretchChartsToFillWhitespace(root) {
+    const PAGE_HEIGHT_PX = 11 * 96; // .pdfx-page is set in real CSS inches; 1in is always exactly 96 CSS px
+    const SAFETY_MARGIN_PX = 10;    // breathing room against rounding/font-metric drift across browsers
+    const MIN_GROWTH_PX = 20;       // not worth a full re-render + recapture for a trivial sliver of space
+    const MAX_EXTRA_PX = 260;       // sane ceiling so an unusually short table never balloons the chart absurdly tall
+
+    const targets = [
+      { pageIndex: 1, varName: '_amazonChart' },  // buildCoverPage=0, buildAmazonPage=1, buildWebsitePage=2, buildWalmartPage=3 — order matches root.innerHTML assembly below
+      { pageIndex: 2, varName: '_webChart' },
+      { pageIndex: 3, varName: '_walmartChart' },
+    ];
+
+    const pages = Array.from(root.querySelectorAll('.pdfx-page'));
+    const swappedImgs = [];
+
+    targets.forEach(function (t) {
+      const pageEl = pages[t.pageIndex];
+      if (!pageEl) { console.log('[pdf-export][qa] whitespace check —', t.varName, '— page index', t.pageIndex, 'not found, skipping'); return; }
+      const inner = pageEl.querySelector('.pdfx-inner');
+      if (!inner) return;
+
+      const usedHeight = inner.getBoundingClientRect().height;
+      const leftover = PAGE_HEIGHT_PX - usedHeight - SAFETY_MARGIN_PX;
+      console.log('[pdf-export][qa] whitespace check —', t.varName, '— page content height:', Math.round(usedHeight) + 'px', '— page budget:', PAGE_HEIGHT_PX + 'px', '— leftover:', Math.round(leftover) + 'px');
+      if (leftover < MIN_GROWTH_PX) { console.log('[pdf-export][qa]', t.varName, '— leftover below', MIN_GROWTH_PX + 'px threshold, leaving chart as-is'); return; }
+
+      const growth = Math.min(leftover, MAX_EXTRA_PX);
+      const imgEl = pageEl.querySelector('.pdfx-card img');
+      if (!imgEl) { console.log('[pdf-export][qa]', t.varName, '— no chart <img> found on this page, skipping'); return; }
+      const currentHeightPx = imgEl.getBoundingClientRect().height;
+      const newHeightPx = currentHeightPx + growth;
+
+      const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[t.varName]);
+      const wrapper = liveCanvas ? liveCanvas.parentElement : null;
+      const targetW = wrapper ? wrapper.getBoundingClientRect().width : (liveCanvas ? liveCanvas.width : 700);
+      const desiredLiveHeightPx = targetW * (newHeightPx / PDFX_CARD_WIDTH_PX);
+
+      console.log('[pdf-export][qa]', t.varName, '— stretching chart image from', Math.round(currentHeightPx) + 'px to', Math.round(newHeightPx) + 'px (growth', Math.round(growth) + 'px) — re-rendering live canvas at height', Math.round(desiredLiveHeightPx) + 'px before recapture');
+
+      const recaptured = window.pdfxCaptureOneChart(t.varName, { heightPx: desiredLiveHeightPx });
+      if (recaptured && recaptured.img) {
+        imgEl.src = recaptured.img;
+        imgEl.style.height = Math.round(newHeightPx) + 'px';
+        swappedImgs.push(imgEl);
+      } else {
+        console.warn('[pdf-export]', t.varName, '— recapture at taller height returned no image, leaving original chart image in place');
+      }
+    });
+
+    if (!swappedImgs.length) return;
+
+    // Same image-load/decode wait as the very first pass, scoped to just the
+    // handful of <img> tags we swapped a new src into above.
+    await Promise.all(swappedImgs.map(function (img) {
+      const loaded = img.complete ? Promise.resolve() : new Promise(function (res) {
+        img.addEventListener('load', res, { once: true });
+        img.addEventListener('error', res, { once: true });
+      });
+      return loaded.then(function () {
+        return (typeof img.decode === 'function') ? img.decode().catch(function () { /* rendered anyway */ }) : null;
+      });
+    }));
+    console.log('[pdf-export] stretched-chart images loaded and decoded —', swappedImgs.length, 'chart(s) re-rendered taller to fill page whitespace');
   }
 
   function pdfxChartImg(varName) {
@@ -6978,7 +7151,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Channel Performance</div>' +
           '<div class="pdfx-chrow"><span class="pdfx-chname">Amazon</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
           '<div class="pdfx-kpis">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales Revenue by Month</div>' + pdfxChartBlock('_amazonChart') + '</div>' +
+          '<div class="pdfx-card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><div class="pdfx-card-title" style="margin-bottom:0;">Sales Revenue by Month</div><div>' + pdfxLegendHtml('legend-amazon') + '</div></div>' + pdfxChartBlock('_amazonChart') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
             pdfxTableHtml(['#', 'Product', 'Units', 'Units (Ads)', 'Units (Organic)'], rows) +
           '</div>' +
@@ -6999,7 +7172,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Channel Performance</div>' +
           '<div class="pdfx-chrow"><span class="pdfx-chname">Web — evolisproducts.com</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
           '<div class="pdfx-kpis">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales by Month</div>' + pdfxChartBlock('_webChart') + '</div>' +
+          '<div class="pdfx-card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><div class="pdfx-card-title" style="margin-bottom:0;">Sales by Month</div><div>' + pdfxLegendHtml('legend-web') + '</div></div>' + pdfxChartBlock('_webChart') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
             pdfxTableHtml(['#', 'Product', 'Units', 'Units (Ads)', 'Units (Organic)'], rows) +
           '</div>' +
@@ -7020,7 +7193,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Channel Performance</div>' +
           '<div class="pdfx-chrow"><span class="pdfx-chname">Walmart</span><span class="pdfx-chdate">' + pdfxEscape(dateRange) + '</span></div>' +
           '<div class="pdfx-kpis n3">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Sales by Month</div>' + pdfxChartBlock('_walmartChart') + '</div>' +
+          '<div class="pdfx-card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><div class="pdfx-card-title" style="margin-bottom:0;">Sales by Month</div><div>' + pdfxLegendHtml('legend-walmart') + '</div></div>' + pdfxChartBlock('_walmartChart') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units)</span></div>' +
             pdfxTableHtml(['#', 'Product', 'Units'], rows.map(function (r) { return r.slice(0, 3); })) +
           '</div>' +
@@ -7048,19 +7221,25 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Key Performance Metrics</div>' +
           '<div class="pdfx-kpis" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-two-col">' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Investments</div>' +
-              '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);margin-bottom:10px;">' +
-                '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>' +
-                '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>' +
-                '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>' +
+            '<div class="pdfx-card" style="margin-bottom:0;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+                '<div class="pdfx-card-title" style="margin-bottom:0;">Investments</div>' +
+                '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">' +
+                  '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>' +
+                  '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>' +
+                  '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>' +
+                '</div>' +
               '</div>' +
               pdfxChartBlock('_investChart') +
               '<div class="pdfx-ltd"><div class="pdfx-ltd-val">' + pdfxEscape(ltdVal || '—') + '</div><div class="pdfx-ltd-lbl">Launch to date · Total Investments</div></div>' +
             '</div>' +
-            '<div class="pdfx-card" style="margin-bottom:0;"><div class="pdfx-card-title">Ad Impressions</div>' +
-              '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);margin-bottom:10px;">' +
-                '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>' + new Date().getFullYear() + '</span>' +
-                '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>' + (new Date().getFullYear() - 1) + '</span>' +
+            '<div class="pdfx-card" style="margin-bottom:0;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+                '<div class="pdfx-card-title" style="margin-bottom:0;">Ad Impressions</div>' +
+                '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">' +
+                  '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>' + new Date().getFullYear() + '</span>' +
+                  '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>' + (new Date().getFullYear() - 1) + '</span>' +
+                '</div>' +
               '</div>' +
               pdfxChartBlock('_impressChart') +
             '</div>' +
@@ -7253,6 +7432,14 @@ async function loadAuditResultsFromSheet() {
         await document.fonts.ready;
         console.log('[pdf-export] fonts ready, loaded count:', document.fonts.size);
       }
+
+      // Fill leftover bottom-of-page whitespace on the Amazon/Web/Walmart
+      // pages by re-rendering their chart taller, now that the 8-row table
+      // (no more "+N more" note) has settled into its real, final height.
+      // Must run after the table/image/font waits above and before the
+      // html2canvas loop below, since it measures this export's actual
+      // rendered layout. Per Jaclyn 2026-07-15.
+      await pdfxStretchChartsToFillWhitespace(root);
 
       const pageEls = Array.from(root.querySelectorAll('.pdfx-page'));
       console.log('[pdf-export] .pdfx-page count:', pageEls.length);
