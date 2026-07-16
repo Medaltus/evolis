@@ -30,6 +30,31 @@ const sheets                               = require('../config/sheets');
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
+// TODO: confirm the correct brand tab name for Évolis in sheets.products
+// (matches getBrandAsinMap's usage in sync-business-report-process.js,
+// which reads brand.tabName from config/brands.js — using a plain string
+// here since I don't have that brands config file to import from).
+const BRAND_TAB_NAME = 'evolis';
+
+// Amazon's own error (confirmed via test-sqp-connection.js against a real
+// FATAL report): "This report type requires the report option(s): asin."
+// Pulling the ASIN list from Products Cache — same source and same
+// "latest sync date only" logic as getBrandAsinMap in
+// sync-business-report-process.js — rather than hardcoding it, so this
+// stays correct as the catalog changes.
+async function getBrandAsins() {
+  const rows = await readRows(sheets.products, BRAND_TAB_NAME);
+  if (!rows || !rows.length) return [];
+  const latestDate = rows.reduce((max, r) => ((r['date'] || '') > max ? r['date'] : max), '');
+  const latestRows = latestDate ? rows.filter(r => r['date'] === latestDate) : rows;
+  const asins = new Set();
+  latestRows.forEach(r => {
+    const asin = (r['asin'] || '').trim().toUpperCase();
+    if (asin) asins.add(asin);
+  });
+  return Array.from(asins);
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -68,6 +93,13 @@ module.exports = async (req, res) => {
   }
 
   // ── Request the report ──────────────────────────────────────────────────
+  const asins = await getBrandAsins();
+  if (!asins.length) {
+    console.error('[sync-sqp-request] no ASINs found in Products Cache — check BRAND_TAB_NAME / sheets.products');
+    return res.status(500).json({ error: 'No ASINs found in Products Cache — cannot request report without the required asin option' });
+  }
+  console.log(`[sync-sqp-request] ${targetMonth} — requesting for ${asins.length} ASINs`);
+
   let reportId;
   try {
     const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
@@ -75,7 +107,7 @@ module.exports = async (req, res) => {
       marketplaceIds: [process.env.SP_MARKETPLACE_ID],
       dataStartTime,
       dataEndTime,
-      reportOptions: { reportPeriod: 'MONTH' },
+      reportOptions: { reportPeriod: 'MONTH', asin: asins.join(' ') },
     });
 
     if (!createResp || !createResp.reportId) {
