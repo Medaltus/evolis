@@ -188,14 +188,14 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .chart-placeholder{background:var(--bg);border-radius:var(--radius-sm);height:200px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;border:1px solid var(--border2);}
 
 /* ── Insights log (internal only) ── */
-.log-entry{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;margin-bottom:10px;}
-.log-entry-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
-.log-date{font-size:11px;font-family:var(--mono);color:var(--muted);}
-.log-page{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;background:var(--navy-dim);color:var(--navy);padding:2px 8px;border-radius:10px;}
-.log-status-live{font-size:10px;font-weight:600;color:var(--success);background:rgba(36,233,163,0.10);padding:2px 8px;border-radius:10px;}
-.log-status-staging{font-size:10px;font-weight:600;color:var(--warn);background:rgba(200,125,47,0.10);padding:2px 8px;border-radius:10px;}
-.log-text{font-size:12.5px;color:var(--navy);line-height:1.65;}
-.log-actions{display:flex;gap:6px;margin-top:10px;}
+.log-entry{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;overflow:hidden;}
+.log-entry-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;background:linear-gradient(135deg,var(--slate) 0%,#56658f 100%);}
+.log-date{font-size:11px;font-family:var(--mono);color:#fff;}
+.log-page{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;background:#fff;color:var(--slate);padding:2px 8px;border-radius:10px;}
+.log-status-live{font-size:10px;font-weight:600;color:#1db88a;background:#fff;padding:2px 8px;border-radius:10px;}
+.log-status-staging{font-size:10px;font-weight:600;color:var(--warn);background:#fff;padding:2px 8px;border-radius:10px;}
+.log-text{font-size:12.5px;color:var(--navy);line-height:1.65;padding:12px 16px 0;}
+.log-actions{display:flex;gap:6px;padding:10px 16px 16px;}
 
 /* ── Toast ── */
 .toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;padding:10px 18px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;opacity:0;transform:translateY(8px);transition:all .25s;z-index:2000;pointer-events:none;}
@@ -586,20 +586,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 /* ═══════════════════════════════════
    INSIGHTS ENGINE — Upload + AI
    ═══════════════════════════════════ */
-.upload-panel{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:20px;}
-.upload-panel-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
-.upload-panel-title .up-badge{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:rgba(36,233,163,.12);color:#1db88a;border:1px solid rgba(36,233,163,.2);border-radius:10px;padding:2px 8px;}
-.upload-drop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
-.upload-drop{border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--bg);}
-.upload-drop:hover,.upload-drop.dragover{border-color:var(--green);background:rgba(36,233,163,.05);}
-.upload-drop input{display:none;}
-.upload-drop-icon{font-size:20px;margin-bottom:6px;}
-.upload-drop-label{font-size:11.5px;font-weight:600;color:var(--navy);margin-bottom:3px;}
-.upload-drop-sub{font-size:10px;color:var(--muted);}
-.upload-drop-files{margin-top:8px;font-size:10px;color:#1db88a;line-height:1.6;}
-.upload-run-btn{display:flex;align-items:center;gap:8px;background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 20px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;}
-.upload-run-btn:hover{background:#0a2d7a;}
-.upload-run-btn:disabled{background:var(--muted);cursor:not-allowed;}
+.upload-panel{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:24px 26px;margin-bottom:20px;}
+.upload-panel-title{font-family:var(--font-subheader);font-size:19px;font-weight:700;color:var(--navy);margin-bottom:16px;}
+/* 2026-07-16: uploads removed — Run Analysis no longer needs files, per
+   Jaclyn. Buttons redesigned as a clean modern pair: Run Analysis as the
+   solid-fill primary action, Run Listing Audit as an outlined secondary
+   action of the same shape/size. */
+.upload-run-btn{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);color:#fff;border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(0,31,96,.18);}
+.upload-run-btn:hover{box-shadow:0 4px 14px rgba(0,31,96,.28);transform:translateY(-1px);}
+.upload-run-btn:disabled{background:var(--muted);cursor:not-allowed;box-shadow:none;transform:none;}
 .upload-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
 .upload-run-btn.running .spinner{display:block;}
 .upload-run-btn.running .btn-label{opacity:.7;}
@@ -610,9 +605,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
 /* AI-generated insight cards */
 .ai-insight-card{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden;}
-.ai-insight-card-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);}
-.ai-insight-card-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
-.ai-insight-card-date{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.ai-insight-card-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(135deg,var(--slate) 0%,#56658f 100%);}
+.ai-insight-card-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;}
+.ai-insight-card-date{font-size:10px;color:rgba(255,255,255,.75);font-family:var(--mono);}
 .ai-insight-card-body{padding:14px 16px;font-size:12.5px;color:var(--navy);line-height:1.7;}
 .ai-insight-card-body ul{margin:8px 0 0 0;padding-left:18px;}
 .ai-insight-card-body li{margin-bottom:4px;}
@@ -649,9 +644,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .la-update-status.saved{color:#1db88a;}
 .la-update-status.pending{color:var(--warn);}
 
-/* Audit buttons in the upload panel */
-.audit-run-btn{display:flex;align-items:center;gap:8px;background:rgba(0,31,96,.08);color:var(--navy);border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);padding:10px 18px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;}
-.audit-run-btn:hover{background:rgba(0,31,96,.15);}
+/* Audit button in the panel — clean outlined pill matching the primary button's shape */
+.audit-run-btn{display:flex;align-items:center;gap:9px;background:#fff;color:var(--navy);border:1.5px solid var(--navy);border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;}
+.audit-run-btn:hover{background:rgba(0,31,96,.06);}
 .audit-run-btn:disabled{opacity:.5;cursor:not-allowed;}
 .audit-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(0,31,96,.2);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;display:none;}
 .audit-run-btn.running .spinner{display:block;}
@@ -1772,43 +1767,10 @@ As inventory availability improves, the current sales mix provides a strong foun
 
     <div class="channel-page" id="ins-log">
 
-      <!-- ── UPLOAD PANEL ── -->
+      <!-- ── ANALYSIS PANEL ── -->
       <div class="upload-panel">
-        <div class="upload-panel-title">
-          📊 Weekly Report Upload
-          <span class="up-badge">AI Analysis</span>
-        </div>
-        <div class="upload-drop-grid" style="grid-template-columns:repeat(4,1fr);">
-          <label class="upload-drop" id="drop-kw" ondragover="upDragOver(event,'drop-kw')" ondragleave="upDragLeave('drop-kw')" ondrop="upDrop(event,'kw')">
-            <input type="file" id="file-kw" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'kw')">
-            <div class="upload-drop-icon">🔍</div>
-            <div class="upload-drop-label">Keyword Tracker</div>
-            <div class="upload-drop-sub">CSV or XLSX · multiple OK</div>
-            <div class="upload-drop-files" id="files-kw"></div>
-          </label>
-          <label class="upload-drop" id="drop-biz" ondragover="upDragOver(event,'drop-biz')" ondragleave="upDragLeave('drop-biz')" ondrop="upDrop(event,'biz')">
-            <input type="file" id="file-biz" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'biz')">
-            <div class="upload-drop-icon">📦</div>
-            <div class="upload-drop-label">Business Report</div>
-            <div class="upload-drop-sub">Amazon Business Report · CSV or XLSX</div>
-            <div class="upload-drop-files" id="files-biz"></div>
-          </label>
-          <label class="upload-drop" id="drop-ppc" ondragover="upDragOver(event,'drop-ppc')" ondragleave="upDragLeave('drop-ppc')" ondrop="upDrop(event,'ppc')">
-            <input type="file" id="file-ppc" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'ppc')">
-            <div class="upload-drop-icon">📈</div>
-            <div class="upload-drop-label">PPC Report</div>
-            <div class="upload-drop-sub">Campaign performance · CSV or XLSX</div>
-            <div class="upload-drop-files" id="files-ppc"></div>
-          </label>
-          <label class="upload-drop" id="drop-sqp" ondragover="upDragOver(event,'drop-sqp')" ondragleave="upDragLeave('drop-sqp')" ondrop="upDrop(event,'sqp')">
-            <input type="file" id="file-sqp" multiple accept=".csv,.xlsx,.xls" onchange="upSelect(this,'sqp')">
-            <div class="upload-drop-icon">🔎</div>
-            <div class="upload-drop-label">SQP Report</div>
-            <div class="upload-drop-sub">Search Query Performance · CSV</div>
-            <div class="upload-drop-files" id="files-sqp"></div>
-          </label>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div class="upload-panel-title">Weekly Brand Analysis</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <button class="upload-run-btn" id="run-analysis-btn" onclick="runInsightAnalysis()">
             <div class="spinner"></div>
             <span class="btn-label">✦ Run Analysis</span>
@@ -6255,18 +6217,16 @@ function buildListingContext() {
 async function runInsightAnalysis() {
   const btn=document.getElementById('run-analysis-btn');
   const st=document.getElementById('upload-status');
-  if (!_upFiles.kw.length&&!_upFiles.biz.length&&!_upFiles.ppc.length&&!(_upFiles.sqp||[]).length) {
-    st.textContent='\u26a0 Upload at least one report first.'; st.className='upload-status error'; return;
-  }
   btn.classList.add('running'); btn.disabled=true;
   try {
-    st.textContent='Parsing files\u2026'; st.className='upload-status';
-    await parseAllFiles();
+    // 2026-07-16: Run Analysis no longer requires uploaded reports — the
+    // backend (/api/run-analysis) now gathers its own data server-side.
+    // This still sends an (empty) summaries object rather than omitting
+    // the field, in case the endpoint still expects the key to exist.
+    // Per Jaclyn — if the actual new request shape differs, this is the
+    // one spot to adjust once the updated backend contract is confirmed.
     const sum=buildSummaries();
-    const fileCount=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc,...(_upFiles.sqp||[])].length;
-    const sqpCount=(_upFiles.sqp||[]).length;
-    const kwCount=_upFiles.kw.length;
-    st.textContent='Loading history\u2026';
+    st.textContent='Loading history\u2026'; st.className='upload-status';
     const hist=await fetchHistoricalSummaries(4);
     st.textContent='Running AI analysis\u2026';
     const ins=await callClaudeForInsights(sum,formatHistoryForClaude(hist),buildListingContext());
@@ -6275,7 +6235,7 @@ async function runInsightAnalysis() {
     st.textContent='Saving\u2026';
     await saveUploadsToSheet(sum,ins);
     await writeInsightsToSheet(ins);
-    st.textContent='\u2713 Done \u2014 '+fileCount+' files ('+kwCount+' KT'+( sqpCount?' + SQP':'')+') \u2014 '+new Date().toLocaleTimeString();
+    st.textContent='\u2713 Done \u2014 '+new Date().toLocaleTimeString();
     st.className='upload-status success';
   } catch(err) {
     console.error(err);
@@ -6305,12 +6265,11 @@ async function callClaudeForInsights(sum, histCtx, listingCtx) {
 }
 
 async function saveUploadsToSheet(sum,ins) {
-  const files=[..._upFiles.kw,..._upFiles.biz,..._upFiles.ppc,...(_upFiles.sqp||[])].map(f=>f.name+'('+f._rtype+')').join(', ');
   await fetch('/api/write-uploads',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({brand:INSIGHTS_BRAND_TAB,sheetId:UPLOADS_SHEET_ID,gid:UPLOADS_EVOLIS_GID,
       date:ins.date||new Date().toISOString().slice(0,10),week_label:weekLabel(),
       kw_summary:JSON.stringify(sum.kw),biz_summary:JSON.stringify(sum.biz),
-      ppc_summary:JSON.stringify(sum.ppc),sqp_summary:JSON.stringify(sum.sqp||[]),files_uploaded:files})});
+      ppc_summary:JSON.stringify(sum.ppc),sqp_summary:JSON.stringify(sum.sqp||[]),files_uploaded:'(auto — no uploads)'})});
 }
 
 async function writeInsightsToSheet(ins) {
