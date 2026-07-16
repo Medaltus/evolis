@@ -77,10 +77,25 @@ module.exports = async (req, res) => {
   }
 
   // ── 2. Match each target tab against the Events rows ───────────────────
+  // Optional ?tab=... narrows to just one target (case-insensitive exact
+  // match against tabName) — useful for running events one at a time
+  // given how much order data a single event can pull.
+  const tabFilter = (req.query.tab || '').toLowerCase().trim();
+  const activeTargets = tabFilter
+    ? TARGET_TABS.filter(t => t.tabName.toLowerCase() === tabFilter)
+    : TARGET_TABS;
+
+  if (tabFilter && !activeTargets.length) {
+    return res.status(400).json({
+      error: `No target tab named "${req.query.tab}"`,
+      validTabs: TARGET_TABS.map(t => t.tabName),
+    });
+  }
+
   const matched = [];   // [{ tabName, start, end, matchedEventName }]
   const skipped = [];   // [{ tabName, reason }]
 
-  for (const target of TARGET_TABS) {
+  for (const target of activeTargets) {
     const candidates = eventRows.filter(r => {
       const name = (r['Event Name'] || '').toLowerCase();
       return target.keywords.some(kw => name.includes(kw));
@@ -167,7 +182,9 @@ module.exports = async (req, res) => {
       metaMap[`report_end_${m.tabName}`]   = m.end;
       metaMap[`processed_${m.tabName}`]    = 'false';
     }
-    metaMap['target_tabs']       = matched.filter(m => reportIds[m.tabName]).map(m => m.tabName).join(',');
+    const existingTargets = (metaMap['target_tabs'] || '').split(',').filter(Boolean);
+    const newTargets = matched.filter(m => reportIds[m.tabName]).map(m => m.tabName);
+    metaMap['target_tabs'] = Array.from(new Set([...existingTargets, ...newTargets])).join(',');
     metaMap['last_requested_at'] = ts;
 
     const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
