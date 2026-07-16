@@ -1,28 +1,21 @@
 /**
  * api/cron/sync-sqp-process.js
- * Step 2 of 2 — reads the reportId stored by sync-sqp-request.js, polls
- * until DONE, downloads, and writes the full report to the
- * search_query_performance tab of sheets.searchQueryPerformance.
+ * Step 2 of 2 — for every active brand with pending reportIds in _meta,
+ * polls until DONE, downloads, merges all of that brand's batches, and
+ * writes the full report to a PER-BRAND tab in
+ * sheets.searchQueryPerformance (brand.tabName — same convention as
+ * sync-business-report-process.js), rather than one shared tab.
  *
- * Runs twice daily across days 8-20 (see vercel.json) — Brand Analytics
- * monthly reports can take longer to generate than the daily Business
- * Report, so a single invocation's poll window (mirrors
- * sync-business-report-process.js: 60s timeout, 4s interval) may not
- * always catch DONE on the first check. If it times out, this just exits
- * without marking anything PROCESSED, so the next scheduled run picks up
- * the same still-pending reportId and checks again — no state is lost
- * between runs.
+ * Runs twice daily across days 8-20 (see vercel.json). One brand's
+ * FATAL/timeout does not block any other brand — each is wrapped in its
+ * own try/catch and reported independently in the results array, same
+ * defensive pattern as sync-business-report-process.js's per-brand loop.
  *
- * Debug mode — logs the raw TSV header row instead of writing to the
- * sheet, so real Amazon column names can be confirmed before trusting the
- * parse. Same defensive pattern as sync-business-report-process.js
- * (?debug=true) — doubly worth using here since this is a brand-new report
- * type; the column names below are my best documentation-based guess, not
- * yet verified against a real response:
+ * Debug mode — logs real column headers/row counts per brand instead of
+ * writing, so real Amazon field names can be confirmed before trusting the
+ * parse (this is still a brand-new report type):
  *   GET /api/cron/sync-sqp-process?debug=true
- *   Authorization: Bearer <CRON_SECRET>
- *
- * Force re-process even if already marked PROCESSED:
+ * Force re-process a brand already marked PROCESSED:
  *   GET /api/cron/sync-sqp-process?force=true
  */
 
@@ -30,14 +23,24 @@ const zlib                                 = require('zlib');
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
+const brands                               = require('../config/brands');
 
+const HEADERS       = ['MONTH', 'ASIN', 'START_DATE', 'END_DATE',
+  'SEARCH_QUERY', 'SEARCH_QUERY_SCORE', 'SEARCH_QUERY_VOLUME',
+  'TOTAL_QUERY_IMPRESSION_COUNT', 'ASIN_IMPRESSION_COUNT', 'ASIN_IMPRESSION_SHARE',
+  'TOTAL_CLICK_COUNT', 'TOTAL_CLICK_RATE', 'ASIN_CLICK_COUNT', 'ASIN_CLICK_SHARE',
+  'TOTAL_MEDIAN_CLICK_PRICE', 'ASIN_MEDIAN_CLICK_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CLICK_COUNT',
+  'TOTAL_CART_ADD_COUNT', 'TOTAL_CART_ADD_RATE', 'ASIN_CART_ADD_COUNT', 'ASIN_CART_ADD_SHARE',
+  'TOTAL_MEDIAN_CART_ADD_PRICE', 'ASIN_MEDIAN_CART_ADD_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CART_ADD_COUNT',
+  'TOTAL_PURCHASE_COUNT', 'TOTAL_PURCHASE_RATE', 'ASIN_PURCHASE_COUNT', 'ASIN_PURCHASE_SHARE',
+  'TOTAL_MEDIAN_PURCHASE_PRICE', 'ASIN_MEDIAN_PURCHASE_PRICE',
+  'TOTAL_SAME_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_ONE_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_TWO_DAY_SHIPPING_PURCHASE_COUNT'];
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
-const DATA_TAB      = 'search_query_performance';
 
-// Same poll budget as sync-business-report-process.js — if this SPECIFIC
-// invocation's window isn't enough, the next scheduled run (see vercel.json)
-// tries again; nothing is lost by giving up after this timeout.
+// Same poll budget as sync-business-report-process.js.
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
 
@@ -51,11 +54,6 @@ module.exports = async (req, res) => {
   const ts  = now.toISOString();
   const debugMode = req.query.debug === 'true';
 
-  // ── Read _meta to find the pending reportId ─────────────────────────────
-  // A missing _meta tab (Sheets API returns "Unable to parse range") means
-  // sync-sqp-request.js hasn't successfully run yet on this sheet — that's
-  // an expected state on a brand-new sheet, not a real failure, so this
-  // reads as "nothing to process" rather than a 500.
   let metaMap = {};
   try {
     const rawMeta = await readRows(sheets.searchQueryPerformance, META_TAB);
@@ -66,118 +64,132 @@ module.exports = async (req, res) => {
     const tabMissing = /unable to parse range/i.test(err.message) || /Sheets GET failed \(400\)/i.test(err.message);
     if (tabMissing) {
       console.log('[sync-sqp-process] _meta tab does not exist yet — sync-sqp-request has not successfully run on this sheet yet');
-      return res.status(200).json({ ok: true, message: '_meta tab does not exist yet — run sync-sqp-request first', detail: err.message });
+      return res.status(200).json({ ok: true, message: '_meta tab does not exist yet — run sync-sqp-request first' });
     }
     console.error('[sync-sqp-process] failed to read _meta:', err.message);
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
-  if (metaMap['report_status'] === 'PROCESSED' && !req.query.force && !debugMode) {
-    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-run anyway.', meta: metaMap });
-  }
-
   const targetMonth = metaMap['target_month'];
-  const batchCount = targetMonth ? parseInt(metaMap[`report_batch_count_${targetMonth}`] || '0', 10) : 0;
-  if (!targetMonth || !batchCount) {
-    return res.status(400).json({ error: 'No pending target_month/batches in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
-  }
-  const batchReportIds = [];
-  for (let i = 0; i < batchCount; i++) {
-    const id = metaMap[`report_id_${targetMonth}_b${i}`];
-    if (!id) return res.status(400).json({ error: `Missing report_id_${targetMonth}_b${i} in _meta — _meta may be corrupted, try re-running sync-sqp-request with ?force=true` });
-    batchReportIds.push(id);
-  }
-  console.log(`[sync-sqp-process] ${targetMonth} — ${batchCount} batch(es): ${batchReportIds.join(', ')}`);
-
-  // ── Poll + download every batch (re-checked every invocation — cheap,
-  // and avoids needing to persist downloaded content between runs) ───────
-  let allEntries = [];
-  const batchResults = [];
-  for (let i = 0; i < batchReportIds.length; i++) {
-    const reportId = batchReportIds[i];
-    const result = await pollReportUntilDone(reportId, targetMonth, i);
-    batchResults.push({ batchIndex: i, reportId, status: result.status });
-
-    if (result.status === 'FATAL' || result.status === 'CANCELLED') {
-      const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId);
-      try {
-        const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-        metaMap['report_status'] = result.status;
-        const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
-        await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
-      } catch (err) { /* best-effort */ }
-      return res.status(500).json({ error: `Report ${result.status}`, targetMonth, batchIndex: i, reportId, amazonResponse: result.statusBody, errorDocumentContent });
-    }
-
-    if (result.status !== 'DONE') {
-      // Still IN_QUEUE/IN_PROGRESS after this invocation's poll window —
-      // stop here, next scheduled run re-checks ALL batches (including any
-      // already DONE ones, which will just resolve quickly this time).
-      console.warn(`[sync-sqp-process] ${targetMonth} batch ${i} not ready yet within this invocation's poll window — will check again next scheduled run`);
-      return res.status(200).json({ ok: true, notReadyYet: true, targetMonth, batchResults, lastKnownStatus: result.status });
-    }
-
-    const jsonText = await downloadReportJson(result.documentId);
-    if (jsonText === null) {
-      return res.status(500).json({ error: 'Failed to download report document', targetMonth, batchIndex: i, reportId });
-    }
-    let parsed;
-    try { parsed = JSON.parse(jsonText); } catch (e) { parsed = {}; }
-    allEntries = allEntries.concat(parsed.dataByAsin || []);
+  if (!targetMonth) {
+    return res.status(400).json({ error: 'No target_month in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
   }
 
-  console.log(`[sync-sqp-process] ${targetMonth} — all ${batchCount} batch(es) DONE, ${allEntries.length} total entries`);
-  const { headers: dataHeaders, rows: dataRows } = flattenEntries(allEntries);
+  const activeBrands = brands.filter(b => b.active);
+  const results = [];
+  const debugResults = [];
+
+  for (const brand of activeBrands) {
+    try {
+      if (metaMap[`report_status_${brand.id}`] === 'PROCESSED' && !req.query.force && !debugMode) {
+        results.push({ brand: brand.id, status: 'already-processed' });
+        continue;
+      }
+
+      const batchCount = parseInt(metaMap[`report_batch_count_${brand.id}_${targetMonth}`] || '0', 10);
+      if (!batchCount) {
+        results.push({ brand: brand.id, status: 'no-pending-request' });
+        continue;
+      }
+
+      const batchReportIds = [];
+      for (let i = 0; i < batchCount; i++) {
+        const id = metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`];
+        if (!id) { results.push({ brand: brand.id, status: 'error', reason: `missing report_id_${brand.id}_${targetMonth}_b${i}` }); batchReportIds.length = 0; break; }
+        batchReportIds.push(id);
+      }
+      if (!batchReportIds.length) continue;
+
+      console.log(`[sync-sqp-process] ${brand.id} ${targetMonth} — ${batchCount} batch(es): ${batchReportIds.join(', ')}`);
+
+      let allEntries = [];
+      let brandStopped = false;
+
+      for (let i = 0; i < batchReportIds.length; i++) {
+        const reportId = batchReportIds[i];
+        const result = await pollReportUntilDone(reportId, brand.id, targetMonth, i);
+
+        if (result.status === 'FATAL' || result.status === 'CANCELLED') {
+          const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId);
+          metaMap[`report_status_${brand.id}`] = result.status;
+          results.push({ brand: brand.id, status: result.status, batchIndex: i, reportId, errorDocumentContent });
+          brandStopped = true;
+          break;
+        }
+        if (result.status !== 'DONE') {
+          console.warn(`[sync-sqp-process] ${brand.id} ${targetMonth} batch ${i} not ready yet — will check again next scheduled run`);
+          results.push({ brand: brand.id, status: 'not-ready-yet', batchIndex: i, lastKnownStatus: result.status });
+          brandStopped = true;
+          break;
+        }
+
+        const jsonText = await downloadReportJson(result.documentId);
+        if (jsonText === null) {
+          results.push({ brand: brand.id, status: 'error', batchIndex: i, reason: 'download failed' });
+          brandStopped = true;
+          break;
+        }
+        let parsed;
+        try { parsed = JSON.parse(jsonText); } catch (e) { parsed = {}; }
+        allEntries = allEntries.concat(parsed.dataByAsin || []);
+      }
+      if (brandStopped) continue;
+
+      console.log(`[sync-sqp-process] ${brand.id} ${targetMonth} — all ${batchCount} batch(es) DONE, ${allEntries.length} total entries`);
+      const flatRows = flattenEntries(allEntries, targetMonth);
+
+      if (debugMode) {
+        debugResults.push({
+          brand: brand.id,
+          columnHeaders: HEADERS,
+          rowCount: flatRows.length,
+          firstRow: flatRows[0] || [],
+        });
+        continue; // debug mode never writes, for any brand
+      }
+
+      const token = await ensureTab(sheets.searchQueryPerformance, brand.tabName, HEADERS);
+      const existingRows = await readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []);
+      // Idempotent re-run safety: drop any prior write of THIS month for
+      // this brand, keep every other month already in this brand's tab.
+      const otherMonthsRows = (existingRows || [])
+        .filter(r => r['MONTH'] !== targetMonth)
+        .map(r => HEADERS.map(h => r[h] ?? ''));
+
+      await replaceRows(sheets.searchQueryPerformance, brand.tabName, HEADERS, [...otherMonthsRows, ...flatRows], token);
+      console.log(`[sync-sqp-process] ${brand.id} ${targetMonth} — wrote ${flatRows.length} rows to tab "${brand.tabName}"`);
+
+      metaMap[`report_status_${brand.id}`]     = 'PROCESSED';
+      metaMap[`last_processed_at_${brand.id}`] = ts;
+      results.push({ brand: brand.id, status: 'ok', rowsWritten: flatRows.length });
+
+    } catch (err) {
+      console.error(`[sync-sqp-process] ${brand.id} failed:`, err.message);
+      results.push({ brand: brand.id, status: 'error', reason: err.message });
+    }
+  }
 
   if (debugMode) {
-    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — column headers: ${dataHeaders.join(' | ')}`);
-    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — row count: ${dataRows.length}`);
-    console.log(`[sync-sqp-process][DEBUG] ${targetMonth} — first row: ${JSON.stringify(dataRows[0] || [])}`);
-    return res.status(200).json({
-      debug: true,
-      targetMonth,
-      batchCount,
-      columnHeaders: dataHeaders,
-      rowCount: dataRows.length,
-      firstRow: dataRows[0] || [],
-    });
+    return res.status(200).json({ debug: true, targetMonth, results: debugResults });
   }
 
-  // ── Write to sheet ───────────────────────────────────────────────────────
+  // ── Persist updated per-brand statuses ───────────────────────────────────
   try {
-    const taggedHeaders = ['MONTH', ...dataHeaders];
-    const existingRows  = await readRows(sheets.searchQueryPerformance, DATA_TAB).catch(() => []);
-    // Idempotent re-run safety: drop any prior write of THIS month, keep every other month already in the tab.
-    const otherMonthsRows = (existingRows || [])
-      .filter(r => r['MONTH'] !== targetMonth)
-      .map(r => taggedHeaders.map(h => r[h] ?? ''));
-    const newRows = dataRows.map(r => [targetMonth, ...r]);
-
-    const token = await ensureTab(sheets.searchQueryPerformance, DATA_TAB, taggedHeaders);
-    await replaceRows(sheets.searchQueryPerformance, DATA_TAB, taggedHeaders, [...otherMonthsRows, ...newRows], token);
-    console.log(`[sync-sqp-process] ${targetMonth} — wrote ${newRows.length} rows`);
-
-    // Mark processed
     const metaToken = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-    metaMap['report_status']     = 'PROCESSED';
-    metaMap['last_processed_at'] = ts;
     const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
     await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, metaToken);
-
-    res.status(200).json({ ok: true, targetMonth, rowsWritten: newRows.length });
   } catch (err) {
-    console.error(`[sync-sqp-process] failed to write ${targetMonth} to sheet:`, err.message);
-    res.status(500).json({ error: 'Failed to write report to sheet', detail: err.message, targetMonth });
+    console.warn('[sync-sqp-process] failed to update _meta statuses:', err.message);
   }
+
+  res.status(200).json({ ok: true, targetMonth, results });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Polls one batch's reportId until DONE/FATAL/CANCELLED, or gives up after
-// REPORT_POLL_TIMEOUT_MS (same budget as sync-business-report-process.js).
-async function pollReportUntilDone(reportId, targetMonth, batchIndex) {
+async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex) {
   let statusBody = null;
   let status = null;
   const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
@@ -188,21 +200,19 @@ async function pollReportUntilDone(reportId, targetMonth, batchIndex) {
       const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
       status = resp.processingStatus;
       statusBody = resp;
-      console.log(`[sync-sqp-process] ${targetMonth} batch ${batchIndex} report ${reportId} status: ${status}`);
+      console.log(`[sync-sqp-process] ${brandId} ${targetMonth} batch ${batchIndex} report ${reportId} status: ${status}`);
       if (status === 'DONE') return { status, documentId: resp.reportDocumentId, statusBody };
       if (status === 'FATAL' || status === 'CANCELLED') {
-        console.error(`[sync-sqp-process] ${targetMonth} batch ${batchIndex} report ${status} — full response:`, JSON.stringify(resp));
+        console.error(`[sync-sqp-process] ${brandId} ${targetMonth} batch ${batchIndex} report ${status} — full response:`, JSON.stringify(resp));
         return { status, documentId: null, statusBody };
       }
     } catch (err) {
-      console.warn(`[sync-sqp-process] batch ${batchIndex} poll error (will retry): ${err.message}`);
+      console.warn(`[sync-sqp-process] ${brandId} batch ${batchIndex} poll error (will retry): ${err.message}`);
     }
   }
   return { status: status || 'TIMEOUT', documentId: null, statusBody };
 }
 
-// Downloads and decompresses a report document, returning null on any
-// failure rather than throwing — callers decide how to handle that.
 async function downloadReportJson(documentId) {
   if (!documentId) return null;
   try {
@@ -222,8 +232,6 @@ async function downloadReportJson(documentId) {
   }
 }
 
-// Best-effort download used only for FATAL error-detail documents — never
-// throws, returns null if anything goes wrong (this is diagnostic-only).
 async function tryDownloadDocument(documentId) {
   if (!documentId) return null;
   const content = await downloadReportJson(documentId);
@@ -231,43 +239,22 @@ async function tryDownloadDocument(documentId) {
   return content;
 }
 
-// Flattens an ALREADY-MERGED array of dataByAsin entries (across every
-// batch for this month) into flat rows. "Full report" per the original
-// ask — every field Amazon returns is included, not a trimmed subset.
-// Structure confirmed against a real successful response (2026-07-16):
-// { reportSpecification, dataByAsin: [ { startDate, endDate, asin,
-// searchQueryData: {...}, impressionData: {...}, clickData: {...},
-// cartAddData: {...}, purchaseData: {...} } ] }.
-//
-// Several fields (asinCartAddShare, totalMedianCartAddPrice, etc.) come
-// back as null when there's zero volume for that metric — .amount/
-// .currencyCode access below is null-safe for exactly that reason.
-const SQP_HEADERS = [
-  'ASIN', 'START_DATE', 'END_DATE',
-  'SEARCH_QUERY', 'SEARCH_QUERY_SCORE', 'SEARCH_QUERY_VOLUME',
-  'TOTAL_QUERY_IMPRESSION_COUNT', 'ASIN_IMPRESSION_COUNT', 'ASIN_IMPRESSION_SHARE',
-  'TOTAL_CLICK_COUNT', 'TOTAL_CLICK_RATE', 'ASIN_CLICK_COUNT', 'ASIN_CLICK_SHARE',
-  'TOTAL_MEDIAN_CLICK_PRICE', 'ASIN_MEDIAN_CLICK_PRICE',
-  'TOTAL_SAME_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CLICK_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CLICK_COUNT',
-  'TOTAL_CART_ADD_COUNT', 'TOTAL_CART_ADD_RATE', 'ASIN_CART_ADD_COUNT', 'ASIN_CART_ADD_SHARE',
-  'TOTAL_MEDIAN_CART_ADD_PRICE', 'ASIN_MEDIAN_CART_ADD_PRICE',
-  'TOTAL_SAME_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_ONE_DAY_SHIPPING_CART_ADD_COUNT', 'TOTAL_TWO_DAY_SHIPPING_CART_ADD_COUNT',
-  'TOTAL_PURCHASE_COUNT', 'TOTAL_PURCHASE_RATE', 'ASIN_PURCHASE_COUNT', 'ASIN_PURCHASE_SHARE',
-  'TOTAL_MEDIAN_PURCHASE_PRICE', 'ASIN_MEDIAN_PURCHASE_PRICE',
-  'TOTAL_SAME_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_ONE_DAY_SHIPPING_PURCHASE_COUNT', 'TOTAL_TWO_DAY_SHIPPING_PURCHASE_COUNT',
-];
-
-function flattenEntries(entries) {
+// "Full report" per the original ask — every field Amazon returns is
+// included. Structure confirmed against a real successful response
+// (2026-07-16). Several fields (asinCartAddShare, totalMedianCartAddPrice,
+// etc.) come back null when there's zero volume for that metric — the
+// .amount access below is null-safe for exactly that reason.
+function flattenEntries(entries, targetMonth) {
   const price = p => (p && p.amount != null) ? p.amount : '';
 
-  const rows = (entries || []).map(e => {
+  return (entries || []).map(e => {
     const sq = e.searchQueryData || {};
     const imp = e.impressionData || {};
     const clk = e.clickData || {};
     const cart = e.cartAddData || {};
     const pur = e.purchaseData || {};
     return [
-      e.asin ?? '', e.startDate ?? '', e.endDate ?? '',
+      targetMonth, e.asin ?? '', e.startDate ?? '', e.endDate ?? '',
       sq.searchQuery ?? '', sq.searchQueryScore ?? '', sq.searchQueryVolume ?? '',
       imp.totalQueryImpressionCount ?? '', imp.asinImpressionCount ?? '', imp.asinImpressionShare ?? '',
       clk.totalClickCount ?? '', clk.totalClickRate ?? '', clk.asinClickCount ?? '', clk.asinClickShare ?? '',
@@ -281,6 +268,4 @@ function flattenEntries(entries) {
       pur.totalSameDayShippingPurchaseCount ?? '', pur.totalOneDayShippingPurchaseCount ?? '', pur.totalTwoDayShippingPurchaseCount ?? '',
     ];
   });
-
-  return { headers: SQP_HEADERS, rows };
 }
