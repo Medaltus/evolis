@@ -7137,7 +7137,7 @@ async function loadAuditResultsFromSheet() {
       // once real line weight was back in the comparison — 0.15 alone read
       // as too close to straight segments once thickness matched.
       const PDFX_HEIGHT_FACTOR = 0.9;
-      const PDFX_CAPTURE_TENSION = 0.22;
+      const PDFX_CAPTURE_TENSION = 0.3; // 2026-07-16: bumped from 0.22 — Jaclyn wanted more curve. Re-tested at 0.3 (the dashboard's own native value) with the corrected line-weight scaling and 0.9x height factor already in place, and it now reads clean rather than bulgy — the earlier over-exaggeration was compounded by the un-scaled thin lines, not tension alone.
       const PDFX_LINE_WIDTH_TARGET_PX = 3;   // dashboard's own is 2.5 — slightly heavier per Jaclyn's "increase the weight" ask
       const PDFX_POINT_RADIUS_TARGET_PX = 2.2; // dashboard's own is 2
       const captureHeightPx = Math.round(originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX));
