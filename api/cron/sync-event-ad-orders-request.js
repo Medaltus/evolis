@@ -62,6 +62,51 @@ module.exports = async (req, res) => {
   if (!sheets.masterSkuList) return res.status(500).json({ error: 'sheets.masterSkuList is not configured' });
   if (!sheets.adOrders)      return res.status(500).json({ error: 'sheets.adOrders is not configured' });
 
+  // ── Manual override — same one-off backfill path as
+  // sync-event-orders-request.js. Bypasses Events tab matching entirely.
+  //   GET ?startDate=2025-06-21&endDate=2025-06-24&outTab=Prime Day 2025
+  if (req.query.startDate && req.query.endDate && req.query.outTab) {
+    let overrideToken, overrideProfileId;
+    try {
+      overrideToken     = await getAdToken();
+      overrideProfileId = await discoverProfileId(overrideToken);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to auth/discover ad profile', detail: err.message });
+    }
+
+    const overrideEndRaw = `${req.query.endDate}T23:59:59Z`;
+    const overrideEnd = overrideEndRaw > safeBefore ? safeBefore.slice(0, 10) : req.query.endDate;
+
+    const reportId = await requestReportWithRetry(
+      overrideToken, overrideProfileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
+      { startDate: req.query.startDate, endDate: overrideEnd },
+      ['advertiser'],
+      ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+      req.query.outTab
+    );
+    if (!reportId) return res.status(500).json({ error: 'No reportId returned for override request' });
+
+    try {
+      const tabName = req.query.outTab;
+      const metaToken = await ensureTab(sheets.adOrders, META_TAB, META_HEADERS);
+      const rawMeta   = await readRows(sheets.adOrders, META_TAB);
+      const metaMap2  = {};
+      (rawMeta || []).forEach(r => { if (r.KEY) metaMap2[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+
+      metaMap2[`report_id_${tabName}`] = [`report_id_${tabName}`, reportId, ts];
+      metaMap2[`processed_${tabName}`] = [`processed_${tabName}`, 'false', ts];
+      const existingTargets = ((metaMap2['target_tabs'] || [])[1] || '').split(',').filter(Boolean);
+      metaMap2['target_tabs']  = ['target_tabs', Array.from(new Set([...existingTargets, tabName])).join(','), ts];
+      metaMap2['ad_profile_id'] = ['ad_profile_id', String(overrideProfileId), ts];
+
+      await replaceRows(sheets.adOrders, META_TAB, META_HEADERS, Object.values(metaMap2), metaToken);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to write meta for override', detail: err.message, reportId });
+    }
+
+    return res.status(200).json({ mode: 'manual_override', outTab: req.query.outTab, reportId, start: req.query.startDate, end: overrideEnd });
+  }
+
   // ── 1. Read Events tab, apply optional ?tab= filter ─────────────────────
   let eventRows;
   try {
