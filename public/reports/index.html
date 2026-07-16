@@ -420,11 +420,11 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
 .ppc-opp-card.high{border-left:4px solid var(--warn);}
 .ppc-opp-card.med{border-left:4px solid #6b7ba2;}
-.ppc-opp-card.action-type{border-left:4px solid var(--danger);background:rgba(219,55,45,.035);}
+.ppc-opp-card.action-type{border-left:4px solid var(--danger);}
 .ppc-opp-card.action-type .ppc-opp-body{font-weight:600;font-size:13px;}
-.ppc-opp-card.opportunity-type{border-left:4px solid var(--warn);background:rgba(200,125,47,.03);}
-.ppc-opp-card.win-type{border-left:4px solid #1db88a;background:rgba(36,233,163,.03);}
-.ppc-opp-card.summary-type{background:var(--bg);border:1px dashed var(--border);box-shadow:none;}
+.ppc-opp-card.opportunity-type{border-left:4px solid var(--warn);}
+.ppc-opp-card.win-type{border-left:4px solid #1db88a;}
+.ppc-opp-card.summary-type{border-left:4px solid #6b7ba2;}
 .ppc-opp-card.summary-type .ppc-opp-body{color:var(--muted);font-size:12px;}
 .kw-flag-wasted{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;color:var(--danger);background:rgba(219,55,45,.08);padding:2px 7px;border-radius:8px;margin-left:4px;}
 .ppc-opp-hd{padding:14px 18px 10px;background:var(--bg);border-bottom:1px solid var(--border);}
@@ -6172,29 +6172,33 @@ function injectInsightsBoxes(ins) {
 // work discussed separately), so everything renders as a neutral card
 // rather than guessing at priority.
 function renderPpcInsightCards(ppc, container) {
-  const cards = [];
+  // Exactly 4 cards, each holding a list of its items (not one card per
+  // item) — white background throughout, color differentiation kept only
+  // on the left border + badge so it stays easy to read rather than busy.
+  const list = arr => (arr && arr.length)
+    ? '<ul style="margin:0;padding-left:18px;">' + arr.map(t => `<li style="margin-bottom:6px;">${t}</li>`).join('') + '</ul>'
+    : '<span style="color:var(--muted);">None this week.</span>';
 
-  // Order: Actions first (most executable, most "pop"), then Opportunities,
-  // then Wins (lowest urgency — things already working), Summary as a
-  // de-emphasized context banner at the very top. Previously everything
-  // rendered in the same flat white-card style regardless of type, which
-  // is exactly why it read as "busy and hard to pull actionable stuff out."
-  if (ppc.summary) {
-    cards.unshift(`<div class="ppc-opp-card summary-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div><div class="ppc-opp-body">${ppc.summary}</div></div>`);
-  }
-  (ppc.actions || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card action-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div><div class="ppc-opp-body">${text}</div></div>`);
-  });
-  (ppc.opportunities || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card opportunity-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div><div class="ppc-opp-body">${text}</div></div>`);
-  });
-  (ppc.wins || []).forEach(text => {
-    cards.push(`<div class="ppc-opp-card win-type"><div class="ppc-opp-hd"><div class="ppc-opp-badge" style="color:#1db88a;">✓ WIN</div></div><div class="ppc-opp-body">${text}</div></div>`);
-  });
+  const summaryBody = ppc.summary ? `<p style="margin:0;">${ppc.summary}</p>` : '<span style="color:var(--muted);">No summary yet.</span>';
 
-  container.innerHTML = cards.length
-    ? cards.join('')
-    : '<div class="ppc-opp-card"><div class="ppc-opp-body" style="color:var(--muted);">No PPC insights logged yet.</div></div>';
+  container.innerHTML = `
+    <div class="ppc-opp-card summary-type">
+      <div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div>
+      <div class="ppc-opp-body">${summaryBody}</div>
+    </div>
+    <div class="ppc-opp-card action-type">
+      <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+      <div class="ppc-opp-body">${list(ppc.actions)}</div>
+    </div>
+    <div class="ppc-opp-card opportunity-type">
+      <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+      <div class="ppc-opp-body">${list(ppc.opportunities)}</div>
+    </div>
+    <div class="ppc-opp-card win-type">
+      <div class="ppc-opp-hd"><div class="ppc-opp-badge" style="color:#1db88a;">✓ WIN</div></div>
+      <div class="ppc-opp-body">${list(ppc.wins)}</div>
+    </div>
+  `;
 
   // QA cross-check: flag any keyword pill in Strategy by Product that's
   // currently sitting in the live Wasted Spend panel — i.e. a place where
