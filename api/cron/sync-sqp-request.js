@@ -36,8 +36,31 @@ const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 // here since I don't have that brands config file to import from).
 const BRAND_TAB_NAME = 'evolis';
 
-// Amazon's own error (confirmed via test-sqp-connection.js against a real
-// FATAL report): "This report type requires the report option(s): asin."
+// Amazon's own error (confirmed via a real request): the 'asin' report
+// option has a 200-CHARACTER limit on the joined string, not a count limit
+// — 19 real ASINs (10 chars each + spaces) already exceeds it at 208
+// chars. Batches into groups that fit under that limit, so this keeps
+// working correctly as the catalog grows rather than silently breaking
+// again at some future ASIN count.
+function chunkAsinsByCharLimit(asins, maxLen = 200) {
+  const batches = [];
+  let current = [];
+  let currentLen = 0;
+  for (const asin of asins) {
+    const addedLen = current.length ? asin.length + 1 : asin.length; // +1 for the joining space
+    if (currentLen + addedLen > maxLen && current.length) {
+      batches.push(current);
+      current = [asin];
+      currentLen = asin.length;
+    } else {
+      current.push(asin);
+      currentLen += addedLen;
+    }
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
+
 // Pulling the ASIN list from Products Cache — same source and same
 // "latest sync date only" logic as getBrandAsinMap in
 // sync-business-report-process.js — rather than hardcoding it, so this
@@ -87,67 +110,66 @@ module.exports = async (req, res) => {
     console.warn('[sync-sqp-request] could not read _meta (probably first-ever run, tab does not exist yet):', err.message);
   }
 
-  if (metaMap[`report_id_${targetMonth}`] && !req.query.force) {
-    console.log(`[sync-sqp-request] ${targetMonth} already requested (reportId ${metaMap[`report_id_${targetMonth}`]}, status ${metaMap['report_status'] || 'unknown'}) — skipping. Pass ?force=true to request a fresh one anyway (e.g. after a FATAL report).`);
-    return res.status(200).json({ ok: true, skipped: true, targetMonth, reportId: metaMap[`report_id_${targetMonth}`] });
+  if (metaMap[`report_batch_count_${targetMonth}`] && !req.query.force) {
+    console.log(`[sync-sqp-request] ${targetMonth} already requested (${metaMap[`report_batch_count_${targetMonth}`]} batch(es), status ${metaMap['report_status'] || 'unknown'}) — skipping. Pass ?force=true to request fresh ones anyway (e.g. after a FATAL report).`);
+    return res.status(200).json({ ok: true, skipped: true, targetMonth, batchCount: metaMap[`report_batch_count_${targetMonth}`] });
   }
 
-  // ── Request the report ──────────────────────────────────────────────────
+  // ── Request the report — one per ASIN batch (200-char asin limit) ───────
   const asins = await getBrandAsins();
   if (!asins.length) {
     console.error('[sync-sqp-request] no ASINs found in Products Cache — check BRAND_TAB_NAME / sheets.products');
     return res.status(500).json({ error: 'No ASINs found in Products Cache — cannot request report without the required asin option' });
   }
-  console.log(`[sync-sqp-request] ${targetMonth} — requesting for ${asins.length} ASINs`);
+  const batches = chunkAsinsByCharLimit(asins);
+  console.log(`[sync-sqp-request] ${targetMonth} — requesting for ${asins.length} ASINs across ${batches.length} batch(es) (200-char limit on the joined asin string)`);
 
-  let reportId;
-  try {
-    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-      reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
-      marketplaceIds: [process.env.SP_MARKETPLACE_ID],
-      dataStartTime,
-      dataEndTime,
-      reportOptions: { reportPeriod: 'MONTH', asin: asins.join(' ') },
-    });
+  const reportIds = [];
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
+        reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
+        marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+        dataStartTime,
+        dataEndTime,
+        reportOptions: { reportPeriod: 'MONTH', asin: batches[i].join(' ') },
+      });
 
-    if (!createResp || !createResp.reportId) {
-      // Most likely: Amazon saying last month's Brand Analytics data isn't
-      // finalized yet — expected during roughly the first 10-15 days of the
-      // month. Not a hard failure; don't write to _meta so tomorrow's run
-      // retries fresh. Return 200, not 500, since nothing actually went wrong.
-      console.warn(`[sync-sqp-request] ${targetMonth} — no reportId in response (likely not ready yet):`, JSON.stringify(createResp));
-      return res.status(200).json({ ok: true, notReadyYet: true, targetMonth, detail: createResp });
+      if (!createResp || !createResp.reportId) {
+        console.error(`[sync-sqp-request] ${targetMonth} batch ${i} — no reportId in response:`, JSON.stringify(createResp));
+        return res.status(500).json({ error: `Amazon returned no reportId for ${targetMonth} batch ${i}`, detail: createResp, targetMonth, batchIndex: i, batchAsins: batches[i] });
+      }
+      reportIds.push(createResp.reportId);
+      console.log(`[sync-sqp-request] ${targetMonth} batch ${i} (${batches[i].length} ASINs) requested: ${createResp.reportId}`);
+    } catch (err) {
+      console.error(`[sync-sqp-request] failed to request ${targetMonth} batch ${i}:`, err.message);
+      return res.status(500).json({ error: `Failed to request report for ${targetMonth} batch ${i}`, detail: err.message });
     }
-    reportId = createResp.reportId;
-    console.log(`[sync-sqp-request] ${targetMonth} report requested: ${reportId}`);
-  } catch (err) {
-    console.error(`[sync-sqp-request] failed to request report for ${targetMonth}:`, err.message);
-    return res.status(500).json({ error: `Failed to request report for ${targetMonth}`, detail: err.message });
   }
-
   // ── Write metadata ───────────────────────────────────────────────────────
   try {
     const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-    metaMap[`report_id_${targetMonth}`] = reportId;
+    reportIds.forEach((id, i) => { metaMap[`report_id_${targetMonth}_b${i}`] = id; });
+    metaMap[`report_batch_count_${targetMonth}`] = String(reportIds.length);
     metaMap['report_status']     = 'REQUESTED';
     metaMap['target_month']      = targetMonth;
     metaMap['last_requested_at'] = ts;
 
     const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
     await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
-    console.log(`[sync-sqp-request] meta written for ${targetMonth}`);
+    console.log(`[sync-sqp-request] meta written for ${targetMonth} — ${reportIds.length} batch(es)`);
   } catch (err) {
     console.error('[sync-sqp-request] failed to write meta:', err.message);
-    // Report was successfully requested with Amazon at this point — don't
-    // waste it, but make the sheet-write failure visible rather than
+    // Reports were successfully requested with Amazon at this point — don't
+    // waste them, but make the sheet-write failure visible rather than
     // returning a plain 200 that looks fully successful.
     return res.status(207).json({
-      warning: 'Report requested successfully, but failed to write _meta — check sheets.searchQueryPerformance / config/sheets.js',
+      warning: 'Reports requested successfully, but failed to write _meta — check sheets.searchQueryPerformance / config/sheets.js',
       metaWriteError: err.message,
       targetMonth,
-      reportId,
+      reportIds,
     });
   }
 
-  res.status(200).json({ ok: true, targetMonth, reportId });
+  res.status(200).json({ ok: true, targetMonth, reportIds, batchCount: reportIds.length });
 };
