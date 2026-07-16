@@ -18,7 +18,7 @@
  * SHEET_UPLOADS                   file uploads tracking (Evolis GID etc)
  * SHEET_BUSINESS_REPORT           Sales & Traffic business report (sessions/units by brand, monthly)
  * SHEET_SEARCH_QUERY_PERFORMANCE  Brand Analytics Search Query Performance (full monthly report, per-brand tabs, sync-sqp-request/process)
- * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js
+ * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js. Also has an "Events" tab (Event Name/start_date/end_date) used by sync-event-orders-request.js.
  * SHEET_KEYWORD_TRACKER            Organic keyword rank tracking, per-brand tabs — used by run-analysis.js
  */
 
