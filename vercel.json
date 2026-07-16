@@ -55,11 +55,11 @@
     },
     {
       "path": "/api/cron/sync-sqp-request",
-      "schedule": "40 3 8-20 * *"
+      "schedule": "*/10 * 8-20 * *"
     },
     {
       "path": "/api/cron/sync-sqp-process",
-      "schedule": "50 3,15 8-20 * *"
+      "schedule": "*/10 * 8-20 * *"
     },
     {
       "path": "/api/cron/sync-subscriptions",
@@ -177,7 +177,7 @@
       "maxDuration": 300
     },
     "api/cron/sync-sqp-request.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/cron/sync-sqp-process.js": {
       "maxDuration": 300
