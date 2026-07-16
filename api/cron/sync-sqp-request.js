@@ -70,48 +70,51 @@ function chunkAsinsByCharLimit(asinList, maxLen = 200) {
   return chunkBatches;
 }
 
-// Amazon's own error (confirmed via a real multi-brand run): looping
-// through every brand's batch requests back-to-back with no delay
-// exhausted the createReport quota after the first couple of brands,
-// cascading QuotaExceeded across every brand after that. Same fix as
-// sync-ad-search-terms-request.js already uses for this exact problem —
-// stagger every request, and retry with backoff on QuotaExceeded rather
-// than giving up on the first hit. Confirmed 2026-07-16.
-const STAGGER_MS = 3000;
-const MAX_RETRIES = 5;
+// Amazon's own error (confirmed via a real multi-brand run): the burst
+// allowance for createReport is small — 5 successful calls (evolis's 2
+// batches + skinuva's 1 + dearcloud's first 2) succeeded, then EVERY
+// subsequent call failed instantly with QuotaExceeded. That's a small
+// burst bucket with a slow refill, not an occasional throttle — retrying
+// the exact same call 5 times with exponential backoff (my first attempt
+// at this fix) just burns the function's entire time budget waiting on a
+// bucket that isn't going to refill fast enough to matter, which is why
+// the function then timed out outright. The real fix is architectural,
+// not a bigger backoff number: stop trying to force all 15 brands through
+// in one invocation. Fail fast on QuotaExceeded, stop the ENTIRE run
+// immediately (every brand after the first throttled one will hit the
+// exact same wall — no point burning time cycling through the rest), and
+// let the next scheduled run (much more frequent now — see vercel.json)
+// pick up wherever this one stopped, via the existing per-brand skip
+// logic. Confirmed 2026-07-16.
+const STAGGER_MS = 2000;
 let lastRequestAt = 0;
 
-async function requestReportWithRetry(dataStartTime, dataEndTime, asinBatch, label) {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const waitMs = STAGGER_MS - (Date.now() - lastRequestAt);
-    if (waitMs > 0) await sleep(waitMs);
-    lastRequestAt = Date.now();
+async function requestReport(dataStartTime, dataEndTime, asinBatch, label) {
+  const waitMs = STAGGER_MS - (Date.now() - lastRequestAt);
+  if (waitMs > 0) await sleep(waitMs);
+  lastRequestAt = Date.now();
 
-    const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-      reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
-      marketplaceIds: [process.env.SP_MARKETPLACE_ID],
-      dataStartTime,
-      dataEndTime,
-      reportOptions: { reportPeriod: 'MONTH', asin: asinBatch.join(' ') },
-    });
+  const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
+    reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
+    marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+    dataStartTime,
+    dataEndTime,
+    reportOptions: { reportPeriod: 'MONTH', asin: asinBatch.join(' ') },
+  });
 
-    if (createResp?.reportId) {
-      console.log(`[sync-sqp-request] ${label}: ${createResp.reportId}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
-      return { reportId: createResp.reportId };
-    }
-
-    const isThrottled = createResp?.errors?.[0]?.code === 'QuotaExceeded';
-    if (isThrottled && attempt < MAX_RETRIES) {
-      const backoffSec = 5 * Math.pow(2, attempt - 1); // 5s, 10s, 20s, 40s
-      console.warn(`[sync-sqp-request] ${label} throttled (attempt ${attempt}/${MAX_RETRIES}), retrying in ${backoffSec}s`);
-      await sleep(backoffSec * 1000);
-      continue;
-    }
-
-    console.error(`[sync-sqp-request] ${label} failed (attempt ${attempt}/${MAX_RETRIES}):`, JSON.stringify(createResp));
-    return { error: createResp };
+  if (createResp?.reportId) {
+    console.log(`[sync-sqp-request] ${label}: ${createResp.reportId}`);
+    return { reportId: createResp.reportId };
   }
-  return { error: { errors: [{ code: 'MaxRetriesExceeded' }] } };
+
+  const isThrottled = createResp?.errors?.[0]?.code === 'QuotaExceeded';
+  if (isThrottled) {
+    console.warn(`[sync-sqp-request] ${label} — quota exhausted, stopping this entire run (next scheduled run continues from here)`);
+    return { error: createResp, quotaExhausted: true };
+  }
+
+  console.error(`[sync-sqp-request] ${label} failed:`, JSON.stringify(createResp));
+  return { error: createResp };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -203,7 +206,27 @@ module.exports = async (req, res) => {
   const activeBrands = brands.filter(b => b.active);
   const results = [];
 
+  // Hard cap on NEW report-creation calls in this single invocation.
+  // 2 brands succeeded, then 11 hit QuotaExceeded on their FIRST attempt —
+  // that's a small burst limit already exhausted, not a stagger-timing
+  // problem. If the real refill rate is as slow as ~1/60s (common for
+  // SP-API report quotas), getting through the remaining ~20 batches would
+  // take 20+ minutes — no maxDuration setting fixes that. Capping how much
+  // NEW work happens per run and letting the existing daily schedule (see
+  // vercel.json) spread the rest across subsequent invocations is the
+  // actual fix, not a longer timeout. Progress is saved per-brand as it
+  // happens, so whatever wasn't reached this run is exactly what the next
+  // scheduled run will attempt first. Confirmed 2026-07-16.
+  const MAX_NEW_REQUESTS_PER_RUN = 3;
+  let requestsThisRun = 0;
+
   for (const brand of activeBrands) {
+    if (requestsThisRun >= MAX_NEW_REQUESTS_PER_RUN) {
+      console.log(`[sync-sqp-request] reached per-run cap of ${MAX_NEW_REQUESTS_PER_RUN} new brand(s) requested — ${brand.id} and any remaining brands will be picked up by the next scheduled run`);
+      results.push({ brand: brand.id, status: 'deferred-to-next-run' });
+      continue;
+    }
+
     const brandAsins = asinsByBrand.get(brand.id) || [];
     if (!brandAsins.length) {
       console.warn(`[sync-sqp-request] ${brand.id} — no ASINs matched via SKU prefix, skipping`);
@@ -219,17 +242,20 @@ module.exports = async (req, res) => {
 
     const batches = chunkAsinsByCharLimit(brandAsins);
     console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} — requesting for ${brandAsins.length} ASINs across ${batches.length} batch(es)`);
+    requestsThisRun++; // this brand is about to make real Amazon API calls — counts against the per-run cap regardless of whether it succeeds or fails below
 
     const reportIds = [];
     let brandFailed = false;
+    let quotaExhausted = false;
     for (let i = 0; i < batches.length; i++) {
       try {
         const label = `${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs)`;
-        const result = await requestReportWithRetry(dataStartTime, dataEndTime, batches[i], label);
+        const result = await requestReport(dataStartTime, dataEndTime, batches[i], label);
         if (!result.reportId) {
-          console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} — no reportId after retries:`, JSON.stringify(result.error));
+          console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} — no reportId:`, JSON.stringify(result.error));
           results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: result.error });
           brandFailed = true;
+          quotaExhausted = !!result.quotaExhausted;
           break;
         }
         reportIds.push(result.reportId);
@@ -239,6 +265,17 @@ module.exports = async (req, res) => {
         brandFailed = true;
         break;
       }
+    }
+
+    if (quotaExhausted) {
+      // Every remaining brand would hit the exact same exhausted bucket —
+      // no point burning the rest of this invocation's time cycling
+      // through them. Stop the whole run here; the next scheduled run
+      // (frequent — see vercel.json) picks up from this brand via the
+      // existing per-brand skip logic, since whatever succeeded before
+      // this point was already written to _meta immediately as it happened.
+      console.warn(`[sync-sqp-request] stopping run early at ${brand.id} — quota exhausted, remaining brands will be picked up next scheduled run`);
+      return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted' });
     }
     if (brandFailed) continue; // this brand's partial reportIds are NOT written to _meta — next run retries this brand cleanly
 
