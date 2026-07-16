@@ -76,16 +76,46 @@ async function ensureTab(sheetId, tabName, headers) {
 
   // Get existing sheets
   const meta = await sheetsGet(token, `/${sheetId}?fields=sheets.properties.title`);
-  const exists = (meta.sheets || []).some(s => s.properties.title === tabName);
+  const titles = (meta.sheets || []).map(s => s.properties.title);
+  const exists = titles.some(t => t === tabName);
+
+  // 2026-07-16 — diagnostic for the "addSheet says it already exists, but
+  // the exists-check above said it didn't" contradiction: since both the
+  // check and the create target the exact same sheetId in the exact same
+  // call, the only way to get that contradiction is either (a) `titles`
+  // didn't actually contain everything Google has, or (b) it did contain
+  // the right tab but under a title that LOOKS like "revenue" without
+  // being === to it — a trailing space, a non-breaking space, a lookalike
+  // unicode character, anything invisible in the Sheets UI's tab strip.
+  // Logging the exact list + character codes here means the next failure
+  // (if there is one) is diagnosable from Vercel logs directly instead of
+  // needing another guess-and-check round.
+  if (!exists) {
+    const targetCodes = tabName.split('').map(c => c.charCodeAt(0)).join(',');
+    console.log(`[sheets] ensureTab("${tabName}") — not found in titles: ${JSON.stringify(titles)} — target char codes: [${targetCodes}]`);
+  }
 
   if (!exists) {
     // Add the sheet tab
-    await sheetsPost(token, `/${sheetId}:batchUpdate`, {
-      requests: [{ addSheet: { properties: { title: tabName } } }],
-    });
-    // Write headers on row 1
-    await writeRow(sheetId, tabName, 1, headers, token);
-    console.log(`[sheets] created tab "${tabName}" in sheet ${sheetId}`);
+    try {
+      await sheetsPost(token, `/${sheetId}:batchUpdate`, {
+        requests: [{ addSheet: { properties: { title: tabName } } }],
+      });
+      // Write headers on row 1
+      await writeRow(sheetId, tabName, 1, headers, token);
+      console.log(`[sheets] created tab "${tabName}" in sheet ${sheetId}`);
+    } catch (err) {
+      // 2026-07-16 — self-heal against the exact contradiction above: if
+      // Google's own error says this tab already exists, that's ground
+      // truth — trust it over our own (apparently wrong) pre-check rather
+      // than failing the whole sync over a tab that's actually fine. Any
+      // OTHER addSheet failure still throws normally.
+      if (/already exists/i.test(err.message)) {
+        console.warn(`[sheets] addSheet said "${tabName}" already exists (contradicts the exists-check above — see titles logged) — continuing as if it already existed.`);
+      } else {
+        throw err;
+      }
+    }
   } else {
     // Tab already exists — check its actual header row against what this
     // caller expects. Doesn't fix anything, just makes drift loud.
