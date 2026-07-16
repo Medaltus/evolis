@@ -6688,7 +6688,7 @@ async function loadAuditResultsFromSheet() {
   // constant to make every chart's axis labels bigger in the exported PDF;
   // it's now fully decoupled from the live dashboard's own 10px tick size.
   const PDFX_CARD_WIDTH_PX = 686; // matches pdfxChartBlock's own target display width
-  const PDFX_CHART_AXIS_TARGET_PX = 16; // effective size at PDFX_CARD_WIDTH_PX display width — was landing at ~10 before this fix
+  const PDFX_CHART_AXIS_TARGET_PX = 12; // effective size at PDFX_CARD_WIDTH_PX display width — was landing at ~10 before this fix; 16 confirmed working but too big, dropping to 12 as a starting point
   function pdfxWithScaledAxisFonts(options, captureWidthPx) {
     const fontScale = captureWidthPx / PDFX_CARD_WIDTH_PX;
     const scaledSize = Math.max(6, Math.round(PDFX_CHART_AXIS_TARGET_PX * fontScale));
