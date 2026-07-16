@@ -428,6 +428,16 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .ppc-opp-card.summary-type .ppc-opp-body{color:var(--muted);font-size:12px;}
 .kw-flag-wasted{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;color:var(--danger);background:rgba(219,55,45,.08);padding:2px 7px;border-radius:8px;margin-left:4px;}
 .ppc-opp-hd{padding:14px 18px 10px;background:var(--bg);border-bottom:1px solid var(--border);}
+/* 2026-07-16: header previously used the same var(--bg) as the page itself
+   — the intended "shaded title area" was invisible because it wasn't
+   actually shaded relative to anything around it. Tinting each card's
+   header with a light wash of its own accent color (matching the left
+   border already in place) makes it stand out AND reinforces which type of
+   card it is at a glance. Per Jaclyn 2026-07-16. */
+.ppc-opp-card.action-type .ppc-opp-hd{background:rgba(219,55,45,.07);}
+.ppc-opp-card.opportunity-type .ppc-opp-hd{background:rgba(200,125,47,.08);}
+.ppc-opp-card.win-type .ppc-opp-hd{background:rgba(36,233,163,.08);}
+.ppc-opp-card.summary-type .ppc-opp-hd{background:rgba(107,123,162,.08);}
 .ppc-opp-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;}
 .ppc-opp-badge.urgent{color:var(--danger);}
 .ppc-opp-badge.high{color:var(--warn);}
@@ -7074,37 +7084,46 @@ async function loadAuditResultsFromSheet() {
       const wrapper = liveCanvas.parentElement;
       const dashboardHeightPx = wrapper ? wrapper.getBoundingClientRect().height : originalHeightPx;
 
-      // 2026-07-15: the naive fix here — just reusing dashboardHeightPx as
-      // the PDF <img>'s CSS height while the captured image still had its
-      // own much flatter native aspect ratio (the live canvas is far wider
-      // than the fixed 686px PDF card) — visibly stretched/distorted the
-      // chart, because that forces a browser to non-uniformly scale a flat
-      // image into a tall box. An earlier attempt to fix THAT by mutating
-      // the wrapper's CSS height and calling chart.resize() with no
-      // arguments also came out distorted.
+      // 2026-07-16: rendering height-matched to the dashboard exactly (100%)
+      // fixed the earlier distortion, but exposed a real, separate issue —
+      // Chart.js computes each line's tension-based curve using the ACTUAL
+      // pixel y-deltas between points, which are much larger on a 3x-taller
+      // capture canvas than on the live dashboard's own flat one, even
+      // though x-spacing (width) is unchanged. Same tension VALUE (0.3), but
+      // a very different-looking curve — much more exaggerated bulging —
+      // purely because of the aspect ratio it's drawn at. This isn't
+      // something the earlier resize fix could address; it's a separate,
+      // deeper effect of deliberately rendering taller than the chart's
+      // native aspect. Confirmed empirically by rendering both versions
+      // side-by-side with the real production config.
       //
-      // Root-caused via an isolated Chart.js+canvas test: chart.resize(w, h)
-      // called WITH BOTH explicit numeric arguments produces a byte-for-byte
-      // identical render to building a chart at that size from scratch — a
-      // genuine re-render, not a stretch — and resizing back afterward
-      // restores exactly. The no-argument call relies on Chart.js
-      // auto-detecting size from the container, which is where the
-      // distortion actually came from.
-      //
-      // So: re-render the live chart, synchronously, at the exact
-      // width:height ratio it'll be shown at in the PDF (686:dashboardHeightPx)
-      // — scaled up to the chart's own real capture width so resolution
-      // stays sharp — capture, then resize back to its original on-screen
-      // size so the live dashboard is left exactly as it was. Per Jaclyn
-      // 2026-07-15.
-      const captureHeightPx = Math.round(originalWidthPx * (dashboardHeightPx / PDFX_CARD_WIDTH_PX));
+      // Two changes, tuned together against that same comparison: (1) knock
+      // the height target down slightly (0.9x) — also addresses "I'd like
+      // it slightly less tall" directly, and reduces how extreme the aspect
+      // change is in the first place; (2) temporarily reduce each line
+      // dataset's tension during capture only (0.3 → 0.15) to counteract
+      // the taller-aspect curve exaggeration — restored immediately after,
+      // never touching how the live dashboard itself looks. Per Jaclyn
+      // 2026-07-16.
+      const PDFX_HEIGHT_FACTOR = 0.9;
+      const PDFX_CAPTURE_TENSION = 0.15;
+      const captureHeightPx = Math.round(originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX));
       liveChart.resize(originalWidthPx, captureHeightPx);
+
+      const origTensions = (liveChart.data && liveChart.data.datasets)
+        ? liveChart.data.datasets.map(function (ds) { return ds.tension; })
+        : [];
+      if (liveChart.data && liveChart.data.datasets) {
+        liveChart.data.datasets.forEach(function (ds) {
+          if (typeof ds.tension === 'number') ds.tension = PDFX_CAPTURE_TENSION;
+        });
+      }
 
       const targetW = originalWidthPx;
       const rawDataInfo = liveChart.data && liveChart.data.datasets
         ? liveChart.data.datasets.map(function (ds) { return (ds.label || '?') + ':' + (ds.data ? ds.data.length : 0) + ' total, ' + (ds.data ? ds.data.filter(function (v) { return v != null; }).length : 0) + ' non-null'; }).join(' | ')
         : 'no datasets';
-      console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '— re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx) + ' in the PDF) — data:', rawDataInfo);
+      console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '(x' + PDFX_HEIGHT_FACTOR + ' factor) — re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx * PDFX_HEIGHT_FACTOR) + ' in the PDF) — tension override:', PDFX_CAPTURE_TENSION, '— data:', rawDataInfo);
 
       let img = '';
       const hasScales = !!(liveChart.options && liveChart.options.scales);
@@ -7116,8 +7135,8 @@ async function loadAuditResultsFromSheet() {
           // so origScales stays a pristine reference to swap back in below.
           const scaled = pdfxWithScaledAxisFonts(liveChart.options, targetW);
           liveChart.options.scales = scaled.scales;
-          liveChart.update('none'); // synchronous, no animation
         }
+        liveChart.update('none'); // synchronous, no animation — picks up both the scale/font change above and the tension change above
         img = liveChart.toBase64Image('image/png');
       } catch (e) {
         console.warn('[pdf-export] scaled-font capture failed for', varName, '— falling back to whatever is currently rendered:', e.message);
@@ -7125,11 +7144,16 @@ async function loadAuditResultsFromSheet() {
       } finally {
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
-          liveChart.update('none');
         }
+        if (liveChart.data && liveChart.data.datasets) {
+          liveChart.data.datasets.forEach(function (ds, i) {
+            if (typeof origTensions[i] === 'number') ds.tension = origTensions[i];
+          });
+        }
+        liveChart.update('none');
       }
 
-      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height, displayHeightPx: dashboardHeightPx };
+      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height, displayHeightPx: dashboardHeightPx * PDFX_HEIGHT_FACTOR };
 
       // Restore the live dashboard's own chart to its original size —
       // explicit numeric resize again, same validated synchronous technique,
