@@ -5559,6 +5559,30 @@ async function ppcLoadSearchTermPanels() {
     const { year: latestY, month: latestM } = ovGetLastFullMonth();
     let prevY = latestY, prevM = latestM - 1; if (prevM === 0) { prevM = 12; prevY--; }
 
+    // 2026-07-16: Opportunities always showed "None this month" no matter
+    // what the real numbers were, even though Wasted Spend/Top Performing
+    // (built from cost/sales, not purchases) worked fine — narrowed it down
+    // via the Ad Search Terms sheet screenshot: the "purchases" column
+    // there is showing $0.00 / $1.00 / $2.00 (currency-formatted), while
+    // cost and sales in the same rows show plain numbers with no $. Google
+    // Sheets CSV export writes each cell's DISPLAYED text, formatting
+    // included — parseInt("$1.00", 10) returns NaN (it doesn't accept a
+    // leading $), and NaN || 0 silently falls back to 0. So `purchases` was
+    // being read as zero on every single row regardless of the real count,
+    // which made cvr always compute to 0 and the >= 15 filter reject
+    // everything. Stripping non-numeric characters before parsing fixes it
+    // regardless of whether the sheet's cell formatting ever gets
+    // corrected — applied to every numeric field here defensively, not
+    // just purchases, so the same silent-zero failure can't recur on
+    // cost/sales/clicks/impressions if their formatting ever changes too.
+    // Per Jaclyn 2026-07-16.
+    function ppcNum(val) {
+      if (val == null) return 0;
+      const cleaned = String(val).replace(/[^0-9.\-]/g, '');
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? 0 : n;
+    }
+
     function groupByTerm(y, m) {
       const groups = {};
       rows.forEach(r => {
@@ -5567,17 +5591,19 @@ async function ppcLoadSearchTermPanels() {
         if (!term) return;
         if (!groups[term]) groups[term] = { clicks: 0, cost: 0, sales: 0, purchases: 0, impressions: 0 };
         const g = groups[term];
-        g.clicks      += parseInt(r.clicks, 10) || 0;
-        g.cost        += parseFloat(r.cost) || 0;
-        g.sales       += parseFloat(r.sales) || 0;
-        g.purchases   += parseInt(r.purchases, 10) || 0;
-        g.impressions += parseInt(r.impressions, 10) || 0;
+        g.clicks      += ppcNum(r.clicks);
+        g.cost        += ppcNum(r.cost);
+        g.sales       += ppcNum(r.sales);
+        g.purchases   += ppcNum(r.purchases);
+        g.impressions += ppcNum(r.impressions);
       });
       return groups;
     }
 
     const curr = groupByTerm(latestY, latestM);
     const prev = groupByTerm(prevY, prevM);
+    console.log('[PPC][qa] latest month:', latestY + '-' + latestM, '— terms with data:', Object.keys(curr).length, '— sample purchases values:', Object.values(curr).slice(0, 5).map(g => g.purchases));
+    console.log('[PPC][qa] prior month (for CPC Rising):', prevY + '-' + prevM, '— terms with data:', Object.keys(prev).length, (Object.keys(prev).length === 0 ? '— NO PRIOR-MONTH ROWS AT ALL: CPC Rising has nothing to compare against — that\'s a data gap in the sheet, not a bug in this code' : ''));
 
     const currList = Object.entries(curr).map(([term, g]) => ({
       term, ...g,
@@ -5605,6 +5631,7 @@ async function ppcLoadSearchTermPanels() {
     // Opportunities — high CVR (≥15%, category benchmark floor), sorted by CVR desc
     const opportunities = currList.filter(t => t.purchases > 0 && t.cvr >= 15)
       .sort((a, b) => b.cvr - a.cvr).slice(0, N);
+    console.log('[PPC][qa] Opportunities — terms with purchases > 0:', currList.filter(t => t.purchases > 0).length, '— of those, cvr >= 15:', opportunities.length);
     ppcRenderPanel('st-opp-body', opportunities, t =>
       `<tr><td>${t.term}</td><td style="color:#1db88a;font-weight:600;">${pct(t.cvr)}</td><td>${money(t.cost)}</td></tr>`);
 
@@ -5616,6 +5643,7 @@ async function ppcLoadSearchTermPanels() {
       .map(t => ({ ...t, prevCpc: prevCpcByTerm[t.term], delta: t.cpc - prevCpcByTerm[t.term] }))
       .filter(t => t.delta > 0)
       .sort((a, b) => b.delta - a.delta).slice(0, N);
+    console.log('[PPC][qa] CPC Rising — terms overlapping both months with clicks:', currList.filter(t => t.clicks > 0 && prevCpcByTerm[t.term] != null).length, '— of those, CPC increased:', cpcRising.length);
     ppcRenderPanel('st-cpc-body', cpcRising, t =>
       `<tr><td>${t.term}</td><td>${money(t.prevCpc)}</td><td style="color:var(--danger);font-weight:600;">${money(t.cpc)}</td></tr>`);
 
