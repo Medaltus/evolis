@@ -63,14 +63,14 @@ module.exports = async (req, res) => {
   const ts  = now.toISOString();
   const safeBefore = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
 
-  if (!sheets.eventsCalendar) {
-    return res.status(500).json({ error: 'sheets.eventsCalendar is not configured — add masterSkuList/eventsCalendar to config/sheets.js pointing at SHEET_MASTER_SKU_LIST' });
+  if (!sheets.masterSkuList) {
+    return res.status(500).json({ error: 'sheets.masterSkuList is not configured in config/sheets.js' });
   }
 
   // ── 1. Read the Events tab ──────────────────────────────────────────────
   let eventRows;
   try {
-    eventRows = await readRows(sheets.eventsCalendar, EVENTS_TAB);
+    eventRows = await readRows(sheets.masterSkuList, EVENTS_TAB);
   } catch (err) {
     console.error('[sync-event-orders-request] failed to read Events tab:', err.message);
     return res.status(500).json({ error: 'Failed to read Events tab', detail: err.message });
