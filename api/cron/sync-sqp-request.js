@@ -221,12 +221,6 @@ module.exports = async (req, res) => {
   let requestsThisRun = 0;
 
   for (const brand of activeBrands) {
-    if (requestsThisRun >= MAX_NEW_REQUESTS_PER_RUN) {
-      console.log(`[sync-sqp-request] reached per-run cap of ${MAX_NEW_REQUESTS_PER_RUN} new brand(s) requested — ${brand.id} and any remaining brands will be picked up by the next scheduled run`);
-      results.push({ brand: brand.id, status: 'deferred-to-next-run' });
-      continue;
-    }
-
     const brandAsins = asinsByBrand.get(brand.id) || [];
     if (!brandAsins.length) {
       console.warn(`[sync-sqp-request] ${brand.id} — no ASINs matched via SKU prefix, skipping`);
@@ -234,72 +228,92 @@ module.exports = async (req, res) => {
       continue;
     }
 
-    if (metaMap[`report_batch_count_${brand.id}_${targetMonth}`] && !req.query.force) {
-      console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} already requested — skipping. Pass ?force=true to request fresh ones anyway.`);
+    const batches = chunkAsinsByCharLimit(brandAsins);
+    const expectedBatchCount = batches.length;
+
+    // report_batch_count now means TOTAL EXPECTED batches (set up front),
+    // not "how many succeeded" — resuming correctly requires knowing how
+    // many are still missing, not just whether the brand was ever attempted.
+    const storedBatchCount = parseInt(metaMap[`report_batch_count_${brand.id}_${targetMonth}`] || '0', 10);
+    if (storedBatchCount && storedBatchCount !== expectedBatchCount && !req.query.force) {
+      console.warn(`[sync-sqp-request] ${brand.id} ${targetMonth} — stored batch count (${storedBatchCount}) doesn't match current ASIN-derived count (${expectedBatchCount}), catalog may have changed since the last attempt. Pass ?force=true to restart this brand cleanly.`);
+    }
+    metaMap[`report_batch_count_${brand.id}_${targetMonth}`] = String(expectedBatchCount);
+
+    if (metaMap[`report_status_${brand.id}`] === 'REQUESTED' && !req.query.force) {
+      console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} already fully requested — skipping. Pass ?force=true to request fresh ones anyway.`);
       results.push({ brand: brand.id, status: 'skipped' });
       continue;
     }
 
-    const batches = chunkAsinsByCharLimit(brandAsins);
-    console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} — requesting for ${brandAsins.length} ASINs across ${batches.length} batch(es)`);
-    requestsThisRun++; // this brand is about to make real Amazon API calls — counts against the per-run cap regardless of whether it succeeds or fails below
-
-    const reportIds = [];
-    let brandFailed = false;
+    let batchesDoneThisRun = 0;
     let quotaExhausted = false;
-    for (let i = 0; i < batches.length; i++) {
-      try {
-        const label = `${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs)`;
-        const result = await requestReport(dataStartTime, dataEndTime, batches[i], label);
-        if (!result.reportId) {
-          console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} — no reportId:`, JSON.stringify(result.error));
-          results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: result.error });
-          brandFailed = true;
-          quotaExhausted = !!result.quotaExhausted;
-          break;
-        }
-        reportIds.push(result.reportId);
-      } catch (err) {
-        console.error(`[sync-sqp-request] ${brand.id} ${targetMonth} batch ${i} failed:`, err.message);
-        results.push({ brand: brand.id, status: 'error', batchIndex: i, detail: err.message });
-        brandFailed = true;
+    let hardError = null;
+
+    for (let i = 0; i < expectedBatchCount; i++) {
+      // Resume support: a batch already recorded (from this run's earlier
+      // brands, or a PRIOR run that got partway through this same brand)
+      // is never re-requested — this is what makes a large brand like
+      // dearcloud (6 batches, more than one run's quota capacity) able to
+      // actually finish over several runs instead of restarting from
+      // batch 0 forever. Confirmed 2026-07-16.
+      if (metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`] && !req.query.force) continue;
+
+      if (requestsThisRun >= MAX_NEW_REQUESTS_PER_RUN) {
+        console.log(`[sync-sqp-request] reached per-run cap of ${MAX_NEW_REQUESTS_PER_RUN} new request(s) — ${brand.id} batch ${i} and everything after it will be picked up by the next scheduled run`);
+        quotaExhausted = true; // treat the same as quota exhaustion: stop the WHOLE run, not just this brand — every subsequent call would hit the same cap/wall
         break;
+      }
+
+      const label = `${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs)`;
+      let result;
+      try {
+        result = await requestReport(dataStartTime, dataEndTime, batches[i], label);
+      } catch (err) {
+        hardError = err.message;
+        break;
+      }
+      requestsThisRun++;
+
+      if (!result.reportId) {
+        if (result.quotaExhausted) { quotaExhausted = true; break; }
+        hardError = JSON.stringify(result.error);
+        break;
+      }
+
+      // Write THIS ONE batch immediately — not accumulated with the rest
+      // of the brand's batches. This is what actually fixes the
+      // dearcloud problem: previously, if batch 5 of 6 failed, batches
+      // 0-4's already-successful reportIds were discarded along with it.
+      metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`] = result.reportId;
+      batchesDoneThisRun++;
+      try {
+        const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+        const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+        await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+      } catch (err) {
+        console.error(`[sync-sqp-request] ${brand.id} batch ${i} succeeded with Amazon but failed to write meta:`, err.message);
       }
     }
 
-    if (quotaExhausted) {
-      // Every remaining brand would hit the exact same exhausted bucket —
-      // no point burning the rest of this invocation's time cycling
-      // through them. Stop the whole run here; the next scheduled run
-      // (frequent — see vercel.json) picks up from this brand via the
-      // existing per-brand skip logic, since whatever succeeded before
-      // this point was already written to _meta immediately as it happened.
-      console.warn(`[sync-sqp-request] stopping run early at ${brand.id} — quota exhausted, remaining brands will be picked up next scheduled run`);
-      return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted' });
+    // Is this brand now fully done (every batch index 0..expectedBatchCount-1 has a reportId)?
+    const allBatchesPresent = Array.from({ length: expectedBatchCount }, (_, i) => !!metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`]).every(Boolean);
+    if (allBatchesPresent) {
+      metaMap[`report_status_${brand.id}`]     = 'REQUESTED';
+      metaMap[`last_requested_at_${brand.id}`] = ts;
+      try {
+        const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+        const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+        await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+      } catch (err) { /* best-effort — individual batches were already saved above */ }
+      results.push({ brand: brand.id, status: 'requested', batchCount: expectedBatchCount, newBatchesThisRun: batchesDoneThisRun });
+    } else {
+      results.push({ brand: brand.id, status: 'partial', batchesDoneThisRun, totalBatches: expectedBatchCount, reason: hardError || (quotaExhausted ? 'quota/cap reached' : 'in progress') });
     }
-    if (brandFailed) continue; // this brand's partial reportIds are NOT written to _meta — next run retries this brand cleanly
 
-    reportIds.forEach((id, i) => { metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`] = id; });
-    metaMap[`report_batch_count_${brand.id}_${targetMonth}`] = String(reportIds.length);
-    metaMap[`report_status_${brand.id}`]      = 'REQUESTED';
-    metaMap[`last_requested_at_${brand.id}`]  = ts;
-    results.push({ brand: brand.id, status: 'requested', batchCount: reportIds.length });
-
-    // Write immediately after EACH brand succeeds, not accumulated and
-    // written once after the whole loop — with retries potentially taking
-    // up to ~75s per throttled brand across many brands, a mid-run Vercel
-    // timeout would otherwise lose progress for brands that had already
-    // succeeded earlier in this same invocation. Confirmed 2026-07-16.
-    try {
-      const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
-      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
-      await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
-    } catch (err) {
-      console.error(`[sync-sqp-request] ${brand.id} — requested successfully but failed to write meta:`, err.message);
-      // Report was successfully requested with Amazon at this point — flag
-      // it in the results, but keep going with the remaining brands rather
-      // than aborting the whole run over one sheet-write hiccup.
-      results[results.length - 1] = { brand: brand.id, status: 'requested-but-meta-write-failed', batchCount: reportIds.length, metaWriteError: err.message };
+    if (quotaExhausted) {
+      console.warn(`[sync-sqp-request] stopping run early at ${brand.id} — quota/cap reached, remaining work will be picked up next scheduled run`);
+      return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted' });
     }
   }
 
