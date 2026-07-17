@@ -32,7 +32,7 @@ const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
-  'unit_count', 'sku', 'asin', 'brand', 'last_updated',
+  'unit_count', 'sku', 'asin', 'brand', 'last_updated', 'year',
 ];
 
 const META_TAB     = '_meta_events';
@@ -135,9 +135,12 @@ module.exports = async (req, res) => {
       const orderId = row['amazon-order-id'] || row['order-id'] || '';
       if (!orderId) continue;
 
+      const orderDate = (row['purchase-date'] || '').slice(0, 10);
+      const year = orderDate ? parseInt(orderDate.slice(0, 4), 10) : '';
+
       outRows.push([
         orderId,
-        (row['purchase-date'] || '').slice(0, 10),
+        orderDate,
         row['order-status'] || '',
         round2(parseFloat(row['item-price'] || '0')),
         row['promotion-ids'] || '',
@@ -151,14 +154,33 @@ module.exports = async (req, res) => {
         row['asin'] || '',
         matchedBrand ? matchedBrand.id : 'unknown',
         nowEst,
+        year,
       ]);
     }
 
+    // Upsert keyed by order_id+sku, NOT a full replace — this tab now
+    // accumulates every year's occurrence of this event as rows, so a run
+    // for one year must never wipe out rows from a different year that
+    // are already sitting in the same tab. (Previously this was a full
+    // replaceRows per run, which is exactly why 2025 and 2026 ended up in
+    // separate tabs instead of one — full-replace had no way to coexist
+    // with a prior year's data in the same tab.)
     try {
       const token = await ensureTab(sheets.orders, tabName, HEADERS);
-      await replaceRows(sheets.orders, tabName, HEADERS, outRows, token);
-      console.log(`[sync-event-orders-process] ${tabName} — wrote ${outRows.length} rows (full replace)`);
-      results.push({ tab: tabName, status: 'ok', rows: outRows.length });
+      const existingRaw = await readRows(sheets.orders, tabName);
+      const key = r => `${Array.isArray(r) ? r[0] : r.order_id}||${Array.isArray(r) ? r[11] : r.sku}`;
+
+      const merged = new Map();
+      (existingRaw || []).forEach(r => {
+        const rowArr = Array.isArray(r) ? r : HEADERS.map(h => r[h] ?? '');
+        merged.set(key(rowArr), rowArr);
+      });
+      outRows.forEach(r => merged.set(key(r), r));
+
+      const finalRows = Array.from(merged.values());
+      await replaceRows(sheets.orders, tabName, HEADERS, finalRows, token);
+      console.log(`[sync-event-orders-process] ${tabName} — upserted ${outRows.length} rows this run, ${finalRows.length} total rows across all years`);
+      results.push({ tab: tabName, status: 'ok', rowsThisRun: outRows.length, totalRows: finalRows.length });
 
       metaMap[`processed_${tabName}`] = 'true';
     } catch (err) {
