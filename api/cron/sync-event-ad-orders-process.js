@@ -118,7 +118,8 @@ module.exports = async (req, res) => {
         const adUnits       = parseInt(r.unitsSoldClicks14d || 0, 10) || 0;
         const sales         = round2(parseFloat(r.sales14d || 0) || 0);
         const acos          = sales > 0 ? round2((spend / sales) * 100) : '';
-        const purchaseDate  = r.date || ''; // present now that request.js uses timeUnit=DAILY
+        const purchaseDate  = r.date || r.reportDate || ''; // now explicitly requested via columns — see debug check before trusting this
+        if (!purchaseDate) console.warn(`[sync-event-ad-orders-process] ${tabName} — row for ${asin} has no date field even after requesting it explicitly. Raw keys: ${Object.keys(r).join(',')}`);
         return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now, purchaseDate];
       });
 
