@@ -6601,7 +6601,7 @@ async function runListingAudit() {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error('HTTP ' + res.status + ': ' + (errBody.error || JSON.stringify(errBody)));
+          throw new Error('HTTP ' + res.status + ': ' + (errBody.error || 'unknown error') + (errBody.detail ? ' — ' + errBody.detail : ''));
         }
         const data = await res.json();
         totalSkus += (data.skuCount || 0);
