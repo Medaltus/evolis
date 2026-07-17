@@ -848,6 +848,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <div class="topbar-right">
       <div class="pdf-events-picker" id="pdf-events-picker" style="display:none;font-size:11px;color:var(--muted);align-items:center;gap:8px;">
         <span>Include in PDF:</span>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-strategy" style="margin:0;"> Strategy</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-bss" style="margin:0;"> Big Spring Sale</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-pd" style="margin:0;"> Prime Day</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-pbdd" style="margin:0;"> PBDD</label>
@@ -7944,8 +7945,16 @@ async function loadAuditResultsFromSheet() {
     _walmartChart: 'chart-walmart',
     _investChart: 'chart-invest',
     _impressChart: 'chart-impressions',
-    _snsChart: 'chart-sns',
-    _pdTopSellersChart: 'pd-chart-top-sellers'
+    _snsChart: 'chart-sns'
+    // _pdTopSellersChart deliberately NOT registered here — reverted
+    // 2026-07-18 per Jaclyn. Adding it caused the whole shared force-
+    // ancestors-visible capture pipeline (the one that took a long time to
+    // get right — see the extensive notes throughout this file) to also
+    // force the entire Events page hierarchy visible during every export,
+    // which broke rendering for the other charts too. Prime Day's event
+    // page will show the "chart not yet loaded" fallback text in the PDF
+    // for now rather than the real chart image; its KPI numbers still
+    // export fine since those come from plain DOM text, not this pipeline.
   };
   let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages() — now {varName: {img, width, height}}
 
@@ -8501,6 +8510,64 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  // Static content — mirrors the Strategy tab's own text (#ev-strategy).
+  // Hardcoded here rather than read from the DOM since it's a fixed
+  // playbook, not data; if the Strategy tab copy changes, update both.
+  function pdfxStrategyItem(title, text) {
+    return '<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:2px;">' + pdfxEscape(title) + '</div>' +
+      '<div style="font-size:10.5px;color:#48557a;line-height:1.5;">' + text + '</div></div>';
+  }
+  function pdfxStrategyPhase(numLabel, title, pillLabel, itemsHtml) {
+    return '<div class="pdfx-card" style="margin-bottom:14px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+        '<div><span style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">' + pdfxEscape(numLabel) + '</span> ' +
+        '<span style="font-size:13px;font-weight:700;color:var(--navy);">' + pdfxEscape(title) + '</span></div>' +
+        '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--green);background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:2px 8px;">' + pdfxEscape(pillLabel) + '</span>' +
+      '</div>' + itemsHtml + '</div>';
+  }
+  function buildStrategyPage(monthYear) {
+    const leadUp = pdfxStrategyPhase('Phase 01', 'Lead Up', 'Prepare',
+      pdfxStrategyItem('Listings &amp; SEO', 'Refresh listing content, images, and A+ Content to ensure <strong>maximum search visibility and conversion readiness</strong> before traffic surges.') +
+      pdfxStrategyItem('Advertising', 'Gradually <strong>increase budgets 1.5–3x and bids 10%+</strong> in the 7–14 days prior to warm the algorithm and activate event-specific campaigns.') +
+      pdfxStrategyItem('Promotions &amp; Pricing', 'Finalize Prime Exclusive Discounts and <strong>confirm all deals are submitted, eligible, and approved</strong> with sufficient lead time.') +
+      pdfxStrategyItem('Inventory &amp; Operations', 'Confirm FBA stock coverage, inbound timelines, and <strong>buffer inventory levels to prevent sell-outs</strong> during peak demand.') +
+      pdfxStrategyItem('Creative &amp; Storefront', 'Upload refreshed imagery and <strong>add promotional banners and curated storefront landing pages</strong> optimized for high-traffic event conditions.') +
+      pdfxStrategyItem('Content Health Check', 'Resolve any listing suppressions, Q&amp;A gaps, and negative review flags <strong>before traffic surges</strong> — a suppressed listing during an event is a direct missed opportunity.')
+    );
+    const during = pdfxStrategyPhase('Phase 02', 'During', 'Execute',
+      pdfxStrategyItem('Real-Time Ad Optimization', '<strong>Increase budgets 2–4x and bids 20%+</strong> as CPCs rise. Reallocate spend to top performers in real time across all ad placements.') +
+      pdfxStrategyItem('Deal &amp; Buy Box Monitoring', 'Ensure all discounts are active and the <strong>Buy Box is stable</strong>. Resolve any pricing issues immediately — lost Buy Box is direct lost revenue.') +
+      pdfxStrategyItem('Listing &amp; Inventory Health', 'Monitor for suppressed listings and <strong>low-inventory alerts in real time</strong> to prevent conversion interruptions across the event window.') +
+      pdfxStrategyItem('Performance Tracking', 'Watch sessions, conversion rate, ACOS, and sell-through velocity continuously. <strong>Make decisions from live data</strong>, not post-event analysis.')
+    );
+    const leadOut = pdfxStrategyPhase('Phase 03', 'Lead Out', 'Capitalize',
+      pdfxStrategyItem('Retargeting &amp; Display', 'Run Sponsored Display ads to <strong>re-engage shoppers who viewed but didn\u2019t convert</strong> during the event window.') +
+      pdfxStrategyItem('Listing Refinement', 'Update keywords and creatives using <strong>what actually converted</strong> during the event — real data is the best optimization input.') +
+      pdfxStrategyItem('Brand Halo Expansion', 'Capitalize on new-to-brand traffic with <strong>cross-sell and complementary product campaigns</strong> to increase basket size.') +
+      pdfxStrategyItem('Inventory Replenishment', 'Adjust restock strategies based on <strong>post-event velocity and new customer acquisition rates</strong>.') +
+      pdfxStrategyItem('Review Acceleration', 'Activate follow-up sequences to drive <strong>organic review growth from event purchasers</strong> — the highest-quality acquisition window of the year.') +
+      pdfxStrategyItem('Comprehensive Reporting', 'Deliver clear post-event analysis — <strong>what worked, what didn\u2019t, and how to capitalize</strong> on gains for the next event cycle.')
+    );
+    const outlook = '<div class="pdfx-card" style="background:var(--sand);border:none;">' +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy);margin-bottom:6px;">Strategic Outlook</div>' +
+      '<div style="font-size:11.5px;color:#48557a;line-height:1.6;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
+      '</div>';
+
+    const page1 = '<div class="pdfx-page"><div class="pdfx-inner">' +
+      pdfxHeaderBand(monthYear, 'Events') +
+      '<div class="pdfx-chlabel">Event Strategy</div>' +
+      leadUp + during +
+      pdfxFooter(monthYear) +
+      '</div></div>';
+    const page2 = '<div class="pdfx-page"><div class="pdfx-inner">' +
+      pdfxHeaderBand(monthYear, 'Events') +
+      '<div class="pdfx-chlabel">Event Strategy (continued)</div>' +
+      leadOut + outlook +
+      pdfxFooter(monthYear) +
+      '</div></div>';
+    return page1 + page2;
+  }
+
   // Generic across all 4 event tabs. Only Prime Day has real KPI cards +
   // chart built so far — hasKpis detects that by checking whether the KPI
   // element actually exists in the DOM, so Big Spring Sale/PBDD/BFCM pages
@@ -8568,6 +8635,7 @@ async function loadAuditResultsFromSheet() {
       // whether page load already started them — always resolves once the
       // chart is actually built.
       const includeEvents = {
+        strategy: !!document.getElementById('pdf-include-strategy') && document.getElementById('pdf-include-strategy').checked,
         bss:  !!document.getElementById('pdf-include-bss')  && document.getElementById('pdf-include-bss').checked,
         pd:   !!document.getElementById('pdf-include-pd')   && document.getElementById('pdf-include-pd').checked,
         pbdd: !!document.getElementById('pdf-include-pbdd') && document.getElementById('pdf-include-pbdd').checked,
@@ -8595,7 +8663,6 @@ async function loadAuditResultsFromSheet() {
       // loaded, just re-verify," not "actually wait for a cold fetch,"
       // which is what this was silently doing every time before today.
       const expectedCharts = ['_amazonChart', '_webChart', '_walmartChart', '_investChart', '_impressChart', '_snsChart'];
-      if (includeEvents.pd) expectedCharts.push('_pdTopSellersChart');
       const pollStart = Date.now();
       while (Date.now() - pollStart < 12000 && expectedCharts.some(v => !window[v])) {
         await new Promise(r => setTimeout(r, 150));
@@ -8621,6 +8688,7 @@ async function loadAuditResultsFromSheet() {
       }
 
       const eventPages = [
+        includeEvents.strategy ? buildStrategyPage(monthYear) : '',
         includeEvents.bss  ? buildEventPage('bss',  'Big Spring Sale',             monthYear) : '',
         includeEvents.pd   ? buildEventPage('pd',   'Prime Day',                   monthYear) : '',
         includeEvents.pbdd ? buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear) : '',
