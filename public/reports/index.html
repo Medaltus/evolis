@@ -956,39 +956,34 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- Executive summary — two columns like the PDF -->
       <div class="card" style="margin-bottom:16px;">
-        <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px;">Executive Summary</div>
-        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="exec-summary-headline">Organic Performance Offsets Slowdown as Inventory Mix Evolves</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="staging-note" id="ov-report-status">◎ Draft</span>
+            <button class="btn-edit" id="ov-exec-edit-btn">✏️ Edit</button>
+            <button class="btn-approve" id="ov-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+          </div>
+        </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="exec-summary-headline">Loading…</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
-          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="exec-summary-left">May performance demonstrated improving sales stability despite continued inventory constraints across portions of the catalog. Amazon unit sales increased modestly month over month, driven primarily by organic demand, while website performance rebounded with meaningful gains in both units sold and orders.<br><br>While advertising activity moderated during the month, organic sales momentum strengthened, particularly on Amazon where organic units increased 8% month over month.</div>
-          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="exec-summary-right">Reverse Shampoo (Travel Size) emerged as the top-selling SKU for Amazon, with Promote and Reverse Activators continuing to rank among the brand's strongest performers. On the website, order volume and unit sales recovered while activators remained the primary driver of demand, highlighting continued consumer loyalty for available SKUs.<br><br>As inventory availability improves, the current sales mix provides a strong foundation for future growth.</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="exec-summary-left">Loading…</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="exec-summary-right">Loading…</div>
         </div>
       </div>
 
       <!-- Edit panel for executive summary -->
-      <div class="insight-bar" style="margin-bottom:8px;">
-        <strong style="font-size:11px;">Executive Summary</strong>
-        <div class="insight-actions">
-          <span class="staging-note">◎ In Staging</span>
-          <button class="btn-edit" onclick="toggleEditor('s-overview')">✏️ Edit</button>
-          <button class="btn-approve" onclick="openApproveModal('s-overview')">Approve → Live</button>
-        </div>
-      </div>
-      <div class="insight-editor" id="editor-s-overview">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the headline and summary text shown on the partner-facing Overview tab.</div>
+      <div class="insight-editor" id="ov-exec-editor" style="margin-bottom:16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the headline and summary text for this month's report. This month is resolved automatically (last full calendar month).</div>
         <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Headline</div>
-        <textarea id="textarea-s-overview-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;">Organic Performance Offsets Slowdown as Inventory Mix Evolves</textarea>
+        <textarea id="textarea-ov-exec-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
         <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Left column</div>
-        <textarea id="textarea-s-overview-left" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;margin-bottom:10px;">May performance demonstrated improving sales stability despite continued inventory constraints across portions of the catalog. Amazon unit sales increased modestly month over month, driven primarily by organic demand, while website performance rebounded with meaningful gains in both units sold and orders.
-
-While advertising activity moderated during the month, organic sales momentum strengthened, particularly on Amazon where organic units increased 8% month over month.</textarea>
+        <textarea id="textarea-ov-exec-left" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;margin-bottom:10px;"></textarea>
         <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Right column</div>
-        <textarea id="textarea-s-overview-right" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;">Reverse Shampoo (Travel Size) emerged as the top-selling SKU for Amazon, with Promote and Reverse Activators continuing to rank among the brand's strongest performers. On the website, order volume and unit sales recovered while activators remained the primary driver of demand, highlighting continued consumer loyalty for available SKUs.
-
-As inventory availability improves, the current sales mix provides a strong foundation for future growth.</textarea>
+        <textarea id="textarea-ov-exec-right" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;"></textarea>
         <div class="editor-footer" style="margin-top:10px;">
-          <span class="editor-note">Saved edits go to Staging for review before going live.</span>
-          <button class="btn-cancel" onclick="toggleEditor('s-overview')">Cancel</button>
-          <button class="btn-save-stage" onclick="saveToStaging('s-overview')">Save to Staging</button>
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="ov-exec-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="ov-exec-save-btn">Save</button>
         </div>
       </div>
 
@@ -1024,19 +1019,17 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="tp-insight-text">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</span>
+        <span class="insight-text" id="tp-insight-text">Loading…</span>
         <div class="insight-actions">
-          <span class="staging-note">◎ In Staging</span>
-          <button class="btn-edit" id="tp-insight-edit-btn" id="tp-insight-cancel" onclick="toggleEditor('amazon')">✏️ Edit</button>
-          <button class="btn-approve" onclick="openApproveModal('amazon')">Approve → Live</button>
+          <button class="btn-edit" id="tp-insight-edit-btn">✏️ Edit</button>
         </div>
       </div>
       <div class="insight-editor" id="tp-insight-editor">
-        <textarea id="tp-insight-textarea">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</textarea>
+        <textarea id="tp-insight-textarea"></textarea>
         <div class="editor-footer">
-          <span class="editor-note">💡 Currently in Staging — approve to push live to the partner dashboard.</span>
-          <button class="btn-cancel" id="tp-insight-cancel" onclick="toggleEditor('amazon')">Cancel</button>
-          <button class="btn-save-stage" id="tp-insight-save" onclick="saveToStaging('amazon')">Save to Staging</button>
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="tp-insight-cancel">Cancel</button>
+          <button class="btn-save-stage" id="tp-insight-save">Save</button>
         </div>
       </div>
     </div>
@@ -1072,19 +1065,17 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="web-insight-text">Website rebounded strongly in May (+27% units) driven by subscription renewals and organic traffic. AOV declined due to travel-size mix shift.</span>
+        <span class="insight-text" id="web-insight-text">Loading…</span>
         <div class="insight-actions">
-          <span class="live-note">● Live</span>
-          <button class="btn-edit" onclick="toggleEditor('website')">✏️ Edit</button>
-          <button class="btn-approve" onclick="openApproveModal('website')">Approve → Live</button>
+          <button class="btn-edit" id="web-insight-edit-btn">✏️ Edit</button>
         </div>
       </div>
       <div class="insight-editor" id="web-insight-editor">
-        <textarea id="web-insight-textarea">Website rebounded strongly in May (+27% units) driven by subscription renewals and organic traffic. AOV declined due to travel-size mix shift.</textarea>
+        <textarea id="web-insight-textarea"></textarea>
         <div class="editor-footer">
-          <span class="editor-note">💡 Saved edits go to Staging for review before going live.</span>
-          <button class="btn-cancel" onclick="toggleEditor('website')">Cancel</button>
-          <button class="btn-save-stage" onclick="saveToStaging('website')">Save to Staging</button>
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="web-insight-cancel">Cancel</button>
+          <button class="btn-save-stage" id="web-insight-save">Save</button>
         </div>
       </div>
     </div>
@@ -1120,19 +1111,17 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="wtp-insight-text">Walmart declined post-April promo period. Units down 12% MOM but AOV remained stable. Performance expected to normalize in June.</span>
+        <span class="insight-text" id="wtp-insight-text">Loading…</span>
         <div class="insight-actions">
-          <span class="live-note">● Live</span>
-          <button class="btn-edit" onclick="toggleEditor('walmart')">✏️ Edit</button>
-          <button class="btn-approve" onclick="openApproveModal('walmart')">Approve → Live</button>
+          <button class="btn-edit" id="wtp-insight-edit-btn">✏️ Edit</button>
         </div>
       </div>
       <div class="insight-editor" id="wtp-insight-editor">
-        <textarea id="wtp-insight-textarea">Walmart declined post-April promo period. Units down 12% MOM but AOV remained stable. Performance expected to normalize in June.</textarea>
+        <textarea id="wtp-insight-textarea"></textarea>
         <div class="editor-footer">
-          <span class="editor-note">💡 Saved edits go to Staging for review before going live.</span>
-          <button class="btn-cancel" onclick="toggleEditor('walmart')">Cancel</button>
-          <button class="btn-save-stage" onclick="saveToStaging('walmart')">Save to Staging</button>
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="wtp-insight-cancel">Cancel</button>
+          <button class="btn-save-stage" id="wtp-insight-save">Save</button>
         </div>
       </div>
     </div>
@@ -1306,7 +1295,31 @@ As inventory availability improves, the current sales mix provides a strong foun
     </div>
 
     <div class="channel-page" id="ev-spring">
-      <div class="placeholder-block"><div class="ph-icon">🌸</div><div class="ph-title">Big Spring Sale — March 2026</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="staging-note" id="bss-report-status">◎ Draft</span>
+            <button class="btn-edit" id="bss-exec-edit-btn">✏️ Edit</button>
+            <button class="btn-approve" id="bss-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+          </div>
+        </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="bss-exec-summary-headline">Loading…</div>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="bss-exec-summary-body">Loading…</div>
+      </div>
+      <div class="insight-editor" id="bss-exec-editor">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the title and summary shown at the top of this event report.</div>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Title</div>
+        <textarea id="textarea-bss-exec-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
+        <textarea id="textarea-bss-exec-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:100px;"></textarea>
+        <div class="editor-footer" style="margin-top:10px;">
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="bss-exec-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="bss-exec-save-btn">Save</button>
+        </div>
+      </div>
+      <div class="placeholder-block"><div class="ph-icon">🌸</div><div class="ph-title">Big Spring Sale — March 2026</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
     </div>
     <div class="channel-page" id="ev-primeday">
       <div class="page-hd" style="margin-bottom:4px;">
@@ -1314,35 +1327,29 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
       <div class="pd-event-dates" id="pd-event-dates">Loading event dates…</div>
 
-      <!-- Executive summary — mirrors the s-overview pattern (headline + 2 columns) -->
+      <!-- Executive summary — title + single body, per-event (not the 2-column monthly format) -->
       <div class="card" style="margin-bottom:16px;">
-        <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px;">Executive Summary</div>
-        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="pd-exec-summary-headline">Add a headline summarizing this event's performance</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
-          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-left">Click Edit below to add the left-column summary — typically top-level performance vs. last year's event.</div>
-          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-right">Click Edit below to add the right-column summary — typically product-level or mix-shift observations.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="staging-note" id="pd-report-status">◎ Draft</span>
+            <button class="btn-edit" id="pd-exec-edit-btn">✏️ Edit</button>
+            <button class="btn-approve" id="pd-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+          </div>
         </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="pd-exec-summary-headline">Loading…</div>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-body">Loading…</div>
       </div>
-      <div class="insight-bar" style="margin-bottom:8px;">
-        <strong style="font-size:11px;">Executive Summary</strong>
-        <div class="insight-actions">
-          <span class="staging-note">◎ In Staging</span>
-          <button class="btn-edit" onclick="toggleEditor('ev-primeday')">✏️ Edit</button>
-          <button class="btn-approve" onclick="openApproveModal('ev-primeday')">Approve → Live</button>
-        </div>
-      </div>
-      <div class="insight-editor" id="editor-ev-primeday">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the headline and summary text shown at the top of this event report.</div>
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Headline</div>
-        <textarea id="textarea-ev-primeday-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Left column</div>
-        <textarea id="textarea-ev-primeday-left" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;margin-bottom:10px;"></textarea>
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Right column</div>
-        <textarea id="textarea-ev-primeday-right" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;"></textarea>
+      <div class="insight-editor" id="pd-exec-editor">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the title and summary shown at the top of this event report.</div>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Title</div>
+        <textarea id="textarea-pd-exec-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
+        <textarea id="textarea-pd-exec-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:100px;"></textarea>
         <div class="editor-footer" style="margin-top:10px;">
-          <span class="editor-note">Saved edits go to Staging for review before going live.</span>
-          <button class="btn-cancel" onclick="toggleEditor('ev-primeday')">Cancel</button>
-          <button class="btn-save-stage" onclick="saveToStaging('ev-primeday')">Save to Staging</button>
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="pd-exec-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="pd-exec-save-btn">Save</button>
         </div>
       </div>
 
@@ -1363,10 +1370,58 @@ As inventory availability improves, the current sales mix provides a strong foun
       </div>
     </div>
     <div class="channel-page" id="ev-pbdd">
-      <div class="placeholder-block"><div class="ph-icon">🎯</div><div class="ph-title">Prime Big Deal Days — October 2025</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="staging-note" id="pbdd-report-status">◎ Draft</span>
+            <button class="btn-edit" id="pbdd-exec-edit-btn">✏️ Edit</button>
+            <button class="btn-approve" id="pbdd-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+          </div>
+        </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="pbdd-exec-summary-headline">Loading…</div>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pbdd-exec-summary-body">Loading…</div>
+      </div>
+      <div class="insight-editor" id="pbdd-exec-editor">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the title and summary shown at the top of this event report.</div>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Title</div>
+        <textarea id="textarea-pbdd-exec-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
+        <textarea id="textarea-pbdd-exec-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:100px;"></textarea>
+        <div class="editor-footer" style="margin-top:10px;">
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="pbdd-exec-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="pbdd-exec-save-btn">Save</button>
+        </div>
+      </div>
+      <div class="placeholder-block"><div class="ph-icon">🎯</div><div class="ph-title">Prime Big Deal Days — October 2025</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
     </div>
     <div class="channel-page" id="ev-bfcm">
-      <div class="placeholder-block"><div class="ph-icon">🖤</div><div class="ph-title">Black Friday / Cyber Monday — 2025</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="staging-note" id="bfcm-report-status">◎ Draft</span>
+            <button class="btn-edit" id="bfcm-exec-edit-btn">✏️ Edit</button>
+            <button class="btn-approve" id="bfcm-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+          </div>
+        </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="bfcm-exec-summary-headline">Loading…</div>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="bfcm-exec-summary-body">Loading…</div>
+      </div>
+      <div class="insight-editor" id="bfcm-exec-editor">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the title and summary shown at the top of this event report.</div>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Title</div>
+        <textarea id="textarea-bfcm-exec-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
+        <textarea id="textarea-bfcm-exec-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:100px;"></textarea>
+        <div class="editor-footer" style="margin-top:10px;">
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="bfcm-exec-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="bfcm-exec-save-btn">Save</button>
+        </div>
+      </div>
+      <div class="placeholder-block"><div class="ph-icon">🖤</div><div class="ph-title">Black Friday / Cyber Monday — 2025</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
     </div>
   </div>
 
@@ -5262,79 +5317,10 @@ async function initSns() {
 
 })();
 
-  // ── Key Insights (localStorage) ───────────────────────────────────────────
-  (function initInsights() {
-    const STORAGE_KEY = 'evolis_amazon_key_insight';
-    const textEl      = document.getElementById('tp-insight-text');
-    const barEl       = document.getElementById('tp-insight-bar');
-    const editorEl    = document.getElementById('tp-insight-editor');
-    const textareaEl  = document.getElementById('tp-insight-textarea');
-    const editBtn     = document.getElementById('tp-insight-edit-btn');
-    const saveBtn     = document.getElementById('tp-insight-save');
-    const cancelBtn   = document.getElementById('tp-insight-cancel');
-
-    function loadInsight() {
-      const saved = localStorage.getItem(STORAGE_KEY) || '';
-      textEl.textContent = saved || 'No insight added yet — click "Edit insight" to add one.';
-      textEl.style.opacity = saved ? '1' : '0.55';
-    }
-
-    editBtn.addEventListener('click', () => {
-      textareaEl.value = localStorage.getItem(STORAGE_KEY) || '';
-      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
-      if (editorEl.style.display === 'block') setTimeout(() => textareaEl.focus(), 50);
-    });
-
-    saveBtn.addEventListener('click', () => {
-      const val = textareaEl.value.trim();
-      if (val) localStorage.setItem(STORAGE_KEY, val);
-      else localStorage.removeItem(STORAGE_KEY);
-      loadInsight();
-      editorEl.style.display = 'none';
-    });
-
-    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
-
-    loadInsight();
-  })();
-
-  // ── Key Insights — Website page ──────────────────────────────────────────
-  (function initWebInsights() {
-    const STORAGE_KEY = 'evolis_web_key_insight';
-    const textEl      = document.getElementById('web-insight-text');
-    const barEl       = document.getElementById('web-insight-bar');
-    const editorEl    = document.getElementById('web-insight-editor');
-    const textareaEl  = document.getElementById('web-insight-textarea');
-    const editBtn     = document.getElementById('web-insight-edit-btn');
-    const saveBtn     = document.getElementById('web-insight-save');
-    const cancelBtn   = document.getElementById('web-insight-cancel');
-
-    if (!editBtn) return;
-
-    function loadInsight() {
-      const saved = localStorage.getItem(STORAGE_KEY) || '';
-      textEl.textContent = saved || 'No insight added yet — click "Edit insight" to add one.';
-      textEl.style.opacity = saved ? '1' : '0.55';
-    }
-
-    editBtn.addEventListener('click', () => {
-      textareaEl.value = localStorage.getItem(STORAGE_KEY) || '';
-      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
-      if (editorEl.style.display === 'block') setTimeout(() => textareaEl.focus(), 50);
-    });
-
-    saveBtn.addEventListener('click', () => {
-      const val = textareaEl.value.trim();
-      if (val) localStorage.setItem(STORAGE_KEY, val);
-      else localStorage.removeItem(STORAGE_KEY);
-      loadInsight();
-      editorEl.style.display = 'none';
-    });
-
-    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
-
-    loadInsight();
-  })();
+  // Key Insights (Amazon/Website/Walmart) now wired via window.wireInsightBlock,
+  // called from the DOMContentLoaded block below — replaces the old
+  // per-page localStorage-only initInsights()/initWebInsights() (and Walmart,
+  // which never actually had a working save path before this).
 
   // ── Auto-init all data on page load (no lazy loading) ──
   document.addEventListener('DOMContentLoaded', function () {
@@ -5354,7 +5340,203 @@ async function initSns() {
 
 })();
 
-// ── Events Page: Prime Day report ─────────────────────────────────────────
+// ── Shared: editable report-content blocks backed by SHEET_REPORT_INSIGHTS ──
+// Per Jaclyn 2026-07-18: no staging/live workflow on individual blocks —
+// just Edit → type content → Save, which writes straight to the sheet as
+// Draft. Approval is a single separate action per scope (once per month on
+// the Sales Overview tab, once per event on that event's own tab).
+(function () {
+  const REPORT_INSIGHTS_SHEET_ID = '1Fz0bEArdx54vTSGMGj-m6TYec1kizKyPubJOZNWBaLg';
+  const BRAND = 'evolis';
+
+  // gviz/tq (not the usual export?format=csv&gid=N) because these tabs get
+  // created on first save via ensureTab() — their gid isn't known ahead of
+  // time, but gviz/tq can look a tab up by name instead.
+  function gvizCsvUrl(tabName) {
+    return `https://docs.google.com/spreadsheets/d/${REPORT_INSIGHTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+  function getLastFullMonth() {
+    const now = new Date();
+    let year = now.getFullYear();
+    let month = now.getMonth(); // 0-indexed = last month's 1-indexed value
+    if (month === 0) { month = 12; year--; }
+    return { year, month };
+  }
+
+  async function fetchRow(tabName, matchFields) {
+    try {
+      const res = await fetch(gvizCsvUrl(tabName));
+      if (!res.ok) return null;
+      const csv = await res.text();
+      if (!isCsv(csv)) return null;
+      const rows = parseCsv(csv);
+      const keys = Object.keys(matchFields);
+      return rows.find(r => keys.every(k => String(r[k] || '') === String(matchFields[k]))) || null;
+    } catch (e) { console.warn('[InsightBlock] fetchRow failed:', e.message); return null; }
+  }
+
+  async function saveFields({ scope, year, month, eventName, eventYear, fields, action }) {
+    const body = { brand: BRAND, scope, action, fields };
+    if (scope === 'monthly') { body.year = year; body.month = month; }
+    else { body.eventName = eventName; body.eventYear = eventYear; }
+    const res = await fetch('/api/write-report-insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json.row;
+  }
+
+  // Finds the Events-tab row for `eventName` with the most recent start_date,
+  // same lookup already used to build the Prime Day report itself.
+  async function getLatestEventYear(eventName) {
+    const EVENTS_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+    const EVENTS_GID = '347530381';
+    try {
+      const csv = await fetch(`https://docs.google.com/spreadsheets/d/${EVENTS_SHEET_ID}/export?format=csv&gid=${EVENTS_GID}&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (!isCsv(csv)) return null;
+      const rows = parseCsv(csv).filter(r => (r['Event Name'] || '').trim() === eventName);
+      rows.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''));
+      return rows[0] ? rows[0].start_date.slice(0,4) : null;
+    } catch (e) { console.warn('[InsightBlock] getLatestEventYear failed:', e.message); return null; }
+  }
+
+  // cfg: { scope:'monthly'|'event', tabNameForScope: (brand)=>tabName,
+  //        matchFields (monthly: none needed, resolved internally; event: {eventName}),
+  //        fields: [{ key, displayId, textareaId, prefix?, placeholder? }],
+  //        editBtnId, saveBtnId, cancelBtnId, editorId,
+  //        approveBtnId? (optional — only one block per scope-instance should have this),
+  //        statusElId? }
+  async function wireInsightBlock(cfg) {
+    const editBtn   = document.getElementById(cfg.editBtnId);
+    const saveBtn    = document.getElementById(cfg.saveBtnId);
+    const cancelBtn  = document.getElementById(cfg.cancelBtnId);
+    const editorEl   = document.getElementById(cfg.editorId);
+    if (!editBtn || !saveBtn || !editorEl) { console.warn('[InsightBlock] missing elements for', cfg.editBtnId); return; }
+
+    // Resolve the actual key (year/month, or eventName/eventYear) once —
+    // event scope needs an async lookup against the Events tab first.
+    let key;
+    if (cfg.scope === 'monthly') {
+      const { year, month } = getLastFullMonth();
+      key = { year, month, tabName: BRAND };
+    } else {
+      const eventYear = await getLatestEventYear(cfg.eventName);
+      if (!eventYear) { console.warn('[InsightBlock] no Events-tab row found for', cfg.eventName); return; }
+      key = { eventName: cfg.eventName, eventYear, tabName: `${BRAND}_events` };
+    }
+    const matchFields = cfg.scope === 'monthly'
+      ? { year: String(key.year), month: String(key.month) }
+      : { event_name: key.eventName, event_year: key.eventYear };
+
+    async function load() {
+      const row = await fetchRow(key.tabName, matchFields);
+      cfg.fields.forEach(f => {
+        const val = row ? (row[f.key] || '') : '';
+        const disp = document.getElementById(f.displayId);
+        if (disp) {
+          if (val) { disp.innerHTML = (f.prefix || '') + val.replace(/\n/g,'<br>'); disp.style.opacity = '1'; }
+          else { disp.innerHTML = (f.prefix || '') + '<span style="opacity:.55;">' + (f.placeholder || 'No content added yet — click Edit to add it.') + '</span>'; }
+        }
+        const ta = document.getElementById(f.textareaId);
+        if (ta) ta.value = val;
+      });
+      if (cfg.statusElId) {
+        const statusEl = document.getElementById(cfg.statusElId);
+        if (statusEl) {
+          const status = row ? (row.status || 'Draft') : 'Draft';
+          statusEl.textContent = status === 'Approved' ? '● Approved & Live' : '◎ Draft';
+          statusEl.style.color = status === 'Approved' ? '#1a9b6f' : '';
+        }
+      }
+      return row;
+    }
+
+    editBtn.addEventListener('click', () => {
+      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+      if (editorEl.style.display === 'block') {
+        const firstTa = document.getElementById(cfg.fields[0].textareaId);
+        if (firstTa) setTimeout(() => firstTa.focus(), 50);
+      }
+    });
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+
+    saveBtn.addEventListener('click', async () => {
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      try {
+        const fieldsToSave = {};
+        cfg.fields.forEach(f => {
+          const ta = document.getElementById(f.textareaId);
+          if (ta) fieldsToSave[f.key] = ta.value.trim();
+        });
+        await saveFields({
+          scope: cfg.scope,
+          year: key.year, month: key.month,
+          eventName: key.eventName, eventYear: key.eventYear,
+          fields: fieldsToSave, action: 'save',
+        });
+        await load();
+        editorEl.style.display = 'none';
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      } finally {
+        saveBtn.disabled = false; saveBtn.textContent = origLabel;
+      }
+    });
+
+    if (cfg.approveBtnId) {
+      const approveBtn = document.getElementById(cfg.approveBtnId);
+      if (approveBtn) approveBtn.addEventListener('click', async () => {
+        const origLabel = approveBtn.textContent;
+        approveBtn.disabled = true; approveBtn.textContent = 'Approving…';
+        try {
+          await saveFields({
+            scope: cfg.scope,
+            year: key.year, month: key.month,
+            eventName: key.eventName, eventYear: key.eventYear,
+            action: 'approve',
+          });
+          await load();
+        } catch (e) {
+          alert('Approve failed: ' + e.message);
+        } finally {
+          approveBtn.disabled = false; approveBtn.textContent = origLabel;
+        }
+      });
+    }
+
+    load();
+  }
+
+  window.wireInsightBlock = wireInsightBlock;
+})();
 // Per Jaclyn 2026-07-17: no new cron needed — the "Prime Day" tabs on the
 // orders sheet and ad orders sheet are already populated by existing crons
 // (sync-event-orders-request/process.js, sync-event-ad-orders-request/
@@ -5701,72 +5883,65 @@ async function initSns() {
 
 </script>
 <script>
-// ── Sales Overview executive summary (localStorage persistence) ──
-(function() {
-  function loadOverview() {
-    const hl   = localStorage.getItem('evo_overview_headline');
-    const left = localStorage.getItem('evo_overview_left');
-    const rgt  = localStorage.getItem('evo_overview_right');
-    if (hl)   { document.getElementById('exec-summary-headline').textContent = hl;
-                document.getElementById('textarea-s-overview-headline').value = hl; }
-    if (left) { document.getElementById('exec-summary-left').innerHTML = left.replace(/\n/g,'<br>');
-                document.getElementById('textarea-s-overview-left').value = left; }
-    if (rgt)  { document.getElementById('exec-summary-right').innerHTML = rgt.replace(/\n/g,'<br>');
-                document.getElementById('textarea-s-overview-right').value = rgt; }
-  }
-  function saveOverview() {
-    const hl   = document.getElementById('textarea-s-overview-headline').value.trim();
-    const left = document.getElementById('textarea-s-overview-left').value.trim();
-    const rgt  = document.getElementById('textarea-s-overview-right').value.trim();
-    if (hl)   localStorage.setItem('evo_overview_headline', hl);
-    if (left) localStorage.setItem('evo_overview_left',    left);
-    if (rgt)  localStorage.setItem('evo_overview_right',   rgt);
-    loadOverview();
-  }
-  document.addEventListener('DOMContentLoaded', function() {
-    loadOverview();
-    // Override the save button for s-overview
-    const saveBtn = document.querySelector('#editor-s-overview .btn-save-stage');
-    if (saveBtn) saveBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      saveOverview();
-      document.getElementById('editor-s-overview').style.display = 'none';
-    });
-  });
-})();
+// ── Wire all report-content blocks to SHEET_REPORT_INSIGHTS ────────────────
+// Replaces the old per-block localStorage mocks (Overview exec summary,
+// Prime Day exec summary) and the old non-persisting Amazon/Website/Walmart
+// Key Insight editors. Per Jaclyn 2026-07-18: no staging/live buttons on
+// these — Edit → Save writes straight to the sheet as Draft. Exactly one
+// Approve button per scope (Overview for the month, each event tab for
+// that event) flips status to Approved.
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof window.wireInsightBlock !== 'function') { console.warn('[ReportInsights] wireInsightBlock not loaded'); return; }
 
-// ── Prime Day (Events page) executive summary — same localStorage pattern ──
-(function() {
-  function loadPrimeDayOverview() {
-    const hl   = localStorage.getItem('evo_primeday_headline');
-    const left = localStorage.getItem('evo_primeday_left');
-    const rgt  = localStorage.getItem('evo_primeday_right');
-    if (hl)   { document.getElementById('pd-exec-summary-headline').textContent = hl;
-                document.getElementById('textarea-ev-primeday-headline').value = hl; }
-    if (left) { document.getElementById('pd-exec-summary-left').innerHTML = left.replace(/\n/g,'<br>');
-                document.getElementById('textarea-ev-primeday-left').value = left; }
-    if (rgt)  { document.getElementById('pd-exec-summary-right').innerHTML = rgt.replace(/\n/g,'<br>');
-                document.getElementById('textarea-ev-primeday-right').value = rgt; }
-  }
-  function savePrimeDayOverview() {
-    const hl   = document.getElementById('textarea-ev-primeday-headline').value.trim();
-    const left = document.getElementById('textarea-ev-primeday-left').value.trim();
-    const rgt  = document.getElementById('textarea-ev-primeday-right').value.trim();
-    if (hl)   localStorage.setItem('evo_primeday_headline', hl);
-    if (left) localStorage.setItem('evo_primeday_left',    left);
-    if (rgt)  localStorage.setItem('evo_primeday_right',   rgt);
-    loadPrimeDayOverview();
-  }
-  document.addEventListener('DOMContentLoaded', function() {
-    loadPrimeDayOverview();
-    const saveBtn = document.querySelector('#editor-ev-primeday .btn-save-stage');
-    if (saveBtn) saveBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      savePrimeDayOverview();
-      document.getElementById('editor-ev-primeday').style.display = 'none';
+  // Monthly — Overview Executive Summary (the one block with the Approve button)
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [
+      { key: 'exec_summary_title', displayId: 'exec-summary-headline', textareaId: 'textarea-ov-exec-headline', placeholder: 'Add a headline summarizing this month.' },
+      { key: 'exec_summary_left',  displayId: 'exec-summary-left',     textareaId: 'textarea-ov-exec-left',     placeholder: 'Add the left-column summary.' },
+      { key: 'exec_summary_right', displayId: 'exec-summary-right',    textareaId: 'textarea-ov-exec-right',    placeholder: 'Add the right-column summary.' },
+    ],
+    editBtnId: 'ov-exec-edit-btn', saveBtnId: 'ov-exec-save-btn', cancelBtnId: 'ov-exec-cancel-btn', editorId: 'ov-exec-editor',
+    approveBtnId: 'ov-approve-btn', statusElId: 'ov-report-status',
+  });
+
+  // Monthly — three Key Insights (no Approve button; gated by the one above)
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [{ key: 'amazon_key_insight', displayId: 'tp-insight-text', textareaId: 'tp-insight-textarea', placeholder: 'No insight added yet — click Edit to add one.' }],
+    editBtnId: 'tp-insight-edit-btn', saveBtnId: 'tp-insight-save', cancelBtnId: 'tp-insight-cancel', editorId: 'tp-insight-editor',
+  });
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [{ key: 'website_key_insight', displayId: 'web-insight-text', textareaId: 'web-insight-textarea', placeholder: 'No insight added yet — click Edit to add one.' }],
+    editBtnId: 'web-insight-edit-btn', saveBtnId: 'web-insight-save', cancelBtnId: 'web-insight-cancel', editorId: 'web-insight-editor',
+  });
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [{ key: 'walmart_key_insight', displayId: 'wtp-insight-text', textareaId: 'wtp-insight-textarea', placeholder: 'No insight added yet — click Edit to add one.' }],
+    editBtnId: 'wtp-insight-edit-btn', saveBtnId: 'wtp-insight-save', cancelBtnId: 'wtp-insight-cancel', editorId: 'wtp-insight-editor',
+  });
+
+  // Events — one summary block per event tab, each with its own Approve button.
+  // Event names must match the Events tab exactly.
+  [
+    { eventName: 'Prime Day',                     prefix: 'pd' },
+    { eventName: 'Big Spring Sale',               prefix: 'bss' },
+    { eventName: 'Prime Big Deal Days',           prefix: 'pbdd' },
+    { eventName: 'Black Friday & Cyber Monday',   prefix: 'bfcm' },
+  ].forEach(({ eventName, prefix }) => {
+    window.wireInsightBlock({
+      scope: 'event',
+      eventName,
+      fields: [
+        { key: 'summary_title', displayId: `${prefix}-exec-summary-headline`, textareaId: `textarea-${prefix}-exec-headline`, placeholder: "Add a title summarizing this event's performance." },
+        { key: 'summary_body',  displayId: `${prefix}-exec-summary-body`,     textareaId: `textarea-${prefix}-exec-body`,     placeholder: 'Add the event recap.' },
+      ],
+      editBtnId: `${prefix}-exec-edit-btn`, saveBtnId: `${prefix}-exec-save-btn`, cancelBtnId: `${prefix}-exec-cancel-btn`, editorId: `${prefix}-exec-editor`,
+      approveBtnId: `${prefix}-approve-btn`, statusElId: `${prefix}-report-status`,
     });
   });
-})();
+});
 
 
 // ═══════════════════════════════════════════════════════════════════
