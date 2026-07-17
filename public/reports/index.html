@@ -116,6 +116,12 @@ nav{flex:1;padding:8px 8px 0;}
 .pd-legend{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--muted);}
 .pd-legend span{display:inline-flex;align-items:center;gap:5px;}
 .pd-legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
+/* Empty-state placeholders via CSS rather than real text, so PDF/report
+   export (which reads .textContent) correctly sees "" for unfilled fields
+   and skips them, instead of exporting a stray "no content yet" line. */
+[data-placeholder]:empty::after{content:attr(data-placeholder);opacity:.55;}
+.channel-tabs-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap;}
+.channel-tabs-row .channel-tabs{margin-bottom:0;}
 
 /* ── Cards / sections ── */
 .card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
@@ -936,11 +942,17 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div><div class="page-title">Sales</div><div class="page-sub" id="sales-page-sub">May 1 – May 31, 2026 · Last full month</div></div>
     </div>
 
-    <div class="channel-tabs">
-      <button class="ch-tab active" onclick="showChannel('sales','s-overview',this)">Overview</button>
-      <button class="ch-tab" onclick="showChannel('sales','s-amazon',this)">Amazon</button>
-      <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
-      <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
+    <div class="channel-tabs-row">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('sales','s-overview',this)">Overview</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-amazon',this)">Amazon</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="staging-note" id="sales-report-status">◎ Draft</span>
+        <button class="btn-approve" id="sales-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+      </div>
     </div>
 
     <div class="channel-page active" id="s-overview">
@@ -959,9 +971,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <span class="staging-note" id="ov-report-status">◎ Draft</span>
             <button class="btn-edit" id="ov-exec-edit-btn">✏️ Edit</button>
-            <button class="btn-approve" id="ov-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
           </div>
         </div>
         <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="exec-summary-headline">Loading…</div>
@@ -1223,12 +1233,18 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <div class="page-hd">
       <div><div class="page-title">Events</div><div class="page-sub">Promotional event performance & strategy</div></div>
     </div>
-    <div class="channel-tabs">
-      <button class="ch-tab active" onclick="showChannel('events','ev-strategy',this)">Strategy</button>
-      <button class="ch-tab" onclick="showChannel('events','ev-spring',this)">Big Spring Sale '26</button>
-      <button class="ch-tab" onclick="showChannel('events','ev-primeday',this)">Prime Day</button>
-      <button class="ch-tab" onclick="showChannel('events','ev-pbdd',this)">Prime Big Deal Days Oct '25</button>
-      <button class="ch-tab" onclick="showChannel('events','ev-bfcm',this)">BFCM '25</button>
+    <div class="channel-tabs-row">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('events','ev-strategy',this)">Strategy</button>
+        <button class="ch-tab" onclick="showChannel('events','ev-spring',this)">Big Spring Sale</button>
+        <button class="ch-tab" onclick="showChannel('events','ev-primeday',this)">Prime Day</button>
+        <button class="ch-tab" onclick="showChannel('events','ev-pbdd',this)">Prime Big Deal Days</button>
+        <button class="ch-tab" onclick="showChannel('events','ev-bfcm',this)">BFCM</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="staging-note" id="events-report-status"></span>
+        <button class="btn-approve" id="events-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+      </div>
     </div>
     <div class="channel-page active" id="ev-strategy">
 
@@ -1298,11 +1314,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="staging-note" id="bss-report-status">◎ Draft</span>
-            <button class="btn-edit" id="bss-exec-edit-btn">✏️ Edit</button>
-            <button class="btn-approve" id="bss-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
-          </div>
+          <button class="btn-edit" id="bss-exec-edit-btn">✏️ Edit</button>
         </div>
         <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="bss-exec-summary-headline">Loading…</div>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="bss-exec-summary-body">Loading…</div>
@@ -1331,11 +1343,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="staging-note" id="pd-report-status">◎ Draft</span>
-            <button class="btn-edit" id="pd-exec-edit-btn">✏️ Edit</button>
-            <button class="btn-approve" id="pd-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
-          </div>
+          <button class="btn-edit" id="pd-exec-edit-btn">✏️ Edit</button>
         </div>
         <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="pd-exec-summary-headline">Loading…</div>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-body">Loading…</div>
@@ -1373,11 +1381,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="staging-note" id="pbdd-report-status">◎ Draft</span>
-            <button class="btn-edit" id="pbdd-exec-edit-btn">✏️ Edit</button>
-            <button class="btn-approve" id="pbdd-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
-          </div>
+          <button class="btn-edit" id="pbdd-exec-edit-btn">✏️ Edit</button>
         </div>
         <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="pbdd-exec-summary-headline">Loading…</div>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pbdd-exec-summary-body">Loading…</div>
@@ -1400,11 +1404,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="staging-note" id="bfcm-report-status">◎ Draft</span>
-            <button class="btn-edit" id="bfcm-exec-edit-btn">✏️ Edit</button>
-            <button class="btn-approve" id="bfcm-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
-          </div>
+          <button class="btn-edit" id="bfcm-exec-edit-btn">✏️ Edit</button>
         </div>
         <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:10px;" id="bfcm-exec-summary-headline">Loading…</div>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="bfcm-exec-summary-body">Loading…</div>
@@ -3154,6 +3154,20 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
+
+    // Events page: track which event tab is active so the single
+    // Approve button (top-right of the tab menu) knows what to approve.
+    // 'ev-strategy' has no event of its own — null disables the button.
+    if (page === 'events') {
+      const EVENT_TAB_MAP = {
+        'ev-spring':   'Big Spring Sale',
+        'ev-primeday': 'Prime Day',
+        'ev-pbdd':     'Prime Big Deal Days',
+        'ev-bfcm':     'Black Friday & Cyber Monday',
+      };
+      window._activeEventName = EVENT_TAB_MAP[channelId] || null;
+      if (typeof window._refreshEventsApproveBtn === 'function') window._refreshEventsApproveBtn();
+    }
   }
 
   // ── Sub-tab navigation (nested product/variation tabs) ──
@@ -5427,12 +5441,11 @@ async function initSns() {
     } catch (e) { console.warn('[InsightBlock] getLatestEventYear failed:', e.message); return null; }
   }
 
-  // cfg: { scope:'monthly'|'event', tabNameForScope: (brand)=>tabName,
-  //        matchFields (monthly: none needed, resolved internally; event: {eventName}),
+  // cfg: { scope:'monthly'|'event', eventName (event scope only),
   //        fields: [{ key, displayId, textareaId, prefix?, placeholder? }],
-  //        editBtnId, saveBtnId, cancelBtnId, editorId,
-  //        approveBtnId? (optional — only one block per scope-instance should have this),
-  //        statusElId? }
+  //        editBtnId, saveBtnId, cancelBtnId, editorId }
+  // No approve/status handling here — see wireApproveButton below for the
+  // two section-level Approve buttons (Sales, Events).
   async function wireInsightBlock(cfg) {
     const editBtn   = document.getElementById(cfg.editBtnId);
     const saveBtn    = document.getElementById(cfg.saveBtnId);
@@ -5461,20 +5474,20 @@ async function initSns() {
         const val = row ? (row[f.key] || '') : '';
         const disp = document.getElementById(f.displayId);
         if (disp) {
-          if (val) { disp.innerHTML = (f.prefix || '') + val.replace(/\n/g,'<br>'); disp.style.opacity = '1'; }
-          else { disp.innerHTML = (f.prefix || '') + '<span style="opacity:.55;">' + (f.placeholder || 'No content added yet — click Edit to add it.') + '</span>'; }
+          if (val) {
+            disp.removeAttribute('data-placeholder');
+            disp.innerHTML = (f.prefix || '') + val.replace(/\n/g,'<br>');
+          } else {
+            // Truly empty (no text nodes) so [data-placeholder]:empty::after
+            // shows the placeholder visually, while .textContent stays ""
+            // for anything (PDF export, future report export) reading it.
+            disp.textContent = '';
+            disp.setAttribute('data-placeholder', f.placeholder || 'No content added yet — click Edit to add it.');
+          }
         }
         const ta = document.getElementById(f.textareaId);
         if (ta) ta.value = val;
       });
-      if (cfg.statusElId) {
-        const statusEl = document.getElementById(cfg.statusElId);
-        if (statusEl) {
-          const status = row ? (row.status || 'Draft') : 'Draft';
-          statusEl.textContent = status === 'Approved' ? '● Approved & Live' : '◎ Draft';
-          statusEl.style.color = status === 'Approved' ? '#1a9b6f' : '';
-        }
-      }
       return row;
     }
 
@@ -5511,31 +5524,66 @@ async function initSns() {
       }
     });
 
-    if (cfg.approveBtnId) {
-      const approveBtn = document.getElementById(cfg.approveBtnId);
-      if (approveBtn) approveBtn.addEventListener('click', async () => {
-        const origLabel = approveBtn.textContent;
-        approveBtn.disabled = true; approveBtn.textContent = 'Approving…';
-        try {
-          await saveFields({
-            scope: cfg.scope,
-            year: key.year, month: key.month,
-            eventName: key.eventName, eventYear: key.eventYear,
-            action: 'approve',
-          });
-          await load();
-        } catch (e) {
-          alert('Approve failed: ' + e.message);
-        } finally {
-          approveBtn.disabled = false; approveBtn.textContent = origLabel;
-        }
-      });
-    }
-
     load();
   }
 
   window.wireInsightBlock = wireInsightBlock;
+  window.getLatestEventYear = getLatestEventYear;
+
+  // ── Section-level Approve button (one per page: Sales, Events) ───────────
+  // Separate from wireInsightBlock — this only ever approves, never edits
+  // content, and (for Events) needs to know which event tab is currently
+  // active rather than a fixed key.
+  function wireApproveButton(cfg) {
+    const btn = document.getElementById(cfg.btnId);
+    const statusEl = cfg.statusElId ? document.getElementById(cfg.statusElId) : null;
+    if (!btn) return;
+
+    async function refresh() {
+      const key = await cfg.resolveKey();
+      if (!key) {
+        btn.disabled = true;
+        if (statusEl) statusEl.textContent = '';
+        return null;
+      }
+      btn.disabled = false;
+      const matchFields = cfg.scope === 'monthly'
+        ? { year: String(key.year), month: String(key.month) }
+        : { event_name: key.eventName, event_year: key.eventYear };
+      const tabName = cfg.scope === 'monthly' ? BRAND : `${BRAND}_events`;
+      const row = await fetchRow(tabName, matchFields);
+      const status = row ? (row.status || 'Draft') : 'Draft';
+      if (statusEl) {
+        statusEl.textContent = status === 'Approved' ? '● Approved & Live' : '◎ Draft';
+        statusEl.style.color = status === 'Approved' ? '#1a9b6f' : '';
+      }
+      return key;
+    }
+
+    btn.addEventListener('click', async () => {
+      const key = await cfg.resolveKey();
+      if (!key) return;
+      const origLabel = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Approving…';
+      try {
+        await saveFields({
+          scope: cfg.scope,
+          year: key.year, month: key.month,
+          eventName: key.eventName, eventYear: key.eventYear,
+          action: 'approve',
+        });
+        await refresh();
+      } catch (e) {
+        alert('Approve failed: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = origLabel;
+      }
+    });
+
+    refresh();
+    return { refresh };
+  }
+  window.wireApproveButton = wireApproveButton;
 })();
 // Per Jaclyn 2026-07-17: no new cron needed — the "Prime Day" tabs on the
 // orders sheet and ad orders sheet are already populated by existing crons
@@ -5884,16 +5932,14 @@ async function initSns() {
 </script>
 <script>
 // ── Wire all report-content blocks to SHEET_REPORT_INSIGHTS ────────────────
-// Replaces the old per-block localStorage mocks (Overview exec summary,
-// Prime Day exec summary) and the old non-persisting Amazon/Website/Walmart
-// Key Insight editors. Per Jaclyn 2026-07-18: no staging/live buttons on
-// these — Edit → Save writes straight to the sheet as Draft. Exactly one
-// Approve button per scope (Overview for the month, each event tab for
-// that event) flips status to Approved.
+// Per Jaclyn 2026-07-18 (revised): no Draft/Approve UI on individual blocks
+// at all — just Edit → Save, writes to the sheet as a draft. Exactly two
+// Approve buttons total, both at the top-right of a tab menu rather than on
+// any content block: one on Sales (approves this month), one on Events
+// (approves whichever event tab is currently active).
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof window.wireInsightBlock !== 'function') { console.warn('[ReportInsights] wireInsightBlock not loaded'); return; }
 
-  // Monthly — Overview Executive Summary (the one block with the Approve button)
   window.wireInsightBlock({
     scope: 'monthly',
     fields: [
@@ -5902,10 +5948,8 @@ document.addEventListener('DOMContentLoaded', function() {
       { key: 'exec_summary_right', displayId: 'exec-summary-right',    textareaId: 'textarea-ov-exec-right',    placeholder: 'Add the right-column summary.' },
     ],
     editBtnId: 'ov-exec-edit-btn', saveBtnId: 'ov-exec-save-btn', cancelBtnId: 'ov-exec-cancel-btn', editorId: 'ov-exec-editor',
-    approveBtnId: 'ov-approve-btn', statusElId: 'ov-report-status',
   });
 
-  // Monthly — three Key Insights (no Approve button; gated by the one above)
   window.wireInsightBlock({
     scope: 'monthly',
     fields: [{ key: 'amazon_key_insight', displayId: 'tp-insight-text', textareaId: 'tp-insight-textarea', placeholder: 'No insight added yet — click Edit to add one.' }],
@@ -5922,8 +5966,7 @@ document.addEventListener('DOMContentLoaded', function() {
     editBtnId: 'wtp-insight-edit-btn', saveBtnId: 'wtp-insight-save', cancelBtnId: 'wtp-insight-cancel', editorId: 'wtp-insight-editor',
   });
 
-  // Events — one summary block per event tab, each with its own Approve button.
-  // Event names must match the Events tab exactly.
+  // Events — one summary block per event tab. No per-block Approve anymore.
   [
     { eventName: 'Prime Day',                     prefix: 'pd' },
     { eventName: 'Big Spring Sale',               prefix: 'bss' },
@@ -5938,9 +5981,36 @@ document.addEventListener('DOMContentLoaded', function() {
         { key: 'summary_body',  displayId: `${prefix}-exec-summary-body`,     textareaId: `textarea-${prefix}-exec-body`,     placeholder: 'Add the event recap.' },
       ],
       editBtnId: `${prefix}-exec-edit-btn`, saveBtnId: `${prefix}-exec-save-btn`, cancelBtnId: `${prefix}-exec-cancel-btn`, editorId: `${prefix}-exec-editor`,
-      approveBtnId: `${prefix}-approve-btn`, statusElId: `${prefix}-report-status`,
     });
   });
+
+  // ── Section-level Approve buttons ─────────────────────────────────────
+  function getLastFullMonthLocal() {
+    const now = new Date();
+    let year = now.getFullYear(), month = now.getMonth();
+    if (month === 0) { month = 12; year--; }
+    return { year, month };
+  }
+
+  window.wireApproveButton({
+    scope: 'monthly',
+    btnId: 'sales-approve-btn',
+    statusElId: 'sales-report-status',
+    resolveKey: async () => getLastFullMonthLocal(),
+  });
+
+  const eventsApprove = window.wireApproveButton({
+    scope: 'event',
+    btnId: 'events-approve-btn',
+    statusElId: 'events-report-status',
+    resolveKey: async () => {
+      const eventName = window._activeEventName;
+      if (!eventName) return null; // Strategy tab active — nothing to approve
+      const eventYear = await window.getLatestEventYear(eventName);
+      return eventYear ? { eventName, eventYear } : null;
+    },
+  });
+  window._refreshEventsApproveBtn = eventsApprove ? eventsApprove.refresh : null;
 });
 
 
