@@ -20,8 +20,8 @@
  * SHEET_SEARCH_QUERY_PERFORMANCE  Brand Analytics Search Query Performance (full monthly report, per-brand tabs, sync-sqp-request/process)
  * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js. Also has an "Events" tab (Event Name/start_date/end_date) used by sync-event-orders-request.js.
  * SHEET_KEYWORD_TRACKER            Organic keyword rank tracking, per-brand tabs — used by run-analysis.js
+ * SHEET_PRODUCT_INVENTORY          Dated daily product+inventory snapshots, per-brand tabs (date, sku, asin, quantities, plus full listing copy: title/item_highlights/bullet_1-5/description/backend_keywords/ingredients). Added 2026-07-17 — used by run-listing-audit.js as the "current listing" source (most recent date per SKU), replacing SHEET_LISTINGS for that purpose.
  */
-
 module.exports = {
   orders:                 process.env.SHEET_ORDERS,
   ordersHistorical:       process.env.SHEET_ORDERS_HISTORICAL,
@@ -39,4 +39,5 @@ module.exports = {
   searchQueryPerformance: process.env.SHEET_SEARCH_QUERY_PERFORMANCE,
   masterSkuList:          process.env.SHEET_MASTER_SKU_LIST,
   keywordTracker:         process.env.SHEET_KEYWORD_TRACKER,
+  productInventory:       process.env.SHEET_PRODUCT_INVENTORY,
 };
