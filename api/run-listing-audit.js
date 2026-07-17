@@ -253,7 +253,8 @@ module.exports = async function handler(req, res) {
   });
   if (!sourceRes.ok) {
     const err = await sourceRes.text();
-    return res.status(502).json({ error: 'Failed to read source sheet', detail: err.slice(0, 200) });
+    console.error(`[listing-audit] source sheet read failed (${brand}, tab "${tabName}"): ${sourceRes.status} — ${err.slice(0, 300)}`);
+    return res.status(502).json({ error: 'Failed to read source sheet', detail: err.slice(0, 300) });
   }
   const sourceData = await sourceRes.json();
   const allRawRows = sourceData.values || [];
