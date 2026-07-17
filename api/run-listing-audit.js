@@ -3,6 +3,16 @@
  * POST /api/run-listing-audit
  *
  * Reads listing copy directly from the source Google Sheet.
+ *
+ * CHANGED 2026-07-17 per Jaclyn: "current listing" data now comes from
+ * SHEET_PRODUCT_INVENTORY (dated daily snapshots, one tab per brand) instead
+ * of the old SHEET_LISTINGS (single current-state row per SKU). For each
+ * SKU, this reads the row with the most recent date in column A. The sheet
+ * ID itself still comes from the sourceSheetId POST param below — whoever
+ * calls this endpoint (dashboard button, curl) now needs to pass
+ * SHEET_PRODUCT_INVENTORY's ID (1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s)
+ * instead of the old SHEET_LISTINGS ID.
+ *
  * Calls Claude once per SKU using a plain-text delimited response format —
  * NO JSON from Claude, so no JSON parse errors, ever.
  *
@@ -29,27 +39,46 @@
 const { google } = require('googleapis');
 
 // ─── source sheet column indices (0-based) ──────────────────────────────────
-// sku | asin | name | status | title | item_highlights |
-// bullet_1 | bullet_2 | bullet_3 | bullet_4 | bullet_5 |
-// description | backend_keywords | issues | last_synced
+// CHANGED 2026-07-17 per Jaclyn: source of "current listing" data moved from
+// SHEET_LISTINGS to SHEET_PRODUCT_INVENTORY (1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s).
+// Confirmed directly from the sheet — one tab per brand, dated daily snapshots
+// (each SKU has 4-5 rows spanning different dates, not just one current row).
+// Column layout, confirmed from the actual header row:
+// date | sku | asin | fulfillable_quantity | reserved_quantity |
+// inbound_working_quantity | inbound_shipped_quantity | inbound_receiving_quantity |
+// unfulfillable_quantity | seller_fulfilled_quantity | total_quantity | name |
+// status | sales_ranks | title | item_highlights | bullet_1..bullet_5 |
+// description | backend_keywords | ingredients | item_type_keyword | offers |
+// issues | last_synced
 const COL = {
-  sku:              0,
-  asin:             1,
-  name:             2,
-  status:           3,
-  title:            4,
-  item_highlights:  5,
-  bullet_1:         6,
-  bullet_2:         7,
-  bullet_3:         8,
-  bullet_4:         9,
-  bullet_5:         10,
-  description:      11,
-  backend_keywords: 12,
-  ingredients:       13,
-  item_type_keyword: 14,
-  issues:            15,
-  last_synced:       16,
+  date:              0,
+  sku:               1,
+  asin:              2,
+  fulfillable_qty:   3,
+  reserved_qty:      4,
+  inbound_working:   5,
+  inbound_shipped:   6,
+  inbound_receiving: 7,
+  unfulfillable_qty: 8,
+  seller_fulfilled_qty: 9,
+  total_qty:         10,
+  name:              11,
+  status:            12,
+  sales_ranks:       13,
+  title:             14,
+  item_highlights:   15,
+  bullet_1:          16,
+  bullet_2:          17,
+  bullet_3:          18,
+  bullet_4:          19,
+  bullet_5:          20,
+  description:       21,
+  backend_keywords:  22,
+  ingredients:       23,
+  item_type_keyword: 24,
+  offers:            25,
+  issues:            26,
+  last_synced:       27,
 };
 
 // ─── keyword strategy sheet ─────────────────────────────────────────────────
@@ -215,8 +244,10 @@ module.exports = async function handler(req, res) {
   }
 
   // Fetch all rows (skip header row 1)
+  // CHANGED 2026-07-17: range widened from A2:Q to A2:AB — SHEET_PRODUCT_INVENTORY
+  // has 28 columns (date through last_synced), vs. the old 17-column SHEET_LISTINGS.
   const tabName = brand; // e.g. "evolis"
-  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:Q')}?majorDimension=ROWS`;
+  const sourceUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sourceSheetId}/values/${encodeURIComponent(tabName + '!A2:AB')}?majorDimension=ROWS`;
   const sourceRes = await fetch(sourceUrl, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -225,11 +256,28 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ error: 'Failed to read source sheet', detail: err.slice(0, 200) });
   }
   const sourceData = await sourceRes.json();
-  const allRows = sourceData.values || [];
+  const allRawRows = sourceData.values || [];
 
-  if (!allRows.length) {
+  if (!allRawRows.length) {
     return res.status(200).json({ ok: true, message: 'No rows found in source sheet', skuCount: 0 });
   }
+
+  // CHANGED 2026-07-17: SHEET_PRODUCT_INVENTORY has multiple dated rows per
+  // SKU (daily snapshots), not one current row per SKU like the old sheet.
+  // Collapse to the single most-recent-date row per SKU. Done per-SKU rather
+  // than filtering to one global max date, since a few SKUs are missing the
+  // very latest sync date (observed: some evolis SKUs have only 4 of the
+  // last 5 days) — a global-max filter would silently drop those SKUs
+  // entirely rather than falling back to their next-most-recent row.
+  const latestBySkuDate = new Map();
+  for (const row of allRawRows) {
+    const sku = (row[COL.sku] || '').trim();
+    if (!sku) continue;
+    const date = (row[COL.date] || '').trim();
+    const existing = latestBySkuDate.get(sku);
+    if (!existing || date > (existing[COL.date] || '')) latestBySkuDate.set(sku, row);
+  }
+  const allRows = Array.from(latestBySkuDate.values());
 
   // Filter rows: testSku (single), skuFilter (array from batch), or all
   const rows = allRows.filter(row => {
