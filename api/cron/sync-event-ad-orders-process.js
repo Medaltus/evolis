@@ -30,7 +30,7 @@ const AD_API_HOST  = 'advertising-api.amazon.com';
 const META_TAB     = '_meta_events';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
-const HEADERS = ['asin', 'brand', 'impressions', 'clicks', 'ad_units', 'purchases', 'spend', 'sales', 'acos', 'last_updated'];
+const HEADERS = ['asin', 'brand', 'impressions', 'clicks', 'ad_units', 'purchases', 'spend', 'sales', 'acos', 'last_updated', 'purchase_date'];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -99,6 +99,16 @@ module.exports = async (req, res) => {
         continue;
       }
 
+      if (req.query.debug === 'true') {
+        return res.status(200).json({
+          debug: true,
+          tab: tabName,
+          rowCount: rows.length,
+          firstRow: rows[0] || null,
+          note: 'Check whether the per-row date field is actually named "date" before trusting purchase_date in the real write path.',
+        });
+      }
+
       const outRows = rows.map(r => {
         const asin       = (r.advertisedAsin || '').toUpperCase();
         const impressions = parseInt(r.impressions || 0, 10) || 0;
@@ -108,7 +118,8 @@ module.exports = async (req, res) => {
         const adUnits       = parseInt(r.unitsSoldClicks14d || 0, 10) || 0;
         const sales         = round2(parseFloat(r.sales14d || 0) || 0);
         const acos          = sales > 0 ? round2((spend / sales) * 100) : '';
-        return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now];
+        const purchaseDate  = r.date || ''; // present now that request.js uses timeUnit=DAILY
+        return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now, purchaseDate];
       });
 
       try {
