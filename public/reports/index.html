@@ -5346,6 +5346,12 @@ const UPLOADS_EVOLIS_GID  = '1714211650';
 const INSIGHTS_BRAND_TAB  = 'evolis';
 const LISTING_AUDIT_SHEET_ID  = '1NrCQPR7vuuHKgG6nVnh3hGnHGHD6txjXGdhrIn63w-M';
 const SHEET_LISTINGS_ID       = '142l0fEr7TnNCLfqbxfK3PoS4gREaoqfXevqjB1_dB-M';
+// Added 2026-07-17: source of "current listing" data for the AUDIT specifically.
+// loadListingsFromSheet() (the Active Title/etc. display cards) still correctly
+// reads SHEET_LISTINGS above — that data is current and accurate. Only the
+// audit backend call needs the new sheet, since run-listing-audit.js was
+// rewritten to expect SHEET_PRODUCT_INVENTORY's column layout.
+const SHEET_PRODUCT_INVENTORY_ID = '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s';
 const SHEET_LISTINGS_GID      = '1253931757';
 const KEYWORD_STRATEGY_SHEET_ID = '1B50P142KObEcwtgxzNzofRAidZ9efePts0_8RSnt5mg';
 const SKU_KW_GID_MAP = {
@@ -6226,15 +6232,17 @@ async function runInsightAnalysis() {
     // Per Jaclyn — if the actual new request shape differs, this is the
     // one spot to adjust once the updated backend contract is confirmed.
     const sum=buildSummaries();
-    st.textContent='Loading history\u2026'; st.className='upload-status';
-    const hist=await fetchHistoricalSummaries(4);
-    st.textContent='Running AI analysis\u2026';
-    const ins=await callClaudeForInsights(sum,formatHistoryForClaude(hist),buildListingContext());
+    st.textContent='Running AI analysis\u2026'; st.className='upload-status';
+    const ins=await callClaudeForInsights(sum,'','');
     st.textContent='Updating dashboard\u2026';
     injectInsights(ins);
     st.textContent='Saving\u2026';
     await saveUploadsToSheet(sum,ins);
-    await writeInsightsToSheet(ins);
+    // FIX 2026-07-17: removed the writeInsightsToSheet(ins) call that used
+    // to run here. The backend (/api/run-analysis) now writes insights to
+    // sheets.insights itself, server-side. Keeping this call was double-
+    // writing every run into the Insights Log tab — confirmed on the sheet
+    // itself, two rows for the same date, one of them column-shifted.
     st.textContent='\u2713 Done \u2014 '+new Date().toLocaleTimeString();
     st.className='upload-status success';
   } catch(err) {
@@ -6582,7 +6590,7 @@ async function runListingAudit() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             brand:          INSIGHTS_BRAND_TAB,
-            sourceSheetId:  SHEET_LISTINGS_ID,
+            sourceSheetId:  SHEET_PRODUCT_INVENTORY_ID,
             auditSheetId:   LISTING_AUDIT_SHEET_ID,
             keywordSheetId: KEYWORD_STRATEGY_SHEET_ID,
             skuGidMap:      SKU_KW_GID_MAP,
@@ -8334,4 +8342,3 @@ async function loadAuditResultsFromSheet() {
 </script>
 </body>
 </html>
- 
