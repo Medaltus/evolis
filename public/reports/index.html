@@ -5528,30 +5528,56 @@ async function initSns() {
     const legendEl = document.getElementById('pd-legend');
     if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>2025</span><span><i style="background:#1b2559;"></i>2026</span>`;
 
-    // Custom plugin: draws a colored YOY% pill just past the end of each
-    // row's longer bar — Chart.js has no built-in per-bar label, and adding
+    // Custom plugin — Chart.js has no built-in per-bar label, and adding
     // chartjs-plugin-datalabels as a new dependency felt like more risk than
     // this needed, so this is scoped to just this one chart instance.
+    // Draws: (1) the raw unit count inside each bar (or just past it, muted,
+    // if the bar's too short to hold the text), and (2) a YOY% pill per row,
+    // pinned to a fixed column past the plot area rather than "past the
+    // longer bar" — keeps it from colliding with a value label on short-bar
+    // rows, and reads cleaner as an aligned column of numbers.
     const yoyLabelPlugin = {
       id: 'pdYoyLabels',
       afterDatasetsDraw(chart) {
-        const { ctx, chartArea, scales } = chart;
+        const { ctx, chartArea } = chart;
         ctx.save();
-        ctx.font = "700 10px 'Montserrat', sans-serif";
+
+        // Per-bar unit-count labels
+        ctx.font = "600 10px 'Montserrat', sans-serif";
         ctx.textBaseline = 'middle';
+        [0, 1].forEach(dsIndex => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          const values = dsIndex === 0 ? entries.map(e => e.prev) : entries.map(e => e.curr);
+          meta.data.forEach((bar, i) => {
+            const label = String(values[i]);
+            const textW = ctx.measureText(label).width;
+            const barWidth = bar.x - bar.base;
+            if (barWidth > textW + 12) {
+              ctx.fillStyle = '#fff';
+              ctx.textAlign = 'right';
+              ctx.fillText(label, bar.x - 8, bar.y);
+            } else {
+              ctx.fillStyle = '#8a94a6';
+              ctx.textAlign = 'left';
+              ctx.fillText(label, bar.x + 6, bar.y);
+            }
+          });
+        });
+
+        // YOY% pill per row, fixed column just past the plot area
+        ctx.font = "700 10px 'Montserrat', sans-serif";
+        ctx.textAlign = 'left';
         entries.forEach((e, i) => {
           const p = pct(e.curr, e.prev);
           const label = `${p > 0 ? '+' : ''}${p}%`;
           const isGood = p >= 0;
-          // Anchor off whichever bar (2025 or 2026) extends furthest for this row.
           const meta2025 = chart.getDatasetMeta(0).data[i];
           const meta2026 = chart.getDatasetMeta(1).data[i];
           if (!meta2025 || !meta2026) return;
-          const x = Math.max(meta2025.x, meta2026.x) + 10;
           const y = (meta2025.y + meta2026.y) / 2;
           const textW = ctx.measureText(label).width;
-          const padX = 6, padY = 3, boxH = 16;
-          const boxX = Math.min(x, chartArea.right - textW - padX * 2 - 4);
+          const padX = 6, boxH = 16;
+          const boxX = chartArea.right + 10;
           ctx.fillStyle = isGood ? 'rgba(36,233,163,.15)' : 'rgba(219,55,45,.12)';
           ctx.beginPath();
           ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3);
@@ -5580,7 +5606,7 @@ async function initSns() {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
-        layout: { padding: { right: 56 } }, // room for the YOY% pills past the longest bar
+        layout: { padding: { right: 64 } }, // room for the fixed YOY% pill column
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -5592,7 +5618,14 @@ async function initSns() {
             }
           }
         },
-        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+        // Values now render on the bars themselves, so the value axis (with
+        // its vertical gridlines running behind every bar) is redundant —
+        // hiding it entirely is what actually declutters this, not just
+        // toggling the grid off while keeping ticks/border.
+        scales: {
+          x: { display: false, beginAtZero: true },
+          y: { grid: { display: false } }
+        }
       }
     });
   }
