@@ -30,7 +30,7 @@ const AD_API_HOST  = 'advertising-api.amazon.com';
 const META_TAB     = '_meta_events';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
-const HEADERS = ['asin', 'brand', 'impressions', 'clicks', 'ad_units', 'purchases', 'spend', 'sales', 'acos', 'last_updated', 'purchase_date'];
+const HEADERS = ['asin', 'brand', 'impressions', 'clicks', 'ad_units', 'purchases', 'spend', 'sales', 'acos', 'last_updated', 'purchase_date', 'year'];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -120,14 +120,30 @@ module.exports = async (req, res) => {
         const acos          = sales > 0 ? round2((spend / sales) * 100) : '';
         const purchaseDate  = r.date || r.reportDate || ''; // now explicitly requested via columns — see debug check before trusting this
         if (!purchaseDate) console.warn(`[sync-event-ad-orders-process] ${tabName} — row for ${asin} has no date field even after requesting it explicitly. Raw keys: ${Object.keys(r).join(',')}`);
-        return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now, purchaseDate];
+        const year = purchaseDate ? parseInt(purchaseDate.slice(0, 4), 10) : '';
+        return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now, purchaseDate, year];
       });
 
+      // Upsert keyed by asin+purchase_date, NOT a full replace — same fix
+      // applied to sync-event-orders-process.js. A run for one year's
+      // event must never wipe out a different year's rows already sitting
+      // in this tab (e.g. a manually-merged 2025 backfill).
       try {
         const tabToken = await ensureTab(sheets.adOrders, tabName, HEADERS);
-        await replaceRows(sheets.adOrders, tabName, HEADERS, outRows, tabToken);
-        console.log(`[sync-event-ad-orders-process] ${tabName} — wrote ${outRows.length} rows`);
-        results.push({ tab: tabName, status: 'ok', rows: outRows.length });
+        const existingRaw = await readRows(sheets.adOrders, tabName);
+        const key = r => `${Array.isArray(r) ? r[0] : r.asin}||${Array.isArray(r) ? r[10] : r.purchase_date}`;
+
+        const merged = new Map();
+        (existingRaw || []).forEach(r => {
+          const rowArr = Array.isArray(r) ? r : HEADERS.map(h => r[h] ?? '');
+          merged.set(key(rowArr), rowArr);
+        });
+        outRows.forEach(r => merged.set(key(r), r));
+
+        const finalRows = Array.from(merged.values());
+        await replaceRows(sheets.adOrders, tabName, HEADERS, finalRows, tabToken);
+        console.log(`[sync-event-ad-orders-process] ${tabName} — upserted ${outRows.length} rows this run, ${finalRows.length} total across all years`);
+        results.push({ tab: tabName, status: 'ok', rowsThisRun: outRows.length, totalRows: finalRows.length });
         metaUpdates[`processed_${tabName}`] = 'true';
       } catch (err) {
         results.push({ tab: tabName, status: 'write_failed', error: err.message });
