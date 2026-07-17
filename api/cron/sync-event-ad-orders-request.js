@@ -79,7 +79,7 @@ module.exports = async (req, res) => {
       overrideToken, overrideProfileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
       { startDate: req.query.startDate, endDate: overrideEnd },
       ['advertiser'],
-      ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+      ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
       req.query.outTab
     );
     if (!reportId) return res.status(500).json({ error: 'No reportId returned for override request' });
@@ -164,7 +164,7 @@ module.exports = async (req, res) => {
       token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
       { startDate: m.startDate, endDate: m.endDate },
       ['advertiser'],
-      ['advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+      ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
       m.tabName
     );
     if (reportId) reportIds[m.tabName] = reportId;
