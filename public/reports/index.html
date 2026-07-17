@@ -846,6 +846,13 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   <div class="topbar">
     <span class="topbar-title" id="topbar-title">Overview — Évolis</span>
     <div class="topbar-right">
+      <div class="pdf-events-picker" id="pdf-events-picker" style="display:none;font-size:11px;color:var(--muted);align-items:center;gap:8px;">
+        <span>Include in PDF:</span>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-bss" style="margin:0;"> Big Spring Sale</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-pd" style="margin:0;"> Prime Day</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-pbdd" style="margin:0;"> PBDD</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-bfcm" style="margin:0;"> BFCM</label>
+      </div>
       <button class="pdf-export-btn" id="pdf-export-btn" onclick="exportPartnerPDF()" style="display:none;">
         <svg viewBox="0 0 16 16"><path d="M8 1v9M4.5 6.5L8 10l3.5-3.5"/><path d="M2 11v2.5a1 1 0 001 1h10a1 1 0 001-1V11"/></svg>
         <span class="pdfx-spin"></span>
@@ -962,7 +969,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div style="font-family:Georgia,serif;font-size:34px;line-height:1.15;margin-bottom:14px;">Monthly<br>Partnership<br>Report</div>
         <div style="width:40px;height:2px;background:var(--green);margin-bottom:18px;"></div>
         <div style="font-size:12px;color:rgba(255,255,255,.6);line-height:1.6;max-width:520px;">A brief overview of sales performance, ad investments, brand stewardship activities, and upcoming growth opportunities.</div>
-        <div style="margin-top:18px;font-size:11px;color:rgba(255,255,255,.4);font-weight:600;letter-spacing:.06em;">BRAND PERFORMANCE REPORT &nbsp;·&nbsp; <span id="topbar-date" style="color:rgba(255,255,255,.55);">May 2026</span></div>
+        <div style="margin-top:18px;font-size:11px;color:rgba(255,255,255,.4);font-weight:600;letter-spacing:.06em;">BRAND PERFORMANCE REPORT &nbsp;·&nbsp; <span id="overview-hero-date" style="color:rgba(255,255,255,.55);">May 2026</span></div>
       </div>
 
       <!-- Executive summary — two columns like the PDF -->
@@ -3144,6 +3151,11 @@ function showPage(id, btn) {
   if (pdfBtn) {
     const exportablePages = ['sales', 'marketing', 'events'];
     pdfBtn.style.display = exportablePages.includes(id) ? 'flex' : 'none';
+  }
+  const pdfPicker = document.getElementById('pdf-events-picker');
+  if (pdfPicker) {
+    const exportablePages = ['sales', 'marketing', 'events'];
+    pdfPicker.style.display = exportablePages.includes(id) ? 'flex' : 'none';
   }
 
   // Auto-init first active channel when navigating to Sales or Marketing
@@ -6127,21 +6139,29 @@ document.addEventListener('DOMContentLoaded', function() {
     load();
   })();
 
-  // ── Overview hero date — independent of initAmazonLive() ────────────────
-  // That function already sets #topbar-date, but per Jaclyn 2026-07-18 it
-  // was still showing the static "May 2026" default — likely a timing/error
-  // issue somewhere earlier in that async function's chain. Rather than
-  // chase that dependency, this sets it directly and unconditionally so it
-  // can't be silently skipped by something unrelated failing upstream.
-  (function fixTopbarDate() {
-    const el = document.getElementById('topbar-date');
-    if (!el) return;
+  // ── Overview hero date — real root cause found ───────────────────────────
+  // #topbar-date (the global topbar element) was already being set correctly
+  // by initAmazonLive() — but the Overview hero block had a SEPARATE element
+  // that also used id="topbar-date". Duplicate IDs are invalid HTML, and
+  // document.getElementById always resolves to the first match in the DOM
+  // (the global topbar), so every fix aimed at "topbar-date" — including my
+  // last one — was silently updating the topbar while the hero block's own
+  // copy, several hundred lines later in the DOM, never got touched at all.
+  // That's exactly why it kept showing the static "May 2026" default no
+  // matter what. Given the hero block's span its own id (overview-hero-date)
+  // above, and this now sets both independently.
+  (function fixOverviewDates() {
     const now = new Date();
     let year = now.getFullYear(), month = now.getMonth();
     if (month === 0) { month = 12; year--; }
     const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const lastDay = new Date(year, month, 0).getDate();
-    el.textContent = `${names[month-1]} 1 – ${names[month-1]} ${lastDay}, ${year}`;
+
+    const topbarEl = document.getElementById('topbar-date');
+    if (topbarEl) topbarEl.textContent = `📅 ${names[month-1]} 1 – ${names[month-1]} ${lastDay}, ${year}`;
+
+    const heroEl = document.getElementById('overview-hero-date');
+    if (heroEl) heroEl.textContent = `${names[month-1]} ${year}`;
   })();
 });
 
@@ -7924,7 +7944,8 @@ async function loadAuditResultsFromSheet() {
     _walmartChart: 'chart-walmart',
     _investChart: 'chart-invest',
     _impressChart: 'chart-impressions',
-    _snsChart: 'chart-sns'
+    _snsChart: 'chart-sns',
+    _pdTopSellersChart: 'pd-chart-top-sellers'
   };
   let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages() — now {varName: {img, width, height}}
 
@@ -8480,6 +8501,40 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  // Generic across all 4 event tabs. Only Prime Day has real KPI cards +
+  // chart built so far — hasKpis detects that by checking whether the KPI
+  // element actually exists in the DOM, so Big Spring Sale/PBDD/BFCM pages
+  // automatically pick up their KPIs+chart the moment those get built,
+  // with no changes needed here. Until then they're exec-summary-only.
+  function buildEventPage(prefix, eventLabel, monthYear) {
+    const headline = pdfxText('#' + prefix + '-exec-summary-headline') || eventLabel;
+    const body = pdfxHTML('#' + prefix + '-exec-summary-body') || '<span style="color:var(--muted);font-style:italic;">No summary added yet.</span>';
+    const dates = pdfxById(prefix + '-event-dates') ? pdfxText('#' + prefix + '-event-dates') : '';
+
+    const hasKpis = !!pdfxById(prefix + '-kpi-total-units');
+    const kpisHtml = hasKpis
+      ? '<div class="pdfx-kpis" style="margin-top:6px;">' +
+          ['kpi-total-units','kpi-total-orders','kpi-avg-order','kpi-units-ads','kpi-units-organic']
+            .map(function (s) { return pdfxKpi(prefix + '-' + s); })
+            .map(pdfxKpiCardHtml).join('') +
+        '</div>'
+      : '';
+    const chartHtml = hasKpis
+      ? '<div class="pdfx-card" style="margin-top:14px;"><div class="pdfx-card-title">Top Sellers — Units Sold</div>' + pdfxChartBlock('_' + prefix + 'TopSellersChart') + '</div>'
+      : '';
+
+    return '' +
+      '<div class="pdfx-page">' +
+        '<div class="pdfx-inner">' +
+          pdfxHeaderBand(monthYear, 'Events') +
+          '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + (dates ? ' — ' + pdfxEscape(dates) : '') + '</div>' +
+          '<div class="pdfx-card"><div class="pdfx-card-title">' + pdfxEscape(headline) + '</div><div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + body + '</div></div>' +
+          kpisHtml + chartHtml +
+          pdfxFooter(monthYear) +
+        '</div>' +
+      '</div>';
+  }
+
   // ---- main entry point ----------------------------------------------------
 
   window.exportPartnerPDF = async function () {
@@ -8512,12 +8567,23 @@ async function loadAuditResultsFromSheet() {
       // definitions above), so calling them again here — regardless of
       // whether page load already started them — always resolves once the
       // chart is actually built.
+      const includeEvents = {
+        bss:  !!document.getElementById('pdf-include-bss')  && document.getElementById('pdf-include-bss').checked,
+        pd:   !!document.getElementById('pdf-include-pd')   && document.getElementById('pdf-include-pd').checked,
+        pbdd: !!document.getElementById('pdf-include-pbdd') && document.getElementById('pdf-include-pbdd').checked,
+        bfcm: !!document.getElementById('pdf-include-bfcm') && document.getElementById('pdf-include-bfcm').checked,
+      };
+
       const initPromises = [
         (typeof window.initAmazonLive === 'function')      ? window.initAmazonLive()      : null,
         (typeof window.initWebLive === 'function')         ? window.initWebLive()         : null,
         (typeof window.initWalmartLive === 'function')     ? window.initWalmartLive()     : null,
         (typeof window.initStewardshipLive === 'function') ? window.initStewardshipLive() : null,
-        (!window._snsChart && typeof initSns === 'function') ? initSns() : null
+        (!window._snsChart && typeof initSns === 'function') ? initSns() : null,
+        // Prime Day's KPIs/chart are lazy-loaded on tab click — if it's
+        // checked for inclusion but the tab was never opened this session,
+        // this is what actually builds the chart before capture below.
+        (includeEvents.pd && typeof window.initPrimeDayReport === 'function') ? window.initPrimeDayReport() : null,
       ].filter(Boolean);
       if (initPromises.length) {
         console.log('[pdf-export] awaiting', initPromises.length, 'chart data load(s) before building PDF');
@@ -8529,6 +8595,7 @@ async function loadAuditResultsFromSheet() {
       // loaded, just re-verify," not "actually wait for a cold fetch,"
       // which is what this was silently doing every time before today.
       const expectedCharts = ['_amazonChart', '_webChart', '_walmartChart', '_investChart', '_impressChart', '_snsChart'];
+      if (includeEvents.pd) expectedCharts.push('_pdTopSellersChart');
       const pollStart = Date.now();
       while (Date.now() - pollStart < 12000 && expectedCharts.some(v => !window[v])) {
         await new Promise(r => setTimeout(r, 150));
@@ -8553,9 +8620,17 @@ async function loadAuditResultsFromSheet() {
         document.body.appendChild(root);
       }
 
+      const eventPages = [
+        includeEvents.bss  ? buildEventPage('bss',  'Big Spring Sale',             monthYear) : '',
+        includeEvents.pd   ? buildEventPage('pd',   'Prime Day',                   monthYear) : '',
+        includeEvents.pbdd ? buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear) : '',
+        includeEvents.bfcm ? buildEventPage('bfcm', 'Black Friday & Cyber Monday', monthYear) : '',
+      ].join('');
+
       root.innerHTML =
         buildCoverPage(monthYear) + buildAmazonPage(monthYear) + buildWebsitePage(monthYear) +
-        buildWalmartPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear);
+        buildWalmartPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear) +
+        eventPages;
 
       // Positioned off-screen (not display:none, so it still has real layout
       // for html2canvas to measure/paint) rather than visible on top of
