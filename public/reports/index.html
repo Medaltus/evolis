@@ -111,6 +111,11 @@ nav{flex:1;padding:8px 8px 0;}
 .kpi-mom.up{color:#1db88a;}
 .kpi-mom.dn{color:var(--danger);}
 .kpi-mom.flat{color:var(--muted);}
+.pd-event-dates{font-size:13px;color:var(--muted);margin:-8px 0 18px;}
+.pd-top-sellers-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.pd-legend{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--muted);}
+.pd-legend span{display:inline-flex;align-items:center;gap:5px;}
+.pd-legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
 
 /* ── Cards / sections ── */
 .card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
@@ -1232,7 +1237,7 @@ As inventory availability improves, the current sales mix provides a strong foun
     <div class="channel-tabs">
       <button class="ch-tab active" onclick="showChannel('events','ev-strategy',this)">Strategy</button>
       <button class="ch-tab" onclick="showChannel('events','ev-spring',this)">Big Spring Sale '26</button>
-      <button class="ch-tab" onclick="showChannel('events','ev-primeday',this)">Prime Day Jul '25</button>
+      <button class="ch-tab" onclick="showChannel('events','ev-primeday',this)">Prime Day</button>
       <button class="ch-tab" onclick="showChannel('events','ev-pbdd',this)">Prime Big Deal Days Oct '25</button>
       <button class="ch-tab" onclick="showChannel('events','ev-bfcm',this)">BFCM '25</button>
     </div>
@@ -1304,7 +1309,25 @@ As inventory availability improves, the current sales mix provides a strong foun
       <div class="placeholder-block"><div class="ph-icon">🌸</div><div class="ph-title">Big Spring Sale — March 2026</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
     </div>
     <div class="channel-page" id="ev-primeday">
-      <div class="placeholder-block"><div class="ph-icon">⚡</div><div class="ph-title">Prime Day — July 2025</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
+      <div class="page-hd" style="margin-bottom:4px;">
+        <div><div class="page-title" style="font-size:18px;" id="pd-event-title">Prime Day</div></div>
+      </div>
+      <div class="pd-event-dates" id="pd-event-dates">Loading event dates…</div>
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="kpi-card" id="pd-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pd-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pd-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pd-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pd-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="pd-top-sellers-row">
+          <div class="card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>
+          <div class="pd-legend" id="pd-legend"></div>
+        </div>
+        <div id="pd-top-sellers-empty" style="display:none;color:var(--muted);font-size:12px;padding:20px 0;">No unit sales found for either event year.</div>
+        <div style="position:relative;height:340px;"><canvas id="pd-chart-top-sellers"></canvas></div>
+      </div>
     </div>
     <div class="channel-page" id="ev-pbdd">
       <div class="placeholder-block"><div class="ph-icon">🎯</div><div class="ph-title">Prime Big Deal Days — October 2025</div><div class="ph-sub">Event recap, revenue lift, units, ACOS performance</div></div>
@@ -3042,6 +3065,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-walmart')       initWalmartLive();
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
+    if (channelId === 'ev-primeday')     window.initPrimeDayReport();
   }
 
   // ── Sub-tab navigation (nested product/variation tabs) ──
@@ -5295,6 +5319,277 @@ async function initSns() {
     if (typeof window.initPpcPage === 'function') window.initPpcPage();
   });
 
+})();
+
+// ── Events Page: Prime Day report ─────────────────────────────────────────
+// Per Jaclyn 2026-07-17: no new cron needed — the "Prime Day" tabs on the
+// orders sheet and ad orders sheet are already populated by existing crons
+// (sync-event-orders-request/process.js, sync-event-ad-orders-request/
+// process.js) and already scoped to just the event date windows. This
+// function only reads and renders. Event dates come from the Events tab
+// (Master SKU List, gid 347530381) rather than being hardcoded, per
+// Jaclyn's request that the report itself — not just the tab label —
+// make the actual event dates clear.
+(function () {
+  const EVENTS_SHEET_ID       = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const EVENTS_GID            = '347530381';
+  const PD_ORDERS_SHEET_ID    = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok';
+  const PD_ORDERS_GID         = '893121583';  // "Prime Day" tab — already event-date-scoped, both years
+  const PD_AD_ORDERS_SHEET_ID = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI';
+  const PD_AD_ORDERS_GID      = '1513774721'; // "Prime Day" tab on the ad orders sheet
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
+  const BRAND = 'evolis';
+
+  function sheetCsvUrl(id, gid) {
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+  function parseAmt(v) {
+    if (v == null) return 0;
+    const n = parseFloat(String(v).replace(/[$,]/g, ''));
+    return isNaN(n) ? 0 : n;
+  }
+  // Epsilon fallback for a zero previous-year value — matches the exact
+  // convention already used on the Master SKU List's own YOY% column for
+  // Big Spring Sale / Prime Day (e.g. "0.01 | 20 | 199900%"), rather than
+  // showing Infinity/NaN or silently hiding a 0→N change.
+  function pct(current, previous) {
+    const p = (!previous || previous === 0) ? 0.01 : previous;
+    return Math.round(((current - p) / p) * 100);
+  }
+  function setKpiValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = el.querySelector('.kpi-value');
+    if (v) v.textContent = value;
+  }
+  function setBadge(id, pctVal) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector('.kpi-mom');
+    if (!badge) return;
+    if (pctVal == null) { badge.className = 'kpi-mom flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    badge.className = 'kpi-mom ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% YOY`;
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const [y,m,d] = iso.split('-').map(Number);
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${names[m-1]} ${d}, ${y}`;
+  }
+
+  async function getEventDates() {
+    const csv = await fetch(sheetCsvUrl(EVENTS_SHEET_ID, EVENTS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    if (!isCsv(csv)) return { current: null, previous: null };
+    const rows = parseCsv(csv).filter(r => (r['Event Name'] || '').trim() === 'Prime Day');
+    rows.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''));
+    return { current: rows[0] || null, previous: rows[1] || null };
+  }
+
+  // Total Units sums unit_count across all rows unconditionally — cancelled
+  // rows already record 0 units per this sheet's existing convention, same
+  // as the regular monthly aggregateMonth() logic elsewhere on this
+  // dashboard. Total Orders and Average Order explicitly exclude Cancelled
+  // per Jaclyn (2026-07-17) — matching order_id can appear on multiple rows
+  // (one per SKU in that order), so both are computed by grouping on
+  // order_id first, not by counting/summing rows directly.
+  function aggregateYear(rows, year) {
+    const filtered = rows.filter(r => String(r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND);
+    const nonCancelled = filtered.filter(r => (r.status || '').trim().toLowerCase() !== 'cancelled');
+    const orderIds = new Set(nonCancelled.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const orderTotals = {};
+    nonCancelled.forEach(r => {
+      if (!r.order_id) return;
+      // item_price, not order_total — order_total is per-line-item on this
+      // sheet (same order_id shows different order_total per SKU), matching
+      // the same item_price-accumulation approach already used by the
+      // regular monthly aggregateMonth() elsewhere on this dashboard.
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    return { totalUnits, totalOrders, avgOrder, rows: filtered };
+  }
+
+  function sumAdUnits(rows, year) {
+    return rows
+      .filter(r => String(r.Year || r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND)
+      .reduce((s, r) => s + (parseInt(r.ad_units, 10) || 0), 0);
+  }
+
+  // ASIN → name lookup, same source/columns as the existing Top Products
+  // name-lookup pattern elsewhere on this dashboard (col A = ASIN, col C = name).
+  async function getProductNames() {
+    const map = {};
+    try {
+      const csv = await fetch(sheetCsvUrl(PRODUCT_NAMES_SHEET_ID, PRODUCT_NAMES_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (!isCsv(csv)) return map;
+      const lines = csv.trim().split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+        const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+        if (asin && name) map[asin] = name;
+      }
+    } catch (e) { console.warn('[PrimeDayReport] name lookup failed:', e.message); }
+    return map;
+  }
+
+  function buildTopSellersChart(currRows, prevRows, nameMap) {
+    const byAsin = {}; // asin -> { curr, prev }
+    currRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (!asin) return;
+      byAsin[asin] = byAsin[asin] || { curr: 0, prev: 0 };
+      byAsin[asin].curr += parseInt(r.unit_count, 10) || 0;
+    });
+    prevRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (!asin) return;
+      byAsin[asin] = byAsin[asin] || { curr: 0, prev: 0 };
+      byAsin[asin].prev += parseInt(r.unit_count, 10) || 0;
+    });
+    const entries = Object.entries(byAsin)
+      .filter(([, v]) => v.curr > 0 || v.prev > 0)
+      .map(([asin, v]) => ({ asin, name: nameMap[asin] || asin, ...v }))
+      .sort((a, b) => b.curr - a.curr);
+
+    const emptyEl = document.getElementById('pd-top-sellers-empty');
+    if (!entries.length) {
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const legendEl = document.getElementById('pd-legend');
+    if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>2025</span><span><i style="background:#1b2559;"></i>2026</span>`;
+
+    const ctx = document.getElementById('pd-chart-top-sellers');
+    if (!ctx) return;
+    if (window._pdTopSellersChart) window._pdTopSellersChart.destroy();
+    window._pdTopSellersChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: entries.map(e => e.name),
+        datasets: [
+          { label: 'Prime Day 2025', data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3 },
+          { label: 'Prime Day 2026', data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3 },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterBody: (items) => {
+                const e = entries[items[0].dataIndex];
+                return [`YOY: ${pct(e.curr, e.prev) > 0 ? '+' : ''}${pct(e.curr, e.prev)}%`];
+              }
+            }
+          }
+        },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  }
+
+  window.initPrimeDayReport = function () {
+    if (window._primeDayReportPromise) return window._primeDayReportPromise;
+    window._primeDayReportPromise = (async function () {
+      console.log('[Evolis] initPrimeDayReport() called');
+      try {
+        const [dates, ordersCsv, adOrdersCsv, nameMap] = await Promise.all([
+          getEventDates(),
+          fetch(sheetCsvUrl(PD_ORDERS_SHEET_ID, PD_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(sheetCsvUrl(PD_AD_ORDERS_SHEET_ID, PD_AD_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+          getProductNames(),
+        ]);
+
+        const dateEl = document.getElementById('pd-event-dates');
+        if (dates.current) {
+          if (dateEl) dateEl.textContent = `${fmtDate(dates.current.start_date)} – ${fmtDate(dates.current.end_date)}` + (dates.previous ? ` · vs. ${fmtDate(dates.previous.start_date)} – ${fmtDate(dates.previous.end_date)} last year` : '');
+        } else if (dateEl) {
+          dateEl.textContent = 'Event dates not found on Events tab.';
+        }
+
+        if (!isCsv(ordersCsv) || !dates.current) {
+          ['pd-kpi-total-units','pd-kpi-total-orders','pd-kpi-avg-order','pd-kpi-units-ads','pd-kpi-units-organic'].forEach(id => {
+            setKpiValue(id, '—'); setBadge(id, null);
+          });
+          return;
+        }
+
+        const allOrderRows  = parseCsv(ordersCsv);
+        const allAdRows     = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv) : [];
+        const currYear = dates.current.start_date.slice(0,4);
+        const prevYear = dates.previous ? dates.previous.start_date.slice(0,4) : null;
+
+        const curr = aggregateYear(allOrderRows, currYear);
+        const prev = prevYear ? aggregateYear(allOrderRows, prevYear) : null;
+        const adUnits     = sumAdUnits(allAdRows, currYear);
+        const prevAdUnits = prevYear ? sumAdUnits(allAdRows, prevYear) : 0;
+
+        const fmt  = n => (n ?? 0).toLocaleString();
+        const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+        setKpiValue('pd-kpi-total-units', fmt(curr.totalUnits));
+        setBadge('pd-kpi-total-units', prev ? pct(curr.totalUnits, prev.totalUnits) : null);
+
+        setKpiValue('pd-kpi-total-orders', fmt(curr.totalOrders));
+        setBadge('pd-kpi-total-orders', prev ? pct(curr.totalOrders, prev.totalOrders) : null);
+
+        setKpiValue('pd-kpi-avg-order', '$' + fmt2(curr.avgOrder));
+        setBadge('pd-kpi-avg-order', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null);
+
+        setKpiValue('pd-kpi-units-ads', fmt(adUnits));
+        setBadge('pd-kpi-units-ads', prev ? pct(adUnits, prevAdUnits) : null);
+
+        const organicUnits = curr.totalUnits - adUnits;
+        const prevOrganic  = prev ? prev.totalUnits - prevAdUnits : null;
+        setKpiValue('pd-kpi-units-organic', fmt(organicUnits));
+        setBadge('pd-kpi-units-organic', prevOrganic != null ? pct(organicUnits, prevOrganic) : null);
+
+        buildTopSellersChart(curr.rows, prev ? prev.rows : [], nameMap);
+
+      } catch (err) {
+        console.error('[PrimeDayReport]', err.message);
+        const dateEl = document.getElementById('pd-event-dates');
+        if (dateEl) dateEl.textContent = 'Error loading event data: ' + err.message;
+      }
+    })();
+    return window._primeDayReportPromise;
+  };
 })();
 
 
