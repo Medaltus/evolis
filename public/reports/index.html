@@ -1313,6 +1313,39 @@ As inventory availability improves, the current sales mix provides a strong foun
         <div><div class="page-title" style="font-size:18px;" id="pd-event-title">Prime Day</div></div>
       </div>
       <div class="pd-event-dates" id="pd-event-dates">Loading event dates…</div>
+
+      <!-- Executive summary — mirrors the s-overview pattern (headline + 2 columns) -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px;">Executive Summary</div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="pd-exec-summary-headline">Add a headline summarizing this event's performance</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-left">Click Edit below to add the left-column summary — typically top-level performance vs. last year's event.</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="pd-exec-summary-right">Click Edit below to add the right-column summary — typically product-level or mix-shift observations.</div>
+        </div>
+      </div>
+      <div class="insight-bar" style="margin-bottom:8px;">
+        <strong style="font-size:11px;">Executive Summary</strong>
+        <div class="insight-actions">
+          <span class="staging-note">◎ In Staging</span>
+          <button class="btn-edit" onclick="toggleEditor('ev-primeday')">✏️ Edit</button>
+          <button class="btn-approve" onclick="openApproveModal('ev-primeday')">Approve → Live</button>
+        </div>
+      </div>
+      <div class="insight-editor" id="editor-ev-primeday">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Edit the headline and summary text shown at the top of this event report.</div>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Headline</div>
+        <textarea id="textarea-ev-primeday-headline" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:52px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Left column</div>
+        <textarea id="textarea-ev-primeday-left" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;margin-bottom:10px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Right column</div>
+        <textarea id="textarea-ev-primeday-right" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:80px;"></textarea>
+        <div class="editor-footer" style="margin-top:10px;">
+          <span class="editor-note">Saved edits go to Staging for review before going live.</span>
+          <button class="btn-cancel" onclick="toggleEditor('ev-primeday')">Cancel</button>
+          <button class="btn-save-stage" onclick="saveToStaging('ev-primeday')">Save to Staging</button>
+        </div>
+      </div>
+
       <div class="kpi-row" style="margin-bottom:20px;">
         <div class="kpi-card" id="pd-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
         <div class="kpi-card" id="pd-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
@@ -1326,7 +1359,7 @@ As inventory availability improves, the current sales mix provides a strong foun
           <div class="pd-legend" id="pd-legend"></div>
         </div>
         <div id="pd-top-sellers-empty" style="display:none;color:var(--muted);font-size:12px;padding:20px 0;">No unit sales found for either event year.</div>
-        <div style="position:relative;height:340px;"><canvas id="pd-chart-top-sellers"></canvas></div>
+        <div style="position:relative;height:420px;"><canvas id="pd-chart-top-sellers"></canvas></div>
       </div>
     </div>
     <div class="channel-page" id="ev-pbdd">
@@ -5463,6 +5496,8 @@ async function initSns() {
     return map;
   }
 
+  const TOP_SELLERS_COUNT = 7; // per Jaclyn 2026-07-17 — "top 5-7 products, a little bigger"
+
   function buildTopSellersChart(currRows, prevRows, nameMap) {
     const byAsin = {}; // asin -> { curr, prev }
     currRows.forEach(r => {
@@ -5480,7 +5515,8 @@ async function initSns() {
     const entries = Object.entries(byAsin)
       .filter(([, v]) => v.curr > 0 || v.prev > 0)
       .map(([asin, v]) => ({ asin, name: nameMap[asin] || asin, ...v }))
-      .sort((a, b) => b.curr - a.curr);
+      .sort((a, b) => b.curr - a.curr)
+      .slice(0, TOP_SELLERS_COUNT); // top N by current-year units, matching the screenshot's 7-row layout
 
     const emptyEl = document.getElementById('pd-top-sellers-empty');
     if (!entries.length) {
@@ -5491,6 +5527,41 @@ async function initSns() {
 
     const legendEl = document.getElementById('pd-legend');
     if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>2025</span><span><i style="background:#1b2559;"></i>2026</span>`;
+
+    // Custom plugin: draws a colored YOY% pill just past the end of each
+    // row's longer bar — Chart.js has no built-in per-bar label, and adding
+    // chartjs-plugin-datalabels as a new dependency felt like more risk than
+    // this needed, so this is scoped to just this one chart instance.
+    const yoyLabelPlugin = {
+      id: 'pdYoyLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        ctx.save();
+        ctx.font = "700 10px 'Montserrat', sans-serif";
+        ctx.textBaseline = 'middle';
+        entries.forEach((e, i) => {
+          const p = pct(e.curr, e.prev);
+          const label = `${p > 0 ? '+' : ''}${p}%`;
+          const isGood = p >= 0;
+          // Anchor off whichever bar (2025 or 2026) extends furthest for this row.
+          const meta2025 = chart.getDatasetMeta(0).data[i];
+          const meta2026 = chart.getDatasetMeta(1).data[i];
+          if (!meta2025 || !meta2026) return;
+          const x = Math.max(meta2025.x, meta2026.x) + 10;
+          const y = (meta2025.y + meta2026.y) / 2;
+          const textW = ctx.measureText(label).width;
+          const padX = 6, padY = 3, boxH = 16;
+          const boxX = Math.min(x, chartArea.right - textW - padX * 2 - 4);
+          ctx.fillStyle = isGood ? 'rgba(36,233,163,.15)' : 'rgba(219,55,45,.12)';
+          ctx.beginPath();
+          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3);
+          ctx.fill();
+          ctx.fillStyle = isGood ? '#1a9b6f' : '#c0392b';
+          ctx.fillText(label, boxX + padX, y + 1);
+        });
+        ctx.restore();
+      }
+    };
 
     const ctx = document.getElementById('pd-chart-top-sellers');
     if (!ctx) return;
@@ -5504,10 +5575,12 @@ async function initSns() {
           { label: 'Prime Day 2026', data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3 },
         ],
       },
+      plugins: [yoyLabelPlugin],
       options: {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { right: 56 } }, // room for the YOY% pills past the longest bar
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -5625,6 +5698,39 @@ async function initSns() {
       e.stopPropagation();
       saveOverview();
       document.getElementById('editor-s-overview').style.display = 'none';
+    });
+  });
+})();
+
+// ── Prime Day (Events page) executive summary — same localStorage pattern ──
+(function() {
+  function loadPrimeDayOverview() {
+    const hl   = localStorage.getItem('evo_primeday_headline');
+    const left = localStorage.getItem('evo_primeday_left');
+    const rgt  = localStorage.getItem('evo_primeday_right');
+    if (hl)   { document.getElementById('pd-exec-summary-headline').textContent = hl;
+                document.getElementById('textarea-ev-primeday-headline').value = hl; }
+    if (left) { document.getElementById('pd-exec-summary-left').innerHTML = left.replace(/\n/g,'<br>');
+                document.getElementById('textarea-ev-primeday-left').value = left; }
+    if (rgt)  { document.getElementById('pd-exec-summary-right').innerHTML = rgt.replace(/\n/g,'<br>');
+                document.getElementById('textarea-ev-primeday-right').value = rgt; }
+  }
+  function savePrimeDayOverview() {
+    const hl   = document.getElementById('textarea-ev-primeday-headline').value.trim();
+    const left = document.getElementById('textarea-ev-primeday-left').value.trim();
+    const rgt  = document.getElementById('textarea-ev-primeday-right').value.trim();
+    if (hl)   localStorage.setItem('evo_primeday_headline', hl);
+    if (left) localStorage.setItem('evo_primeday_left',    left);
+    if (rgt)  localStorage.setItem('evo_primeday_right',   rgt);
+    loadPrimeDayOverview();
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    loadPrimeDayOverview();
+    const saveBtn = document.querySelector('#editor-ev-primeday .btn-save-stage');
+    if (saveBtn) saveBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      savePrimeDayOverview();
+      document.getElementById('editor-ev-primeday').style.display = 'none';
     });
   });
 })();
