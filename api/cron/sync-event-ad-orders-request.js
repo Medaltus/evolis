@@ -7,16 +7,14 @@
  * spAdvertisedProduct (ASIN-level ad performance) report per matched
  * event, scoped to exactly that event's start/end dates.
  *
- * NO PURCHASE-DATE COLUMN NEEDED: the existing ad-orders cache cron
- * requests SUMMARY-granularity reports for a whole month, so its rows
- * are month-level totals with no per-day breakdown — that's fine for a
- * monthly cache, but useless for isolating "just the days of Prime Day"
- * out of a month that also contains non-event days. This cron sidesteps
- * that entirely: each request's startDate/endDate IS the event's exact
- * window, so the ASIN-level totals Amazon returns are already scoped to
- * just those days. Same technique already used in
- * sync-business-report-request.js (one request per calendar month) —
- * here it's one request per event window instead.
+ * DAILY GRANULARITY: requests each event's report with timeUnit=DAILY, so
+ * every row carries a real per-day date within the event window — one row
+ * per ASIN per day, not one summary row per ASIN for the whole event.
+ * (Earlier version of this file used SUMMARY granularity specifically to
+ * avoid needing a date column at all, by scoping each request to the
+ * event's exact window — that's still how sync-event-orders-request.js
+ * works, but this file switched to DAILY on 2026-07-16 so downstream
+ * sheets have an actual purchase_date column to work with.)
  *
  * Matching logic, meta tab naming, and the ?tab= single-event filter are
  * identical to sync-event-orders-request.js — see that file for the full
@@ -211,7 +209,7 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
       name:      `event_${reportTypeId}_${label}_${dateRange.endDate}`,
       startDate: dateRange.startDate,
       endDate:   dateRange.endDate,
-      configuration: { adProduct, groupBy, columns, reportTypeId, timeUnit: 'SUMMARY', format: 'GZIP_JSON' },
+      configuration: { adProduct, groupBy, columns, reportTypeId, timeUnit: 'DAILY', format: 'GZIP_JSON' },
     });
 
     if (body?.reportId) {
