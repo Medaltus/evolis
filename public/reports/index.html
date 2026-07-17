@@ -531,9 +531,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .ppc-kw-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);width:100%;margin-bottom:4px;}
 .opp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;}
 .opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;}
-.opp-channel{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--green);margin-bottom:8px;}
-.opp-event{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:6px;}
-.opp-promo{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;}
+.opp-title{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.opp-subtitle{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;}
 .opp-body{font-size:12.5px;color:var(--muted);line-height:1.6;}
 .ppc-opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
@@ -1209,19 +1208,41 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
 
       <div class="card" style="margin-bottom:16px;">
-        <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin-bottom:14px;">Future Opportunities</div>
-        <div class="opp-grid">
-          <div class="opp-card">
-            <div class="opp-channel">Amazon</div>
-            <div class="opp-event">Prime Day <span style="color:var(--muted);font-size:11px;font-weight:400;">· Dates TBD</span></div>
-            <div class="opp-promo">20% off Full-Sized Products</div>
-            <div class="opp-body">This event drives a high volume of traffic to Amazon. Early planning for deals and sponsored placements is recommended to maximize visibility during the sales window.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Future Opportunities</div>
+          <button class="btn-edit" id="opp-edit-btn">✏️ Edit</button>
+        </div>
+        <div class="opp-grid" id="opp-grid">
+          <div class="opp-card" id="opp-card-1" style="display:none;">
+            <div class="opp-title" id="opp-title-1"></div>
+            <div class="opp-subtitle" id="opp-subtitle-1"></div>
+            <div class="opp-body" id="opp-body-1"></div>
           </div>
-          <div class="opp-card">
-            <div class="opp-channel">Website</div>
-            <div class="opp-event">Upcoming Promos</div>
-            <div class="opp-body" style="margin-top:8px;">Our promotional strategy is focused on activators, leveraging their strong inventory position and high-performance formulations to drive results and maximize conversion during upcoming promotions.</div>
+          <div class="opp-card" id="opp-card-2" style="display:none;">
+            <div class="opp-title" id="opp-title-2"></div>
+            <div class="opp-subtitle" id="opp-subtitle-2"></div>
+            <div class="opp-body" id="opp-body-2"></div>
           </div>
+          <div class="opp-card" id="opp-card-3" style="display:none;">
+            <div class="opp-title" id="opp-title-3"></div>
+            <div class="opp-subtitle" id="opp-subtitle-3"></div>
+            <div class="opp-body" id="opp-body-3"></div>
+          </div>
+          <div class="opp-card" id="opp-card-4" style="display:none;">
+            <div class="opp-title" id="opp-title-4"></div>
+            <div class="opp-subtitle" id="opp-subtitle-4"></div>
+            <div class="opp-body" id="opp-body-4"></div>
+          </div>
+        </div>
+        <div id="opp-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No opportunities added yet — click Edit to add up to 4.</div>
+      </div>
+      <div class="insight-editor" id="opp-editor">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Up to 4 opportunity cards. Leave a card's Title blank to leave it out of the report entirely. Subtitle is optional — if left blank, the body text sits directly under the title.</div>
+        <div id="opp-editor-slots"></div>
+        <div class="editor-footer" style="margin-top:10px;">
+          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+          <button class="btn-cancel" id="opp-cancel-btn">Cancel</button>
+          <button class="btn-save-stage" id="opp-save-btn">Save</button>
         </div>
       </div>
 
@@ -5529,6 +5550,8 @@ async function initSns() {
 
   window.wireInsightBlock = wireInsightBlock;
   window.getLatestEventYear = getLatestEventYear;
+  window.reportInsightsFetchRow = fetchRow;
+  window.reportInsightsSaveFields = saveFields;
 
   // ── Section-level Approve button (one per page: Sales, Events) ───────────
   // Separate from wireInsightBlock — this only ever approves, never edits
@@ -6011,6 +6034,115 @@ document.addEventListener('DOMContentLoaded', function() {
     },
   });
   window._refreshEventsApproveBtn = eventsApprove ? eventsApprove.refresh : null;
+
+  // ── Future Opportunities: up to 4 cards, title/subtitle/body ────────────
+  // Bespoke rather than wireInsightBlock, since it needs to show/hide whole
+  // cards based on whether Title is filled, and collapse the Subtitle line
+  // when it's blank — not just fill-or-placeholder per field.
+  (function wireOpportunities() {
+    const BRAND = 'evolis';
+    const editBtn = document.getElementById('opp-edit-btn');
+    const saveBtn = document.getElementById('opp-save-btn');
+    const cancelBtn = document.getElementById('opp-cancel-btn');
+    const editorEl = document.getElementById('opp-editor');
+    const slotsEl = document.getElementById('opp-editor-slots');
+    if (!editBtn || !saveBtn || !editorEl || !slotsEl) return;
+
+    // Build the 4 editor slots once.
+    slotsEl.innerHTML = [1,2,3,4].map(n => `
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Opportunity ${n} — Title</div>
+        <textarea id="textarea-opp${n}-title" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:40px;margin-bottom:8px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Subtitle <span style="font-weight:400;color:var(--muted);">(optional)</span></div>
+        <textarea id="textarea-opp${n}-subtitle" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:40px;margin-bottom:8px;"></textarea>
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
+        <textarea id="textarea-opp${n}-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:60px;"></textarea>
+      </div>
+    `).join('');
+
+    function getLastFullMonthLocal2() {
+      const now = new Date();
+      let year = now.getFullYear(), month = now.getMonth();
+      if (month === 0) { month = 12; year--; }
+      return { year, month };
+    }
+
+    async function load() {
+      const { year, month } = getLastFullMonthLocal2();
+      const row = await window.reportInsightsFetchRow(BRAND, { year: String(year), month: String(month) });
+      let anyVisible = false;
+      [1,2,3,4].forEach(n => {
+        const title    = row ? (row[`opp${n}_title`]    || '') : '';
+        const subtitle = row ? (row[`opp${n}_subtitle`] || '') : '';
+        const body     = row ? (row[`opp${n}_body`]     || '') : '';
+        const card = document.getElementById(`opp-card-${n}`);
+        if (title) {
+          anyVisible = true;
+          card.style.display = '';
+          document.getElementById(`opp-title-${n}`).textContent = title;
+          const subEl = document.getElementById(`opp-subtitle-${n}`);
+          if (subtitle) { subEl.textContent = subtitle; subEl.style.display = ''; }
+          else { subEl.textContent = ''; subEl.style.display = 'none'; }
+          document.getElementById(`opp-body-${n}`).textContent = body;
+        } else {
+          card.style.display = 'none';
+        }
+        const taTitle = document.getElementById(`textarea-opp${n}-title`);
+        const taSub   = document.getElementById(`textarea-opp${n}-subtitle`);
+        const taBody  = document.getElementById(`textarea-opp${n}-body`);
+        if (taTitle) taTitle.value = title;
+        if (taSub)   taSub.value = subtitle;
+        if (taBody)  taBody.value = body;
+      });
+      document.getElementById('opp-empty-state').style.display = anyVisible ? 'none' : 'block';
+      return row;
+    }
+
+    editBtn.addEventListener('click', () => {
+      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+    });
+    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+
+    saveBtn.addEventListener('click', async () => {
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      try {
+        const { year, month } = getLastFullMonthLocal2();
+        const fields = {};
+        [1,2,3,4].forEach(n => {
+          fields[`opp${n}_title`]    = (document.getElementById(`textarea-opp${n}-title`).value || '').trim();
+          fields[`opp${n}_subtitle`] = (document.getElementById(`textarea-opp${n}-subtitle`).value || '').trim();
+          fields[`opp${n}_body`]     = (document.getElementById(`textarea-opp${n}-body`).value || '').trim();
+        });
+        await window.reportInsightsSaveFields({ scope: 'monthly', year, month, fields, action: 'save' });
+        await load();
+        editorEl.style.display = 'none';
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      } finally {
+        saveBtn.disabled = false; saveBtn.textContent = origLabel;
+      }
+    });
+
+    load();
+  })();
+
+  // ── Overview hero date — independent of initAmazonLive() ────────────────
+  // That function already sets #topbar-date, but per Jaclyn 2026-07-18 it
+  // was still showing the static "May 2026" default — likely a timing/error
+  // issue somewhere earlier in that async function's chain. Rather than
+  // chase that dependency, this sets it directly and unconditionally so it
+  // can't be silently skipped by something unrelated failing upstream.
+  (function fixTopbarDate() {
+    const el = document.getElementById('topbar-date');
+    if (!el) return;
+    const now = new Date();
+    let year = now.getFullYear(), month = now.getMonth();
+    if (month === 0) { month = 12; year--; }
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const lastDay = new Date(year, month, 0).getDate();
+    el.textContent = `${names[month-1]} 1 – ${names[month-1]} ${lastDay}, ${year}`;
+  })();
 });
 
 
@@ -8313,14 +8445,13 @@ async function loadAuditResultsFromSheet() {
 
   function pdfxFutureOpportunitiesBlock() {
     const cards = Array.prototype.map.call(document.querySelectorAll('#m-opportunities .opp-card'), function (card) {
-      const channel = pdfxText('.opp-channel', card);
-      const event = pdfxText('.opp-event', card);
-      const promo = pdfxText('.opp-promo', card);
+      const title = pdfxText('.opp-title', card);
+      if (!title) return ''; // blank Title = this slot is unused, per Jaclyn 2026-07-18
+      const subtitle = pdfxText('.opp-subtitle', card);
       const body = pdfxText('.opp-body', card);
       return '<div>' +
-        '<div style="font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--green);margin-bottom:6px;">' + pdfxEscape(channel) + '</div>' +
-        '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">' + pdfxEscape(event) + '</div>' +
-        (promo ? '<div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px;">' + pdfxEscape(promo) + '</div>' : '') +
+        '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">' + pdfxEscape(title) + '</div>' +
+        (subtitle ? '<div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px;">' + pdfxEscape(subtitle) + '</div>' : '') +
         '<div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + pdfxEscape(body) + '</div>' +
         '</div>';
     }).join('');
