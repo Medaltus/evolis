@@ -53,7 +53,7 @@ module.exports = async (req, res) => {
       total += (data.shipments || []).length;
       hasMore = page < (data.pages || 1);
       page++;
-      if (page > 20) break; // safety valve
+      if (page > 200) break; // safety net against a runaway loop, not a real ceiling
       if (hasMore) await sleep(300);
     }
 
