@@ -1340,6 +1340,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </div>
 
     <div class="channel-page" id="ev-spring">
+      <div class="page-hd" style="margin-bottom:4px;">
+        <div><div class="page-title" style="font-size:18px;" id="bss-event-title">Big Spring Sale</div></div>
+      </div>
+      <div class="pd-event-dates" id="bss-event-dates">Loading event dates…</div>
+
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
@@ -1360,7 +1365,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-save-stage" id="bss-exec-save-btn">Save</button>
         </div>
       </div>
-      <div class="placeholder-block"><div class="ph-icon">🌸</div><div class="ph-title">Big Spring Sale — March 2026</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
+
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="kpi-card" id="bss-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bss-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bss-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bss-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bss-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="pd-top-sellers-row">
+          <div class="card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>
+          <div class="pd-legend" id="bss-legend"></div>
+        </div>
+        <div id="bss-top-sellers-empty" style="display:none;color:var(--muted);font-size:12px;padding:20px 0;">No unit sales found for either event year.</div>
+        <div style="position:relative;height:420px;"><canvas id="bss-chart-top-sellers"></canvas></div>
+      </div>
     </div>
     <div class="channel-page" id="ev-primeday">
       <div class="page-hd" style="margin-bottom:4px;">
@@ -1407,6 +1427,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
     </div>
     <div class="channel-page" id="ev-pbdd">
+      <div class="page-hd" style="margin-bottom:4px;">
+        <div><div class="page-title" style="font-size:18px;" id="pbdd-event-title">Prime Big Deal Days</div></div>
+      </div>
+      <div class="pd-event-dates" id="pbdd-event-dates">Loading event dates…</div>
+
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
@@ -1427,9 +1452,29 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-save-stage" id="pbdd-exec-save-btn">Save</button>
         </div>
       </div>
-      <div class="placeholder-block"><div class="ph-icon">🎯</div><div class="ph-title">Prime Big Deal Days — October 2025</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
+
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="kpi-card" id="pbdd-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pbdd-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pbdd-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pbdd-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="pbdd-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="pd-top-sellers-row">
+          <div class="card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>
+          <div class="pd-legend" id="pbdd-legend"></div>
+        </div>
+        <div id="pbdd-top-sellers-empty" style="display:none;color:var(--muted);font-size:12px;padding:20px 0;">No unit sales found for either event year.</div>
+        <div style="position:relative;height:420px;"><canvas id="pbdd-chart-top-sellers"></canvas></div>
+      </div>
     </div>
     <div class="channel-page" id="ev-bfcm">
+      <div class="page-hd" style="margin-bottom:4px;">
+        <div><div class="page-title" style="font-size:18px;" id="bfcm-event-title">Black Friday &amp; Cyber Monday</div></div>
+      </div>
+      <div class="pd-event-dates" id="bfcm-event-dates">Loading event dates…</div>
+
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
           <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
@@ -1450,7 +1495,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-save-stage" id="bfcm-exec-save-btn">Save</button>
         </div>
       </div>
-      <div class="placeholder-block"><div class="ph-icon">🖤</div><div class="ph-title">Black Friday / Cyber Monday — 2025</div><div class="ph-sub">KPIs and Top Sellers chart not built yet — coming next, same as Prime Day.</div></div>
+
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="kpi-card" id="bfcm-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bfcm-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bfcm-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bfcm-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="bfcm-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="pd-top-sellers-row">
+          <div class="card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>
+          <div class="pd-legend" id="bfcm-legend"></div>
+        </div>
+        <div id="bfcm-top-sellers-empty" style="display:none;color:var(--muted);font-size:12px;padding:20px 0;">No unit sales found for either event year.</div>
+        <div style="position:relative;height:420px;"><canvas id="bfcm-chart-top-sellers"></canvas></div>
+      </div>
     </div>
   </div>
 
@@ -3188,6 +3248,9 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
+    if (channelId === 'ev-spring')       window.initBigSpringSaleReport();
+    if (channelId === 'ev-pbdd')         window.initPBDDReport();
+    if (channelId === 'ev-bfcm')         window.initBFCMReport();
 
     // Events page: track which event tab is active so the single
     // Approve button (top-right of the tab menu) knows what to approve.
@@ -5964,6 +6027,371 @@ async function initSns() {
   };
 })();
 
+// ── Big Spring Sale / Prime Big Deal Days / BFCM event reports ─────────────
+// 2026-07-20, per Jaclyn: same report as Prime Day (exec summary already
+// scaffolded per-event, KPI row, Top Sellers YOY chart), replicated for the
+// other three events. Each is a fully independent, self-contained block —
+// own copies of the CSV/formatting helpers rather than sharing Prime Day's
+// closure — matching how every other report section in this file is
+// already built (sheetCsvUrl/isCsv/parseCsv/pct/etc. are duplicated in at
+// least five places already), specifically so nothing about the
+// already-working Prime Day code above had to be touched to add these.
+//
+// Date pairing per event (confirmed against the Events tab 2026-07-20):
+//   Prime Day            — 2026 (Jun 23-26)  vs 2025 (Jul 8-11)   [already built]
+//   Big Spring Sale      — 2026 (Mar 25-31)  vs 2025 (Mar 25-31)  — already happened this year
+//   Prime Big Deal Days  — 2025 (Oct 7-8)    vs 2024 (Oct 8-9)    — 2026 hasn't happened yet
+//   Black Friday & Cyber Monday — 2025 (Nov 28-Dec 1) vs 2024 (Nov 29-Dec 2) — 2026 hasn't happened yet
+// getEventDates() already picks "most recent two rows for this event name"
+// generically, so PBDD/BFCM correctly land on 2025-vs-2024 without any
+// special-casing — it just reflects whatever rows actually exist.
+(function () {
+  const EVENTS_SHEET_ID       = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const EVENTS_GID            = '347530381';
+  const AD_ORDERS_SHEET_ID    = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI';
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
+  const BRAND = 'evolis';
+  const TOP_SELLERS_COUNT = 7;
+
+  // Per-event config — gids per Jaclyn 2026-07-20. Orders sheet is the same
+  // "Newderm - Amazon Orders" sheet as Prime Day (1SiYu8e2...); ad sheet is
+  // the same ad-orders sheet as Prime Day (1N30haUFZ...) — only the gids
+  // (i.e. which tab) differ per event.
+  const EVENTS = {
+    bss: {
+      eventName: 'Big Spring Sale',
+      ordersSheetId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', ordersGid: '1255964265',
+      adOrdersSheetId: AD_ORDERS_SHEET_ID, adOrdersGid: '1312857917',
+      prefix: 'bss',
+    },
+    pbdd: {
+      eventName: 'Prime Big Deal Days',
+      ordersSheetId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', ordersGid: '1090722755',
+      adOrdersSheetId: AD_ORDERS_SHEET_ID, adOrdersGid: '687755000',
+      prefix: 'pbdd',
+    },
+    bfcm: {
+      eventName: 'Black Friday & Cyber Monday',
+      ordersSheetId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', ordersGid: '942023472',
+      adOrdersSheetId: AD_ORDERS_SHEET_ID, adOrdersGid: '23521749',
+      prefix: 'bfcm',
+    },
+  };
+
+  function sheetCsvUrl(id, gid) {
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+  function parseAmt(v) {
+    if (v == null) return 0;
+    const n = parseFloat(String(v).replace(/[$,]/g, ''));
+    return isNaN(n) ? 0 : n;
+  }
+  function pct(current, previous) {
+    const p = (!previous || previous === 0) ? 0.01 : previous;
+    return Math.round(((current - p) / p) * 100);
+  }
+  function setKpiValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = el.querySelector('.kpi-value');
+    if (v) v.textContent = value;
+  }
+  function setBadge(id, pctVal) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector('.kpi-mom');
+    if (!badge) return;
+    if (pctVal == null) { badge.className = 'kpi-mom flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    badge.className = 'kpi-mom ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% YOY`;
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const [y,m,d] = iso.split('-').map(Number);
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${names[m-1]} ${d}, ${y}`;
+  }
+
+  // Normalizes punctuation/case before comparing event names — "Black
+  // Friday & Cyber Monday" vs "Black Friday and Cyber Monday" showed up
+  // with different conjunctions across different sheets in this same
+  // project, so an exact === match (fine for "Prime Day", "Big Spring
+  // Sale", "Prime Big Deal Days" — all unambiguous) would silently return
+  // no rows for BFCM specifically if the Events tab's actual cell text
+  // uses a different conjunction than what's hardcoded here.
+  function normEventName(s) {
+    return (s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  async function getEventDates(eventName) {
+    const csv = await fetch(sheetCsvUrl(EVENTS_SHEET_ID, EVENTS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    if (!isCsv(csv)) return { current: null, previous: null };
+    const target = normEventName(eventName);
+    const rows = parseCsv(csv).filter(r => normEventName(r['Event Name']) === target);
+    rows.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''));
+    return { current: rows[0] || null, previous: rows[1] || null };
+  }
+
+  function aggregateYear(rows, year) {
+    const filtered = rows.filter(r => String(r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND);
+    const nonCancelled = filtered.filter(r => (r.status || '').trim().toLowerCase() !== 'cancelled');
+    const orderIds = new Set(nonCancelled.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const orderTotals = {};
+    nonCancelled.forEach(r => {
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    return { totalUnits, totalOrders, avgOrder, rows: filtered };
+  }
+
+  function sumAdUnits(rows, year) {
+    return rows
+      .filter(r => String(r.Year || r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND)
+      .reduce((s, r) => s + (parseInt(r.ad_units, 10) || 0), 0);
+  }
+
+  async function getProductNames() {
+    const map = {};
+    try {
+      const csv = await fetch(sheetCsvUrl(PRODUCT_NAMES_SHEET_ID, PRODUCT_NAMES_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (!isCsv(csv)) return map;
+      const lines = csv.trim().split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+        const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+        if (asin && name) map[asin] = name;
+      }
+    } catch (e) { console.warn('[EventReport] name lookup failed:', e.message); }
+    return map;
+  }
+
+  // eventLabel/currYear/prevYear drive the dataset labels and legend text —
+  // unlike Prime Day's chart (which hardcodes "2025"/"2026" since those are
+  // its actual years), PBDD and BFCM's most-recent pair is 2025-vs-2024, so
+  // this needs to be dynamic per event rather than copying Prime Day's
+  // hardcoded years.
+  function buildTopSellersChart(prefix, eventLabel, currYear, prevYear, currRows, prevRows, nameMap) {
+    const byAsin = {};
+    currRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (!asin) return;
+      byAsin[asin] = byAsin[asin] || { curr: 0, prev: 0 };
+      byAsin[asin].curr += parseInt(r.unit_count, 10) || 0;
+    });
+    prevRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (!asin) return;
+      byAsin[asin] = byAsin[asin] || { curr: 0, prev: 0 };
+      byAsin[asin].prev += parseInt(r.unit_count, 10) || 0;
+    });
+    const entries = Object.entries(byAsin)
+      .filter(([, v]) => v.curr > 0 || v.prev > 0)
+      .map(([asin, v]) => ({ asin, name: nameMap[asin] || asin, ...v }))
+      .sort((a, b) => b.curr - a.curr)
+      .slice(0, TOP_SELLERS_COUNT);
+
+    const emptyEl = document.getElementById(`${prefix}-top-sellers-empty`);
+    if (!entries.length) {
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const legendEl = document.getElementById(`${prefix}-legend`);
+    if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>${prevYear}</span><span><i style="background:#1b2559;"></i>${currYear}</span>`;
+
+    const yoyLabelPlugin = {
+      id: `${prefix}YoyLabels`,
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        ctx.save();
+        ctx.font = "600 10px 'Montserrat', sans-serif";
+        ctx.textBaseline = 'middle';
+        [0, 1].forEach(dsIndex => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          const values = dsIndex === 0 ? entries.map(e => e.prev) : entries.map(e => e.curr);
+          meta.data.forEach((bar, i) => {
+            const label = String(values[i]);
+            const textW = ctx.measureText(label).width;
+            const barWidth = bar.x - bar.base;
+            if (barWidth > textW + 12) {
+              ctx.fillStyle = '#fff';
+              ctx.textAlign = 'right';
+              ctx.fillText(label, bar.x - 8, bar.y);
+            } else {
+              ctx.fillStyle = '#8a94a6';
+              ctx.textAlign = 'left';
+              ctx.fillText(label, bar.x + 6, bar.y);
+            }
+          });
+        });
+        ctx.font = "700 10px 'Montserrat', sans-serif";
+        ctx.textAlign = 'left';
+        entries.forEach((e, i) => {
+          const p = pct(e.curr, e.prev);
+          const label = `${p > 0 ? '+' : ''}${p}%`;
+          const isGood = p >= 0;
+          const metaPrev = chart.getDatasetMeta(0).data[i];
+          const metaCurr = chart.getDatasetMeta(1).data[i];
+          if (!metaPrev || !metaCurr) return;
+          const y = (metaPrev.y + metaCurr.y) / 2;
+          const textW = ctx.measureText(label).width;
+          const padX = 6, boxH = 16;
+          const boxX = chartArea.right + 10;
+          ctx.fillStyle = isGood ? 'rgba(36,233,163,.15)' : 'rgba(219,55,45,.12)';
+          ctx.beginPath();
+          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3);
+          ctx.fill();
+          ctx.fillStyle = isGood ? '#1a9b6f' : '#c0392b';
+          ctx.fillText(label, boxX + padX, y + 1);
+        });
+        ctx.restore();
+      }
+    };
+
+    const ctx = document.getElementById(`${prefix}-chart-top-sellers`);
+    if (!ctx) return;
+    const chartRef = `_${prefix}TopSellersChart`;
+    if (window[chartRef]) window[chartRef].destroy();
+    window[chartRef] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: entries.map(e => e.name),
+        datasets: [
+          { label: `${eventLabel} ${prevYear}`, data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3 },
+          { label: `${eventLabel} ${currYear}`, data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3 },
+        ],
+      },
+      plugins: [yoyLabelPlugin],
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { right: 64 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterBody: (items) => {
+                const e = entries[items[0].dataIndex];
+                return [`YOY: ${pct(e.curr, e.prev) > 0 ? '+' : ''}${pct(e.curr, e.prev)}%`];
+              }
+            }
+          }
+        },
+        scales: {
+          x: { display: false, beginAtZero: true },
+          y: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function makeInitFn(cfg) {
+    const promiseKey = `_${cfg.prefix}ReportPromise`;
+    return function () {
+      if (window[promiseKey]) return window[promiseKey];
+      window[promiseKey] = (async function () {
+        console.log(`[Evolis] init${cfg.prefix}Report() called`);
+        try {
+          const [dates, ordersCsv, adOrdersCsv, nameMap] = await Promise.all([
+            getEventDates(cfg.eventName),
+            fetch(sheetCsvUrl(cfg.ordersSheetId, cfg.ordersGid)).then(r => r.ok ? r.text() : '').catch(() => ''),
+            fetch(sheetCsvUrl(cfg.adOrdersSheetId, cfg.adOrdersGid)).then(r => r.ok ? r.text() : '').catch(() => ''),
+            getProductNames(),
+          ]);
+
+          const dateEl = document.getElementById(`${cfg.prefix}-event-dates`);
+          if (dates.current) {
+            if (dateEl) dateEl.textContent = `${fmtDate(dates.current.start_date)} – ${fmtDate(dates.current.end_date)}` + (dates.previous ? ` · vs. ${fmtDate(dates.previous.start_date)} – ${fmtDate(dates.previous.end_date)} last year` : '');
+          } else if (dateEl) {
+            dateEl.textContent = 'Event dates not found on Events tab.';
+          }
+
+          const kpiIds = [`${cfg.prefix}-kpi-total-units`, `${cfg.prefix}-kpi-total-orders`, `${cfg.prefix}-kpi-avg-order`, `${cfg.prefix}-kpi-units-ads`, `${cfg.prefix}-kpi-units-organic`];
+          if (!isCsv(ordersCsv) || !dates.current) {
+            kpiIds.forEach(id => { setKpiValue(id, '—'); setBadge(id, null); });
+            return;
+          }
+
+          const allOrderRows = parseCsv(ordersCsv);
+          const allAdRows    = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv) : [];
+          const currYear = dates.current.start_date.slice(0,4);
+          const prevYear = dates.previous ? dates.previous.start_date.slice(0,4) : null;
+
+          const curr = aggregateYear(allOrderRows, currYear);
+          const prev = prevYear ? aggregateYear(allOrderRows, prevYear) : null;
+          const adUnits     = sumAdUnits(allAdRows, currYear);
+          const prevAdUnits = prevYear ? sumAdUnits(allAdRows, prevYear) : 0;
+
+          const fmt  = n => (n ?? 0).toLocaleString();
+          const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+          setKpiValue(`${cfg.prefix}-kpi-total-units`, fmt(curr.totalUnits));
+          setBadge(`${cfg.prefix}-kpi-total-units`, prev ? pct(curr.totalUnits, prev.totalUnits) : null);
+
+          setKpiValue(`${cfg.prefix}-kpi-total-orders`, fmt(curr.totalOrders));
+          setBadge(`${cfg.prefix}-kpi-total-orders`, prev ? pct(curr.totalOrders, prev.totalOrders) : null);
+
+          setKpiValue(`${cfg.prefix}-kpi-avg-order`, '$' + fmt2(curr.avgOrder));
+          setBadge(`${cfg.prefix}-kpi-avg-order`, prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null);
+
+          setKpiValue(`${cfg.prefix}-kpi-units-ads`, fmt(adUnits));
+          setBadge(`${cfg.prefix}-kpi-units-ads`, prev ? pct(adUnits, prevAdUnits) : null);
+
+          const organicUnits = curr.totalUnits - adUnits;
+          const prevOrganic  = prev ? prev.totalUnits - prevAdUnits : null;
+          setKpiValue(`${cfg.prefix}-kpi-units-organic`, fmt(organicUnits));
+          setBadge(`${cfg.prefix}-kpi-units-organic`, prevOrganic != null ? pct(organicUnits, prevOrganic) : null);
+
+          buildTopSellersChart(cfg.prefix, cfg.eventName, currYear, prevYear, curr.rows, prev ? prev.rows : [], nameMap);
+
+        } catch (err) {
+          console.error(`[EventReport:${cfg.prefix}]`, err.message);
+          const dateEl = document.getElementById(`${cfg.prefix}-event-dates`);
+          if (dateEl) dateEl.textContent = 'Error loading event data: ' + err.message;
+        }
+      })();
+      return window[promiseKey];
+    };
+  }
+
+  window.initBigSpringSaleReport = makeInitFn(EVENTS.bss);
+  window.initPBDDReport          = makeInitFn(EVENTS.pbdd);
+  window.initBFCMReport          = makeInitFn(EVENTS.bfcm);
+})();
+
 
 </script>
 <script>
@@ -8652,6 +9080,9 @@ async function loadAuditResultsFromSheet() {
         // checked for inclusion but the tab was never opened this session,
         // this is what actually builds the chart before capture below.
         (includeEvents.pd && typeof window.initPrimeDayReport === 'function') ? window.initPrimeDayReport() : null,
+        (includeEvents.bss  && typeof window.initBigSpringSaleReport === 'function') ? window.initBigSpringSaleReport() : null,
+        (includeEvents.pbdd && typeof window.initPBDDReport === 'function')          ? window.initPBDDReport()          : null,
+        (includeEvents.bfcm && typeof window.initBFCMReport === 'function')          ? window.initBFCMReport()          : null,
       ].filter(Boolean);
       if (initPromises.length) {
         console.log('[pdf-export] awaiting', initPromises.length, 'chart data load(s) before building PDF');
