@@ -515,6 +515,24 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .ppc-metric-lbl{color:var(--muted);}
 .ppc-metric-val{font-weight:600;color:var(--navy);}
 .ppc-note{font-size:11.5px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);line-height:1.65;}
+.inv-status-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;text-align:center;}
+.inv-status-card .kpi-value{font-size:26px;}
+.inv-status-card.critical{background:rgba(219,55,45,.06);border-color:rgba(219,55,45,.2);}
+.inv-status-card.critical .kpi-value{color:var(--danger);}
+.inv-status-card.low{background:rgba(200,125,47,.07);border-color:rgba(200,125,47,.2);}
+.inv-status-card.low .kpi-value{color:var(--warn);}
+.inv-status-card.stable{background:rgba(212,177,6,.08);border-color:rgba(212,177,6,.22);}
+.inv-status-card.stable .kpi-value{color:#a8890a;}
+.inv-status-card.healthy{background:var(--green-dim);border-color:rgba(36,233,163,.25);}
+.inv-status-card.healthy .kpi-value{color:#1db88a;}
+.inv-filter-pill{border:1px solid var(--border);background:var(--white);padding:6px 14px;border-radius:20px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font);}
+.inv-filter-pill.active{background:var(--navy);color:var(--white);border-color:var(--navy);}
+.inv-status-pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.03em;}
+.inv-status-pill.critical{background:rgba(219,55,45,.12);color:var(--danger);}
+.inv-status-pill.low{background:rgba(200,125,47,.14);color:var(--warn);}
+.inv-status-pill.stable{background:rgba(212,177,6,.16);color:#a8890a;}
+.inv-status-pill.healthy{background:var(--green-dim);color:#1db88a;}
+.inv-status-pill.unscored{background:var(--bg);color:var(--muted);}
 .ppc-strategy-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
 .ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);} /* 2026-07-16: matches the navy Listing Audit / Insights product-card header treatment — same "if we list a product specifically" rule extended to Strategy by Product. Per Jaclyn. */
 .ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.65);margin-bottom:3px;}
@@ -922,12 +940,43 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   <!-- ══ INVENTORY ══ -->
   <div class="page" id="page-inventory">
     <div class="page-hd">
-      <div><div class="page-title">Inventory</div><div class="page-sub">ShipStation · W350 · W360 · Last synced 2h ago</div></div>
+      <div><div class="page-title">Inventory</div><div class="page-sub">Amazon Products Cache · Days of inventory = sellable units ÷ (90-day purchased units ÷ 90)</div></div>
     </div>
-    <div class="placeholder-block">
-      <div class="ph-icon">📦</div>
-      <div class="ph-title">Inventory Page</div>
-      <div class="ph-sub">Mirrors VB Cosmetics inventory page layout.<br>Tabs: W350 · W360 · All SKUs · Reorder Alerts</div>
+
+    <div class="ppc-card-title">Warehouse Snapshot</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
+      <div class="kpi-card"><div class="kpi-label">Total Units Available</div><div class="kpi-value" id="inv-kpi-available">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Units Allocated</div><div class="kpi-value" id="inv-kpi-allocated">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Units on Hand</div><div class="kpi-value" id="inv-kpi-onhand">—</div></div>
+    </div>
+
+    <div class="ppc-card-title">SKUs by Status</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+      <div class="inv-status-card critical"><div class="kpi-value" id="inv-count-critical">—</div><div class="kpi-label">Critical</div></div>
+      <div class="inv-status-card low"><div class="kpi-value" id="inv-count-low">—</div><div class="kpi-label">Low</div></div>
+      <div class="inv-status-card stable"><div class="kpi-value" id="inv-count-stable">—</div><div class="kpi-label">Stable</div></div>
+      <div class="inv-status-card healthy"><div class="kpi-value" id="inv-count-healthy">—</div><div class="kpi-label">Healthy</div></div>
+    </div>
+    <div class="ppc-note" style="margin-bottom:20px;">ℹ Critical ≤30 days · Low 31–89 days · Stable 90–119 days · Healthy 120+ days of inventory. SKUs with no purchases in the last 90 days aren't scored (no denominator to compute against) and are excluded from these counts.</div>
+
+    <div class="ppc-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <input type="text" id="inv-search" placeholder="Search SKU or product name…" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--font);font-size:12.5px;">
+        <div id="inv-filter-pills" style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="inv-filter-pill active" data-filter="all">All</button>
+          <button class="inv-filter-pill" data-filter="critical">Critical</button>
+          <button class="inv-filter-pill" data-filter="low">Low</button>
+          <button class="inv-filter-pill" data-filter="stable">Stable</button>
+          <button class="inv-filter-pill" data-filter="healthy">Healthy</button>
+          <button class="inv-filter-pill" data-filter="unscored">Unscored</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>SKU</th><th>Product Name</th><th>Qty on Hand</th><th>Allocated</th><th>Available</th><th>Days of Inventory</th><th>Status</th></tr></thead>
+          <tbody id="inv-table-body"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -5447,6 +5496,7 @@ async function initSns() {
     // further down) and exposed on window so it can be called from here.
     if (typeof window.initInsightsOverview === 'function') window.initInsightsOverview();
     if (typeof window.initPpcPage === 'function') window.initPpcPage();
+    if (typeof window.initInventoryPage === 'function') window.initInventoryPage();
   });
 
 })();
@@ -7191,6 +7241,149 @@ async function ppcLoadProductPerformance() {
 window.initPpcPage = async function() {
   await ppcLoadSearchTermPanels();
   await ppcLoadProductPerformance();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// INVENTORY PAGE — sourced entirely from the Products Cache sheet
+// (evolis tab). total_quantity and days_of_inventory are live sheet
+// formulas (see sync-products.js) — CSV export always returns their
+// computed value, never the formula text, so no special handling is
+// needed here to read them.
+//
+// Definitions (stated explicitly since these are judgment calls, not
+// values pulled directly from a single API field):
+//   Available (sellable) = total_quantity (fulfillable + seller-fulfilled)
+//   Allocated             = reserved_quantity
+//   Qty on Hand            = fulfillable + reserved + unfulfillable +
+//                             seller-fulfilled — physical stock currently
+//                             possessed somewhere, EXCLUDING inbound units
+//                             still in transit (not yet in hand)
+//   Days of Inventory      = read directly from the sheet's own formula
+//
+// Status thresholds match the reference layout this page was modeled on:
+// Critical ≤30 days, Low 31–89, Stable 90–119, Healthy 120+. A SKU with no
+// purchases in the last 90 days has no denominator to score against —
+// it's "Unscored", not silently miscounted into any of the four buckets.
+// ═══════════════════════════════════════════════════════════════════
+
+let _invAllRows = []; // cached after first load, filtered/re-rendered by search+filter without refetching
+
+function invStatusFor(days) {
+  if (days === '' || days === null || isNaN(days)) return 'unscored';
+  if (days <= 30) return 'critical';
+  if (days <= 89) return 'low';
+  if (days <= 119) return 'stable';
+  return 'healthy';
+}
+
+const INV_STATUS_LABEL = { critical: 'Critical', low: 'Low', stable: 'Stable', healthy: 'Healthy', unscored: 'Unscored' };
+
+async function loadInventoryPage() {
+  const tbody = document.getElementById('inv-table-body');
+  if (!tbody) return;
+  try {
+    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No data</td></tr>'; return; }
+
+    // Daily snapshot cron — most recent date only
+    const latestDate = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const latestRows = rows.filter(r => r.date === latestDate);
+
+    _invAllRows = latestRows.map(r => {
+      const fulfillable = parseInt(r.fulfillable_quantity, 10) || 0;
+      const reserved     = parseInt(r.reserved_quantity, 10) || 0;
+      const unfulfillable = parseInt(r.unfulfillable_quantity, 10) || 0;
+      const sellerFulfilled = parseInt(r.seller_fulfilled_quantity, 10) || 0;
+      const available     = parseFloat(r.total_quantity) || 0; // fulfillable + seller-fulfilled, per the sheet formula
+      const onHand         = fulfillable + reserved + unfulfillable + sellerFulfilled;
+      const daysRaw         = r.days_of_inventory;
+      const days             = (daysRaw === '' || daysRaw === null || daysRaw === undefined) ? '' : parseFloat(daysRaw);
+      return {
+        sku: r.sku || '', name: r.name || r.sku || '',
+        available, allocated: reserved, onHand,
+        days, status: invStatusFor(days),
+      };
+    });
+
+    renderInventoryKpis(_invAllRows);
+    renderInventoryTable(_invAllRows);
+    wireInventoryControls();
+  } catch (err) {
+    console.warn('[Inventory] load failed:', err.message);
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">Error loading</td></tr>';
+  }
+}
+
+function renderInventoryKpis(rows) {
+  const sum = f => rows.reduce((s, r) => s + (f(r) || 0), 0);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v.toLocaleString(); };
+
+  set('inv-kpi-available', sum(r => r.available));
+  set('inv-kpi-allocated', sum(r => r.allocated));
+  set('inv-kpi-onhand', sum(r => r.onHand));
+
+  const counts = { critical: 0, low: 0, stable: 0, healthy: 0 };
+  rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  set('inv-count-critical', counts.critical);
+  set('inv-count-low', counts.low);
+  set('inv-count-stable', counts.stable);
+  set('inv-count-healthy', counts.healthy);
+}
+
+function renderInventoryTable(rows) {
+  const tbody = document.getElementById('inv-table-body');
+  if (!tbody) return;
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">No SKUs match</td></tr>'; return; }
+
+  const sorted = [...rows].sort((a, b) => {
+    const rank = { critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
+    return (rank[a.status] ?? 5) - (rank[b.status] ?? 5);
+  });
+
+  tbody.innerHTML = sorted.map(r => `
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
+      <td>${r.name}</td>
+      <td>${r.onHand.toLocaleString()}</td>
+      <td>${r.allocated.toLocaleString()}</td>
+      <td>${r.available.toLocaleString()}</td>
+      <td>${r.days === '' ? '—' : Math.round(r.days).toLocaleString()}</td>
+      <td><span class="inv-status-pill ${r.status}">${INV_STATUS_LABEL[r.status]}</span></td>
+    </tr>
+  `).join('');
+}
+
+let _invControlsWired = false;
+let _invActiveFilter = 'all';
+
+function wireInventoryControls() {
+  if (_invControlsWired) { applyInventoryFilters(); return; } // data reloaded — reapply current search/filter to fresh rows
+  _invControlsWired = true;
+
+  const searchEl = document.getElementById('inv-search');
+  if (searchEl) searchEl.addEventListener('input', applyInventoryFilters);
+
+  document.querySelectorAll('.inv-filter-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.inv-filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _invActiveFilter = btn.dataset.filter;
+      applyInventoryFilters();
+    });
+  });
+}
+
+function applyInventoryFilters() {
+  const q = (document.getElementById('inv-search')?.value || '').toLowerCase().trim();
+  let filtered = _invAllRows;
+  if (_invActiveFilter !== 'all') filtered = filtered.filter(r => r.status === _invActiveFilter);
+  if (q) filtered = filtered.filter(r => r.sku.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  renderInventoryTable(filtered);
+}
+
+window.initInventoryPage = async function() {
+  await loadInventoryPage();
 };
 
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
