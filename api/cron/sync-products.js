@@ -46,7 +46,29 @@
  *   inbound_receiving_quantity, unfulfillable_quantity, total_quantity,
  *   name, status, sales_ranks, title, item_highlights, bullet_1..5,
  *   description, backend_keywords, ingredients, item_type_keyword,
- *   offers, issues, last_synced
+ *   offers, issues, last_synced, purchased_units_90d, days_of_inventory
+ *
+ * total_quantity (col K) and days_of_inventory (col AD) are LIVE
+ * SPREADSHEET FORMULAS, not code-computed values — written with
+ * valueInputOption=USER_ENTERED so they actually evaluate rather than
+ * store as literal formula-looking text:
+ *   total_quantity      = D{row} + J{row}   (fulfillable + seller-fulfilled)
+ *   days_of_inventory   = total_quantity / (purchased_units_90d / 90)
+ *
+ * Inbound (working/shipped/receiving) is deliberately excluded from
+ * total_quantity — confirmed via Amazon's FBA Inventory API docs that
+ * "Inbound" units are still on their way to Amazon's network, not yet
+ * fulfillable/sellable. There's no state in which they become
+ * customer-orderable before being received and reclassified as
+ * fulfillable.
+ *
+ * purchased_units_90d (col AC) is summed from the rolling 90-day orders
+ * cache (sheets.orders, same sheet/tab-per-brand every other cron in this
+ * repo uses) — see fetchBrand90dUnits. FAILSAFE: this lookup is fetched
+ * once per brand and wrapped in its own try/catch; if it fails, that
+ * brand's rows just get a blank purchased_units_90d/days_of_inventory for
+ * this run rather than blocking the inventory/listing sync that already
+ * works today.
  */
 
 const { spRequest }                                     = require('../_spauth');
@@ -69,7 +91,17 @@ const HEADERS = [
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords', 'ingredients', 'item_type_keyword',
   'offers', 'issues', 'last_synced',
+  'purchased_units_90d', 'days_of_inventory',
 ];
+
+// Column letters for the two formulas below — spelled out once here so a
+// future HEADERS reorder doesn't silently break the formula strings.
+// D=fulfillable_quantity, J=seller_fulfilled_quantity, K=total_quantity,
+// AC=purchased_units_90d (28th column).
+const COL_FULFILLABLE      = 'D';
+const COL_SELLER_FULFILLED = 'J';
+const COL_TOTAL_QUANTITY   = 'K';
+const COL_PURCHASED_90D    = 'AC';
 
 const EXCLUDED_BRAND_NAMES = ['high on love']; // different seller account entirely
 
@@ -125,6 +157,8 @@ module.exports = async (req, res) => {
   let processed = 0;
   let i = cursor;
   const tabTokens = {};
+  const tabNextRow = {};       // brandTabName -> next row number to write to
+  const brand90dMaps = {};     // brandTabName -> { [asin]: unitsSoldLast90d } — see fetchBrand90dUnits
 
   for (; i < masterList.length; i++) {
     if (Date.now() - startTime > TIME_BUDGET_MS) break;
@@ -132,12 +166,31 @@ module.exports = async (req, res) => {
 
     const item = masterList[i];
     try {
-      const row = await buildProductRow(item, today, nowIso);
-
       if (!tabTokens[item.brandTabName]) {
         tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, HEADERS);
+        const existingRows = await readRows(sheets.products, item.brandTabName);
+        tabNextRow[item.brandTabName] = existingRows.length + 2; // +1 for header row, +1 to move past the last existing row
       }
-      await appendRows(sheets.products, item.brandTabName, [row], tabTokens[item.brandTabName]);
+
+      // FAILSAFE: 90-day units lookup is fetched once per brand and never
+      // throws out of this block — if it fails, that brand's SKUs just get
+      // a blank purchased_units_90d/days_of_inventory this run rather than
+      // blocking the inventory/listing data that already works today.
+      if (!(item.brandTabName in brand90dMaps)) {
+        try {
+          brand90dMaps[item.brandTabName] = await fetchBrand90dUnits(item.brandTabName);
+        } catch (err) {
+          console.warn(`[sync-products] ${item.brandTabName} — 90-day units lookup failed, leaving purchased_units_90d blank this run:`, err.message);
+          brand90dMaps[item.brandTabName] = {};
+        }
+      }
+
+      const rowNumber = tabNextRow[item.brandTabName];
+      const units90d = brand90dMaps[item.brandTabName][item.asin.toUpperCase()] ?? '';
+      const row = await buildProductRow(item, today, nowIso, rowNumber, units90d);
+
+      await appendRows(sheets.products, item.brandTabName, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
+      tabNextRow[item.brandTabName]++;
       processed++;
     } catch (err) {
       console.error(`[sync-products] ${item.sku} (${item.brandTabName}) failed:`, err.message);
@@ -167,7 +220,7 @@ module.exports = async (req, res) => {
 
 // ── Row building ────────────────────────────────────────────────────────────
 
-async function buildProductRow(item, dateStr, nowIso) {
+async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
   const { sku, asin, name } = item;
   const sfSku = `${sku}-SF`;
 
@@ -181,7 +234,13 @@ async function buildProductRow(item, dateStr, nowIso) {
   ]);
 
   const inv = inventory?.payload?.inventorySummaries?.[0]?.inventoryDetails || {};
-  const totalQuantity = inventory?.payload?.inventorySummaries?.[0]?.totalQuantity ?? '';
+  // total_quantity is now a live formula (fulfillable + seller-fulfilled),
+  // NOT read from Amazon's own totalQuantity field — that field wasn't
+  // reflecting sellable inventory correctly. Inbound-working is
+  // deliberately excluded: confirmed via Amazon's FBA Inventory API docs
+  // that "Inbound" (working/shipped/receiving) is still on its way to
+  // Amazon's network, not yet fulfillable/sellable — there's no state in
+  // which those units become customer-orderable before being received.
 
   // Merchant-fulfilled stock lives on the -SF SKU, not the FBA SKU.
   // The DEFAULT channel on the FBA SKU's own listing always returned 0
@@ -215,7 +274,7 @@ async function buildProductRow(item, dateStr, nowIso) {
     inv.inboundReceivingQuantity ?? '',
     inv.unfulfillableQuantity?.totalUnfulfillableQuantity ?? '',
     sellerFulfilledQuantity,
-    totalQuantity,
+    `=${COL_FULFILLABLE}${rowNumber}+${COL_SELLER_FULFILLED}${rowNumber}`, // total_quantity — live formula, not an API value
     name || '', // from master sheet, NOT the API — per requirements
     (listing?.summaries?.[0]?.status || []).join(', '),
     salesRanksStr,
@@ -229,6 +288,10 @@ async function buildProductRow(item, dateStr, nowIso) {
     offersStr,
     issuesStr,
     nowIso,
+    units90d, // purchased_units_90d — summed from the rolling 90-day orders cache, blank if that lookup failed this run
+    // days_of_inventory — live formula, guarded against divide-by-zero/blank
+    // (N() coerces blank to 0 so the IF check works even if units90d is '').
+    `=IF(N(${COL_PURCHASED_90D}${rowNumber})=0,"",${COL_TOTAL_QUANTITY}${rowNumber}/(${COL_PURCHASED_90D}${rowNumber}/90))`,
   ];
 }
 
@@ -313,6 +376,26 @@ async function fetchMasterSkuList() {
   return out;
 }
 
+// Sums unit_count per ASIN from the rolling 90-day orders cache
+// (sheets.orders, same tab-per-brand sheet every other cron in this repo
+// uses). That sheet is already maintained as a 90-day rolling window by
+// its own cron, so no date filtering is needed here — just exclude
+// cancelled orders, since a cancelled order was never actually purchased.
+// Called once per brand (not per SKU) and cached by the caller.
+async function fetchBrand90dUnits(brandTabName) {
+  const rows = await readRows(sheets.orders, brandTabName);
+  const map = {};
+  (rows || []).forEach(r => {
+    const status = (r.status || '').toLowerCase();
+    if (status === 'cancelled') return;
+    const asin = (r.asin || '').trim().toUpperCase();
+    if (!asin) return;
+    const units = parseInt(r.unit_count, 10) || 0;
+    map[asin] = (map[asin] || 0) + units;
+  });
+  return map;
+}
+
 // Removes every row matching `dateStr` from every active brand's tab,
 // leaving all other dates' history untouched. Used by ?force=true to
 // support "overwrite today" without duplicating rows or losing history.
@@ -320,11 +403,11 @@ async function clearRowsForDate(dateStr) {
   for (const brand of brands.filter(b => b.active)) {
     try {
       const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
-      const rows  = await readRows(sheets.products, brand.tabName);
+      const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA'); // preserve formula text, not computed values
       const kept  = rows.filter(r => (r.date || '') !== dateStr);
       if (kept.length !== rows.length) {
         const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token);
+        await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token, 'USER_ENTERED');
         console.log(`[sync-products] ${brand.id} — cleared ${rows.length - kept.length} existing rows for ${dateStr}`);
       }
     } catch (err) {
