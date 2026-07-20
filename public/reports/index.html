@@ -533,6 +533,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .inv-status-pill.stable{background:rgba(212,177,6,.16);color:#a8890a;}
 .inv-status-pill.healthy{background:var(--green-dim);color:#1db88a;}
 .inv-status-pill.unscored{background:var(--bg);color:var(--muted);}
+.inv-legend-item{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}
+.inv-legend-bar{width:3px;height:12px;border-radius:2px;display:inline-block;}
+.inv-legend-bar.critical{background:var(--danger);}
+.inv-legend-bar.low{background:var(--warn);}
+.inv-legend-bar.stable{background:#a8890a;}
+.inv-legend-bar.healthy{background:#1db88a;}
 .ppc-strategy-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
 .ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);} /* 2026-07-16: matches the navy Listing Audit / Insights product-card header treatment — same "if we list a product specifically" rule extended to Strategy by Product. Per Jaclyn. */
 .ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.65);margin-bottom:3px;}
@@ -957,9 +963,14 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="inv-status-card stable"><div class="kpi-value" id="inv-count-stable">—</div><div class="kpi-label">Stable</div></div>
       <div class="inv-status-card healthy"><div class="kpi-value" id="inv-count-healthy">—</div><div class="kpi-label">Healthy</div></div>
     </div>
-    <div class="ppc-note" style="margin-bottom:20px;">ℹ Critical ≤30 days · Low 31–89 days · Stable 90–119 days · Healthy 120+ days of inventory. SKUs with no purchases in the last 90 days aren't scored (no denominator to compute against) and are excluded from these counts.</div>
 
     <div class="ppc-card">
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
+        <span class="inv-legend-item"><span class="inv-legend-bar critical"></span>Critical ≤30 days</span>
+        <span class="inv-legend-item"><span class="inv-legend-bar low"></span>Low 31–60 days</span>
+        <span class="inv-legend-item"><span class="inv-legend-bar stable"></span>Stable 61–89 days</span>
+        <span class="inv-legend-item"><span class="inv-legend-bar healthy"></span>Healthy 90+ days</span>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
         <input type="text" id="inv-search" placeholder="Search SKU or product name…" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--font);font-size:12.5px;">
         <div id="inv-filter-pills" style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -977,6 +988,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <tbody id="inv-table-body"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
         </table>
       </div>
+      <div class="ppc-note">ℹ SKUs with no purchases in the last 90 days aren't scored (no denominator to compute against) — shown as "Unscored," not miscounted into Critical or Healthy.</div>
     </div>
   </div>
 
@@ -7245,23 +7257,23 @@ window.initPpcPage = async function() {
 
 // ═══════════════════════════════════════════════════════════════════
 // INVENTORY PAGE — sourced entirely from the Products Cache sheet
-// (evolis tab). total_quantity and days_of_inventory are live sheet
-// formulas (see sync-products.js) — CSV export always returns their
-// computed value, never the formula text, so no special handling is
-// needed here to read them.
+// (evolis tab). qty_on_hand, total_quantity, and days_of_inventory are
+// all live sheet formulas (see sync-products.js) — CSV export always
+// returns their computed value, never the formula text, so this page
+// just reads three numbers per row rather than calculating anything,
+// for fast load.
 //
-// Definitions (stated explicitly since these are judgment calls, not
-// values pulled directly from a single API field):
-//   Available (sellable) = total_quantity (fulfillable + seller-fulfilled)
-//   Allocated             = reserved_quantity
-//   Qty on Hand            = fulfillable + reserved + unfulfillable +
-//                             seller-fulfilled — physical stock currently
-//                             possessed somewhere, EXCLUDING inbound units
-//                             still in transit (not yet in hand)
-//   Days of Inventory      = read directly from the sheet's own formula
+// Definitions (stated explicitly, confirmed 2026-07-20 — these are
+// judgment calls, not values pulled directly from a single API field):
+//   Qty on Hand = fulfillable + reserved + seller-fulfilled (sheet formula)
+//                 — excludes unfulfillable (damaged/expired, not usable)
+//                   AND inbound (still in transit, not yet on hand)
+//   Allocated    = reserved_quantity
+//   Available    = qty_on_hand - allocated (sheet formula, column total_quantity)
+//   Days of Inventory = read directly from the sheet's own formula
 //
 // Status thresholds match the reference layout this page was modeled on:
-// Critical ≤30 days, Low 31–89, Stable 90–119, Healthy 120+. A SKU with no
+// Critical ≤30 days, Low 31–60, Stable 61–89, Healthy 90+. A SKU with no
 // purchases in the last 90 days has no denominator to score against —
 // it's "Unscored", not silently miscounted into any of the four buckets.
 // ═══════════════════════════════════════════════════════════════════
@@ -7271,8 +7283,8 @@ let _invAllRows = []; // cached after first load, filtered/re-rendered by search
 function invStatusFor(days) {
   if (days === '' || days === null || isNaN(days)) return 'unscored';
   if (days <= 30) return 'critical';
-  if (days <= 89) return 'low';
-  if (days <= 119) return 'stable';
+  if (days <= 60) return 'low';
+  if (days <= 89) return 'stable';
   return 'healthy';
 }
 
@@ -7291,17 +7303,14 @@ async function loadInventoryPage() {
     const latestRows = rows.filter(r => r.date === latestDate);
 
     _invAllRows = latestRows.map(r => {
-      const fulfillable = parseInt(r.fulfillable_quantity, 10) || 0;
-      const reserved     = parseInt(r.reserved_quantity, 10) || 0;
-      const unfulfillable = parseInt(r.unfulfillable_quantity, 10) || 0;
-      const sellerFulfilled = parseInt(r.seller_fulfilled_quantity, 10) || 0;
-      const available     = parseFloat(r.total_quantity) || 0; // fulfillable + seller-fulfilled, per the sheet formula
-      const onHand         = fulfillable + reserved + unfulfillable + sellerFulfilled;
-      const daysRaw         = r.days_of_inventory;
-      const days             = (daysRaw === '' || daysRaw === null || daysRaw === undefined) ? '' : parseFloat(daysRaw);
+      const allocated = parseInt(r.reserved_quantity, 10) || 0;
+      const available = parseFloat(r.total_quantity) || 0;   // qty_on_hand - reserved, per the sheet formula
+      const onHand      = parseFloat(r.qty_on_hand) || 0;       // fulfillable + reserved + seller-fulfilled, per the sheet formula
+      const daysRaw       = r.days_of_inventory;
+      const days           = (daysRaw === '' || daysRaw === null || daysRaw === undefined) ? '' : parseFloat(daysRaw);
       return {
         sku: r.sku || '', name: r.name || r.sku || '',
-        available, allocated: reserved, onHand,
+        available, allocated, onHand,
         days, status: invStatusFor(days),
       };
     });
