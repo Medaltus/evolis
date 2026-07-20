@@ -539,6 +539,25 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .inv-legend-bar.low{background:var(--warn);}
 .inv-legend-bar.stable{background:#a8890a;}
 .inv-legend-bar.healthy{background:#1db88a;}
+.oos-sku-group{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden;background:var(--white);}
+.oos-sku-group-hd{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer;}
+.oos-sku-group-hd:hover{background:var(--bg);}
+.oos-sku-name{font-weight:700;font-size:13px;color:var(--navy);}
+.oos-sku-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.oos-sku-summary{display:flex;gap:18px;align-items:center;}
+.oos-sku-summary-stat{text-align:right;}
+.oos-sku-summary-stat .n{font-size:16px;font-weight:700;color:var(--navy);}
+.oos-sku-summary-stat .n.danger{color:var(--danger);}
+.oos-sku-summary-stat .l{font-size:9.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;}
+.oos-sku-periods{border-top:1px solid var(--border2);padding:6px 18px 12px;background:var(--bg);display:none;}
+.oos-sku-group.expanded .oos-sku-periods{display:block;}
+.oos-period-row{display:flex;justify-content:space-between;padding:8px 4px;font-size:12px;border-bottom:1px solid var(--border2);color:var(--navy);}
+.oos-period-row:last-child{border-bottom:none;}
+.oos-pill{display:inline-block;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+.oos-pill.ongoing{background:rgba(219,55,45,.12);color:var(--danger);}
+.oos-pill.resolved{background:var(--bg);color:var(--muted);}
+.oos-chevron{transition:transform .15s;color:var(--muted);font-size:11px;}
+.oos-sku-group.expanded .oos-chevron{transform:rotate(90deg);}
 .ppc-strategy-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
 .ppc-strategy-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);} /* 2026-07-16: matches the navy Listing Audit / Insights product-card header treatment — same "if we list a product specifically" rule extended to Strategy by Product. Per Jaclyn. */
 .ppc-strategy-sku{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.65);margin-bottom:3px;}
@@ -949,6 +968,14 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div><div class="page-title">Inventory</div><div class="page-sub">Amazon Products Cache · Days of inventory = sellable units ÷ (90-day purchased units ÷ 90)</div></div>
     </div>
 
+    <div class="channel-tabs-row" style="margin-bottom:18px;">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('inventory','inv-snapshot',this)">Snapshot</button>
+        <button class="ch-tab" onclick="showChannel('inventory','inv-oos-log',this)">Out-of-Stock Log</button>
+      </div>
+    </div>
+
+    <div class="channel-page active" id="inv-snapshot">
     <div class="ppc-card-title">Warehouse Snapshot</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
       <div class="kpi-card"><div class="kpi-label">Total Units Available</div><div class="kpi-value" id="inv-kpi-available">—</div></div>
@@ -990,6 +1017,13 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
       <div class="ppc-note">ℹ SKUs with no purchases in the last 90 days aren't scored (no denominator to compute against) — shown as "Unscored," not miscounted into Critical or Healthy.</div>
     </div>
+    </div><!-- /inv-snapshot -->
+
+    <div class="channel-page" id="inv-oos-log">
+      <div class="ppc-note" style="margin-bottom:16px;">ℹ A SKU counts as out of stock on any day Available (total_quantity) = 0. Consecutive OOS days group into one incident; a later recurrence is a new incident, not a merge. Missing daily-log rows are skipped over rather than treated as a break in the streak. This log is only as complete as the daily history that's actually been logged — it can't retroactively know about stockouts from before sync-products.js started recording this data.</div>
+      <div id="oos-log-body"><div class="ppc-card" style="color:var(--muted);">Loading…</div></div>
+    </div><!-- /inv-oos-log -->
+
   </div>
 
   <!-- ══ FULFILLMENT ══ -->
@@ -3312,6 +3346,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'ev-spring')       window.initBigSpringSaleReport();
     if (channelId === 'ev-pbdd')         window.initPBDDReport();
     if (channelId === 'ev-bfcm')         window.initBFCMReport();
+    if (channelId === 'inv-oos-log')     window.initOosLog();
 
     // Events page: track which event tab is active so the single
     // Approve button (top-right of the tab menu) knows what to approve.
@@ -7394,6 +7429,122 @@ function applyInventoryFilters() {
 window.initInventoryPage = async function() {
   await loadInventoryPage();
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// OUT-OF-STOCK LOG — Option 2 (grouped by SKU), lazy-loaded on first
+// visit to that tab, not on initial page load. This needs the FULL
+// daily history per SKU (not just the latest date, which is all the
+// Snapshot tab needs), so it's a separate, heavier fetch — keeping it
+// lazy is what keeps the Snapshot tab's initial load fast.
+//
+// A day counts as OOS when Available (total_quantity) = 0. Consecutive
+// OOS days group into one incident. Missing daily-log rows (the cron
+// didn't run that day) are skipped over rather than treated as a break
+// in the streak — there's no data contradicting continuity, so the
+// streak is assumed to continue through the gap. A row that exists but
+// has a blank/unparseable total_quantity is treated as "unknown, not
+// OOS" — same reasoning, we don't have evidence either way so we don't
+// claim OOS without it.
+// ═══════════════════════════════════════════════════════════════════
+
+let _oosLogLoaded = false;
+
+async function loadOosLog() {
+  const body = document.getElementById('oos-log-body');
+  if (!body) return;
+  try {
+    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { body.innerHTML = '<div class="ppc-card" style="color:var(--muted);">No data</div>'; return; }
+
+    const todayStr = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+
+    // Group by SKU, sort each group's rows by date ascending
+    const bySku = {};
+    rows.forEach(r => {
+      const sku = (r.sku || '').trim();
+      if (!sku) return;
+      if (!bySku[sku]) bySku[sku] = { name: r.name || sku, rows: [] };
+      bySku[sku].rows.push(r);
+      if (r.name) bySku[sku].name = r.name; // keep the most recently seen name
+    });
+
+    const skuLogs = [];
+    Object.entries(bySku).forEach(([sku, data]) => {
+      const sorted = [...data.rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const periods = [];
+      let streakStart = null, streakLastDate = null;
+
+      sorted.forEach(r => {
+        const avail = r.total_quantity === '' || r.total_quantity === null || r.total_quantity === undefined
+          ? NaN : parseFloat(r.total_quantity);
+        const isOos = avail === 0;
+
+        if (isOos) {
+          if (!streakStart) streakStart = r.date;
+          streakLastDate = r.date;
+        } else if (streakStart) {
+          periods.push({ start: streakStart, end: streakLastDate, ongoing: false });
+          streakStart = null; streakLastDate = null;
+        }
+      });
+      if (streakStart) periods.push({ start: streakStart, end: streakLastDate, ongoing: streakLastDate === todayStr });
+
+      if (!periods.length) return; // never OOS — not part of this log
+
+      const dayCount = (start, end) => Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+      periods.forEach(p => { p.days = dayCount(p.start, p.ongoing ? todayStr : p.end); });
+
+      const totalDays = periods.reduce((s, p) => s + p.days, 0);
+      const isOngoing = periods.some(p => p.ongoing);
+
+      skuLogs.push({ sku, name: data.name, periods: periods.reverse(), totalDays, isOngoing });
+    });
+
+    // Ongoing (worst first by days) surface above fully-resolved history
+    skuLogs.sort((a, b) => {
+      if (a.isOngoing !== b.isOngoing) return a.isOngoing ? -1 : 1;
+      return b.totalDays - a.totalDays;
+    });
+
+    if (!skuLogs.length) {
+      body.innerHTML = '<div class="ppc-card" style="color:var(--muted);">No out-of-stock incidents logged.</div>';
+      return;
+    }
+
+    body.innerHTML = skuLogs.map((log, idx) => `
+      <div class="oos-sku-group" id="oos-group-${idx}">
+        <div class="oos-sku-group-hd" onclick="document.getElementById('oos-group-${idx}').classList.toggle('expanded')">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="oos-chevron">▶</span>
+            <div>
+              <div class="oos-sku-name">${log.sku} · ${log.name}</div>
+              <div class="oos-sku-sub">${log.periods.length} incident${log.periods.length === 1 ? '' : 's'}${log.isOngoing ? ' · ongoing' : ''}</div>
+            </div>
+          </div>
+          <div class="oos-sku-summary">
+            <div class="oos-sku-summary-stat"><div class="n ${log.isOngoing ? 'danger' : ''}">${log.totalDays}</div><div class="l">Total Days OOS</div></div>
+            <div>${log.isOngoing ? '<span class="oos-pill ongoing">Ongoing</span>' : '<span class="oos-pill resolved">Resolved</span>'}</div>
+          </div>
+        </div>
+        <div class="oos-sku-periods">
+          ${log.periods.map(p => `<div class="oos-period-row"><span>${p.start} → ${p.ongoing ? 'today' : p.end}</span><span>${p.days} day${p.days === 1 ? '' : 's'}${p.ongoing ? ' <span class="oos-pill ongoing" style="margin-left:6px;">Ongoing</span>' : ''}</span></div>`).join('')}
+        </div>
+      </div>
+    `).join('');
+
+  } catch (err) {
+    console.warn('[OOS Log] load failed:', err.message);
+    body.innerHTML = '<div class="ppc-card" style="color:var(--muted);">Error loading</div>';
+  }
+}
+
+window.initOosLog = async function() {
+  if (_oosLogLoaded) return; // cheap no-op on repeat tab visits
+  _oosLogLoaded = true;
+  await loadOosLog();
+};
+
 
 const LISTING_SKILL_B64   = 'IyBBbWF6b24gTGlzdGluZyBBdWRpdCAmIEJ1aWxkIOKAlCBTa2lsbAoKUHJvZHVjZXMgYSBjb21wbGV0ZSwgY29tcGxpYW50LCBrZXl3b3JkLW9wdGltaXplZCBBbWF6b24gbGlzdGluZyBmb3IgYSBzaW5nbGUgcHJvZHVjdCBTS1UuIENvdmVyczogVGl0bGUsIEl0ZW0gSGlnaGxpZ2h0cywgQnVsbGV0cyAx4oCTNSwgUHJvZHVjdCBEZXNjcmlwdGlvbiwgYW5kIEJhY2tlbmQgS2V5d29yZHMuIEFwcGxpZXMgYWxsIE1lZGFsdHVzIGNvbXBsaWFuY2UgcnVsZXMgYXV0b21hdGljYWxseSDigJQgbm8gcHJvbXB0aW5nIHJlcXVpcmVkLgoKLS0tCgojIyBJbnB1dHMgUmVxdWlyZWQKClRoZSBza2lsbCBhY2NlcHRzIGFueSBjb21iaW5hdGlvbiBvZiB0aGUgZm9sbG93aW5nLiBXb3JrIHdpdGggd2hhdGV2ZXIgaXMgcHJvdmlkZWQuCgp8IElucHV0IHwgU291cmNlIHwgUmVxdWlyZWQ/IHwKfC0tLS0tLS18LS0tLS0tLS18LS0tLS0tLS0tLS18CnwgUHJvZHVjdCBuYW1lICsgZm9ybWF0IHwgVXNlciwgYnJhbmQgd29ya2Jvb2ssIG9yIGRhc2hib2FyZCB8IOKckyBSZXF1aXJlZCB8CnwgRnVsbCBJTkNJIGluZ3JlZGllbnQgbGlzdCB8IEJyYW5kIHdvcmtib29rIChDb2wgTiBvciBPKSwgcHJvZHVjdCBwYWdlLCBvciB1c2VyIHBhc3RlIHwg4pyTIFJlcXVpcmVkIHwKfCBQcm9kdWN0IHNpemUgLyBmb3JtYXQgLyBwcmljZSB8IEJyYW5kIHdvcmtib29rIG9yIHVzZXIgfCDinJMgUmVxdWlyZWQgfAp8IEZyYWdyYW5jZSBzdGF0dXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUiBvciBJTkNJIHwg4pyTIFJlcXVpcmVkIHwKfCBDbGVhbiBzdGFuZGFyZCBjbGFpbXMgfCBCcmFuZCB3b3JrYm9vayBDb2wgUSBvciB1c2VyIHwgUmVjb21tZW5kZWQgfAp8IEV4aXN0aW5nIGxpc3RpbmcgY29weSB8IERhc2hib2FyZCwgU2VsbGVyIENlbnRyYWwsIG9yIHVzZXIgcGFzdGUgfCBPcHRpb25hbCDigJQgZm9yIGF1ZGl0IG1vZGUgfAp8IEtleXdvcmQgVHJhY2tlciAvIENlcmVicm8gdGllcnMgfCBEYXNoYm9hcmQgS2V5d29yZCBUcmFja2VyIHRhYiwgb3IgQ2VyZWJybyBza2lsbCBvdXRwdXQgfCBTdHJvbmdseSByZWNvbW1lbmRlZCB8CnwgU2tpbiB0eXBlIC8gdGFyZ2V0IGNvbnN1bWVyIHwgQnJhbmQgd29ya2Jvb2sgb3IgdXNlciB8IFJlY29tbWVuZGVkIHwKfCBDb21wZXRpdG9yIGJ1bGxldHMgKFZPQyByZXNlYXJjaCkgfCBCcmFuZCB3b3JrYm9vayBSZXZpZXdzIHRhYiBvciBjb21wZXRpdG9yIGF1ZGl0IG91dHB1dCB8IE9wdGlvbmFsIOKAlCBpbXByb3ZlcyBidWxsZXQgZnJhbWluZyB8CgpJZiBubyBrZXl3b3JkIHRpZXJzIGFyZSBwcm92aWRlZCwgZGVyaXZlIGtleXdvcmRzIGZyb20gdGhlIHByb2R1Y3QncyBpbmdyZWRpZW50IGxpc3QsIGZvcm1hdCwgYW5kIGNhdGVnb3J5IHVzaW5nIHRoZSBzYW1lIGZvdXItZ2F0ZSBmaWx0ZXIgZGVmaW5lZCBpbiB0aGUgYGFtYXpvbi1rZXl3b3JkLXN0cmF0ZWd5YCBza2lsbC4KCi0tLQoKIyMgVHdvIE1vZGVzCgojIyMgTW9kZSBBIOKAlCBCdWlsZCAobmV3IGxpc3Rpbmcgb3Igbm8gY29weSBleGlzdHMpCldyaXRlIGFsbCBmaXZlIGVsZW1lbnRzIGZyb20gc2NyYXRjaCB1c2luZyB0aGUgcHJvZHVjdCBwcm9maWxlIGFuZCBrZXl3b3JkIHRhcmdldHMuCgojIyMgTW9kZSBCIOKAlCBBdWRpdCAoZXhpc3RpbmcgY29weSBwcm92aWRlZCkKMS4gUnVuIHRoZSBleGlzdGluZyBjb3B5IHRocm91Z2ggYWxsIGNvbXBsaWFuY2UgZ2F0ZXMgYW5kIGZsYWcgZXZlcnkgdmlvbGF0aW9uIHdpdGggdGhlIGV4YWN0IHdvcmQsIHJ1bGUgYnJlYWNoZWQsIGFuZCBjb21wbGlhbnQgcmVwbGFjZW1lbnQuCjIuIFJld3JpdGUgZWFjaCBmbGFnZ2VkIGVsZW1lbnQgd2l0aCB0aGUgdmlvbGF0aW9uIGNvcnJlY3RlZC4KMy4gU2NvcmUga2V5d29yZCBjb3ZlcmFnZTogd2hpY2ggVDEgYW5kIFQyIHRhcmdldHMgYXJlIHByZXNlbnQsIHdoaWNoIGFyZSBtaXNzaW5nLgo0LiBQcm9kdWNlIGEgcmV2aXNlZCBmdWxsIGxpc3Rpbmcgd2l0aCBhbGwgZml4ZXMgYXBwbGllZC4KCkFsd2F5cyBjb21wbGV0ZSB0aGUgZnVsbCByZXdyaXRlIGV2ZW4gaW4gQXVkaXQgbW9kZSDigJQgbmV2ZXIgZGVsaXZlciBhIHZpb2xhdGlvbiByZXBvcnQgd2l0aG91dCBhbHNvIGRlbGl2ZXJpbmcgY29ycmVjdGVkIGNvcHkuCgotLS0KCiMjIFBoYXNlIDEg4oCUIEJ1aWxkIHRoZSBQcm9kdWN0IFByb2ZpbGUKCkJlZm9yZSB3cml0aW5nIGEgc2luZ2xlIHdvcmQgb2YgY29weSwgY29tcGlsZSBhIHByb2R1Y3QgZmFjdCBzaGVldC4gVGhpcyBpcyBtYW5kYXRvcnkg4oCUIGNvcHkgd3JpdHRlbiB3aXRob3V0IGl0IHdpbGwgZmFpbCBHYXRlIGNoZWNrcy4KCmBgYApQUk9EVUNUIEZBQ1QgU0hFRVQK4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACkJyYW5kOiAgICAgICAgICAgW2JyYW5kIG5hbWVdClNLVSBJRDogICAgICAgICAgW2UuZy4gU1NTMDAwMV0KUHJvZHVjdCBuYW1lOiAgICBbZnVsbCBuYW1lXQpGb3JtYXQ6ICAgICAgICAgIFtzZXJ1bSAvIGNyZWFtIC8gY2xlYW5zZXIgLyBlc3NlbmNlIC8gdG9uZXIgLyBtYXNrIC8gZXRjLl0KU2l6ZTogICAgICAgICAgICBbWCBmbCBveiAvIFggbWxdClByaWNlOiAgICAgICAgICAgWyRYLlhYXQpQcmljZS9vejogICAgICAgIFskWC5YWF0KCkhlcm8gaW5ncmVkaWVudHMgKHRvcCAz4oCTNSBhY3RpdmVzKTogIFtsaXN0XQpGdWxsIElOQ0k6ICAgICAgIFtjb21wbGV0ZSBsaXN0XQoKRnJhZ3JhbmNlOiAgICAgICBbWUVTIOKAlCBkZXNjcmliZSAvIE5PIOKAlCBjb25maXJtZWQgZnJhZ3JhbmNlLWZyZWVdCkNsZWFuIGNsYWltczogICAgW3NpbGljb25lLWZyZWUgLyBwYXJhYmVuLWZyZWUgLyBzdWxmYXRlLWZyZWUgLyBldGMuXQpTa2luIHR5cGU6ICAgICAgIFtvaWx5IC8gZHJ5IC8gY29tYmluYXRpb24gLyBzZW5zaXRpdmUgLyBhbGwgLyBldGMuXQpUYXJnZXQgY29uc3VtZXI6IFtkZXNjcmlwdGlvbl0KClQxIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQyIGtleXdvcmRzOiAgICAgW2Zyb20gS2V5d29yZCBUcmFja2VyIG9yIGRlcml2ZWRdClQzIGtleXdvcmRzOiAgICAgW3RyYWNrIG9ubHkg4oCUIGRvIG5vdCBwbGFjZSBpbiBjb3B5XQpgYGAKCklmIGZyYWdyYW5jZSBzdGF0dXMgaXMgdW5jbGVhciBmcm9tIHRoZSBpbnB1dHMsIGNoZWNrIHRoZSBJTkNJIGZvcjogUGFyZnVtLCBGcmFncmFuY2UsIGFueSBlc3NlbnRpYWwgb2lsIChsYXZlbmRlciBvaWwsIHJvc2VtYXJ5IG9pbCwgZXRjLiksIGxpbmFsb29sLCBsaW1vbmVuZSwgY2l0cm9uZWxsb2wsIGdlcmFuaW9sLCBldWdlbm9sLCBiZW56eWwgYWxjb2hvbC4gSWYgYW55IGFyZSBwcmVzZW50IOKGkiB0cmVhdCBhcyBIQVMgRlJBR1JBTkNFLiBOZXZlciBjbGFpbSBmcmFncmFuY2UtZnJlZSB3aXRob3V0IElOQ0kgY29uZmlybWF0aW9uLgoKLS0tCgojIyBQaGFzZSAyIOKAlCBDb21wbGlhbmNlIEdhdGUgQ2hlY2sKClJ1biBBTEwgY29weSB0aHJvdWdoIGV2ZXJ5IGdhdGUgYmVmb3JlIHdyaXRpbmcuIEluIEF1ZGl0IG1vZGUsIHJ1biB0aGUgZXhpc3RpbmcgY29weSB0aHJvdWdoIHRoZXNlIGdhdGVzIGZpcnN0IGFuZCBmbGFnIHZpb2xhdGlvbnMgYmVmb3JlIHJld3JpdGluZy4KCiMjIyBHYXRlIDEg4oCUIFByb2hpYml0ZWQgSGVhbHRoICYgRWZmaWNhY3kgV29yZHMKCioqSGFyZCBzdWJzdGl0dXRpb25zIOKAlCBtYW5kYXRvcnkgcmVwbGFjZW1lbnRzOioqCgp8IOKdjCBOZXZlciB1c2UgfCDinIUgVXNlIGluc3RlYWQgfAp8LS0tLS0tLS0tLS0tLXwtLS0tLS0tLS0tLS0tLS18CnwgYnJpZ2h0ZW5pbmcgLyBicmlnaHRlbnMgLyBicmlnaHRlbmVkIC8gYnJpZ2h0ZW5lciB8IGlsbHVtaW5hdGUsIHJlc3RvcmUgcmFkaWFuY2UsIGhlYWx0aHktbG9va2luZyBnbG93LCByZWZyZXNoZWQgY29tcGxleGlvbiwgbHVtaW5vdXMgfAp8IGJyaWdodGVuIChhbnkgZm9ybSkgfCBzYW1lIGFzIGFib3ZlIHwKfCBkYXJrIHNwb3QgLyBkYXJrIHNwb3QgY29ycmVjdG9yIHwgdW5ldmVuIHNraW4gdG9uZSwgc2tpbiB0b25lLCByYWRpYW5jZSB8CnwgZGlzY29sb3JhdGlvbiBjb3JyZWN0aW5nIC8gY29ycmVjdHMgZGlzY29sb3JhdGlvbiB8IHVuZXZlbiBza2luIHRvbmUsIGV2ZW4tbG9va2luZyBjb21wbGV4aW9uIHwKfCBza2luIGxpZ2h0ZW5pbmcgLyBza2luIGxpZ2h0ZW5lciB8IChyZW1vdmUgZW50aXJlbHkg4oCUIGRvIG5vdCByZXBsYWNlKSB8CnwgYW50aS1pbmZsYW1tYXRvcnkgfCBpcnJpdGF0aW9uLCByZWRuZXNzLCBwdWZmaW5lc3MsIHN3ZWxsaW5nIGFwcGVhcmFuY2UgfAp8IGluZmxhbW1hdGlvbiB8IGlycml0YXRpb24sIHJlZG5lc3MgfAp8IGhlYWxzIC8gaGVhbGluZyB8IHJlcGFpcnMsIHN1cHBvcnRzLCByZXN0b3JlcyB8CnwgY3VyZXMgfCAocmVtb3ZlIOKAlCBkbyBub3QgcmVwbGFjZSkgfAp8IGVsaW1pbmF0ZXMgKGFzIGEgY3VyZS90cmVhdG1lbnQgY2xhaW0pIHwgaGVscHMgcmVkdWNlLCBoZWxwcyBtaW5pbWl6ZSB0aGUgYXBwZWFyYW5jZSBvZiB8CnwgcHJldmVudHMgKGRpc2Vhc2UgY29udGV4dCkgfCBoZWxwcyBzdXBwb3J0LCBoZWxwcyBtYWludGFpbiB8CnwgcmVsaWV2ZXMgX19fIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBhcHBlYXJhbmNlL3N5bXB0b21zIG9mIF9fXyB8CnwgcGFpbiByZWxpZWYgLyBwYWluIHJlZHVjaW5nIHwgaGVscHMgYWxsZXZpYXRlIHRoZSBwYWluIGFzc29jaWF0ZWQgd2l0aCBfX18gfAp8IGFjbmUtZmlnaHRpbmcgLyB0cmVhdHMgYWNuZSAvIHRyZWF0IGFjbmUgfCBzdXBwb3J0cyBjbGVhcmVyLWxvb2tpbmcgc2tpbiwgaGVscHMgd2l0aCB0aGUgYXBwZWFyYW5jZSBvZiBibGVtaXNoZXMgfAp8IGtpbGxzIGJhY3RlcmlhIC8gYW50aS1iYWN0ZXJpYWwgfCBoZWxwcyByZW1vdmUgZGlydCwgZ3JpbWUsIG9pbCwgYW5kIHN1cmZhY2UgYnVpbGR1cCB8CnwgYW50aW1pY3JvYmlhbCAvIGFudGlmdW5nYWwgfCBoZWxwcyBlbGltaW5hdGUgW3NwZWNpZmljIGlzc3VlXSB8CnwgZnJhZ3JhbmNlLWZyZWUg';
 
