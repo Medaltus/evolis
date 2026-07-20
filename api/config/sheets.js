@@ -21,6 +21,8 @@
  * SHEET_MASTER_SKU_LIST           Master SKU/ASIN list across all brands (Product Short Name tab) — used for SKU-prefix brand matching in sync-sqp-request.js. Also has an "Events" tab (Event Name/start_date/end_date) used by sync-event-orders-request.js.
  * SHEET_KEYWORD_TRACKER            Organic keyword rank tracking, per-brand tabs — used by run-analysis.js
  * SHEET_CONSIGNMENT_INVENTORY      Consignment inventory from ShipStation V2, per-brand tabs (MiGuard, Prohibition so far) — sync-consignment-inventory.js
+ * SHEET_FULFILLMENT_DAILY_SHIPMENTS Daily shipped-order counts (chart) + _kpis tab (shipped 30d, avg cost 7d, avg processing time 7d) — sync-fulfillment-daily-shipments.js, sync-fulfillment-kpis.js
+ * SHEET_FULFILLMENT_STATES          Orders-by-state snapshot for the Fulfillment page's US map + table — sync-fulfillment-states.js
  */
 
 module.exports = {
@@ -41,4 +43,6 @@ module.exports = {
   masterSkuList:          process.env.SHEET_MASTER_SKU_LIST,
   keywordTracker:         process.env.SHEET_KEYWORD_TRACKER,
   consignmentInventory:   process.env.SHEET_CONSIGNMENT_INVENTORY,
+  fulfillmentDailyShipments: process.env.SHEET_FULFILLMENT_DAILY_SHIPMENTS,
+  fulfillmentStates:         process.env.SHEET_FULFILLMENT_STATES,
 };
