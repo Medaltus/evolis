@@ -7730,7 +7730,7 @@ let FF_STATE_DATA = {};
 async function ffLoadKpis() {
   try {
     const csv = await fetch(ovGvizCsvUrlByName(OV_FULFILLMENT_DAILY_SHEET_ID, '_kpis')).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
+    const rows = parseCsvToRows(csv).filter(r => (r.brand || '') === 'evolis');
     const map = {};
     rows.forEach(r => { if (r.metric) map[r.metric] = r.value; });
 
@@ -7749,7 +7749,7 @@ async function ffLoadKpis() {
 async function ffLoadShippedChart() {
   const footer = document.getElementById('ff-chart-footer');
   try {
-    const csv = await fetch(ovGvizCsvUrlByName(OV_FULFILLMENT_DAILY_SHEET_ID, 'daily-counts')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const csv = await fetch(ovGvizCsvUrlByName(OV_FULFILLMENT_DAILY_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
     if (!rows.length) { if (footer) footer.textContent = 'No data yet'; return; }
 
@@ -7891,7 +7891,7 @@ function ffBuildStateTable() {
 async function ffLoadStates() {
   const footer = document.getElementById('ff-map-footer');
   try {
-    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_STATES_SHEET_ID, '0')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const csv = await fetch(ovGvizCsvUrlByName(OV_FULFILLMENT_STATES_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
     if (!rows.length) { if (footer) footer.textContent = 'No data yet'; ffBuildHeatmap(); ffBuildStateTable(); return; }
 
