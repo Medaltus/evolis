@@ -46,21 +46,29 @@
  *   inbound_receiving_quantity, unfulfillable_quantity, total_quantity,
  *   name, status, sales_ranks, title, item_highlights, bullet_1..5,
  *   description, backend_keywords, ingredients, item_type_keyword,
- *   offers, issues, last_synced, purchased_units_90d, days_of_inventory
+ *   offers, issues, last_synced, purchased_units_90d, days_of_inventory,
+ *   qty_on_hand
  *
- * total_quantity (col K) and days_of_inventory (col AD) are LIVE
- * SPREADSHEET FORMULAS, not code-computed values — written with
- * valueInputOption=USER_ENTERED so they actually evaluate rather than
- * store as literal formula-looking text:
- *   total_quantity      = D{row} + J{row}   (fulfillable + seller-fulfilled)
- *   days_of_inventory   = total_quantity / (purchased_units_90d / 90)
+ * total_quantity (col K), days_of_inventory (col AD), and qty_on_hand
+ * (col AE) are LIVE SPREADSHEET FORMULAS, not code-computed values —
+ * written with valueInputOption=USER_ENTERED so they actually evaluate
+ * rather than store as literal formula-looking text:
+ *   qty_on_hand ("On Hand") = D{row}+E{row}+J{row}
+ *                             (fulfillable + reserved + seller-fulfilled)
+ *   total_quantity ("Available") = AE{row}-E{row}  (qty_on_hand - reserved)
+ *   days_of_inventory            = total_quantity / (purchased_units_90d / 90)
  *
- * Inbound (working/shipped/receiving) is deliberately excluded from
- * total_quantity — confirmed via Amazon's FBA Inventory API docs that
- * "Inbound" units are still on their way to Amazon's network, not yet
- * fulfillable/sellable. There's no state in which they become
- * customer-orderable before being received and reclassified as
- * fulfillable.
+ * total_quantity is explicitly DERIVED FROM qty_on_hand minus reserved,
+ * not computed independently — per exact definition given 2026-07-20.
+ * Numerically this still lands on fulfillable+seller_fulfilled (reserved
+ * cancels out), but the formula itself now matches the stated derivation.
+ *
+ * qty_on_hand deliberately excludes inbound (working/shipped/receiving)
+ * — confirmed via Amazon's FBA Inventory API docs that "Inbound" units
+ * are still on their way to Amazon's network, not yet fulfillable/
+ * sellable/physically on hand. It also excludes unfulfillable_quantity
+ * (damaged/expired stock) — physically present but not usable inventory,
+ * per exact definition given 2026-07-20.
  *
  * purchased_units_90d (col AC) is summed from the rolling 90-day orders
  * cache (sheets.orders, same sheet/tab-per-brand every other cron in this
@@ -91,17 +99,17 @@ const HEADERS = [
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords', 'ingredients', 'item_type_keyword',
   'offers', 'issues', 'last_synced',
-  'purchased_units_90d', 'days_of_inventory',
+  'purchased_units_90d', 'days_of_inventory', 'qty_on_hand',
 ];
 
-// Column letters for the two formulas below — spelled out once here so a
+// Column letters for the formulas below — spelled out once here so a
 // future HEADERS reorder doesn't silently break the formula strings.
-// D=fulfillable_quantity, J=seller_fulfilled_quantity, K=total_quantity,
-// AC=purchased_units_90d (28th column).
 const COL_FULFILLABLE      = 'D';
+const COL_RESERVED         = 'E';
 const COL_SELLER_FULFILLED = 'J';
-const COL_TOTAL_QUANTITY   = 'K';
+const COL_TOTAL_QUANTITY   = 'K'; // "Available"
 const COL_PURCHASED_90D    = 'AC';
+const COL_QTY_ON_HAND      = 'AE';
 
 const EXCLUDED_BRAND_NAMES = ['high on love']; // different seller account entirely
 
@@ -274,7 +282,15 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     inv.inboundReceivingQuantity ?? '',
     inv.unfulfillableQuantity?.totalUnfulfillableQuantity ?? '',
     sellerFulfilledQuantity,
-    `=${COL_FULFILLABLE}${rowNumber}+${COL_SELLER_FULFILLED}${rowNumber}`, // total_quantity — live formula, not an API value
+    // total_quantity ("Available") — live formula: qty_on_hand minus
+    // allocated (reserved). Not computed independently from
+    // fulfillable+seller_fulfilled anymore — it's explicitly derived FROM
+    // qty_on_hand, per exact definition given 2026-07-20. Numerically this
+    // still lands on fulfillable+seller_fulfilled (reserved cancels out:
+    // (fulfillable+reserved+seller_fulfilled) - reserved), but the formula
+    // itself now matches the stated derivation rather than coincidentally
+    // producing the same number.
+    `=${COL_QTY_ON_HAND}${rowNumber}-${COL_RESERVED}${rowNumber}`,
     name || '', // from master sheet, NOT the API — per requirements
     (listing?.summaries?.[0]?.status || []).join(', '),
     salesRanksStr,
@@ -292,6 +308,11 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     // days_of_inventory — live formula, guarded against divide-by-zero/blank
     // (N() coerces blank to 0 so the IF check works even if units90d is '').
     `=IF(N(${COL_PURCHASED_90D}${rowNumber})=0,"",${COL_TOTAL_QUANTITY}${rowNumber}/(${COL_PURCHASED_90D}${rowNumber}/90))`,
+    // qty_on_hand — live formula: fulfillable + reserved + seller-fulfilled.
+    // Deliberately excludes unfulfillable_quantity (damaged/expired stock)
+    // AND inbound (still in transit, not physically on hand yet) — per
+    // exact definition given 2026-07-20.
+    `=${COL_FULFILLABLE}${rowNumber}+${COL_RESERVED}${rowNumber}+${COL_SELLER_FULFILLED}${rowNumber}`,
   ];
 }
 
