@@ -131,7 +131,7 @@ async function countShipments(startParam, endParam) {
     total += (data.shipments || []).length;
     hasMore = page < (data.pages || 1);
     page++;
-    if (page > 30) break;
+    if (page > 200) break; // safety net against a runaway loop, not a real ceiling — 200 pages = 100,000 records
     if (hasMore) await sleep(300);
   }
   return total;
@@ -144,7 +144,7 @@ async function fetchAllShipments(startParam, endParam) {
     all = all.concat(data.shipments || []);
     hasMore = page < (data.pages || 1);
     page++;
-    if (page > 30) break;
+    if (page > 200) break; // safety net against a runaway loop, not a real ceiling — 200 pages = 100,000 records
     if (hasMore) await sleep(300);
   }
   return all;
@@ -157,7 +157,7 @@ async function fetchAllOrders(startParam, endParam) {
     all = all.concat(data.orders || []);
     hasMore = page < (data.pages || 1);
     page++;
-    if (page > 30) break;
+    if (page > 200) break; // safety net against a runaway loop, not a real ceiling — 200 pages = 100,000 records
     if (hasMore) await sleep(300);
   }
   return all;
