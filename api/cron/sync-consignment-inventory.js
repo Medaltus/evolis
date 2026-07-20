@@ -5,10 +5,10 @@
  * everything else in this repo deals with).
  *
  * Fetches on-hand/available consignment inventory from ShipStation V2 for
- * MiGuard and Prohibition (each has its own dedicated warehouse — they do
- * NOT share one), cross-references against the master SKU list so a SKU
- * ShipStation doesn't return still shows up with 0/0 rather than silently
- * missing.
+ * MiGuard, Prohibition, and HighOnLove (each has its own dedicated
+ * warehouse — none of them share one), cross-references against the
+ * master SKU list so a SKU ShipStation doesn't return still shows up with
+ * 0/0 rather than silently missing.
  *
  * WHY THE MASTER-LIST CROSS-REFERENCE MATTERS: confirmed via a working
  * inventory-sync cron from a sibling project (Dazzle Dry) that ShipStation
@@ -20,10 +20,15 @@
  * as "no data this run," not "confirmed zero" — exactly backwards for a
  * SKU that just went OOS.
  *
- * High On Love is deliberately NOT included yet — not in config/brands.js
- * at all (different Amazon seller account), and explicitly deferred by
- * Jaclyn until after the Évolis dashboard is fully built (2026-07-20).
- * Its warehouse (se-154551) is known for whenever this gets picked up.
+ * HighOnLove IS included (SKU prefix HOL, confirmed 2026-07-20) but has a
+ * KNOWN, UNRESOLVED GAP: it's on a separate Amazon seller account, so the
+ * Newderm master SKU list this cron reads almost certainly doesn't cover
+ * it — meaning the zero-stock cross-reference has nothing to check
+ * against for this brand specifically. The code detects this at runtime
+ * (zero master-list rows matching the HOL prefix) and surfaces a loud
+ * warning in both the logs and this cron's own JSON response, rather than
+ * silently reporting zeroAdded:0 in a way indistinguishable from "no gaps
+ * found." Resolve by finding/building a master SKU list for HighOnLove.
  *
  * Sheet: SHEET_CONSIGNMENT_INVENTORY, one tab per brand.
  * Columns: sku, name, on_hand, available, last_updated
@@ -58,9 +63,16 @@ const HEADERS = ['sku', 'name', 'on_hand', 'available', 'last_updated'];
 // once both are known — see fetchMasterSkuListFor() below for how the
 // cross-reference would need to change if there's no master list for it.
 const CONSIGNMENT_BRANDS = [
-  { brandId: 'miguard',     warehouseId: 'se-157240', skuPrefix: 'MIG', tabName: 'miguard' },
-  { brandId: 'prohibition', warehouseId: 'se-173781', skuPrefix: 'PRB', tabName: 'prohibition' },
-  // { brandId: 'high-on-love', warehouseId: 'se-154551', skuPrefix: '???', tabName: 'high-on-love' }, // pending prefix + master-list confirmation
+  { brandId: 'miguard',      warehouseId: 'se-157240', skuPrefix: 'MIG', tabName: 'miguard' },
+  { brandId: 'prohibition',  warehouseId: 'se-173781', skuPrefix: 'PRB', tabName: 'prohibition' },
+  // HighOnLove is on a SEPARATE Amazon seller account — the Newderm master
+  // SKU list almost certainly doesn't cover it, so its zero-stock
+  // cross-reference has a known, unresolved gap (see the check + note
+  // right after masterSkus.filter() in the main loop below). Not
+  // silently assumed-covered — flagged loudly in this cron's own output
+  // instead, until a master list for this brand is confirmed one way or
+  // the other.
+  { brandId: 'high-on-love', warehouseId: 'se-154551', skuPrefix: 'HOL', tabName: 'high-on-love' },
 ];
 
 // Consignment SKUs in ShipStation always carry a "C-" prefix over the base
@@ -113,14 +125,22 @@ module.exports = async (req, res) => {
       // Unverified for these two brands specifically. If matching turns
       // out to be off, most/all SKUs will show as "missing" here and that
       // mismatch will be obvious immediately.
+      const brandMasterSkus = masterSkus.filter(m => m.sku.toUpperCase().startsWith(skuPrefix.toUpperCase()));
+
+      // If a brand has ZERO matching master-list rows (expected for
+      // high-on-love — separate Amazon seller account, not in this master
+      // list at all), the cross-reference has nothing to check against.
+      // zeroAdded staying 0 in that case does NOT mean "no gaps found" —
+      // it means "couldn't check for gaps." Flagging that distinction
+      // explicitly rather than letting it look identical to full coverage.
+      const noMasterListCoverage = brandMasterSkus.length === 0;
+
       let zeroAdded = 0;
-      masterSkus
-        .filter(m => m.sku.toUpperCase().startsWith(skuPrefix.toUpperCase()))
-        .forEach(({ sku, name }) => {
-          if (ssMap[sku]) return;
-          rows.push([sku, name || sku, 0, 0, now]);
-          zeroAdded++;
-        });
+      brandMasterSkus.forEach(({ sku, name }) => {
+        if (ssMap[sku]) return;
+        rows.push([sku, name || sku, 0, 0, now]);
+        zeroAdded++;
+      });
 
       rows.sort((a, b) => {
         const aOut = a[3] === 0 ? 0 : 1;
@@ -132,8 +152,14 @@ module.exports = async (req, res) => {
       const token = await ensureTab(sheets.consignmentInventory, tabName, HEADERS);
       await replaceRows(sheets.consignmentInventory, tabName, HEADERS, rows, token);
 
+      if (noMasterListCoverage) {
+        console.warn(`[sync-consignment-inventory] ${brandId} — NO master-list SKUs matched prefix "${skuPrefix}". Zero-stock detection is NOT reliable for this brand — a SKU going out of stock will silently vanish from ShipStation's response instead of showing 0/0.`);
+      }
       console.log(`[sync-consignment-inventory] ${brandId} — ${inventory.length} from ShipStation, ${zeroAdded} zero-stock added from master list`);
-      results.push({ brand: brandId, status: 'ok', fromShipStation: inventory.length, zeroAdded, totalRows: rows.length });
+      results.push({
+        brand: brandId, status: 'ok', fromShipStation: inventory.length, zeroAdded, totalRows: rows.length,
+        ...(noMasterListCoverage ? { warning: 'No master-list SKUs matched this prefix — zero-stock detection is NOT reliable for this brand.' } : {}),
+      });
     } catch (err) {
       console.error(`[sync-consignment-inventory] ${brandId} failed:`, err.message);
       results.push({ brand: brandId, status: 'error', error: err.message });
