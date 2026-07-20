@@ -146,12 +146,20 @@ async function ensureTab(sheetId, tabName, headers) {
 /**
  * Append rows to a tab. Rows is an array of arrays.
  */
-async function appendRows(sheetId, tabName, rows, token) {
+/**
+ * valueInputOption defaults to 'RAW' (existing behavior, unchanged for every
+ * current caller). Pass 'USER_ENTERED' when rows contain real spreadsheet
+ * formulas that need to actually evaluate rather than be stored as literal
+ * text — same reasoning as replaceRows's own valueInputOption param below.
+ * Added 2026-07-20 for sync-products.js's total_quantity/days_of_inventory
+ * formula columns.
+ */
+async function appendRows(sheetId, tabName, rows, token, valueInputOption = 'RAW') {
   if (!rows.length) return;
   const range = `${tabName}!A1`;
   await sheetsPost(
     token,
-    `/${sheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `/${sheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=${valueInputOption}&insertDataOption=INSERT_ROWS`,
     { values: rows }
   );
 }
@@ -184,10 +192,20 @@ async function replaceRows(sheetId, tabName, headers, rows, token, valueInputOpt
 /**
  * Read all rows from a tab. Returns array of objects keyed by header.
  */
-async function readRows(sheetId, tabName) {
+/**
+ * valueRenderOption defaults to the Sheets API's own default
+ * (FORMATTED_VALUE — a formula cell's computed result, not its formula
+ * text), unchanged for every existing caller. Pass 'FORMULA' when a tab
+ * may contain live formulas (e.g. sync-products.js's total_quantity /
+ * days_of_inventory columns) and you need to round-trip the formula
+ * itself rather than flattening it into whatever number it last
+ * evaluated to. Added 2026-07-20.
+ */
+async function readRows(sheetId, tabName, valueRenderOption = null) {
   const token = await getSheetsToken();
   const range = encodeURIComponent(`${tabName}!A1:ZZ`);
-  const data  = await sheetsGet(token, `/${sheetId}/values/${range}`);
+  const suffix = valueRenderOption ? `?valueRenderOption=${valueRenderOption}` : '';
+  const data  = await sheetsGet(token, `/${sheetId}/values/${range}${suffix}`);
   const rows  = data.values || [];
   if (rows.length < 2) return [];
 
