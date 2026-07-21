@@ -8817,14 +8817,19 @@ function renderListingInsightCards(listing, container) {
 function appendLogCard(logEl, ins) {
   const card = document.createElement('div');
   card.className = 'ai-insight-card';
+  const mini = (cardType, badgeHtml, text) =>
+    '<div class="ppc-opp-card ' + cardType + '">' +
+      '<div class="ppc-opp-hd">' + badgeHtml + '</div>' +
+      '<div class="ppc-opp-body" style="font-size:12px;">' + (text || '—') + '</div>' +
+    '</div>';
   card.innerHTML = '<div class="ai-insight-card-hd">' +
     '<span class="ai-insight-card-type">✦ AI Analysis — Organic · PPC · Listing</span>' +
     '<span class="ai-insight-card-date">' + (ins.date||'') + '</span>' +
     '</div><div class="ai-insight-card-body"><p>' + (ins.log_summary||'') + '</p>' +
-    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2);font-size:11.5px;line-height:1.7;">' +
-    '<strong>Organic:</strong> ' + (ins.organic&&ins.organic.summary||'—') + '<br><br>' +
-    '<strong>PPC:</strong> ' + (ins.ppc&&ins.ppc.summary||'—') + '<br><br>' +
-    '<strong>Listing:</strong> ' + (ins.listing&&ins.listing.summary||'—') +
+    '<div class="insight-grid" style="grid-template-columns:repeat(3,1fr);margin-top:12px;margin-bottom:0;">' +
+    mini('win-type', '<div class="ppc-opp-badge" style="color:#1db88a;">ORGANIC</div>', ins.organic&&ins.organic.summary) +
+    mini('opportunity-type', '<div class="ppc-opp-badge high">PPC</div>', ins.ppc&&ins.ppc.summary) +
+    mini('summary-type', '<div class="ppc-opp-badge med">LISTING</div>', ins.listing&&ins.listing.summary) +
     '</div></div>';
   logEl.appendChild(card);
 }
