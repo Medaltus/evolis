@@ -7727,6 +7727,23 @@ const FF_SL = {
 let ffShippedChartInstance = null;
 let FF_STATE_DATA = {};
 
+// Formats an ISO UTC timestamp as "MM-DD-YYYY 4p EST" — simplified,
+// Eastern time, single-letter am/pm. Returns '' for anything unparseable
+// rather than showing a raw/garbled string.
+function ffFormatEst(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d)) return '';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: '2-digit', day: '2-digit', year: 'numeric',
+    hour: 'numeric', hour12: true,
+  }).formatToParts(d);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  const ampm = (p.dayPeriod || '').toLowerCase().startsWith('p') ? 'p' : 'a';
+  return `${p.month}-${p.day}-${p.year} ${p.hour}${ampm} EST`;
+}
+
 async function ffLoadKpis() {
   try {
     const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => '');
@@ -7750,7 +7767,10 @@ async function ffLoadShippedChart() {
   const footer = document.getElementById('ff-chart-footer');
   try {
     const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '356984145')).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
+    const rows = parseCsvToRows(csv).filter(r => {
+      const day = new Date((r.date || '') + 'T12:00:00').getDay();
+      return day !== 0 && day !== 6; // weekends filtered defensively — the cron no longer writes them going forward, but old rows may still exist
+    });
     if (!rows.length) { if (footer) footer.textContent = 'No data yet'; return; }
 
     const sorted = [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -7810,7 +7830,7 @@ async function ffLoadShippedChart() {
     });
 
     const lastRow = sorted[sorted.length - 1];
-    if (footer) footer.textContent = lastRow ? `Last synced · ${lastRow.last_updated || lastRow.date}` : '';
+    if (footer) footer.textContent = lastRow ? `Last synced · ${ffFormatEst(lastRow.last_updated) || lastRow.date}` : '';
   } catch (err) {
     console.warn('[Fulfillment] chart load failed:', err.message);
     if (footer) footer.textContent = 'Error loading';
@@ -7901,7 +7921,7 @@ async function ffLoadStates() {
     ffBuildHeatmap();
     ffBuildStateTable();
 
-    if (footer) footer.textContent = rows[0]?.refreshed_at ? `Last synced · ${rows[0].refreshed_at}` : '';
+    if (footer) footer.textContent = rows[0]?.refreshed_at ? `Last synced · ${ffFormatEst(rows[0].refreshed_at)}` : '';
   } catch (err) {
     console.warn('[Fulfillment] states load failed:', err.message);
     if (footer) footer.textContent = 'Error loading';
