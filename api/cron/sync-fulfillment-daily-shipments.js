@@ -48,6 +48,15 @@ module.exports = async (req, res) => {
 
   try {
     // ── Build the list of dates to process ────────────────────────────
+    // Weekends are skipped for scheduled/backfill runs — no shipping
+    // happens then, so there's nothing to check and no point writing a
+    // zero-row. An explicit ?date= still honors exactly what was asked
+    // for, in case a manual weekend check is ever actually wanted.
+    const isWeekend = dateStr => {
+      const day = new Date(dateStr + 'T12:00:00').getDay(); // noon avoids any DST-edge midnight weirdness
+      return day === 0 || day === 6;
+    };
+
     let dateList;
     if (req.query.days) {
       const n = parseInt(req.query.days, 10) || 30;
@@ -55,12 +64,17 @@ module.exports = async (req, res) => {
       for (let i = n - 1; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        dateList.push(easternDateStr(d));
+        const ds = easternDateStr(d);
+        if (!isWeekend(ds)) dateList.push(ds);
       }
     } else if (req.query.date) {
       dateList = [req.query.date];
     } else {
-      dateList = [easternDateStr(new Date())];
+      const todayStr = easternDateStr(new Date());
+      if (isWeekend(todayStr)) {
+        return res.status(200).json({ message: `${todayStr} is a weekend — no shipping, nothing to do.`, skipped: true });
+      }
+      dateList = [todayStr];
     }
 
     const nowLabel = new Date().toISOString();
