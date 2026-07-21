@@ -62,7 +62,17 @@ module.exports = async function handler(req, res) {
 
   if (!rows.length) return res.status(400).json({ error: 'No rows found in uploaded file' });
 
-  const activeBrands = brands.filter(b => b.active);
+  // HighOnLove is NOT in config/brands.js (deliberately kept out — same
+  // reasoning as _fulfillment_brands.js: it's on a separate Amazon seller
+  // account, and adding it to the shared registry would make it start
+  // appearing in every cron that loops brands.filter(b => b.active)).
+  // Confirmed 2026-07-21 that HighOnLove DOES have a Follow Up automation,
+  // so it needs to be recognized here specifically, without touching the
+  // shared registry.
+  const activeBrands = [
+    ...brands.filter(b => b.active).map(b => ({ id: b.id, tabName: b.tabName })),
+    { id: 'high-on-love', tabName: 'high-on-love' },
+  ];
   const nowIso = new Date().toISOString();
   const results = [];
   const unmatched = [];
