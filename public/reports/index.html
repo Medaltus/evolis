@@ -9657,7 +9657,6 @@ async function loadAuditResultsFromSheet() {
     // opening every sales tab first, and why the font-size scaling
     // (computed from that same bad width) came out backwards. Confirmed
     // 2026-07-14.
-    const freshlyUnhiddenCharts = []; // charts whose ancestor chain actually needed fixing this run
     varNames.forEach(function (varName) {
       const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const chart = window[varName];
@@ -9665,58 +9664,44 @@ async function loadAuditResultsFromSheet() {
       if (!chart) { console.log('[pdf-export][qa]', varName, '— canvas exists but window.' + varName + ' chart object does not exist yet'); return; }
       const ancestorLog = [];
       let node = canvas.parentElement;
-      let neededFix = false;
       while (node && node !== document.body) {
         const disp = window.getComputedStyle(node).display;
         ancestorLog.push((node.id || node.className || node.tagName) + ':' + disp);
         if (disp === 'none') {
           restore.push({ el: node, prop: 'display', prevValue: node.style.display });
           node.style.display = 'block';
-          neededFix = true;
         }
         node = node.parentElement;
       }
-      if (neededFix) freshlyUnhiddenCharts.push(varName);
       console.log('[pdf-export][qa]', varName, '— ancestor chain (before fix):', ancestorLog.join(' > '));
     });
 
     console.log('[pdf-export] forced', restore.length, 'hidden ancestor(s) visible to read real chart sizes');
     await new Promise(function (r) { requestAnimationFrame(r); });
     await new Promise(function (r) { requestAnimationFrame(r); });
-    await new Promise(function (r) { setTimeout(r, 60); }); // was 30ms — widened as defensive margin
+    await new Promise(function (r) { setTimeout(r, 60); });
 
-    // Charts whose tab was actually hidden until the fix above (unlike
-    // every OTHER currently-registered chart — Amazon/Web/Walmart/
-    // Stewardship's two all live on tabs that are already active/visible
-    // by default, so they've had since page load to settle into a real
-    // size; this chart's tab is NOT default-active, so this is the only
-    // case that hits a genuine hidden→visible transition seconds before
-    // capture) get an EXPLICIT resize+redraw here, before anything
-    // measures their size — rather than relying on the single later
-    // resize() call in pdfxCaptureOneChart to both discover AND correct a
-    // possibly-still-settling layout in one step. Added 2026-07-21 after
-    // this chart specifically (mfcShippedChartInstance) rendered
-    // correctly-visible but tiny/squeezed in the exported PDF despite the
-    // wrapper's own CSS height already matching every working chart
-    // exactly — the wrapper was never the actual problem.
-    freshlyUnhiddenCharts.forEach(function (varName) {
-      const canvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
-      const chart = window[varName];
-      if (!canvas || !chart) return;
-      const wrapper = canvas.parentElement;
-      const rect = wrapper ? wrapper.getBoundingClientRect() : null;
-      console.log('[pdf-export][qa]', varName, '— freshly-unhidden pre-resize check, wrapper rect:', rect ? Math.round(rect.width) + 'x' + Math.round(rect.height) : '(no wrapper)');
-      try {
-        chart.resize();
-        chart.update('none');
-      } catch (e) {
-        console.warn('[pdf-export][qa]', varName, '— early resize/update failed:', e.message);
-      }
-    });
-    if (freshlyUnhiddenCharts.length) {
-      await new Promise(function (r) { requestAnimationFrame(r); });
-      await new Promise(function (r) { setTimeout(r, 60); });
-    }
+    // REMOVED 2026-07-21: an earlier attempt here added an explicit
+    // chart.resize()+update('none') call for freshly-unhidden charts,
+    // meant to fix mfcShippedChartInstance rendering tiny. Real console
+    // output from an actual export proved this was the ACTUAL CAUSE of a
+    // worse, more specific bug: every other registered chart's canvas
+    // ends up at the height the LATER deliberate oversized-resize (in
+    // pdfxCaptureOneChart, a few lines below) requests — but
+    // mfcShippedChartInstance's canvas snapped back to its ORIGINAL
+    // height by the time it was actually captured, because this early
+    // plain resize() call (with no explicit dimensions) re-armed Chart.js's
+    // own responsive-resize behavior, which then corrected the later
+    // deliberate oversized resize back down to match the real container
+    // size. No other chart went through this early call, so none of them
+    // hit this. Confirmed directly by comparing captured canvas dimensions
+    // in the console log: every working chart's "re-rendered at" height
+    // matched its final "captured canvas" height exactly; this chart's
+    // did not (938 requested, 320 actual) — which also fully explains the
+    // tiny-axis-text complaint as the SAME root cause, not a second bug:
+    // the 39px axis font was correctly computed and drawn, just onto a
+    // canvas 1/3 the intended height, so the whole image (text included)
+    // got scaled down to 98px tall in the PDF instead of 288px.
 
     // 2026-07-15: the isolated-temp-chart approach below this comment used to
     // build a brand-new, fully detached Chart.js instance per chart purely to
