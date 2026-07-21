@@ -904,9 +904,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <span class="pdfx-spin"></span>
         <span class="pdfx-label-text">Export PDF Report</span>
       </button>
-      <span class="staging-pill">Staging</span>
-      <span class="topbar-date" id="topbar-date">📅 May 1 – May 31, 2026</span>
-      <span class="confidential-badge">Confidential</span>
+      <span class="staging-pill" style="display:none;">Staging</span>
+      <span class="topbar-date" id="topbar-date" style="display:none;">📅 May 1 – May 31, 2026</span>
+      <span class="confidential-badge" style="display:none;">Confidential</span>
     </div>
   </div>
 
@@ -1343,6 +1343,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="ppc-note" id="mfc-chart-footer">Loading…</div>
       </div>
 
+      <div class="section-label" style="margin-top:4px;">Customer Service</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
         <div class="kpi-card">
           <div class="kpi-label">Reviews Requested</div>
@@ -1354,13 +1355,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div class="kpi-value" id="mfc-kpi-compliance">—</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-compliance-sub">Open Cases: —</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Customer Service Interactions</div>
-          <div class="kpi-value" id="mfc-kpi-cs-interactions">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Manual — no Amazon API for this</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
           <div class="kpi-label">Returns Processed · Last 30 Days</div>
           <div class="kpi-value" id="mfc-kpi-returns">—</div>
@@ -3759,7 +3753,7 @@ async function initSns() {
 
   const kpiValues = document.querySelectorAll('#m-opportunities .kpi-value');
   const subsKpiEl = kpiValues[0] || null;
-  const retentionKpiEl = kpiValues[1] || null;
+  const retentionKpiEl = document.querySelector('#kpi-retention .kpi-value') || null;
 
   try {
     const [totalsCsv, retentionCsv] = await Promise.all([
@@ -3800,22 +3794,31 @@ async function initSns() {
       if (skipped.length) {
         console.warn('[Evolis][subscriptions] skipped', skipped.length, 'row(s) with no usable total_subscriptions value — these months are NOT in the chart:', skipped.join(', '));
       }
-      console.log('[Evolis][subscriptions] months actually plotted on the chart:', labels.join(', '));
+
+      // Trailing 13 months only — chronologically sorted already, so this
+      // is just "keep the last 13 of however many months made it through
+      // the filtering above." Confirmed 2026-07-21.
+      const TRAILING_MONTHS = 13;
+      const trimmedLabels = labels.slice(-TRAILING_MONTHS);
+      const trimmedValues = values.slice(-TRAILING_MONTHS);
+      const trimmedYears  = years.slice(-TRAILING_MONTHS);
+
+      console.log('[Evolis][subscriptions] months actually plotted on the chart (trailing', TRAILING_MONTHS, 'of', labels.length, 'available):', trimmedLabels.join(', '));
 
       if (values.length) {
         // Color by calendar year: 2024 sand, 2025 slate, 2026 navy. Falls
         // back gracefully for any other year (older -> sand-ish, newer ->
         // navy) so this doesn't quietly break once 2027 data shows up.
         const YEAR_COLORS = { 2024: '#f4dfd0', 2025: '#6b7ba2', 2026: '#001f60' };
-        const distinctYears = [...new Set(years)].sort((a, b) => a - b);
-        const bg = years.map(y => {
+        const distinctYears = [...new Set(trimmedYears)].sort((a, b) => a - b);
+        const bg = trimmedYears.map(y => {
           if (YEAR_COLORS[y]) return YEAR_COLORS[y];
           const idx = distinctYears.indexOf(y);
           return idx <= 0 ? '#f4dfd0' : (idx === distinctYears.length - 1 ? '#001f60' : '#6b7ba2');
         });
         window._snsChart = new Chart(canvas, {
           type: 'bar',
-          data: { labels, datasets: [{ label: 'Active Subscriptions', data: values, backgroundColor: bg }] },
+          data: { labels: trimmedLabels, datasets: [{ label: 'Active Subscriptions', data: trimmedValues, backgroundColor: bg }] },
           options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
@@ -7879,7 +7882,7 @@ async function ffLoadShippedChart() {
     if (!canvas) return;
     if (ffShippedChartInstance) ffShippedChartInstance.destroy();
 
-    ffShippedChartInstance = new Chart(canvas, {
+    ffShippedChartInstance = window.ffShippedChartInstance = new Chart(canvas, {
       type: 'line',
       data: {
         labels,
@@ -8096,7 +8099,7 @@ async function mfcLoadShippedChart() {
     if (!canvas) return;
     if (mfcShippedChartInstance) mfcShippedChartInstance.destroy();
 
-    mfcShippedChartInstance = new Chart(canvas, {
+    mfcShippedChartInstance = window.mfcShippedChartInstance = new Chart(canvas, {
       type: 'line',
       data: { labels, datasets: [{
         label: 'Orders shipped', data: totals,
@@ -8140,6 +8143,38 @@ async function mfcLoadStates() {
 // other 30-day figure on this tab) — stated explicitly since "return
 // rate" could reasonably mean returns/units-sold instead; this is a
 // judgment call, not a given definition.
+const OV_CUSTOMER_SERVICE_SHEET_ID = '14CETE7Qo5PpYrbDqF9TQFoz4b1Uzw3hECIztWmy_VYA';
+const OV_CUSTOMER_SERVICE_EVOLIS_GID = '1776812216';
+
+// Compliance Cases Resolved/Open — most recent (year, month) row in the
+// evolis tab. Reviews Requested is deliberately NOT read here yet — the
+// upload cron (upload-h10-reviews.js) is built, but no real H10 pull has
+// populated this sheet's reviews_requested column yet, so there's nothing
+// real to show. Wiring that read is a one-line change once real data
+// exists; not done preemptively to avoid displaying a stale/fake zero.
+async function mfcLoadComplianceCases() {
+  const resolvedEl = document.getElementById('mfc-kpi-compliance');
+  const subEl      = document.getElementById('mfc-kpi-compliance-sub');
+  try {
+    const csv = await fetch(ovCsvUrl(OV_CUSTOMER_SERVICE_SHEET_ID, OV_CUSTOMER_SERVICE_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) return;
+
+    const sorted = [...rows].sort((a, b) => {
+      const ay = parseInt(a.year, 10) || 0, am = parseInt(a.month, 10) || 0;
+      const by = parseInt(b.year, 10) || 0, bm = parseInt(b.month, 10) || 0;
+      return (ay - by) || (am - bm);
+    });
+    const latest = sorted[sorted.length - 1];
+    if (!latest) return;
+
+    if (resolvedEl) resolvedEl.textContent = latest.compliance_cases_resolved !== '' ? latest.compliance_cases_resolved : '—';
+    if (subEl) subEl.textContent = `Open Cases: ${latest.compliance_cases_open !== '' ? latest.compliance_cases_open : '—'}`;
+  } catch (err) {
+    console.warn('[Marketing/FulfillmentCS] compliance cases load failed:', err.message);
+  }
+}
+
 async function mfcLoadReturns() {
   const valEl = document.getElementById('mfc-kpi-returns');
   const subEl = document.getElementById('mfc-kpi-returns-sub');
@@ -8169,7 +8204,7 @@ async function mfcLoadReturns() {
 }
 
 window.initMarketingFulfillmentCS = async function() {
-  await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns()]);
+  await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns(), mfcLoadComplianceCases()]);
 };
 
 
@@ -9719,7 +9754,7 @@ async function loadAuditResultsFromSheet() {
   }
 
   function pdfxHeaderBand(monthYear, activeTab) {
-    const tabs = ['Sales', 'Brand Stewardship', 'Opportunities'];
+    const tabs = ['Sales', 'Fulfillment & Customer Service', 'Brand Stewardship', 'Opportunities'];
     const tabsHtml = tabs.map(function (t) {
       return '<span class="pdfx-tab' + (t === activeTab ? ' on' : '') + '">' + t + '</span>';
     }).join('');
@@ -9903,6 +9938,71 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  function buildFulfillmentCsPage(monthYear) {
+    // NOTE: pdfxKpi(id) expects `id` on the OUTER .kpi-card with .kpi-label/
+    // .kpi-value as descendants — this tab's cards have the id directly on
+    // the .kpi-value element instead, so pdfxKpi() doesn't fit here. Reading
+    // each value directly instead, with labels hardcoded to match the live
+    // markup exactly (these are static label strings on the live page too,
+    // not dynamic — nothing lost by not reading them from the DOM).
+    const topKpis = [
+      { label: 'Shipped Orders · Last 30 Days', value: pdfxText('#mfc-kpi-shipped30') },
+      { label: 'Our Fulfillment Promise · Last 7 Days', value: '100%' },
+      { label: 'Avg Processing Time · Last 7 Days', value: pdfxText('#mfc-kpi-proctime') },
+      { label: 'Avg Shipping Cost · Last 7 Days', value: pdfxText('#mfc-kpi-shipcost') },
+      { label: 'Inventory Prepped', value: 'Coming soon' },
+    ];
+    const csKpis = [
+      { label: 'Reviews Requested', value: pdfxText('#mfc-kpi-reviews'), sub: pdfxText('#mfc-kpi-reviews-sub') },
+      { label: 'Compliance Cases Resolved', value: pdfxText('#mfc-kpi-compliance'), sub: pdfxText('#mfc-kpi-compliance-sub') },
+    ];
+    const returnsKpi = { label: 'Returns Processed · Last 30 Days', value: pdfxText('#mfc-kpi-returns'), sub: pdfxText('#mfc-kpi-returns-sub') };
+
+    // KPI cards with a sub-line (where MoM normally sits) need their own
+    // markup — pdfxKpiCardHtml()'s momHtml is styled for an up/down arrow
+    // figure, not a free-text sub-label like "Open Cases: 2".
+    function kpiCardWithSub(k) {
+      return '<div class="pdfx-kpi">' +
+        '<div class="pdfx-kpi-lbl">' + pdfxEscape(k.label) + '</div>' +
+        '<div class="pdfx-kpi-val">' + pdfxEscape(k.value || '—') + '</div>' +
+        '<div class="pdfx-kpi-mom flat">' + pdfxEscape(k.sub || '') + '</div>' +
+        '</div>';
+    }
+    function kpiCardPlain(k) {
+      return '<div class="pdfx-kpi">' +
+        '<div class="pdfx-kpi-lbl">' + pdfxEscape(k.label) + '</div>' +
+        '<div class="pdfx-kpi-val">' + pdfxEscape(k.value || '—') + '</div>' +
+        '<div class="pdfx-kpi-mom flat"></div>' +
+        '</div>';
+    }
+
+    // Map: reused verbatim from the live, already-rendered SVG rather than
+    // rebuilt from raw state data — the live page already did that work
+    // when the tab was opened, so this just copies the real markup.
+    const mapInner = pdfxHTML('#mfc-us-svg') || '';
+    const tableInner = pdfxHTML('#mfc-state-table-body') || '';
+
+    return '' +
+      '<div class="pdfx-page">' +
+        '<div class="pdfx-inner">' +
+          pdfxHeaderBand(monthYear, 'Fulfillment & Customer Service') +
+          '<div class="pdfx-chlabel">Fulfillment Performance</div>' +
+          '<div class="pdfx-kpis" style="margin-top:6px;">' + topKpis.map(kpiCardPlain).join('') + '</div>' +
+          '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
+            '<div class="pdfx-card-title">Orders Shipped by Date · Last 30 Days</div>' +
+            pdfxChartBlock('mfcShippedChartInstance', 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') +
+          '</div>' +
+          '<div class="pdfx-chlabel" style="margin-top:16px;">Customer Service</div>' +
+          '<div class="pdfx-kpis" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
+          '<div class="pdfx-kpis" style="margin-top:10px;grid-template-columns:1fr;">' + kpiCardWithSub(returnsKpi) + '</div>' +
+          '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
+            '<div class="pdfx-card-title">Orders by State · Last 30 Days</div>' +
+            '<svg viewBox="0 0 959 593" style="width:100%;height:auto;display:block;">' + mapInner + '</svg>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
   function buildOpportunitiesPage(monthYear) {
     const kpis = ['kpi-active-subs', 'kpi-retention'].map(pdfxKpi);
     return '' +
@@ -10055,6 +10155,7 @@ async function loadAuditResultsFromSheet() {
         (typeof window.initWebLive === 'function')         ? window.initWebLive()         : null,
         (typeof window.initWalmartLive === 'function')     ? window.initWalmartLive()     : null,
         (typeof window.initStewardshipLive === 'function') ? window.initStewardshipLive() : null,
+        (typeof window.initMarketingFulfillmentCS === 'function') ? window.initMarketingFulfillmentCS() : null,
         (!window._snsChart && typeof initSns === 'function') ? initSns() : null,
         // Prime Day's KPIs/chart are lazy-loaded on tab click — if it's
         // checked for inclusion but the tab was never opened this session,
@@ -10108,7 +10209,7 @@ async function loadAuditResultsFromSheet() {
 
       root.innerHTML =
         buildCoverPage(monthYear) + buildAmazonPage(monthYear) + buildWebsitePage(monthYear) +
-        buildWalmartPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear) +
+        buildWalmartPage(monthYear) + buildFulfillmentCsPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear) +
         eventPages;
 
       // Positioned off-screen (not display:none, so it still has real layout
