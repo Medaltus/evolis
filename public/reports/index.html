@@ -610,6 +610,37 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .ppc-opp-body{padding:12px 18px;font-size:12.5px;color:var(--navy);line-height:1.65;}
 .ppc-opp-action{padding:10px 18px 14px;font-size:12px;color:#1db88a;font-weight:600;background:rgba(36,233,163,.05);border-top:1px solid rgba(36,233,163,.15);}
 
+/* ── Organic redesign 2026-07-18: tabbed-by-purpose (Insights / Keyword
+   Tiers / Search Query Performance), reusing existing .sub-tabs/.sub-tab/
+   .sub-page (showSubTab) rather than a new tab mechanism. New modifiers on
+   the existing .ppc-opp-card family for the 4-card Insights grid, plus a
+   condensed ranked-list style for Fastest Path (replacing the 5 wide
+   .org-p1-card cards with one compact list). ── */
+.insight-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:24px;}
+.insight-grid .ppc-opp-card{margin-bottom:0;}
+.ppc-opp-card.action-type{border-left:4px solid var(--danger);}
+.ppc-opp-card.opportunity-type{border-left:4px solid var(--warn);}
+.ppc-opp-card.win-type{border-left:4px solid var(--success);}
+.ppc-opp-card.summary-type{border-left:4px solid var(--slate);}
+.ppc-opp-card.action-type .ppc-opp-hd{background:rgba(219,55,45,.07);}
+.ppc-opp-card.opportunity-type .ppc-opp-hd{background:rgba(200,125,47,.08);}
+.ppc-opp-card.win-type .ppc-opp-hd{background:rgba(36,233,163,.08);}
+.ppc-opp-card.summary-type .ppc-opp-hd{background:rgba(107,123,162,.08);}
+.ppc-opp-badge.win{color:#1db88a;}
+
+.p1-list{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px;}
+.p1-row{display:flex;align-items:center;gap:16px;padding:14px 18px;border-bottom:1px solid var(--border2);}
+.p1-row:last-child{border-bottom:none;}
+.p1-rank{width:34px;height:34px;border-radius:50%;background:var(--bg2);color:var(--navy);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.p1-rank.r1{background:#1db88a;color:#fff;}
+.p1-main{flex:1;min-width:0;}
+.p1-kw{font-size:13.5px;font-weight:700;color:var(--navy);}
+.p1-meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:1px;}
+.p1-why{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;max-width:640px;}
+.p1-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1db88a;background:rgba(36,233,163,.1);padding:4px 10px;border-radius:999px;flex-shrink:0;white-space:nowrap;}
+.p1-lbl.warn{color:var(--warn);background:rgba(200,125,47,.1);}
+.p1-lbl.slate{color:var(--slate);background:rgba(107,123,162,.1);}
+
 /* ═══════════════════════════════════
    ORGANIC PAGE
    ═══════════════════════════════════ */
@@ -3116,195 +3147,175 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ══ ACTIVATORS ══ -->
     <div class="channel-page active" id="org-activators">
-      <div class="ai-section-injected" id="ai-organic-insight">
-        <div class="ai-section-injected-label">✦ AI Organic Insights — Last Upload</div>
-        <div id="ai-organic-text" style="color:var(--muted);font-size:12px;">Loading insights…</div>
+
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('org-activators','oa-insights',this)">Insights</button>
+        <button class="sub-tab" onclick="showSubTab('org-activators','oa-tiers',this)">Keyword Tiers</button>
+        <button class="sub-tab" onclick="showSubTab('org-activators','oa-sqp',this)">Search Query Performance</button>
       </div>
 
-      <!-- Fastest Path to Page 1 -->
-      <div class="org-section-title">Fastest Path to Page 1 — Activators</div>
-      <div class="org-p1-grid">
-
-        <div class="org-p1-card">
-          <div class="org-p1-rank">
-            <div class="org-p1-rank-num">#1</div>
-            <div class="org-p1-rank-lbl">Fastest Win</div>
+      <!-- INSIGHTS — read weekly. Cards below have static fallback content
+           (the same content Jaclyn reviewed and approved in the tabbed-by-
+           purpose mockup, 2026-07-18); injectInsightsBoxes() overwrites them
+           with real ins.organic.{summary,wins,actions,keywords_to_watch}
+           the moment fresh AI insights are available, same data source as
+           before — just split into 4 cards instead of one shared blob. -->
+      <div class="sub-page active" id="oa-insights">
+        <div class="insight-grid">
+          <div class="ppc-opp-card summary-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge med">SUMMARY</div><div class="ppc-opp-title">This Week</div></div>
+            <div class="ppc-opp-body" id="org-insight-summary">B0CQSXSHZT holds rank 306 across all high-volume hair mask and growth keywords — the ASIN isn't indexed or is buried. B07SG6S4VV ranks #1 for the branded term "evolis." No rank movement is visible yet without a historical baseline.</div>
           </div>
-          <div class="org-p1-body">
-            <div class="org-p1-kw">hair growth accelerator</div>
-            <div class="org-p1-meta">20,925 vol · 51.3% ABA · 293 competing · $1.60 CPC</div>
-            <div class="org-p1-why">Only 293 competing ASINs for 20K+ volume. Product IS an activator — maximum relevance score. Consistent PPC spend here builds ranking velocity fastest. Estimated time to page 1: 60–90 days of sustained exact match PPC.</div>
+          <div class="ppc-opp-card win-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge win">✓ WIN</div></div>
+            <div class="ppc-opp-body" id="org-insight-win"><ul style="margin:0;padding-left:18px;">
+              <li>B07SG6S4VV holds rank #1 for "evolis" with strong conversion potential</li>
+              <li>EVO0014 and EVO0015 convert at 46.97% and 57.14% respectively</li>
+              <li>EVO0001 drives $1,399.71 in revenue on 141 sessions at 20.57% conversion</li>
+            </ul></div>
           </div>
-        </div>
-
-        <div class="org-p1-card">
-          <div class="org-p1-rank">
-            <div class="org-p1-rank-num">#2</div>
-            <div class="org-p1-rank-lbl">High Conviction</div>
+          <div class="ppc-opp-card action-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+            <div class="ppc-opp-body" id="org-insight-action"><ul style="margin:0;padding-left:18px;">
+              <li>Launch exact match PPC on "hair growth accelerator" (293 comps, 51.3% ABA)</li>
+              <li>Launch "postpartum hair loss" exact match (661 comps, 25% ABA)</li>
+              <li>Activate Prevent PPC on "scalp treatment" + "dry scalp treatment" — 0 sessions, all upside</li>
+              <li>Add "scalp serum" to Prevent title — backend only today, needs title placement</li>
+            </ul></div>
           </div>
-          <div class="org-p1-body">
-            <div class="org-p1-kw">postpartum hair loss</div>
-            <div class="org-p1-meta">1,084 vol · 25% ABA · 661 competing · $2.25 CPC</div>
-            <div class="org-p1-why">Already in Bullet 1 copy. Low competing count. High buyer intent. Postpartum buyers are loyal reorderers — organic page 1 here has outsized LTV impact. Est. time to page 1: 45–60 days.</div>
-          </div>
-        </div>
-
-        <div class="org-p1-card">
-          <div class="org-p1-rank">
-            <div class="org-p1-rank-num">#3</div>
-            <div class="org-p1-rank-lbl">Quick Win</div>
-          </div>
-          <div class="org-p1-body">
-            <div class="org-p1-kw">hair loss serum</div>
-            <div class="org-p1-meta">1,002 vol · 21% ABA · 3,000 competing · $1.94 CPC</div>
-            <div class="org-p1-why">Direct product format match. Not in listing title — adding would improve ranking signal immediately. 3K competing is manageable with consistent PPC. Est. time to page 1: 90 days.</div>
-          </div>
-        </div>
-
-        <div class="org-p1-card">
-          <div class="org-p1-rank">
-            <div class="org-p1-rank-num">#4</div>
-            <div class="org-p1-rank-lbl">Scalp Niche</div>
-          </div>
-          <div class="org-p1-body">
-            <div class="org-p1-kw">scalp serum for hair growth</div>
-            <div class="org-p1-meta">2,909 vol · 23% ABA · 4,000 competing · $1.81 CPC</div>
-            <div class="org-p1-why">Long-tail with intent-exact match. Already in backend keywords. Adding to Bullet 3 would improve index. 4K competing is competitive but winnable with sustained PPC.</div>
+          <div class="ppc-opp-card opportunity-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+            <div class="ppc-opp-body" id="org-insight-opportunity"><ul style="margin:0;padding-left:18px;">
+              <li>"hair growth serum" — 71,798 vol, B0CQSXSHZT sits at rank 306, needs an indexing push</li>
+              <li>"hair mask for dry damaged hair and growth" — high-value long tail, not yet targeted</li>
+              <li>Upload Seller Central SQP data to replace Cerebro estimates</li>
+            </ul></div>
           </div>
         </div>
 
-        <div class="org-p1-card">
-          <div class="org-p1-rank">
-            <div class="org-p1-rank-num">#5</div>
-            <div class="org-p1-rank-lbl">Dry Scalp</div>
+        <div class="org-section-title">Fastest Path to Page 1 — Activators</div>
+        <div class="p1-list">
+          <div class="p1-row">
+            <div class="p1-rank r1">1</div>
+            <div class="p1-main"><div class="p1-kw">hair growth accelerator</div><div class="p1-meta">20,925 vol · 51.3% ABA · 293 competing · $1.60 CPC</div><div class="p1-why">Only 293 competing ASINs for 20K+ volume — product IS an activator, maximum relevance. Est. 60–90 days with sustained exact match PPC.</div></div>
+            <div class="p1-lbl">Fastest Win</div>
           </div>
-          <div class="org-p1-body">
-            <div class="org-p1-kw">dry scalp treatment</div>
-            <div class="org-p1-meta">9,034 vol · 31.7% ABA · Prevent-specific</div>
-            <div class="org-p1-why">Already in Prevent title. Prevent has zero organic rank — any PPC spend here builds ranking for a term the listing owns by name. Highest-priority organic win for the Prevent Activator specifically.</div>
+          <div class="p1-row">
+            <div class="p1-rank">2</div>
+            <div class="p1-main"><div class="p1-kw">postpartum hair loss</div><div class="p1-meta">1,084 vol · 25% ABA · 661 competing · $2.25 CPC</div><div class="p1-why">Already in Bullet 1. Low competing count, high buyer intent — loyal reorderers with outsized LTV impact. Est. 45–60 days.</div></div>
+            <div class="p1-lbl warn">High Conviction</div>
+          </div>
+          <div class="p1-row">
+            <div class="p1-rank">3</div>
+            <div class="p1-main"><div class="p1-kw">hair loss serum</div><div class="p1-meta">1,002 vol · 21% ABA · 3,000 competing · $1.94 CPC</div><div class="p1-why">Direct product format match, not yet in listing title — adding it improves ranking signal immediately. Est. 90 days.</div></div>
+            <div class="p1-lbl slate">Quick Win</div>
+          </div>
+          <div class="p1-row">
+            <div class="p1-rank">4</div>
+            <div class="p1-main"><div class="p1-kw">scalp serum for hair growth</div><div class="p1-meta">2,909 vol · 23% ABA · 4,000 competing · $1.81 CPC</div><div class="p1-why">Long-tail intent-exact match, already in backend keywords. Adding to Bullet 3 would improve index.</div></div>
+            <div class="p1-lbl slate">Scalp Niche</div>
+          </div>
+          <div class="p1-row">
+            <div class="p1-rank">5</div>
+            <div class="p1-main"><div class="p1-kw">dry scalp treatment</div><div class="p1-meta">9,034 vol · 31.7% ABA · Prevent-specific</div><div class="p1-why">Already in Prevent's title. Prevent has zero organic rank — any PPC spend here builds ranking the listing already owns by name.</div></div>
+            <div class="p1-lbl warn">Dry Scalp</div>
           </div>
         </div>
-
       </div>
 
-      <!-- Search Query Performance -->
-      <div class="org-section-title" style="margin-top:24px;">Top Search Query Context — Activators</div>
-      <div class="org-sqp-alert">
-        <span>📊</span>
-        <span><strong>Search Query Performance data is not yet uploaded for évolis.</strong> The table below shows keyword tracking data from Cerebro. Upload SQP data from Seller Central (Brand Analytics &gt; Search Query Performance) to see brand click share and purchase share by query, which is more actionable than Cerebro vol alone.</span>
-      </div>
-      <div class="org-sqp-card">
-        <div class="org-sqp-title">Current Keyword Tracking — Activators <span class="org-sqp-badge">Cerebro · April 2026</span></div>
-        <div style="overflow-x:auto;">
+      <!-- KEYWORD TIERS — reference when planning PPC/listing changes -->
+      <div class="sub-page" id="oa-tiers">
+        <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core High-Intent</div><div class="tier-sub">All PPC targets · Primary title &amp; bullet placement</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;">
           <table class="data-table">
-            <thead><tr><th>Search Query</th><th>Vol/mo</th><th>Brand Share (Clicks)</th><th>Brand Share (Purchases)</th><th>Organic Rank</th><th>Signal</th></tr></thead>
+            <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Action</th></tr></thead>
             <tbody>
-              <tr><td>evolis</td><td>~200</td><td style="color:#1db88a;font-weight:600;">High</td><td style="color:#1db88a;font-weight:600;">High</td><td><span class="rank-pill rank-top">#4</span></td><td>Brand term — owned</td></tr>
-              <tr><td>hair growth</td><td>131,492</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>⚡ Long-term target — 40K competing</td></tr>
-              <tr><td>rosemary oil for hair growth</td><td>131,425</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ In formula — PPC priority</td></tr>
-              <tr><td>hair growth serum</td><td>71,798</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ Primary PPC target</td></tr>
-              <tr><td>hair growth accelerator</td><td>20,925</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 293 comps — fastest path</td></tr>
-              <tr><td>ordinary hair growth serum</td><td>29,521</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 82.3% ABA — competitor halo</td></tr>
-              <tr><td>scalp serum</td><td>14,567</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ PPC + title (Prevent)</td></tr>
-              <tr><td>postpartum hair loss</td><td>1,084</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 661 comps — quick win</td></tr>
+              <tr><td>hair growth</td><td>131,492</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>24.0%</td><td>&gt;40,000</td><td>PPC broad — long-term target</td></tr>
+              <tr><td>rosemary oil for hair growth</td><td>131,425</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>47.6%</td><td>&gt;4,000</td><td>✅ In formula — PPC exact match</td></tr>
+              <tr><td>hair growth serum</td><td>71,798</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.0%</td><td>&gt;5,000</td><td>✅ Primary target — title + PPC</td></tr>
+              <tr><td>keratin hair treatment</td><td>43,011</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>27.0%</td><td>&gt;6,000</td><td>✅ In title — PPC support</td></tr>
+              <tr><td>hair growth accelerator</td><td>20,925</td><td><span class="rank-pill rank-none">—</span></td><td>51.3%</td><td>293</td><td>⚡ LOW comp, HIGH ABA — priority now</td></tr>
+              <tr><td>ordinary hair growth serum</td><td>29,521</td><td><span class="rank-pill rank-none">—</span></td><td>82.3%</td><td>521</td><td>⚡ Competitor halo — priority PPC</td></tr>
+              <tr><td>scalp serum</td><td>14,567</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>23.5%</td><td>&gt;5,000</td><td>✅ PPC + title (Prevent)</td></tr>
+              <tr><td>scalp oil</td><td>15,715</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>29.0%</td><td>&gt;20,000</td><td>✅ Strong buying signal — PPC</td></tr>
+              <tr><td>scalp treatment</td><td>10,266</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.9%</td><td>&gt;10,000</td><td>✅ Backend + Prevent PPC</td></tr>
+              <tr><td>hair thickening products for women</td><td>9,036</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.1%</td><td>&gt;4,000</td><td>PPC secondary</td></tr>
+              <tr><td>hair loss treatments for women</td><td>9,031</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>11.4%</td><td>&gt;6,000</td><td>PPC test</td></tr>
+              <tr><td>hair serum for hair growth</td><td>8,012</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>17.0%</td><td>&gt;6,000</td><td>Backend + PPC</td></tr>
+              <tr><td>activator</td><td>7,940</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>63.7%</td><td>&gt;4,000</td><td>✅ 45 title density — winnable</td></tr>
+              <tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td>661</td><td>⚡ 661 comps — quick win exact match</td></tr>
+              <tr><td>hair loss serum</td><td>1,002</td><td><span class="rank-pill rank-none">—</span></td><td>21.0%</td><td>&gt;3,000</td><td>Direct product format match</td></tr>
+              <tr><td>scalp serum for hair growth</td><td>2,909</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>23.0%</td><td>&gt;4,000</td><td>Long-tail — backend + PPC</td></tr>
+              <tr><td>scalp massager hair growth</td><td>23,650</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>15.7%</td><td>&gt;2,000</td><td>Backend + PPC secondary</td></tr>
+              <tr><td>hair oils for hair growth</td><td>15,755</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>24.7%</td><td>&gt;20,000</td><td>Adjacent format — backend</td></tr>
+              <tr><td>hair growth products</td><td>5,787</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>25.4%</td><td>&gt;30,000</td><td>Category browse — backend</td></tr>
+              <tr><td>hair serum</td><td>34,835</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>20.1%</td><td>&gt;10,000</td><td>PPC + backend</td></tr>
             </tbody>
           </table>
         </div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;">Upload Seller Central SQP export to replace "~0%" cells with actual brand click and purchase share data.</div>
+
+        <div class="tier-hd2 tier-2"><span class="tier-num">02</span><div><div class="tier-title">Opportunity Keywords</div><div class="tier-sub">High ABA · Winnable · Bullets 3–5 &amp; backend</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;">
+          <table class="data-table">
+            <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td>661</td><td>🎯 Priority — 661 comps, high intent</td></tr>
+              <tr><td>dry scalp treatment</td><td>9,034</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>31.7%</td><td>—</td><td>🎯 Prevent exact match</td></tr>
+              <tr><td>thinning hair treatment</td><td>465</td><td><span class="rank-pill rank-none">—</span></td><td>50.0%</td><td>&gt;9,000</td><td>🎯 Highest conv share in set</td></tr>
+              <tr><td>hair growth treatment</td><td>903</td><td><span class="rank-pill rank-none">—</span></td><td>44.4%</td><td>&gt;10,000</td><td>🎯 High ABA — PPC test</td></tr>
+              <tr><td>hair growth oil spray</td><td>607</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>28.6%</td><td>&gt;2,000</td><td>🎯 High click share (65.3%)</td></tr>
+              <tr><td>hair volumizer for fine hair</td><td>639</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>33.3%</td><td>—</td><td>🎯 Promote angle — fine hair</td></tr>
+              <tr><td>hair treatment for dry damaged hair</td><td>2,474</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>31.2%</td><td>—</td><td>🎯 Prevent angle — dry/damaged</td></tr>
+              <tr><td>oil for hair growth</td><td>2,568</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>20.3%</td><td>445</td><td>🎯 445 competing — winnable</td></tr>
+              <tr><td>hair growth oil for women</td><td>1,934</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.9%</td><td>&gt;9,000</td><td>0 title density</td></tr>
+              <tr><td>hair regrowth for men</td><td>2,568</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>17.4%</td><td>&gt;5,000</td><td>Male audience — Prevent angle</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tier-hd2 tier-3"><span class="tier-num">03</span><div><div class="tier-title">Reach / Long-Term</div><div class="tier-sub">Track only · No PPC spend yet · 12–24 month organic targets</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;">
+          <table class="data-table">
+            <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Conv%</th><th>Strategic Notes</th></tr></thead>
+            <tbody>
+              <tr><td>batana oil for hair growth</td><td>70,565</td><td>32.5%</td><td>Trending ingredient — >1K comps. Aspirational organic target.</td></tr>
+              <tr><td>hair skin and nails vitamins</td><td>96,816</td><td>31.5%</td><td>Cross-category supplement buyers — backend only</td></tr>
+              <tr><td>hair growth supplements</td><td>45,917</td><td>16.8%</td><td>Supplement category — different purchase intent</td></tr>
+              <tr><td>lilyeve hair growth serum</td><td>26,662</td><td>75.0%</td><td>Dominant competitor brand halo — very high conv, 377 comps</td></tr>
+              <tr><td>spartan root activator shampoo</td><td>29,536</td><td>61.6%</td><td>Competitor with "activator" in name — halo opportunity</td></tr>
+              <tr><td>wild growth hair oil</td><td>33,264</td><td>70.3%</td><td>Competitor brand halo — very high conv but specific intent</td></tr>
+              <tr><td>hair growth shampoo</td><td>27,361</td><td>15.0%</td><td>Wrong format but high volume — brand awareness PPC</td></tr>
+              <tr><td>serum</td><td>34,820</td><td>19.8%</td><td>40K competing — extremely broad, index value only</td></tr>
+              <tr><td>hair conditioner</td><td>33,224</td><td>24.3%</td><td>Wrong format — brand discovery only</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <!-- Keyword tiers -->
-      <div class="org-section-title" style="margin-top:24px;">Tier 1 — Core High-Intent</div>
-      <div class="org-tier-badge t1">All PPC targets · Primary title &amp; bullet placement</div>
-      <div style="overflow-x:auto;margin-bottom:20px;">
-        <table class="data-table">
-          <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Action</th></tr></thead>
-          <tbody>
-            <tr><td>hair growth</td><td>131,492</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>24.0%</td><td>&gt;40,000</td><td>PPC broad — long-term target</td></tr>
-            <tr><td>rosemary oil for hair growth</td><td>131,425</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>47.6%</td><td>&gt;4,000</td><td>✅ In formula — PPC exact match</td></tr>
-            <tr><td>hair growth serum</td><td>71,798</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.0%</td><td>&gt;5,000</td><td>✅ Primary target — title + PPC</td></tr>
-            <tr><td>keratin hair treatment</td><td>43,011</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>27.0%</td><td>&gt;6,000</td><td>✅ In title — PPC support</td></tr>
-            <tr><td>hair growth accelerator</td><td>20,925</td><td><span class="rank-pill rank-none">—</span></td><td>51.3%</td><td>293</td><td>⚡ LOW comp, HIGH ABA — priority now</td></tr>
-            <tr><td>ordinary hair growth serum</td><td>29,521</td><td><span class="rank-pill rank-none">—</span></td><td>82.3%</td><td>521</td><td>⚡ Competitor halo — priority PPC</td></tr>
-            <tr><td>scalp serum</td><td>14,567</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>23.5%</td><td>&gt;5,000</td><td>✅ PPC + title (Prevent)</td></tr>
-            <tr><td>scalp oil</td><td>15,715</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>29.0%</td><td>&gt;20,000</td><td>✅ Strong buying signal — PPC</td></tr>
-            <tr><td>scalp treatment</td><td>10,266</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.9%</td><td>&gt;10,000</td><td>✅ Backend + Prevent PPC</td></tr>
-            <tr><td>hair thickening products for women</td><td>9,036</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.1%</td><td>&gt;4,000</td><td>PPC secondary</td></tr>
-            <tr><td>hair loss treatments for women</td><td>9,031</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>11.4%</td><td>&gt;6,000</td><td>PPC test</td></tr>
-            <tr><td>hair serum for hair growth</td><td>8,012</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>17.0%</td><td>&gt;6,000</td><td>Backend + PPC</td></tr>
-            <tr><td>activator</td><td>7,940</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>63.7%</td><td>&gt;4,000</td><td>✅ 45 title density — winnable</td></tr>
-            <tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td>661</td><td>⚡ 661 comps — quick win exact match</td></tr>
-            <tr><td>hair loss serum</td><td>1,002</td><td><span class="rank-pill rank-none">—</span></td><td>21.0%</td><td>&gt;3,000</td><td>Direct product format match</td></tr>
-            <tr><td>scalp serum for hair growth</td><td>2,909</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>23.0%</td><td>&gt;4,000</td><td>Long-tail — backend + PPC</td></tr>
-            <tr><td>scalp massager hair growth</td><td>23,650</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>15.7%</td><td>&gt;2,000</td><td>Backend + PPC secondary</td></tr>
-            <tr><td>hair oils for hair growth</td><td>15,755</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>24.7%</td><td>&gt;20,000</td><td>Adjacent format — backend</td></tr>
-            <tr><td>hair growth products</td><td>5,787</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>25.4%</td><td>&gt;30,000</td><td>Category browse — backend</td></tr>
-            <tr><td>hair serum</td><td>34,835</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>20.1%</td><td>&gt;10,000</td><td>PPC + backend</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="org-section-title">Tier 2 — Opportunity Keywords</div>
-      <div class="org-tier-badge t2">High ABA · Winnable · Bullets 3–5 &amp; backend</div>
-      <div style="overflow-x:auto;margin-bottom:20px;">
-        <table class="data-table">
-          <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr><td>postpartum hair loss</td><td>1,084</td><td><span class="rank-pill rank-none">—</span></td><td>25.0%</td><td>661</td><td>🎯 Priority — 661 comps, high intent</td></tr>
-            <tr><td>dry scalp treatment</td><td>9,034</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>31.7%</td><td>—</td><td>🎯 Prevent exact match</td></tr>
-            <tr><td>thinning hair treatment</td><td>465</td><td><span class="rank-pill rank-none">—</span></td><td>50.0%</td><td>&gt;9,000</td><td>🎯 Highest conv share in set</td></tr>
-            <tr><td>hair growth treatment</td><td>903</td><td><span class="rank-pill rank-none">—</span></td><td>44.4%</td><td>&gt;10,000</td><td>🎯 High ABA — PPC test</td></tr>
-            <tr><td>hair growth oil spray</td><td>607</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>28.6%</td><td>&gt;2,000</td><td>🎯 High click share (65.3%)</td></tr>
-            <tr><td>hair volumizer for fine hair</td><td>639</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>33.3%</td><td>—</td><td>🎯 Promote angle — fine hair</td></tr>
-            <tr><td>hair treatment for dry damaged hair</td><td>2,474</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>31.2%</td><td>—</td><td>🎯 Prevent angle — dry/damaged</td></tr>
-            <tr><td>oil for hair growth</td><td>2,568</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>20.3%</td><td>445</td><td>🎯 445 competing — winnable</td></tr>
-            <tr><td>hair growth oil for women</td><td>1,934</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.9%</td><td>&gt;9,000</td><td>0 title density</td></tr>
-            <tr><td>hair regrowth for men</td><td>2,568</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>17.4%</td><td>&gt;5,000</td><td>Male audience — Prevent angle</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="org-section-title">Tier 3 — Reach / Long-Term</div>
-      <div class="org-tier-badge t3">Track only · No PPC spend yet · 12–24 month organic targets</div>
-      <div style="overflow-x:auto;margin-bottom:20px;">
-        <table class="data-table">
-          <thead><tr><th>Keyword</th><th>Vol/mo</th><th>Conv%</th><th>Strategic Notes</th></tr></thead>
-          <tbody>
-            <tr><td>batana oil for hair growth</td><td>70,565</td><td>32.5%</td><td>Trending ingredient — >1K comps. Aspirational organic target.</td></tr>
-            <tr><td>hair skin and nails vitamins</td><td>96,816</td><td>31.5%</td><td>Cross-category supplement buyers — backend only</td></tr>
-            <tr><td>hair growth supplements</td><td>45,917</td><td>16.8%</td><td>Supplement category — different purchase intent</td></tr>
-            <tr><td>lilyeve hair growth serum</td><td>26,662</td><td>75.0%</td><td>Dominant competitor brand halo — very high conv, 377 comps</td></tr>
-            <tr><td>spartan root activator shampoo</td><td>29,536</td><td>61.6%</td><td>Competitor with "activator" in name — halo opportunity</td></tr>
-            <tr><td>wild growth hair oil</td><td>33,264</td><td>70.3%</td><td>Competitor brand halo — very high conv but specific intent</td></tr>
-            <tr><td>hair growth shampoo</td><td>27,361</td><td>15.0%</td><td>Wrong format but high volume — brand awareness PPC</td></tr>
-            <tr><td>serum</td><td>34,820</td><td>19.8%</td><td>40K competing — extremely broad, index value only</td></tr>
-            <tr><td>hair conditioner</td><td>33,224</td><td>24.3%</td><td>Wrong format — brand discovery only</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Summary and action items -->
-      <div class="ppc-card">
-        <div class="ppc-card-title">Summary &amp; Action Items — Activator Organic Strategy</div>
-        <div class="priority-item">
-          <div class="priority-num">1</div>
-          <div class="priority-text">Launch exact match PPC on "hair growth accelerator" (293 comps, 51.3% ABA, $1.60 CPC) — fastest path to organic rank velocity for Reverse Activator. <span class="priority-tag urgent">Do Now</span></div>
+      <!-- SEARCH QUERY PERFORMANCE — its own data source, kept separate -->
+      <div class="sub-page" id="oa-sqp">
+        <div class="org-sqp-alert">
+          <span>📊</span>
+          <span><strong>Search Query Performance data is not yet uploaded for évolis.</strong> The table below shows keyword tracking data from Cerebro. Upload SQP data from Seller Central (Brand Analytics &gt; Search Query Performance) to see brand click share and purchase share by query, which is more actionable than Cerebro vol alone.</span>
         </div>
-        <div class="priority-item">
-          <div class="priority-num">2</div>
-          <div class="priority-text">Launch "postpartum hair loss" exact match (661 comps, 25% ABA) — in listing copy, low competition, high-loyalty buyer persona. <span class="priority-tag urgent">Do Now</span></div>
-        </div>
-        <div class="priority-item">
-          <div class="priority-num">3</div>
-          <div class="priority-text">Investigate and activate Prevent Activator PPC on "scalp treatment" + "dry scalp treatment" — currently 0 sessions, nothing to protect yet, all upside. <span class="priority-tag urgent">Do Now</span></div>
-        </div>
-        <div class="priority-item">
-          <div class="priority-num">4</div>
-          <div class="priority-text">Upload Seller Central SQP (Search Query Performance) data to replace Cerebro vol estimates with actual brand click share — Brand Analytics &gt; Search Query Performance &gt; Export. <span class="priority-tag monitor">Next Upload</span></div>
-        </div>
-        <div class="priority-item">
-          <div class="priority-num">5</div>
-          <div class="priority-text">Add "scalp serum" to Prevent Activator title in next listing update — currently in backend keywords only, needs to be indexed in the title to build organic ranking signal. <span class="priority-tag monitor">Listing Update</span></div>
+        <div class="org-sqp-card">
+          <div class="org-sqp-title">Current Keyword Tracking — Activators <span class="org-sqp-badge">Cerebro · April 2026</span></div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Search Query</th><th>Vol/mo</th><th>Brand Share (Clicks)</th><th>Brand Share (Purchases)</th><th>Organic Rank</th><th>Signal</th></tr></thead>
+              <tbody>
+                <tr><td>evolis</td><td>~200</td><td style="color:#1db88a;font-weight:600;">High</td><td style="color:#1db88a;font-weight:600;">High</td><td><span class="rank-pill rank-top">#4</span></td><td>Brand term — owned</td></tr>
+                <tr><td>hair growth</td><td>131,492</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>⚡ Long-term target — 40K competing</td></tr>
+                <tr><td>rosemary oil for hair growth</td><td>131,425</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ In formula — PPC priority</td></tr>
+                <tr><td>hair growth serum</td><td>71,798</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ Primary PPC target</td></tr>
+                <tr><td>hair growth accelerator</td><td>20,925</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 293 comps — fastest path</td></tr>
+                <tr><td>ordinary hair growth serum</td><td>29,521</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 82.3% ABA — competitor halo</td></tr>
+                <tr><td>scalp serum</td><td>14,567</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ PPC + title (Prevent)</td></tr>
+                <tr><td>postpartum hair loss</td><td>1,084</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 661 comps — quick win</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;">Upload Seller Central SQP export to replace "~0%" cells with actual brand click and purchase share data.</div>
         </div>
       </div>
 
@@ -3312,101 +3323,169 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
     <!-- ══ SHAMPOOS ══ -->
     <div class="channel-page" id="org-shampoos">
-      <div class="org-section-title">Fastest Path to Page 1 — Shampoos</div>
-      <div class="org-p1-grid">
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#1</div><div class="org-p1-rank-lbl">Best Fit</div></div><div class="org-p1-body"><div class="org-p1-kw">shampoo for thinning hair</div><div class="org-p1-meta">In title · ~8K vol est · Reverse Shampoo exact match</div><div class="org-p1-why">Already in Reverse Shampoo title and copy. Consistent PPC + title placement builds velocity. Estimated page 1: 90 days.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#2</div><div class="org-p1-rank-lbl">Quick Win</div></div><div class="org-p1-body"><div class="org-p1-kw">sulfate free shampoo for hair growth</div><div class="org-p1-meta">In copy · low comp niche · All 3 shampoos</div><div class="org-p1-why">Long-tail with clean label differentiation. In copy across Reverse, Promote, Prevent. Low competition niche term — winnable with moderate PPC spend.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#3</div><div class="org-p1-rank-lbl">Award Angle</div></div><div class="org-p1-body"><div class="org-p1-kw">lengthening shampoo</div><div class="org-p1-meta">Promote-specific · People.com 2024 award</div><div class="org-p1-why">Unique to Promote — the award makes it defensible. Low competition term. Build with PPC + Sponsored Brand headline featuring award.</div></div></div>
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('org-shampoos','osh-insights',this)">Insights</button>
+        <button class="sub-tab" onclick="showSubTab('org-shampoos','osh-tiers',this)">Keyword Tiers</button>
       </div>
-      <div class="org-section-title" style="margin-top:20px;">Tier 1 Keywords — Shampoos</div>
-      <div class="org-tier-badge t1">Core targets</div>
-      <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Action</th></tr></thead><tbody>
-        <tr><td>hair growth shampoo</td><td>27,361</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>15.0%</td><td>&gt;10,000</td><td>✅ Core — PPC + title</td></tr>
-        <tr><td>shampoo for thinning hair</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In Reverse title — PPC</td></tr>
-        <tr><td>thickening shampoo</td><td>6,071</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.3%</td><td>&gt;3,000</td><td>✅ Reverse angle — PPC</td></tr>
-        <tr><td>sulfate free shampoo</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In all shampoo titles — build</td></tr>
-        <tr><td>hair loss shampoo</td><td>6,090</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.6%</td><td>&gt;8,000</td><td>PPC test — Reverse/Prevent</td></tr>
-        <tr><td>rosemary oil shampoo</td><td>~10,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In formula — PPC</td></tr>
-      </tbody></table></div>
-      <div class="ppc-card"><div class="ppc-card-title">Summary &amp; Action Items — Shampoo Organic</div>
-        <div class="priority-item"><div class="priority-num">1</div><div class="priority-text">Add "hair growth shampoo" to Reverse + Promote shampoo titles — currently missing from both. Highest-volume shampoo keyword. <span class="priority-tag urgent">Listing Update</span></div></div>
-        <div class="priority-item"><div class="priority-num">2</div><div class="priority-text">Promote Shampoo: build Sponsored Brand campaign featuring the People.com 2024 Lengthening Award in headline copy. <span class="priority-tag monitor">PPC</span></div></div>
-        <div class="priority-item"><div class="priority-num">3</div><div class="priority-text">Prevent Shampoo: target "anti-aging shampoo" + "scalp treatment shampoo" — unique niche terms with low competition. <span class="priority-tag monitor">PPC</span></div></div>
+      <div class="sub-page active" id="osh-insights">
+        <div class="insight-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="ppc-opp-card action-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Add "hair growth shampoo" to Reverse + Promote shampoo titles — currently missing from both. Highest-volume shampoo keyword.</li>
+            </ul></div>
+          </div>
+          <div class="ppc-opp-card opportunity-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Promote Shampoo: build Sponsored Brand campaign featuring the People.com 2024 Lengthening Award in headline copy</li>
+              <li>Prevent Shampoo: target "anti-aging shampoo" + "scalp treatment shampoo" — unique niche terms with low competition</li>
+            </ul></div>
+          </div>
+        </div>
+        <div class="org-section-title">Fastest Path to Page 1 — Shampoos</div>
+        <div class="p1-list">
+          <div class="p1-row"><div class="p1-rank r1">1</div><div class="p1-main"><div class="p1-kw">shampoo for thinning hair</div><div class="p1-meta">In title · ~8K vol est · Reverse Shampoo exact match</div><div class="p1-why">Already in Reverse Shampoo title and copy. Consistent PPC + title placement builds velocity. Estimated page 1: 90 days.</div></div><div class="p1-lbl">Best Fit</div></div>
+          <div class="p1-row"><div class="p1-rank">2</div><div class="p1-main"><div class="p1-kw">sulfate free shampoo for hair growth</div><div class="p1-meta">In copy · low comp niche · All 3 shampoos</div><div class="p1-why">Long-tail with clean label differentiation. In copy across Reverse, Promote, Prevent. Low competition niche term — winnable with moderate PPC spend.</div></div><div class="p1-lbl slate">Quick Win</div></div>
+          <div class="p1-row"><div class="p1-rank">3</div><div class="p1-main"><div class="p1-kw">lengthening shampoo</div><div class="p1-meta">Promote-specific · People.com 2024 award</div><div class="p1-why">Unique to Promote — the award makes it defensible. Low competition term. Build with PPC + Sponsored Brand headline featuring award.</div></div><div class="p1-lbl warn">Award Angle</div></div>
+        </div>
+      </div>
+      <div class="sub-page" id="osh-tiers">
+        <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core Targets</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Competing</th><th>Action</th></tr></thead><tbody>
+          <tr><td>hair growth shampoo</td><td>27,361</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>15.0%</td><td>&gt;10,000</td><td>✅ Core — PPC + title</td></tr>
+          <tr><td>shampoo for thinning hair</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In Reverse title — PPC</td></tr>
+          <tr><td>thickening shampoo</td><td>6,071</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>22.3%</td><td>&gt;3,000</td><td>✅ Reverse angle — PPC</td></tr>
+          <tr><td>sulfate free shampoo</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In all shampoo titles — build</td></tr>
+          <tr><td>hair loss shampoo</td><td>6,090</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>21.6%</td><td>&gt;8,000</td><td>PPC test — Reverse/Prevent</td></tr>
+          <tr><td>rosemary oil shampoo</td><td>~10,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>—</td><td>✅ In formula — PPC</td></tr>
+        </tbody></table></div>
       </div>
     </div><!-- /org-shampoos -->
 
     <!-- ══ CONDITIONERS ══ -->
     <div class="channel-page" id="org-conditioners">
-      <div class="org-section-title">Fastest Path to Page 1 — Conditioners</div>
-      <div class="org-p1-grid">
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#1</div><div class="org-p1-rank-lbl">System Sell</div></div><div class="org-p1-body"><div class="org-p1-kw">conditioner for thinning hair</div><div class="org-p1-meta">In copy · Reverse Conditioner · low comp niche</div><div class="org-p1-why">Hair growth conditioner niche has lower competition than shampoo. Buyers purchasing conditioner for thinning are already in the hair loss funnel — exact match on "conditioner for thinning hair" and "hair growth conditioner".</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#2</div><div class="org-p1-rank-lbl">Promote Win</div></div><div class="org-p1-body"><div class="org-p1-kw">deep conditioning hair treatment</div><div class="org-p1-meta">Promote-specific · In title</div><div class="org-p1-why">In the Promote Conditioner title. Baobab-powered deep conditioning is differentiated from competitors. Low competition on this specific term.</div></div></div>
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('org-conditioners','ocd-insights',this)">Insights</button>
+        <button class="sub-tab" onclick="showSubTab('org-conditioners','ocd-tiers',this)">Keyword Tiers</button>
       </div>
-      <div class="org-section-title" style="margin-top:20px;">Tier 1 Keywords — Conditioners</div>
-      <div class="org-tier-badge t1">Core targets</div>
-      <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
-        <tr><td>hair growth conditioner</td><td>~12,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Core — all conditioners</td></tr>
-        <tr><td>conditioner for thinning hair</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse — in title</td></tr>
-        <tr><td>thickening conditioner</td><td>~4,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse angle</td></tr>
-        <tr><td>sulfate free conditioner</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ All conditioners</td></tr>
-        <tr><td>deep conditioning hair treatment</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Promote — in title</td></tr>
-        <tr><td>hair loss conditioner</td><td>~2,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>PPC test</td></tr>
-      </tbody></table></div>
-      <div class="ppc-card"><div class="ppc-card-title">Summary &amp; Action Items — Conditioner Organic</div>
-        <div class="priority-item"><div class="priority-num">1</div><div class="priority-text">⚠ EVO0011 title has typo "Conditiner" — fix immediately before any PPC spend on this ASIN. <span class="priority-tag urgent">Critical Fix</span></div></div>
-        <div class="priority-item"><div class="priority-num">2</div><div class="priority-text">Launch PPC on "hair growth conditioner" + "conditioner for thinning hair" as Reverse Conditioner core terms. <span class="priority-tag monitor">PPC</span></div></div>
-        <div class="priority-item"><div class="priority-num">3</div><div class="priority-text">Promote Conditioner: Sponsored Brand with People.com award headline — "Voted Best Lengthening Conditioner 2024." <span class="priority-tag monitor">PPC</span></div></div>
+      <div class="sub-page active" id="ocd-insights">
+        <div class="insight-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="ppc-opp-card action-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>⚠ EVO0011 title has typo "Conditiner" — fix immediately before any PPC spend on this ASIN</li>
+              <li>Launch PPC on "hair growth conditioner" + "conditioner for thinning hair" as Reverse Conditioner core terms</li>
+            </ul></div>
+          </div>
+          <div class="ppc-opp-card opportunity-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Promote Conditioner: Sponsored Brand with People.com award headline — "Voted Best Lengthening Conditioner 2024"</li>
+            </ul></div>
+          </div>
+        </div>
+        <div class="org-section-title">Fastest Path to Page 1 — Conditioners</div>
+        <div class="p1-list">
+          <div class="p1-row"><div class="p1-rank r1">1</div><div class="p1-main"><div class="p1-kw">conditioner for thinning hair</div><div class="p1-meta">In copy · Reverse Conditioner · low comp niche</div><div class="p1-why">Hair growth conditioner niche has lower competition than shampoo. Buyers purchasing conditioner for thinning are already in the hair loss funnel.</div></div><div class="p1-lbl">System Sell</div></div>
+          <div class="p1-row"><div class="p1-rank">2</div><div class="p1-main"><div class="p1-kw">deep conditioning hair treatment</div><div class="p1-meta">Promote-specific · In title</div><div class="p1-why">In the Promote Conditioner title. Baobab-powered deep conditioning is differentiated from competitors. Low competition on this specific term.</div></div><div class="p1-lbl slate">Promote Win</div></div>
+        </div>
+      </div>
+      <div class="sub-page" id="ocd-tiers">
+        <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core Targets</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
+          <tr><td>hair growth conditioner</td><td>~12,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Core — all conditioners</td></tr>
+          <tr><td>conditioner for thinning hair</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse — in title</td></tr>
+          <tr><td>thickening conditioner</td><td>~4,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse angle</td></tr>
+          <tr><td>sulfate free conditioner</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ All conditioners</td></tr>
+          <tr><td>deep conditioning hair treatment</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Promote — in title</td></tr>
+          <tr><td>hair loss conditioner</td><td>~2,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>PPC test</td></tr>
+        </tbody></table></div>
       </div>
     </div><!-- /org-conditioners -->
 
     <!-- ══ HAIR MASKS ══ -->
     <div class="channel-page" id="org-masks">
-      <div class="org-section-title">Fastest Path to Page 1 — Hair Masks</div>
-      <div class="org-p1-grid">
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#1</div><div class="org-p1-rank-lbl">Best Fit</div></div><div class="org-p1-body"><div class="org-p1-kw">deep conditioning hair mask</div><div class="org-p1-meta">In both mask titles · clear category term</div><div class="org-p1-why">Primary category term — in both Reverse and Promote mask titles. Consistent PPC builds ranking. Collagen + keratin angles differentiate from basic masks.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#2</div><div class="org-p1-rank-lbl">Niche Win</div></div><div class="org-p1-body"><div class="org-p1-kw">hair mask for hair growth</div><div class="org-p1-meta">Intent-exact · low competition niche</div><div class="org-p1-why">Buyers combining "hair mask" + "hair growth" are in the hair loss treatment funnel — exact audience. Lower competition than generic "hair mask". In listing copy.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#3</div><div class="org-p1-rank-lbl">Formula Win</div></div><div class="org-p1-body"><div class="org-p1-kw">collagen hair mask</div><div class="org-p1-meta">Reverse-specific · collagen in formula</div><div class="org-p1-why">Collagen is in the Reverse Mask INCI — this is a legitimate, defensible claim. "Collagen hair mask" has meaningful volume with lower competition than "deep conditioning hair mask".</div></div></div>
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('org-masks','omk-insights',this)">Insights</button>
+        <button class="sub-tab" onclick="showSubTab('org-masks','omk-tiers',this)">Keyword Tiers</button>
       </div>
-      <div class="org-section-title" style="margin-top:20px;">Tier 1 Keywords — Hair Masks</div>
-      <div class="org-tier-badge t1">Core targets</div>
-      <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
-        <tr><td>deep conditioning hair mask</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Core — both masks</td></tr>
-        <tr><td>hair mask for hair growth</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In copy — PPC</td></tr>
-        <tr><td>protein hair mask</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In Bullet 3 both masks</td></tr>
-        <tr><td>collagen hair mask</td><td>~4,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse only — in INCI</td></tr>
-        <tr><td>hydrating hair mask</td><td>~6,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In both mask titles</td></tr>
-        <tr><td>hair mask for dry damaged hair</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In copy — backend + PPC</td></tr>
-      </tbody></table></div>
-      <div class="ppc-card"><div class="ppc-card-title">Summary &amp; Action Items — Hair Mask Organic</div>
-        <div class="priority-item"><div class="priority-num">1</div><div class="priority-text">⚠ Promote Mask (EVO0008) title missing "EVOLIS" prefix — fix for brand consistency before PPC spend. <span class="priority-tag urgent">Critical Fix</span></div></div>
-        <div class="priority-item"><div class="priority-num">2</div><div class="priority-text">Launch PPC on "deep conditioning hair mask" + "hair mask for hair growth" as core terms for both masks. <span class="priority-tag monitor">PPC</span></div></div>
-        <div class="priority-item"><div class="priority-num">3</div><div class="priority-text">Reverse Mask: unique angle on "collagen hair mask" — in INCI, low competition, defensible claim. Add to title if character limit allows. <span class="priority-tag monitor">Listing Update</span></div></div>
+      <div class="sub-page active" id="omk-insights">
+        <div class="insight-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="ppc-opp-card action-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>⚠ Promote Mask (EVO0008) title missing "EVOLIS" prefix — fix for brand consistency before PPC spend</li>
+              <li>Launch PPC on "deep conditioning hair mask" + "hair mask for hair growth" as core terms for both masks</li>
+            </ul></div>
+          </div>
+          <div class="ppc-opp-card opportunity-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Reverse Mask: unique angle on "collagen hair mask" — in INCI, low competition, defensible claim. Add to title if character limit allows.</li>
+            </ul></div>
+          </div>
+        </div>
+        <div class="org-section-title">Fastest Path to Page 1 — Hair Masks</div>
+        <div class="p1-list">
+          <div class="p1-row"><div class="p1-rank r1">1</div><div class="p1-main"><div class="p1-kw">deep conditioning hair mask</div><div class="p1-meta">In both mask titles · clear category term</div><div class="p1-why">Primary category term — in both Reverse and Promote mask titles. Consistent PPC builds ranking. Collagen + keratin angles differentiate from basic masks.</div></div><div class="p1-lbl">Best Fit</div></div>
+          <div class="p1-row"><div class="p1-rank">2</div><div class="p1-main"><div class="p1-kw">hair mask for hair growth</div><div class="p1-meta">Intent-exact · low competition niche</div><div class="p1-why">Buyers combining "hair mask" + "hair growth" are in the hair loss treatment funnel — exact audience. Lower competition than generic "hair mask".</div></div><div class="p1-lbl slate">Niche Win</div></div>
+          <div class="p1-row"><div class="p1-rank">3</div><div class="p1-main"><div class="p1-kw">collagen hair mask</div><div class="p1-meta">Reverse-specific · collagen in formula</div><div class="p1-why">Collagen is in the Reverse Mask INCI — this is a legitimate, defensible claim. Meaningful volume with lower competition than "deep conditioning hair mask".</div></div><div class="p1-lbl warn">Formula Win</div></div>
+        </div>
+      </div>
+      <div class="sub-page" id="omk-tiers">
+        <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core Targets</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
+          <tr><td>deep conditioning hair mask</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Core — both masks</td></tr>
+          <tr><td>hair mask for hair growth</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In copy — PPC</td></tr>
+          <tr><td>protein hair mask</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In Bullet 3 both masks</td></tr>
+          <tr><td>collagen hair mask</td><td>~4,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Reverse only — in INCI</td></tr>
+          <tr><td>hydrating hair mask</td><td>~6,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In both mask titles</td></tr>
+          <tr><td>hair mask for dry damaged hair</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In copy — backend + PPC</td></tr>
+        </tbody></table></div>
       </div>
     </div><!-- /org-masks -->
 
     <!-- ══ DRY SHAMPOO ══ -->
     <div class="channel-page" id="org-dryshampoo">
-      <div class="org-section-title">Fastest Path to Page 1 — Dry Shampoo</div>
-      <div class="org-p1-grid">
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#1</div><div class="org-p1-rank-lbl">Niche Own</div></div><div class="org-p1-body"><div class="org-p1-kw">dry shampoo for dark hair</div><div class="org-p1-meta">In backend keywords · In title claim ("no chalk on dark hair")</div><div class="org-p1-why">Specific niche that mass brands like Batiste have negative reviews for (leaves white residue on dark hair). évolis' residue-free formula is a genuine differentiator. In backend + can be added to bullet. Low competition.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#2</div><div class="org-p1-rank-lbl">Scalp Angle</div></div><div class="org-p1-body"><div class="org-p1-kw">dry shampoo for thinning hair</div><div class="org-p1-meta">évolis-unique angle · Bullet 2 copy</div><div class="org-p1-why">No mass brand markets to this specific audience. évolis' FGF5-supporting botanicals make this a defensible claim. Thinning-hair buyers already have évolis awareness from activators — cross-sell moment.</div></div></div>
-        <div class="org-p1-card"><div class="org-p1-rank"><div class="org-p1-rank-num">#3</div><div class="org-p1-rank-lbl">Clean Niche</div></div><div class="org-p1-body"><div class="org-p1-kw">non comedogenic dry shampoo</div><div class="org-p1-meta">In Bullet 4 · Unique claim · Formula-defensible</div><div class="org-p1-why">Almost no competitor explicitly markets non-comedogenic dry shampoo. évolis' formula supports this claim. Very low competition on this specific term — could own it with minimal PPC spend.</div></div></div>
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="showSubTab('org-dryshampoo','ods-insights',this)">Insights</button>
+        <button class="sub-tab" onclick="showSubTab('org-dryshampoo','ods-tiers',this)">Keyword Tiers</button>
       </div>
-      <div class="org-section-title" style="margin-top:20px;">Tier 1 Keywords — Dry Shampoo</div>
-      <div class="org-tier-badge t1">Core targets</div>
-      <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
-        <tr><td>dry shampoo</td><td>~200,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>Broad — brand awareness only, high comp</td></tr>
-        <tr><td>dry shampoo for dark hair</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Niche win — in backend + claim in copy</td></tr>
-        <tr><td>dry shampoo for women</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In backend — PPC</td></tr>
-        <tr><td>dry shampoo spray</td><td>~10,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Product format — PPC</td></tr>
-        <tr><td>volumizing hair products</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In title — build</td></tr>
-        <tr><td>texture powder</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In title + backend</td></tr>
-        <tr><td>root lifter hair products</td><td>~2,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In backend — PPC</td></tr>
-      </tbody></table></div>
-      <div class="ppc-card"><div class="ppc-card-title">Summary &amp; Action Items — Dry Shampoo Organic</div>
-        <div class="priority-item"><div class="priority-num">1</div><div class="priority-text">Own "dry shampoo for dark hair" — residue-free claim is genuine, low competition, and differentiates from mass brands. Launch exact match. <span class="priority-tag urgent">Do Now</span></div></div>
-        <div class="priority-item"><div class="priority-num">2</div><div class="priority-text">Add "dry shampoo for thinning hair" to listing copy explicitly — évolis has a genuine claim (FGF5 botanicals, scalp health) that no mass brand can make. <span class="priority-tag monitor">Listing Update</span></div></div>
-        <div class="priority-item"><div class="priority-num">3</div><div class="priority-text">Consider "non comedogenic dry shampoo" as a Sponsored Brand headline — unique, defensible, and likely uncontested by any current competitor. <span class="priority-tag monitor">PPC</span></div></div>
+      <div class="sub-page active" id="ods-insights">
+        <div class="insight-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="ppc-opp-card action-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge urgent">⚡ ACTION</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Own "dry shampoo for dark hair" — residue-free claim is genuine, low competition, and differentiates from mass brands. Launch exact match.</li>
+              <li>Add "dry shampoo for thinning hair" to listing copy explicitly — évolis has a genuine claim (FGF5 botanicals, scalp health) that no mass brand can make</li>
+            </ul></div>
+          </div>
+          <div class="ppc-opp-card opportunity-type">
+            <div class="ppc-opp-hd"><div class="ppc-opp-badge high">💡 OPPORTUNITY</div></div>
+            <div class="ppc-opp-body"><ul style="margin:0;padding-left:18px;">
+              <li>Consider "non comedogenic dry shampoo" as a Sponsored Brand headline — unique, defensible, and likely uncontested by any current competitor</li>
+            </ul></div>
+          </div>
+        </div>
+        <div class="org-section-title">Fastest Path to Page 1 — Dry Shampoo</div>
+        <div class="p1-list">
+          <div class="p1-row"><div class="p1-rank r1">1</div><div class="p1-main"><div class="p1-kw">dry shampoo for dark hair</div><div class="p1-meta">In backend keywords · In title claim ("no chalk on dark hair")</div><div class="p1-why">Specific niche that mass brands like Batiste have negative reviews for. évolis' residue-free formula is a genuine differentiator. Low competition.</div></div><div class="p1-lbl">Niche Own</div></div>
+          <div class="p1-row"><div class="p1-rank">2</div><div class="p1-main"><div class="p1-kw">dry shampoo for thinning hair</div><div class="p1-meta">évolis-unique angle · Bullet 2 copy</div><div class="p1-why">No mass brand markets to this specific audience. évolis' FGF5-supporting botanicals make this a defensible claim. Cross-sell moment with activator buyers.</div></div><div class="p1-lbl warn">Scalp Angle</div></div>
+          <div class="p1-row"><div class="p1-rank">3</div><div class="p1-main"><div class="p1-kw">non comedogenic dry shampoo</div><div class="p1-meta">In Bullet 4 · Unique claim · Formula-defensible</div><div class="p1-why">Almost no competitor explicitly markets non-comedogenic dry shampoo. Very low competition — could own it with minimal PPC spend.</div></div><div class="p1-lbl slate">Clean Niche</div></div>
+        </div>
+      </div>
+      <div class="sub-page" id="ods-tiers">
+        <div class="tier-hd2 tier-1"><span class="tier-num">01</span><div><div class="tier-title">Core Targets</div></div></div>
+        <div style="overflow-x:auto;margin-bottom:20px;"><table class="data-table"><thead><tr><th>Keyword</th><th>Vol/mo</th><th>Organic Rank</th><th>ABA Conv%</th><th>Action</th></tr></thead><tbody>
+          <tr><td>dry shampoo</td><td>~200,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>Broad — brand awareness only, high comp</td></tr>
+          <tr><td>dry shampoo for dark hair</td><td>~8,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Niche win — in backend + claim in copy</td></tr>
+          <tr><td>dry shampoo for women</td><td>~15,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In backend — PPC</td></tr>
+          <tr><td>dry shampoo spray</td><td>~10,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ Product format — PPC</td></tr>
+          <tr><td>volumizing hair products</td><td>~5,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In title — build</td></tr>
+          <tr><td>texture powder</td><td>~3,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In title + backend</td></tr>
+          <tr><td>root lifter hair products</td><td>~2,000</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>—</td><td>✅ In backend — PPC</td></tr>
+        </tbody></table></div>
       </div>
     </div><!-- /org-dryshampoo -->
 
@@ -8615,13 +8694,20 @@ async function loadInsightsFromSheet() {
 
 // Inject only the organic/PPC/listing green boxes (not the log card)
 function injectInsightsBoxes(ins) {
-  const orgEl = document.getElementById('ai-organic-text');
-  if (orgEl && ins.organic && ins.organic.summary) {
-    orgEl.innerHTML = '<strong>' + (ins.organic.summary||'') + '</strong>' +
-      (ins.organic.wins&&ins.organic.wins.length ? '<br><br><strong>Wins:</strong>' + makeList(ins.organic.wins) : '') +
-      (ins.organic.actions&&ins.organic.actions.length ? '<strong>Actions:</strong>' + makeList(ins.organic.actions) : '') +
-      (ins.organic.keywords_to_watch&&ins.organic.keywords_to_watch.length ? '<strong>Watch:</strong> ' + ins.organic.keywords_to_watch.join(', ') : '');
-    
+  // Organic redesign 2026-07-18: split into 4 separate cards (Summary/Win/
+  // Action/Opportunity) matching the tabbed-by-purpose Insights subtab,
+  // instead of one shared blob in the old #ai-organic-text box. Same
+  // ins.organic fields as before — keywords_to_watch maps to the
+  // Opportunity card, since "watch" and "opportunity" are the same idea here.
+  if (ins.organic && ins.organic.summary) {
+    const sumEl = document.getElementById('org-insight-summary');
+    if (sumEl) sumEl.innerHTML = ins.organic.summary;
+    const winEl = document.getElementById('org-insight-win');
+    if (winEl && ins.organic.wins && ins.organic.wins.length) winEl.innerHTML = makeList(ins.organic.wins);
+    const actEl = document.getElementById('org-insight-action');
+    if (actEl && ins.organic.actions && ins.organic.actions.length) actEl.innerHTML = makeList(ins.organic.actions);
+    const oppEl = document.getElementById('org-insight-opportunity');
+    if (oppEl && ins.organic.keywords_to_watch && ins.organic.keywords_to_watch.length) oppEl.innerHTML = makeList(ins.organic.keywords_to_watch);
   }
   const ppcCardsEl = document.getElementById('ppc-insights-cards');
   if (ppcCardsEl && ins.ppc) {
