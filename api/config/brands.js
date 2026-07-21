@@ -27,6 +27,22 @@
  * "CIMEOSIL" returns real data (78.6% 90-day retention). It's a genuine
  * active brand; it's the master ASIN sheet that's incomplete, not this
  * brand's registration. See the inline note on its entry below.
+ *
+ * high-on-love — ADDED 2026-07-21, active:false. On a SEPARATE Amazon
+ * seller account from the rest of this project — no SP-API/Ads API
+ * connection has been set up for it yet ("eventually," per Jaclyn,
+ * 2026-07-21). Added now to the registry ahead of that setup so it
+ * doesn't need to be re-added later, but kept inactive specifically so
+ * it doesn't get picked up by every cron that loops
+ * brands.filter(b => b.active) and fail against a seller account with no
+ * real connection configured. Flip to active:true once that setup is
+ * actually done. amazonBrandName below is inferred from ShipStation's own
+ * store naming ("HIGHONLOVE @ Amazon.com" / "HIGHONLOVE @ Amazon.CA") —
+ * NOT independently verified against Brand Registry directly, unlike
+ * every other entry in this file. Confirm the real registered string
+ * before this brand's own Amazon-side crons (Replenishment API /
+ * SUBSCRIBER_RETENTION in particular) go live, in case ShipStation's
+ * store name doesn't exactly match Brand Registry's own casing/spacing.
  */
 module.exports = [
   {
@@ -157,5 +173,13 @@ module.exports = [
     displayName:     'PB & Jay',
     amazonBrandName: 'PB & JAY',
     active:          true,
+  },
+  {
+    id:              'high-on-love',
+    tabName:         'high-on-love',
+    skuPrefix:       'HOL',
+    displayName:     'High On Love',
+    amazonBrandName: 'HIGHONLOVE',
+    active:          false,
   },
 ];
