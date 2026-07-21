@@ -39,6 +39,8 @@ module.exports = async (req, res) => {
       dateStr = `${p.year}-${p.month}-${p.day}`;
     }
     const dateParam = `${dateStr.slice(5,7)}/${dateStr.slice(8,10)}/${dateStr.slice(0,4)}`;
+    const startParam = `${dateParam} 00:00:00`;
+    const endParam    = `${dateParam} 23:59:59`;
     const nowLabel = new Date().toISOString();
 
     const results = [];
@@ -47,7 +49,7 @@ module.exports = async (req, res) => {
       try {
         let count = 0, page = 1, hasMore = true;
         while (hasMore) {
-          const data = await ssFetch(`/shipments?storeId=${brand.storeId}&shipDateStart=${encodeURIComponent(dateParam)}&shipDateEnd=${encodeURIComponent(dateParam)}&shipmentStatus=shipped&pageSize=500&page=${page}`);
+          const data = await ssFetch(`/shipments?storeId=${brand.storeId}&shipDateStart=${encodeURIComponent(startParam)}&shipDateEnd=${encodeURIComponent(endParam)}&shipmentStatus=shipped&pageSize=500&page=${page}`);
           count += (data.shipments || []).length;
           hasMore = page < (data.pages || 1);
           page++;
