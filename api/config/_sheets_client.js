@@ -258,10 +258,17 @@ function sheetsGet(token, path, retriesLeft = 3) {
         // source with zero warnings logged — consistent with quota
         // exhaustion near the end of a ~100-call run, silently swallowed.
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          const isRateLimited = res.statusCode === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
-          if (isRateLimited && retriesLeft > 0) {
+          // Retry on 429 (rate limit) AND 500/INTERNAL — added 2026-07-21
+          // after a real backfill run hit repeated "Internal error
+          // encountered" / status:"INTERNAL" 500s that failed immediately
+          // with no retry at all, since this check only covered 429
+          // before. Google's own API docs describe INTERNAL as generally
+          // transient and safe to retry, same reasoning as 429.
+          const isRetryable = res.statusCode === 429 || res.statusCode === 500
+            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
+          if (isRetryable && retriesLeft > 0) {
             const waitMs = (4 - retriesLeft) * 2000 + 2000; // 2s, 4s, 6s
-            console.warn(`[sheets] rate limited on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
+            console.warn(`[sheets] retryable error (${res.statusCode}) on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
               resolve(await sheetsGet(token, path, retriesLeft - 1));
@@ -303,10 +310,11 @@ function sheetsPost(token, path, body, method = 'POST', retriesLeft = 3) {
         catch (e) { return reject(new Error(`Sheets POST parse error (${res.statusCode}): ${d.slice(0, 200)}`)); }
 
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          const isRateLimited = res.statusCode === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
-          if (isRateLimited && retriesLeft > 0) {
+          const isRetryable = res.statusCode === 429 || res.statusCode === 500
+            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
+          if (isRetryable && retriesLeft > 0) {
             const waitMs = (4 - retriesLeft) * 2000 + 2000;
-            console.warn(`[sheets] rate limited on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
+            console.warn(`[sheets] retryable error (${res.statusCode}) on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
               resolve(await sheetsPost(token, path, body, method, retriesLeft - 1));
