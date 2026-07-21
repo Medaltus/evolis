@@ -1304,9 +1304,102 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div><div class="page-title">Marketing</div><div class="page-sub">Brand stewardship · Growth opportunities</div></div>
     </div>
     <div class="channel-tabs">
+      <button class="ch-tab" onclick="showChannel('marketing','m-fulfillment-cs',this)">Fulfillment & Customer Service</button>
       <button class="ch-tab active" onclick="showChannel('marketing','m-stewardship',this)">Brand Stewardship</button>
       <button class="ch-tab" onclick="showChannel('marketing','m-opportunities',this)">Opportunities</button>
     </div>
+
+    <div class="channel-page" id="m-fulfillment-cs">
+
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Shipped Orders · Last 30 Days</div>
+          <div class="kpi-value" id="mfc-kpi-shipped30">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Our Fulfillment Promise · Last 7 Days</div>
+          <div class="kpi-value" style="color:#1db88a;">100%</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Same Day Fulfilled · weekday orders before 1p</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Processing Time · Last 7 Days</div>
+          <div class="kpi-value" id="mfc-kpi-proctime">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Business days · weekends excluded</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Shipping Cost · Last 7 Days</div>
+          <div class="kpi-value" id="mfc-kpi-shipcost">—</div>
+        </div>
+        <div class="kpi-card" style="opacity:.6;">
+          <div class="kpi-label">Inventory Prepped</div>
+          <div class="kpi-value" style="color:var(--muted);">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Coming soon</div>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">Orders Shipped by Date · Last 30 Days</div>
+        <div style="position:relative;height:220px;"><canvas id="mfc-shipped-chart"></canvas></div>
+        <div class="ppc-note" id="mfc-chart-footer">Loading…</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Reviews Requested</div>
+          <div class="kpi-value" id="mfc-kpi-reviews">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-reviews-sub">Helium 10 Follow Up</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Compliance Cases Resolved</div>
+          <div class="kpi-value" id="mfc-kpi-compliance">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-compliance-sub">Open Cases: —</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Customer Service Interactions</div>
+          <div class="kpi-value" id="mfc-kpi-cs-interactions">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Manual — no Amazon API for this</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:20px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Returns Processed · Last 30 Days</div>
+          <div class="kpi-value" id="mfc-kpi-returns">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-returns-sub">Return rate: —</div>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div class="ppc-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>
+          <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">
+            <span>Fewer</span>
+            <div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>
+            <span>More</span>
+          </div>
+        </div>
+        <div style="position:relative;padding:8px 0;">
+          <div class="ff-map-tooltip" id="mfc-map-tip"></div>
+          <svg id="mfc-us-svg" viewBox="0 0 959 593" style="width:100%;height:auto;display:block;"></svg>
+        </div>
+        <div class="ppc-note" id="mfc-map-footer">Loading…</div>
+        <div style="border-top:1px solid var(--border);margin-top:12px;overflow-y:auto;max-height:400px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+              </tr>
+            </thead>
+            <tbody id="mfc-state-table-body"><tr><td colspan="10" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /m-fulfillment-cs -->
+
     <div class="channel-page active" id="m-stewardship">
 
       <div class="section-label">Key Performance Metrics</div>
@@ -3382,6 +3475,7 @@ function showPage(id, btn) {
     if (cid==='s-website')       initWebLive();
     if (cid==='s-walmart')       initWalmartLive();
     if (cid==='m-stewardship')   window.initStewardshipLive();
+    if (cid==='m-fulfillment-cs') window.initMarketingFulfillmentCS();
     if (cid==='m-opportunities' && !window._snsChart) initSns();
   }
 }
@@ -3406,6 +3500,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'ev-pbdd')         window.initPBDDReport();
     if (channelId === 'ev-bfcm')         window.initBFCMReport();
     if (channelId === 'inv-oos-log')     window.initOosLog();
+    if (channelId === 'm-fulfillment-cs') window.initMarketingFulfillmentCS();
 
     // Events page: track which event tab is active so the single
     // Approve button (top-right of the tab menu) knows what to approve.
@@ -7725,7 +7820,6 @@ const FF_SL = {
 
 
 let ffShippedChartInstance = null;
-let FF_STATE_DATA = {};
 
 // Formats an ISO UTC timestamp as "MM-DD-YYYY 4p EST" — simplified,
 // Eastern time, single-letter am/pm. Returns '' for anything unparseable
@@ -7837,9 +7931,9 @@ async function ffLoadShippedChart() {
   }
 }
 
-function ffStateColor(val) {
+function ffStateColorFor(val, stateData) {
   if (!val || val === 0) return '#eef1f8';
-  const maxVal = Math.max(...Object.values(FF_STATE_DATA).filter(v => v > 0), 1);
+  const maxVal = Math.max(...Object.values(stateData).filter(v => v > 0), 1);
   const t = Math.pow(val / maxVal, 0.55);
   const r = Math.round(220 - 220 * t);
   const g = Math.round(230 - 199 * t);
@@ -7847,45 +7941,48 @@ function ffStateColor(val) {
   return `rgb(${r},${g},${b})`;
 }
 
-function ffLabelColor(val) {
-  const maxVal = Math.max(...Object.values(FF_STATE_DATA).filter(v => v > 0), 1);
+function ffLabelColorFor(val, stateData) {
+  const maxVal = Math.max(...Object.values(stateData).filter(v => v > 0), 1);
   return (val / maxVal) > 0.3 ? '#fff' : '#1a2e5a';
 }
 
-function ffBuildHeatmap() {
-  const svg = document.getElementById('ff-us-svg');
+// Generic, reusable across every page that shows this map — takes its own
+// stateData + target element IDs instead of hardcoded globals/IDs, so the
+// ~36KB of FF_SP/FF_SL path data is shared, not duplicated per page.
+function ffBuildHeatmapGeneric(stateData, svgId, tipId) {
+  const svg = document.getElementById(svgId);
   if (!svg) return;
-  let html = '<g id="ff-states">';
+  let html = '<g>';
   for (const [st, path] of Object.entries(FF_SP)) {
     if (!path) continue;
-    const val = FF_STATE_DATA[st] || 0;
-    html += `<path data-st="${st}" d="${path}" fill="${ffStateColor(val)}" stroke="#fff" stroke-width="0.8" stroke-linejoin="round" style="cursor:pointer" onmouseenter="ffShowTip(event,'${st}',${val})" onmouseleave="ffHideTip()"/>`;
+    const val = stateData[st] || 0;
+    html += `<path data-st="${st}" d="${path}" fill="${ffStateColorFor(val, stateData)}" stroke="#fff" stroke-width="0.8" stroke-linejoin="round" style="cursor:pointer" onmouseenter="ffShowTipGeneric(event,'${st}',${val},'${svgId}','${tipId}')" onmouseleave="ffHideTipGeneric('${tipId}')"/>`;
   }
-  html += '</g><g id="ff-labels" style="pointer-events:none">';
+  html += '</g><g style="pointer-events:none">';
   for (const [st, [cx, cy]] of Object.entries(FF_SL)) {
-    const val = FF_STATE_DATA[st] || 0;
-    html += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" fill="${ffLabelColor(val)}" font-size="8" font-family="DM Sans,sans-serif" font-weight="600">${st}</text>`;
+    const val = stateData[st] || 0;
+    html += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" fill="${ffLabelColorFor(val, stateData)}" font-size="8" font-family="DM Sans,sans-serif" font-weight="600">${st}</text>`;
   }
   html += '</g>';
   svg.innerHTML = html;
 }
 
-function ffShowTip(e, st, val) {
-  const tip = document.getElementById('ff-map-tip');
+function ffShowTipGeneric(e, st, val, svgId, tipId) {
+  const tip = document.getElementById(tipId);
   if (!tip) return;
   tip.textContent = `${st}: ${val > 0 ? val.toLocaleString() + ' orders' : 'no data'}`;
   tip.classList.add('visible');
-  const svg = document.getElementById('ff-us-svg');
+  const svg = document.getElementById(svgId);
   const rect = svg.getBoundingClientRect();
   tip.style.left = (e.clientX - rect.left + 14) + 'px';
   tip.style.top = (e.clientY - rect.top - 10) + 'px';
 }
-function ffHideTip() { document.getElementById('ff-map-tip')?.classList.remove('visible'); }
+function ffHideTipGeneric(tipId) { document.getElementById(tipId)?.classList.remove('visible'); }
 
-function ffBuildStateTable() {
-  const tbody = document.getElementById('ff-state-table-body');
+function ffBuildStateTableGeneric(stateData, tbodyId) {
+  const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  const sorted = Object.entries(FF_STATE_DATA).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(stateData).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   if (!sorted.length) { tbody.innerHTML = '<tr><td colspan="10" style="color:var(--muted);">No data yet</td></tr>'; return; }
 
   const total = sorted.reduce((s, [, v]) => s + v, 0);
@@ -7908,24 +8005,31 @@ function ffBuildStateTable() {
   tbody.innerHTML = html;
 }
 
-async function ffLoadStates() {
-  const footer = document.getElementById('ff-map-footer');
+// Fetches states data for a given sheet/gid and renders into a given set
+// of target elements — shared by both the Fulfillment page and the
+// Marketing > Fulfillment & Customer Service tab.
+async function ffLoadStatesGeneric(sheetId, gid, svgId, tipId, tbodyId, footerId) {
+  const footer = document.getElementById(footerId);
   try {
-    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_STATES_SHEET_ID, '402779529')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const csv = await fetch(ovCsvUrl(sheetId, gid)).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
-    if (!rows.length) { if (footer) footer.textContent = 'No data yet'; ffBuildHeatmap(); ffBuildStateTable(); return; }
+    const stateData = {};
+    if (!rows.length) { if (footer) footer.textContent = 'No data yet'; ffBuildHeatmapGeneric(stateData, svgId, tipId); ffBuildStateTableGeneric(stateData, tbodyId); return; }
 
-    FF_STATE_DATA = {};
-    rows.forEach(r => { if (r.state) FF_STATE_DATA[r.state] = parseInt(r.orders, 10) || 0; });
+    rows.forEach(r => { if (r.state) stateData[r.state] = parseInt(r.orders, 10) || 0; });
 
-    ffBuildHeatmap();
-    ffBuildStateTable();
+    ffBuildHeatmapGeneric(stateData, svgId, tipId);
+    ffBuildStateTableGeneric(stateData, tbodyId);
 
     if (footer) footer.textContent = rows[0]?.refreshed_at ? `Last synced · ${ffFormatEst(rows[0].refreshed_at)}` : '';
   } catch (err) {
-    console.warn('[Fulfillment] states load failed:', err.message);
+    console.warn('[States map] load failed:', err.message);
     if (footer) footer.textContent = 'Error loading';
   }
+}
+
+async function ffLoadStates() {
+  await ffLoadStatesGeneric(OV_FULFILLMENT_STATES_SHEET_ID, '402779529', 'ff-us-svg', 'ff-map-tip', 'ff-state-table-body', 'ff-map-footer');
 }
 
 window.initFulfillmentPage = async function() {
@@ -7934,6 +8038,138 @@ window.initFulfillmentPage = async function() {
   // once this page had 3 fetches of its own, on top of every other
   // page's own eagerly-loaded fetches at initial page load.
   await Promise.all([ffLoadKpis(), ffLoadShippedChart(), ffLoadStates()]);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// MARKETING > FULFILLMENT & CUSTOMER SERVICE — same KPI/chart/map as
+// the Fulfillment page (reusing the shared *Generic map functions and
+// the same underlying sheets), plus a new Customer Service KPI row.
+//
+// NOT WIRED YET, deliberately: Reviews Requested, Compliance Cases
+// Resolved/Open, and Customer Service Interactions. All three depend on
+// SHEET_CUSTOMER_SERVICE, and that sheet's gid for the "evolis" tab is
+// still unknown — given today's earlier gid mixup (skinuva vs evolis),
+// this is left as a clear placeholder rather than guessed at again.
+// Returns Processed IS wired — that's a different, already-known sheet.
+// ═══════════════════════════════════════════════════════════════════
+
+const OV_RETURNS_SHEET_ID = '16mnFaFkTfXS4FzZ2mI5aoDKNrw8FWe8R8IUDnv3FHVs';
+const OV_RETURNS_EVOLIS_GID = '267551179';
+
+let mfcShippedChartInstance = null;
+
+async function mfcLoadKpis() {
+  try {
+    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv).filter(r => (r.brand || '') === 'evolis');
+    const map = {};
+    rows.forEach(r => { if (r.metric) map[r.metric] = r.value; });
+
+    const shipped30 = document.getElementById('mfc-kpi-shipped30');
+    const procTime  = document.getElementById('mfc-kpi-proctime');
+    const shipCost   = document.getElementById('mfc-kpi-shipcost');
+
+    if (shipped30) shipped30.textContent = map.shipped_orders_30d ? Number(map.shipped_orders_30d).toLocaleString() : '—';
+    if (procTime)   procTime.textContent  = map.avg_processing_time_7d ? `${map.avg_processing_time_7d} days` : '—';
+    if (shipCost)    shipCost.textContent  = map.avg_shipping_cost_7d ? `$${Number(map.avg_shipping_cost_7d).toFixed(2)}` : '—';
+  } catch (err) {
+    console.warn('[Marketing/FulfillmentCS] KPI load failed:', err.message);
+  }
+}
+
+async function mfcLoadShippedChart() {
+  const footer = document.getElementById('mfc-chart-footer');
+  try {
+    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '356984145')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv).filter(r => {
+      const day = new Date((r.date || '') + 'T12:00:00').getDay();
+      return day !== 0 && day !== 6;
+    });
+    if (!rows.length) { if (footer) footer.textContent = 'No data yet'; return; }
+
+    const sorted = [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const last30 = sorted.slice(-30);
+    const labels = last30.map(r => new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const totals = last30.map(r => parseInt(r.orders_shipped, 10) || 0);
+
+    const canvas = document.getElementById('mfc-shipped-chart');
+    if (!canvas) return;
+    if (mfcShippedChartInstance) mfcShippedChartInstance.destroy();
+
+    mfcShippedChartInstance = new Chart(canvas, {
+      type: 'line',
+      data: { labels, datasets: [{
+        label: 'Orders shipped', data: totals,
+        borderColor: '#001F60', backgroundColor: 'rgba(0,31,96,0.07)',
+        borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBackgroundColor: '#001F60', pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
+        fill: true, tension: 0.4,
+      }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
+            titleColor: '#001F60', bodyColor: '#6B7BA2', padding: 12, boxWidth: 8, boxHeight: 8,
+            callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+          },
+        },
+        scales: {
+          x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
+          y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
+        },
+      },
+    });
+
+    const lastRow = sorted[sorted.length - 1];
+    if (footer) footer.textContent = lastRow ? `Last synced · ${ffFormatEst(lastRow.last_updated) || lastRow.date}` : '';
+  } catch (err) {
+    console.warn('[Marketing/FulfillmentCS] chart load failed:', err.message);
+    if (footer) footer.textContent = 'Error loading';
+  }
+}
+
+async function mfcLoadStates() {
+  await ffLoadStatesGeneric(OV_FULFILLMENT_STATES_SHEET_ID, '402779529', 'mfc-us-svg', 'mfc-map-tip', 'mfc-state-table-body', 'mfc-map-footer');
+}
+
+// Returns Processed + return rate. Rate = returns in the last 30 days ÷
+// shipped orders in the last 30 days (same window/denominator as every
+// other 30-day figure on this tab) — stated explicitly since "return
+// rate" could reasonably mean returns/units-sold instead; this is a
+// judgment call, not a given definition.
+async function mfcLoadReturns() {
+  const valEl = document.getElementById('mfc-kpi-returns');
+  const subEl = document.getElementById('mfc-kpi-returns-sub');
+  try {
+    const [returnsCsv, kpisCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const returnRows = parseCsvToRows(returnsCsv);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const returns30d = returnRows.filter(r => {
+      const d = new Date((r.return_date || '') + 'T00:00:00');
+      return !isNaN(d) && d >= cutoff;
+    }).length;
+
+    const kpiRows = parseCsvToRows(kpisCsv).filter(r => (r.brand || '') === 'evolis');
+    const kpiMap = {};
+    kpiRows.forEach(r => { if (r.metric) kpiMap[r.metric] = r.value; });
+    const shipped30d = parseInt(kpiMap.shipped_orders_30d, 10) || 0;
+
+    if (valEl) valEl.textContent = returns30d.toLocaleString();
+    if (subEl) subEl.textContent = shipped30d > 0 ? `Return rate: ${((returns30d / shipped30d) * 100).toFixed(1)}%` : 'Return rate: —';
+  } catch (err) {
+    console.warn('[Marketing/FulfillmentCS] returns load failed:', err.message);
+  }
+}
+
+window.initMarketingFulfillmentCS = async function() {
+  await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns()]);
 };
 
 
