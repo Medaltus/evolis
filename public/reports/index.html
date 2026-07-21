@@ -6101,14 +6101,15 @@ async function initSns() {
     return `${names[m-1]} ${d}, ${y}`;
   }
 
-  // This year's dates in the same orange used for "Key Insight" callouts
-  // (var(--warn)) so they're the visually prominent part; the prior-year
-  // comparison sits in muted gray, de-emphasized. Built as real HTML (not
-  // a flat string) specifically so the PDF export can read it with
-  // pdfxHTML() and keep the same two-tone styling.
+  // Prominence via weight/color contrast (bold navy vs muted gray), NOT
+  // orange text — corrected 2026-07-21 after direct feedback that orange
+  // TEXT wasn't wanted. The actual orange "pop" happens via a background
+  // callout box matching .pdfx-insight, applied in buildEventPage() for
+  // the PDF specifically — this plain two-weight text is what the live
+  // dashboard's simple date line uses, and what gets wrapped in that box.
   function eventDatesHtml(current, previous) {
     if (!current) return '';
-    const currentHtml = `<span style="color:var(--warn);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
+    const currentHtml = `<span style="color:var(--navy);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
     const prevHtml = previous
       ? ` <span style="color:var(--muted);font-weight:400;">· vs. ${fmtDate(previous.start_date)} – ${fmtDate(previous.end_date)} last year</span>`
       : '';
@@ -6488,7 +6489,7 @@ async function initSns() {
   }
   function eventDatesHtml(current, previous) {
     if (!current) return '';
-    const currentHtml = `<span style="color:var(--warn);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
+    const currentHtml = `<span style="color:var(--navy);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
     const prevHtml = previous
       ? ` <span style="color:var(--muted);font-weight:400;">· vs. ${fmtDate(previous.start_date)} – ${fmtDate(previous.end_date)} last year</span>`
       : '';
@@ -9549,7 +9550,20 @@ async function loadAuditResultsFromSheet() {
     _walmartChart: 'chart-walmart',
     _investChart: 'chart-invest',
     _impressChart: 'chart-impressions',
-    _snsChart: 'chart-sns'
+    _snsChart: 'chart-sns',
+    // Added 2026-07-21 — was never registered here at all, so it fell
+    // through to the naive pdfxRawChartImg fallback (no force-visible
+    // ancestors, no correct-size capture), which is exactly why it showed
+    // up blurry/stretched/broken in the exported PDF while every other
+    // chart on this list worked fine. NOTE: there's documented precedent
+    // right above (_pdTopSellersChart) of adding a chart to this list
+    // causing a regression elsewhere, because it force-visibled an entire
+    // OTHER page's hierarchy during capture. This chart lives on the
+    // Marketing page, not Events, so that specific collision likely
+    // doesn't apply — but this hasn't been proven safe by a real test,
+    // just reasoned about. Check the other 6 charts still export
+    // correctly after this change, not just this one.
+    mfcShippedChartInstance: 'mfc-shipped-chart',
     // _pdTopSellersChart deliberately NOT registered here — reverted
     // 2026-07-18 per Jaclyn. Adding it caused the whole shared force-
     // ancestors-visible capture pipeline (the one that took a long time to
@@ -9921,7 +9935,7 @@ async function loadAuditResultsFromSheet() {
     }).join('');
     return '<div class="pdfx-topband">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
-        '<span class="pdfx-logo-navy" style="margin-left:-8px;display:inline-block;">' + pdfxLogoHtml('height:40px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
+        '<span class="pdfx-logo-navy" style="margin-left:-27.5px;display:inline-block;">' + pdfxLogoHtml('height:40px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
         '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
       '</div>' +
       '<div class="pdfx-tabs">' + tabsHtml + '</div>' +
@@ -10190,20 +10204,34 @@ async function loadAuditResultsFromSheet() {
   // Static content — mirrors the Strategy tab's own text (#ev-strategy).
   // Hardcoded here rather than read from the DOM since it's a fixed
   // playbook, not data; if the Strategy tab copy changes, update both.
+  // Colors/fonts below now match the live #ev-strategy tab exactly
+  // (.evs-phase-title, .evs-phase-pill, .evs-outlook) — confirmed 2026-07-21
+  // that the PDF version was using a uniform navy+green scheme instead of
+  // the live page's actual per-phase color coding (lead-up green, during
+  // navy, lead-out orange/warn) and a wrongly-orange outlook block that's
+  // actually green on the live page. Sizes are still compacted from the
+  // live page's own (26px titles, 14.5px item text) to fit one page —
+  // that part was a deliberate, asked-for tradeoff, not a mismatch to fix.
+  const EVS_PHASE_COLORS = {
+    'lead-up':  { title: '#1db88a', pillBg: 'rgba(36,233,163,.13)', pillColor: '#1db88a' },
+    'during':   { title: 'var(--navy)', pillBg: 'var(--bg2)', pillColor: 'var(--muted)' },
+    'lead-out': { title: 'var(--warn)', pillBg: 'rgba(200,125,47,.12)', pillColor: 'var(--warn)' },
+  };
   function pdfxStrategyItem(title, text) {
     return '<div style="margin-bottom:6px;"><div style="font-size:10.5px;font-weight:700;color:var(--navy);margin-bottom:1px;">' + pdfxEscape(title) + '</div>' +
-      '<div style="font-size:9.5px;color:#48557a;line-height:1.35;">' + text + '</div></div>';
+      '<div style="font-size:9.5px;color:var(--muted);line-height:1.35;">' + text + '</div></div>';
   }
-  function pdfxStrategyPhase(numLabel, title, pillLabel, itemsHtml) {
+  function pdfxStrategyPhase(variant, numLabel, title, pillLabel, itemsHtml) {
+    const c = EVS_PHASE_COLORS[variant];
     return '<div class="pdfx-card" style="margin-bottom:8px;padding:12px 14px;">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
         '<div><span style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">' + pdfxEscape(numLabel) + '</span> ' +
-        '<span style="font-size:13px;font-weight:700;color:var(--navy);">' + pdfxEscape(title) + '</span></div>' +
-        '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--green);background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:2px 8px;">' + pdfxEscape(pillLabel) + '</span>' +
+        '<span style="font-family:var(--font-subheader);font-size:15px;font-weight:700;color:' + c.title + ';">' + pdfxEscape(title) + '</span></div>' +
+        '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:' + c.pillColor + ';background:' + c.pillBg + ';border-radius:999px;padding:3px 10px;">' + pdfxEscape(pillLabel) + '</span>' +
       '</div>' + itemsHtml + '</div>';
   }
   function buildStrategyPage(monthYear) {
-    const leadUp = pdfxStrategyPhase('Phase 01', 'Lead Up', 'Prepare',
+    const leadUp = pdfxStrategyPhase('lead-up', 'Phase 01', 'Lead Up', 'Prepare',
       pdfxStrategyItem('Listings &amp; SEO', 'Refresh listing content, images, and A+ Content to ensure <strong>maximum search visibility and conversion readiness</strong> before traffic surges.') +
       pdfxStrategyItem('Advertising', 'Gradually <strong>increase budgets 1.5–3x and bids 10%+</strong> in the 7–14 days prior to warm the algorithm and activate event-specific campaigns.') +
       pdfxStrategyItem('Promotions &amp; Pricing', 'Finalize Prime Exclusive Discounts and <strong>confirm all deals are submitted, eligible, and approved</strong> with sufficient lead time.') +
@@ -10211,13 +10239,13 @@ async function loadAuditResultsFromSheet() {
       pdfxStrategyItem('Creative &amp; Storefront', 'Upload refreshed imagery and <strong>add promotional banners and curated storefront landing pages</strong> optimized for high-traffic event conditions.') +
       pdfxStrategyItem('Content Health Check', 'Resolve any listing suppressions, Q&amp;A gaps, and negative review flags <strong>before traffic surges</strong> — a suppressed listing during an event is a direct missed opportunity.')
     );
-    const during = pdfxStrategyPhase('Phase 02', 'During', 'Execute',
+    const during = pdfxStrategyPhase('during', 'Phase 02', 'During', 'Execute',
       pdfxStrategyItem('Real-Time Ad Optimization', '<strong>Increase budgets 2–4x and bids 20%+</strong> as CPCs rise. Reallocate spend to top performers in real time across all ad placements.') +
       pdfxStrategyItem('Deal &amp; Buy Box Monitoring', 'Ensure all discounts are active and the <strong>Buy Box is stable</strong>. Resolve any pricing issues immediately — lost Buy Box is direct lost revenue.') +
       pdfxStrategyItem('Listing &amp; Inventory Health', 'Monitor for suppressed listings and <strong>low-inventory alerts in real time</strong> to prevent conversion interruptions across the event window.') +
       pdfxStrategyItem('Performance Tracking', 'Watch sessions, conversion rate, ACOS, and sell-through velocity continuously. <strong>Make decisions from live data</strong>, not post-event analysis.')
     );
-    const leadOut = pdfxStrategyPhase('Phase 03', 'Lead Out', 'Capitalize',
+    const leadOut = pdfxStrategyPhase('lead-out', 'Phase 03', 'Lead Out', 'Capitalize',
       pdfxStrategyItem('Retargeting &amp; Display', 'Run Sponsored Display ads to <strong>re-engage shoppers who viewed but didn\u2019t convert</strong> during the event window.') +
       pdfxStrategyItem('Listing Refinement', 'Update keywords and creatives using <strong>what actually converted</strong> during the event — real data is the best optimization input.') +
       pdfxStrategyItem('Brand Halo Expansion', 'Capitalize on new-to-brand traffic with <strong>cross-sell and complementary product campaigns</strong> to increase basket size.') +
@@ -10225,9 +10253,13 @@ async function loadAuditResultsFromSheet() {
       pdfxStrategyItem('Review Acceleration', 'Activate follow-up sequences to drive <strong>organic review growth from event purchasers</strong> — the highest-quality acquisition window of the year.') +
       pdfxStrategyItem('Comprehensive Reporting', 'Deliver clear post-event analysis — <strong>what worked, what didn\u2019t, and how to capitalize</strong> on gains for the next event cycle.')
     );
-    const outlook = '<div class="pdfx-card" style="background:var(--sand);border:none;padding:10px 14px;margin-bottom:0;">' +
-      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy);margin-bottom:4px;">Strategic Outlook</div>' +
-      '<div style="font-size:9.5px;color:#48557a;line-height:1.4;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
+    // Green accent, matching .evs-outlook exactly — was wrongly using the
+    // orange/sand "key insight" treatment before. Those are two visually
+    // distinct callout styles on the live dashboard; this one was always
+    // meant to be green.
+    const outlook = '<div class="pdfx-card" style="background:rgba(36,233,163,.08);border:none;border-left:3px solid #1db88a;border-radius:6px;padding:10px 14px;margin-bottom:0;">' +
+      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1db88a;margin-bottom:4px;">Strategic Outlook</div>' +
+      '<div style="font-size:9.5px;color:var(--navy);line-height:1.4;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
       '</div>';
 
     // Combined onto ONE page — was 2 pages before. Fit is genuinely tight
@@ -10255,6 +10287,15 @@ async function loadAuditResultsFromSheet() {
     const body = pdfxHTML('#' + prefix + '-exec-summary-body') || '<span style="color:var(--muted);font-style:italic;">No summary added yet.</span>';
     const dates = pdfxById(prefix + '-event-dates') ? pdfxHTML('#' + prefix + '-event-dates') : '';
 
+    // Orange-background callout, matching .pdfx-insight exactly (same
+    // sand background + orange left border) — this is the actual "pop"
+    // treatment asked for. Corrected 2026-07-21: coloring the date TEXT
+    // itself orange (the previous attempt) was explicitly not what was
+    // wanted; the background callout is.
+    const datesHtml = dates
+      ? '<div class="pdfx-insight" style="margin-bottom:10px;">' + dates + '</div>'
+      : '';
+
     const hasKpis = !!pdfxById(prefix + '-kpi-total-units');
     const kpisHtml = hasKpis
       ? '<div class="pdfx-kpis" style="margin-top:6px;">' +
@@ -10271,7 +10312,8 @@ async function loadAuditResultsFromSheet() {
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
           pdfxHeaderBand(monthYear, 'Events') +
-          '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + (dates ? ' — ' + dates : '') + '</div>' +
+          '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + '</div>' +
+          datesHtml +
           '<div class="pdfx-card"><div class="pdfx-card-title">' + pdfxEscape(headline) + '</div><div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + body + '</div></div>' +
           kpisHtml + chartHtml +
           pdfxFooter(monthYear) +
