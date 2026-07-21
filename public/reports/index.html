@@ -6101,6 +6101,20 @@ async function initSns() {
     return `${names[m-1]} ${d}, ${y}`;
   }
 
+  // This year's dates in the same orange used for "Key Insight" callouts
+  // (var(--warn)) so they're the visually prominent part; the prior-year
+  // comparison sits in muted gray, de-emphasized. Built as real HTML (not
+  // a flat string) specifically so the PDF export can read it with
+  // pdfxHTML() and keep the same two-tone styling.
+  function eventDatesHtml(current, previous) {
+    if (!current) return '';
+    const currentHtml = `<span style="color:var(--warn);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
+    const prevHtml = previous
+      ? ` <span style="color:var(--muted);font-weight:400;">· vs. ${fmtDate(previous.start_date)} – ${fmtDate(previous.end_date)} last year</span>`
+      : '';
+    return currentHtml + prevHtml;
+  }
+
   async function getEventDates() {
     const csv = await fetch(sheetCsvUrl(EVENTS_SHEET_ID, EVENTS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
     if (!isCsv(csv)) return { current: null, previous: null };
@@ -6308,7 +6322,7 @@ async function initSns() {
 
         const dateEl = document.getElementById('pd-event-dates');
         if (dates.current) {
-          if (dateEl) dateEl.textContent = `${fmtDate(dates.current.start_date)} – ${fmtDate(dates.current.end_date)}` + (dates.previous ? ` · vs. ${fmtDate(dates.previous.start_date)} – ${fmtDate(dates.previous.end_date)} last year` : '');
+          if (dateEl) dateEl.innerHTML = eventDatesHtml(dates.current, dates.previous);
         } else if (dateEl) {
           dateEl.textContent = 'Event dates not found on Events tab.';
         }
@@ -6471,6 +6485,14 @@ async function initSns() {
     const [y,m,d] = iso.split('-').map(Number);
     const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return `${names[m-1]} ${d}, ${y}`;
+  }
+  function eventDatesHtml(current, previous) {
+    if (!current) return '';
+    const currentHtml = `<span style="color:var(--warn);font-weight:700;">${fmtDate(current.start_date)} – ${fmtDate(current.end_date)}</span>`;
+    const prevHtml = previous
+      ? ` <span style="color:var(--muted);font-weight:400;">· vs. ${fmtDate(previous.start_date)} – ${fmtDate(previous.end_date)} last year</span>`
+      : '';
+    return currentHtml + prevHtml;
   }
 
   // Normalizes punctuation/case before comparing event names — "Black
@@ -6669,7 +6691,7 @@ async function initSns() {
 
           const dateEl = document.getElementById(`${cfg.prefix}-event-dates`);
           if (dates.current) {
-            if (dateEl) dateEl.textContent = `${fmtDate(dates.current.start_date)} – ${fmtDate(dates.current.end_date)}` + (dates.previous ? ` · vs. ${fmtDate(dates.previous.start_date)} – ${fmtDate(dates.previous.end_date)} last year` : '');
+            if (dateEl) dateEl.innerHTML = eventDatesHtml(dates.current, dates.previous);
           } else if (dateEl) {
             dateEl.textContent = 'Event dates not found on Events tab.';
           }
@@ -9893,13 +9915,13 @@ async function loadAuditResultsFromSheet() {
   }
 
   function pdfxHeaderBand(monthYear, activeTab) {
-    const tabs = ['Sales', 'Fulfillment & Customer Service', 'Brand Stewardship', 'Opportunities'];
+    const tabs = ['Sales', 'Fulfillment & Customer Service', 'Brand Stewardship', 'Opportunities', 'Events'];
     const tabsHtml = tabs.map(function (t) {
       return '<span class="pdfx-tab' + (t === activeTab ? ' on' : '') + '">' + t + '</span>';
     }).join('');
     return '<div class="pdfx-topband">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
-        '<span class="pdfx-logo-navy">' + pdfxLogoHtml('height:40px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
+        '<span class="pdfx-logo-navy" style="margin-left:-8px;display:inline-block;">' + pdfxLogoHtml('height:40px;width:auto;filter:brightness(0) invert(1);') + '</span>' +
         '<div class="pdfx-tagright"><div class="pdfx-hdr-tag">Brand Performance Report</div><div class="pdfx-hdr-month">' + pdfxEscape(monthYear) + '</div></div>' +
       '</div>' +
       '<div class="pdfx-tabs">' + tabsHtml + '</div>' +
@@ -10081,21 +10103,31 @@ async function loadAuditResultsFromSheet() {
     // NOTE: pdfxKpi(id) expects `id` on the OUTER .kpi-card with .kpi-label/
     // .kpi-value as descendants — this tab's cards have the id directly on
     // the .kpi-value element instead, so pdfxKpi() doesn't fit here. Reading
-    // each value directly instead, with labels hardcoded to match the live
-    // markup exactly (these are static label strings on the live page too,
-    // not dynamic — nothing lost by not reading them from the DOM).
+    // each value directly instead. Labels below are SHORTENED versions of
+    // the live dashboard's labels, not a straight copy — .pdfx-kpi-lbl has
+    // white-space:nowrap, and the live labels ("Avg Shipping Cost · Last 7
+    // Days") are long enough to overflow a 1/5-width column and spill off
+    // the page edge. Stewardship's labels are all 1-3 words for the same
+    // reason. Confirmed 2026-07-21 as the actual cause of KPI text getting
+    // cut off at the page's right edge.
     const topKpis = [
-      { label: 'Shipped Orders · Last 30 Days', value: pdfxText('#mfc-kpi-shipped30') },
-      { label: 'Our Fulfillment Promise · Last 7 Days', value: '100%' },
-      { label: 'Avg Processing Time · Last 7 Days', value: pdfxText('#mfc-kpi-proctime') },
-      { label: 'Avg Shipping Cost · Last 7 Days', value: pdfxText('#mfc-kpi-shipcost') },
+      { label: 'Shipped Orders (30d)', value: pdfxText('#mfc-kpi-shipped30') },
+      { label: 'Fulfillment Promise (7d)', value: '100%' },
+      { label: 'Avg Processing Time (7d)', value: pdfxText('#mfc-kpi-proctime') },
+      { label: 'Avg Shipping Cost (7d)', value: pdfxText('#mfc-kpi-shipcost') },
       { label: 'Inventory Prepped', value: 'Coming soon' },
     ];
+    // 3 items, matching the live dashboard's merged 3-column row (Returns
+    // moved in here, no longer a separate row) — .pdfx-kpis defaults to a
+    // hardcoded repeat(5,1fr) grid, so a row with fewer than 5 items MUST
+    // use the existing .pdfx-kpis.n3 class or it renders squeezed into
+    // 1/5-width columns with empty space across the rest of the row. This
+    // was the other real cause of the "stretched and weird" look.
     const csKpis = [
       { label: 'Reviews Requested', value: pdfxText('#mfc-kpi-reviews'), sub: pdfxText('#mfc-kpi-reviews-sub') },
       { label: 'Compliance Cases Resolved', value: pdfxText('#mfc-kpi-compliance'), sub: pdfxText('#mfc-kpi-compliance-sub') },
+      { label: 'Returns Processed (30d)', value: pdfxText('#mfc-kpi-returns'), sub: pdfxText('#mfc-kpi-returns-sub') },
     ];
-    const returnsKpi = { label: 'Returns Processed · Last 30 Days', value: pdfxText('#mfc-kpi-returns'), sub: pdfxText('#mfc-kpi-returns-sub') };
 
     // KPI cards with a sub-line (where MoM normally sits) need their own
     // markup — pdfxKpiCardHtml()'s momHtml is styled for an up/down arrow
@@ -10119,7 +10151,6 @@ async function loadAuditResultsFromSheet() {
     // rebuilt from raw state data — the live page already did that work
     // when the tab was opened, so this just copies the real markup.
     const mapInner = pdfxHTML('#mfc-us-svg') || '';
-    const tableInner = pdfxHTML('#mfc-state-table-body') || '';
 
     return '' +
       '<div class="pdfx-page">' +
@@ -10132,8 +10163,7 @@ async function loadAuditResultsFromSheet() {
             pdfxChartBlock('mfcShippedChartInstance', 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') +
           '</div>' +
           '<div class="pdfx-chlabel" style="margin-top:16px;">Customer Service</div>' +
-          '<div class="pdfx-kpis" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
-          '<div class="pdfx-kpis" style="margin-top:10px;grid-template-columns:1fr;">' + kpiCardWithSub(returnsKpi) + '</div>' +
+          '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
             '<div class="pdfx-card-title">Orders by State · Last 30 Days</div>' +
             '<svg viewBox="0 0 959 593" style="width:100%;height:auto;display:block;">' + mapInner + '</svg>' +
@@ -10161,12 +10191,12 @@ async function loadAuditResultsFromSheet() {
   // Hardcoded here rather than read from the DOM since it's a fixed
   // playbook, not data; if the Strategy tab copy changes, update both.
   function pdfxStrategyItem(title, text) {
-    return '<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:2px;">' + pdfxEscape(title) + '</div>' +
-      '<div style="font-size:10.5px;color:#48557a;line-height:1.5;">' + text + '</div></div>';
+    return '<div style="margin-bottom:6px;"><div style="font-size:10.5px;font-weight:700;color:var(--navy);margin-bottom:1px;">' + pdfxEscape(title) + '</div>' +
+      '<div style="font-size:9.5px;color:#48557a;line-height:1.35;">' + text + '</div></div>';
   }
   function pdfxStrategyPhase(numLabel, title, pillLabel, itemsHtml) {
-    return '<div class="pdfx-card" style="margin-bottom:14px;">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+    return '<div class="pdfx-card" style="margin-bottom:8px;padding:12px 14px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
         '<div><span style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">' + pdfxEscape(numLabel) + '</span> ' +
         '<span style="font-size:13px;font-weight:700;color:var(--navy);">' + pdfxEscape(title) + '</span></div>' +
         '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--green);background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:2px 8px;">' + pdfxEscape(pillLabel) + '</span>' +
@@ -10195,24 +10225,24 @@ async function loadAuditResultsFromSheet() {
       pdfxStrategyItem('Review Acceleration', 'Activate follow-up sequences to drive <strong>organic review growth from event purchasers</strong> — the highest-quality acquisition window of the year.') +
       pdfxStrategyItem('Comprehensive Reporting', 'Deliver clear post-event analysis — <strong>what worked, what didn\u2019t, and how to capitalize</strong> on gains for the next event cycle.')
     );
-    const outlook = '<div class="pdfx-card" style="background:var(--sand);border:none;">' +
-      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy);margin-bottom:6px;">Strategic Outlook</div>' +
-      '<div style="font-size:11.5px;color:#48557a;line-height:1.6;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
+    const outlook = '<div class="pdfx-card" style="background:var(--sand);border:none;padding:10px 14px;margin-bottom:0;">' +
+      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy);margin-bottom:4px;">Strategic Outlook</div>' +
+      '<div style="font-size:9.5px;color:#48557a;line-height:1.4;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
       '</div>';
 
+    // Combined onto ONE page — was 2 pages before. Fit is genuinely tight
+    // with 16 total sub-items across 3 phases plus the outlook block;
+    // spacing/font sizes above were tightened specifically to make this
+    // possible. Worth a real check on the actual render before trusting
+    // this looks clean rather than cramped — can't visually verify
+    // page-break behavior from here.
     const page1 = '<div class="pdfx-page"><div class="pdfx-inner">' +
       pdfxHeaderBand(monthYear, 'Events') +
       '<div class="pdfx-chlabel">Event Strategy</div>' +
-      leadUp + during +
+      leadUp + during + leadOut + outlook +
       pdfxFooter(monthYear) +
       '</div></div>';
-    const page2 = '<div class="pdfx-page"><div class="pdfx-inner">' +
-      pdfxHeaderBand(monthYear, 'Events') +
-      '<div class="pdfx-chlabel">Event Strategy (continued)</div>' +
-      leadOut + outlook +
-      pdfxFooter(monthYear) +
-      '</div></div>';
-    return page1 + page2;
+    return page1;
   }
 
   // Generic across all 4 event tabs. Only Prime Day has real KPI cards +
@@ -10223,7 +10253,7 @@ async function loadAuditResultsFromSheet() {
   function buildEventPage(prefix, eventLabel, monthYear) {
     const headline = pdfxText('#' + prefix + '-exec-summary-headline') || eventLabel;
     const body = pdfxHTML('#' + prefix + '-exec-summary-body') || '<span style="color:var(--muted);font-style:italic;">No summary added yet.</span>';
-    const dates = pdfxById(prefix + '-event-dates') ? pdfxText('#' + prefix + '-event-dates') : '';
+    const dates = pdfxById(prefix + '-event-dates') ? pdfxHTML('#' + prefix + '-event-dates') : '';
 
     const hasKpis = !!pdfxById(prefix + '-kpi-total-units');
     const kpisHtml = hasKpis
@@ -10241,7 +10271,7 @@ async function loadAuditResultsFromSheet() {
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
           pdfxHeaderBand(monthYear, 'Events') +
-          '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + (dates ? ' — ' + pdfxEscape(dates) : '') + '</div>' +
+          '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + (dates ? ' — ' + dates : '') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">' + pdfxEscape(headline) + '</div><div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + body + '</div></div>' +
           kpisHtml + chartHtml +
           pdfxFooter(monthYear) +
