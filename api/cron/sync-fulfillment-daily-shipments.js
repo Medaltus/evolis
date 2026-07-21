@@ -31,9 +31,12 @@ module.exports = async (req, res) => {
     if (req.query.date) {
       dateStr = req.query.date;
     } else {
-      dateStr = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-      const [mm, dd, yyyy] = dateStr.split('/');
-      dateStr = `${yyyy}-${mm}-${dd}`;
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+      dateStr = `${p.year}-${p.month}-${p.day}`;
     }
     const dateParam = `${dateStr.slice(5,7)}/${dateStr.slice(8,10)}/${dateStr.slice(0,4)}`;
     const nowLabel = new Date().toISOString();
