@@ -7929,9 +7929,11 @@ async function ffLoadStates() {
 }
 
 window.initFulfillmentPage = async function() {
-  await ffLoadKpis();
-  await ffLoadShippedChart();
-  await ffLoadStates();
+  // Independent fetches — no reason to wait on each other one at a time.
+  // Was sequential before; that added up as a real, perceptible delay
+  // once this page had 3 fetches of its own, on top of every other
+  // page's own eagerly-loaded fetches at initial page load.
+  await Promise.all([ffLoadKpis(), ffLoadShippedChart(), ffLoadStates()]);
 };
 
 
