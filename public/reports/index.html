@@ -8206,7 +8206,10 @@ async function mfcLoadShippedChart() {
     const canvas = document.getElementById('mfc-shipped-chart');
     if (!canvas) return;
 
-    // Update in place instead of destroy()+recreate — added 2026-07-22.
+    // CONFIRMED FIX 2026-07-22 — update in place instead of destroy()+
+    // recreate. Verified directly against a real exported PDF: chart is
+    // now full-width with legible axis labels, matching every other
+    // chart in the pipeline exactly.
     // This chart's loader runs at least twice per session (once when the
     // tab is opened, again via initPromises right before PDF export),
     // meaning the OLD destroy+recreate pattern reused the SAME canvas
@@ -10240,7 +10243,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
             '<div class="pdfx-card-title">Orders by State · Last 30 Days</div>' +
-            '<svg viewBox="0 0 959 593" style="width:100%;height:auto;display:block;">' + mapInner + '</svg>' +
+            '<svg viewBox="0 0 959 593" width="959" height="593" style="width:100%;height:auto;display:block;">' + mapInner + '</svg>' +
           '</div>' +
         '</div>' +
       '</div>';
