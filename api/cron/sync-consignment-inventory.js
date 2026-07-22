@@ -20,15 +20,17 @@
  * as "no data this run," not "confirmed zero" — exactly backwards for a
  * SKU that just went OOS.
  *
- * HighOnLove IS included (SKU prefix HOL, confirmed 2026-07-20) but has a
- * KNOWN, UNRESOLVED GAP: it's on a separate Amazon seller account, so the
- * Newderm master SKU list this cron reads almost certainly doesn't cover
- * it — meaning the zero-stock cross-reference has nothing to check
- * against for this brand specifically. The code detects this at runtime
- * (zero master-list rows matching the HOL prefix) and surfaces a loud
- * warning in both the logs and this cron's own JSON response, rather than
- * silently reporting zeroAdded:0 in a way indistinguishable from "no gaps
- * found." Resolve by finding/building a master SKU list for HighOnLove.
+ * HighOnLove IS included (SKU prefix HOL, confirmed 2026-07-20). The gap
+ * originally flagged here — assuming the master SKU list almost certainly
+ * didn't cover a brand on a separate Amazon seller account — turned out
+ * to be wrong: confirmed 2026-07-22 via a real run (Vercel logs, tab
+ * auto-created since it didn't exist yet) that 19 HOL-prefixed SKUs
+ * matched the master list and got correctly zero-stock-backfilled,
+ * alongside 53 real rows from ShipStation. No "no master-list coverage"
+ * warning fired, and it shouldn't the next run either — the
+ * noMasterListCoverage check below is still worth keeping regardless,
+ * since it costs nothing and would immediately flag it again if the
+ * master list ever stops covering this brand for some other reason.
  *
  * Sheet: SHEET_CONSIGNMENT_INVENTORY, one tab per brand.
  * Columns: sku, name, on_hand, available, last_updated
@@ -55,23 +57,12 @@ const HEADERS = ['sku', 'name', 'on_hand', 'available', 'last_updated'];
 // Each brand has its OWN warehouse — confirmed via GET /v2/inventory_warehouses,
 // 2026-07-20. They do NOT share one, so this is two separate fetches, not
 // one fetch split by brand.
-//
-// HighOnLove (se-154551) is NOT included yet — still needs: (1) its SKU
-// prefix, (2) confirmation of whether a master SKU list exists for it to
-// cross-reference against (it's on a separate Amazon seller account, so
-// the Newderm master list almost certainly doesn't cover it). Add it here
-// once both are known — see fetchMasterSkuListFor() below for how the
-// cross-reference would need to change if there's no master list for it.
 const CONSIGNMENT_BRANDS = [
   { brandId: 'miguard',      warehouseId: 'se-157240', skuPrefix: 'MIG', tabName: 'miguard' },
   { brandId: 'prohibition',  warehouseId: 'se-173781', skuPrefix: 'PRB', tabName: 'prohibition' },
-  // HighOnLove is on a SEPARATE Amazon seller account — the Newderm master
-  // SKU list almost certainly doesn't cover it, so its zero-stock
-  // cross-reference has a known, unresolved gap (see the check + note
-  // right after masterSkus.filter() in the main loop below). Not
-  // silently assumed-covered — flagged loudly in this cron's own output
-  // instead, until a master list for this brand is confirmed one way or
-  // the other.
+  // Confirmed working end-to-end 2026-07-22 — see the file header note for
+  // why this no longer carries the "master list probably doesn't cover
+  // this brand" caveat an earlier draft of this comment had.
   { brandId: 'high-on-love', warehouseId: 'se-154551', skuPrefix: 'HOL', tabName: 'high-on-love' },
 ];
 
