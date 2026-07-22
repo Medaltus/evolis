@@ -401,18 +401,21 @@ async function findNewestFile(folderId) {
 }
 
 // Test-only: find a file by DATE rather than "whatever's newest right now."
-// Real filenames look like InventoryStockLevel_21_07_2026-16_46.xlsx
-// (DD_MM_YYYY-HH_MM) — confirmed against the real 2026-07-21 sample.
-// targetDate comes in as YYYY-MM-DD (easier to type in a curl command)
-// and gets converted to that DD_MM_YYYY form to match against filenames.
-// Lists every file in the folder rather than relying on Drive's own
-// query syntax to filter by a substring in the name, since that's more
-// robust to any minor naming-convention drift Cin7 might introduce later.
+// CORRECTED 2026-07-22: real filenames in the actual Drive folder look
+// like InventoryStockLevel_21/07/2026-16:46.xlsx — forward slashes and a
+// colon, confirmed directly from a Drive screenshot. The sample .xlsx
+// Jaclyn uploaded to this chat showed underscores instead
+// (InventoryStockLevel_21_07_2026-16_46.xlsx) — that's Claude's own file
+// upload pipeline silently sanitizing filesystem-illegal characters
+// (/ and :) on the way in, not what Cin7 actually names its exports.
+// Matching a flexible separator (/, _, or -) between the date parts
+// instead of a fixed one, so this survives either convention and doesn't
+// break again if Cin7's own naming shifts a second time.
 async function findFileByDate(folderId, targetDateIso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(targetDateIso);
   if (!m) throw new Error(`targetDate must be YYYY-MM-DD, got "${targetDateIso}"`);
   const [, yyyy, mm, dd] = m;
-  const needle = `${dd}_${mm}_${yyyy}`; // e.g. "21_07_2026"
+  const dateRegex = new RegExp(`${dd}[/_-]${mm}[/_-]${yyyy}`); // matches "21/07/2026" or "21_07_2026" or "21-07-2026"
 
   const accessToken = await getGoogleDriveToken();
   const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
@@ -423,7 +426,7 @@ async function findFileByDate(folderId, targetDateIso) {
   if (!res.ok) throw new Error(`Drive files.list failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   const files = data.files || [];
-  const matches = files.filter(f => f.name.includes(needle));
+  const matches = files.filter(f => dateRegex.test(f.name));
   if (matches.length > 1) {
     console.warn(`[sync-cin7-consignment-inventory] multiple files matched date ${targetDateIso} — using the most recently modified: ${matches.map(f => f.name).join(', ')}`);
   }
