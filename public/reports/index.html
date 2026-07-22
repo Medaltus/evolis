@@ -914,9 +914,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </button>
 
     <div class="nav-section">Performance</div>
-    <button class="nav-btn soon" disabled>
+    <button class="nav-btn" onclick="showPage('sales-external',this)">
       <svg viewBox="0 0 16 16"><polyline points="1,12 5,7 8,9 12,4 15,6"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Sales
-      <span class="nav-soon-badge">SOON</span>
     </button>
 
     <div class="nav-section">Operations</div>
@@ -1487,6 +1486,154 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-cancel" id="wtp-insight-cancel">Cancel</button>
           <button class="btn-save-stage" id="wtp-insight-save">Save</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SALES (EXTERNAL REPLICA) ══ -->
+  <!-- Read-only replica of the internal Sales page for non-org viewers.
+       No PDF export, no insight edit/save UI, no Approve button — and
+       critically, the month shown is whichever month is most recently
+       marked Approved in SHEET_REPORT_INSIGHTS, NOT the live/current
+       month (that distinction is the whole point of this page). Wired
+       up by initSalesExternalPage() / initAmazonExternal() / etc. -->
+  <div class="page" id="page-sales-external">
+    <div class="page-hd">
+      <div><div class="page-title">Sales</div><div class="page-sub" id="x-sales-page-sub">Loading…</div></div>
+    </div>
+
+    <div class="channel-tabs-row">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('sales-external','x-overview',this)">Overview</button>
+        <button class="ch-tab" onclick="showChannel('sales-external','x-amazon',this)">Amazon</button>
+        <button class="ch-tab" onclick="showChannel('sales-external','x-website',this)">Website</button>
+        <button class="ch-tab" onclick="showChannel('sales-external','x-walmart',this)">Walmart</button>
+      </div>
+    </div>
+
+    <div class="channel-page active" id="x-overview">
+
+      <!-- Hero block — mirrors PDF cover -->
+      <div style="background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);border-radius:10px;padding:36px 40px;margin-bottom:22px;color:#fff;">
+        <div style="font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:10px;">Monthly Overview</div>
+        <div style="font-family:Georgia,serif;font-size:34px;line-height:1.15;margin-bottom:14px;">Monthly<br>Partnership<br>Report</div>
+        <div style="width:40px;height:2px;background:var(--green);margin-bottom:18px;"></div>
+        <div style="font-size:12px;color:rgba(255,255,255,.6);line-height:1.6;max-width:520px;">A brief overview of sales performance, ad investments, brand stewardship activities, and upcoming growth opportunities.</div>
+        <div style="margin-top:18px;font-size:11px;color:rgba(255,255,255,.4);font-weight:600;letter-spacing:.06em;">BRAND PERFORMANCE REPORT &nbsp;·&nbsp; <span id="x-overview-hero-date" style="color:rgba(255,255,255,.55);">Loading…</span></div>
+      </div>
+
+      <!-- Executive summary — read-only, no edit UI -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Executive Summary</div>
+        </div>
+        <div style="font-size:17px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:18px;" id="x-exec-summary-headline">Loading…</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="x-exec-summary-left">Loading…</div>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.7;" id="x-exec-summary-right">Loading…</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="channel-page" id="x-amazon">
+      <div class="kpi-row">
+        <div class="kpi-card" id="x-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-x-amazon" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="position:relative;height:320px;"><canvas id="x-chart-amazon"></canvas></div>
+      </div>
+      <div class="card" id="x-top-products-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
+          <span class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--muted);font-weight:400;">(by Units)</span></span>
+          <span id="x-amazon-products-source" style="font-size:10px;color:var(--muted);"></span>
+        </div>
+        <table class="data-table" id="x-amazon-top-sellers">
+          <thead><tr><th style="width:32px;">#</th><th>Product</th><th>Units</th><th>Units (Ads)</th><th>Units (Organic)</th></tr></thead>
+          <tbody id="x-tp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="insight-bar">
+        <strong>Key Insight:</strong>
+        <span class="insight-text" id="x-tp-insight-text">Loading…</span>
+      </div>
+    </div>
+
+    <div class="channel-page" id="x-website">
+      <div class="channel-hdr">
+        <span style="font-size:16px;font-weight:600;color:var(--navy);">WEB — evolisproducts.com</span>
+        <span id="x-web-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card" id="x-web-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-web-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-web-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-web-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-web-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-x-web" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="position:relative;height:320px;"><canvas id="x-chart-web"></canvas></div>
+      </div>
+      <div class="card" id="x-web-top-products-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
+          <span class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--muted);font-weight:400;">(by Units)</span></span>
+          <span id="x-web-products-source" style="font-size:10px;color:var(--muted);"></span>
+        </div>
+        <table class="data-table" id="x-web-top-sellers">
+          <thead><tr><th style="width:32px;">#</th><th>Product</th><th>Units</th><th>Units (Ads)</th><th>Units (Organic)</th></tr></thead>
+          <tbody id="x-web-tp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="insight-bar">
+        <strong>Key Insight:</strong>
+        <span class="insight-text" id="x-web-insight-text">Loading…</span>
+      </div>
+    </div>
+
+    <div class="channel-page" id="x-walmart">
+      <div class="channel-hdr">
+        <span style="font-size:16px;font-weight:600;color:var(--navy);">Walmart</span>
+        <span id="x-walmart-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card" id="x-wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="x-wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales Revenue by Month</div>
+          <div id="legend-x-walmart" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="position:relative;height:320px;"><canvas id="x-chart-walmart"></canvas></div>
+      </div>
+      <div class="card" id="x-walmart-top-products-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;">
+          <span class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--muted);font-weight:400;">(by Units)</span></span>
+          <span id="x-walmart-products-source" style="font-size:10px;color:var(--muted);"></span>
+        </div>
+        <table class="data-table" id="x-walmart-top-sellers">
+          <thead><tr><th style="width:32px;">#</th><th>Product</th><th>Units</th><th>Units (Ads)</th><th>Units (Organic)</th></tr></thead>
+          <tbody id="x-wtp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="insight-bar">
+        <strong>Key Insight:</strong>
+        <span class="insight-text" id="x-wtp-insight-text">Loading…</span>
       </div>
     </div>
   </div>
@@ -3675,7 +3822,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 <script>
 const pageTitles = {
   home:'Home — Évolis',
-  overview:'Overview — Évolis',sales:'Sales — Évolis',marketing:'Marketing — Évolis',
+  overview:'Overview — Évolis',sales:'Sales — Évolis','sales-external':'Sales — Évolis',marketing:'Marketing — Évolis',
   events:'Events — Évolis',inventory:'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
   insights:'Insights — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
 };
@@ -3711,6 +3858,10 @@ function showPage(id, btn) {
     if (cid==='s-amazon')        initAmazonLive();
     if (cid==='s-website')       initWebLive();
     if (cid==='s-walmart')       initWalmartLive();
+    // External Sales replica — one call regardless of which of its four
+    // sub-tabs is active; initSalesExternalPage() itself resolves the
+    // Approved month once and kicks off all three channel loads together.
+    if (cid && cid.indexOf('x-') === 0) window.initSalesExternalPage();
     if (cid==='m-stewardship')   window.initStewardshipLive();
     if (cid==='m-fulfillment-cs') window.initMarketingFulfillmentCS();
     if (cid==='m-opportunities' && !window._snsChart) initSns();
@@ -3730,6 +3881,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-amazon')        initAmazonLive();
     if (channelId === 's-website')       initWebLive();
     if (channelId === 's-walmart')       initWalmartLive();
+    if (channelId.indexOf('x-') === 0)   window.initSalesExternalPage();
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
@@ -5921,6 +6073,1513 @@ async function initSns() {
     const srcEl = document.getElementById('walmart-products-source');
     if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
   }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SALES PAGE (EXTERNAL REPLICA) — Amazon/Website/Walmart data modules
+// Adapted from the internal initAmazonLive/initWebLive/initWalmartLive above:
+// same aggregation & rendering logic, but writing into the x-* prefixed
+// elements on #page-sales-external, and reading the month to display from
+// window.__approvedReportMonth (set by initSalesExternalPage(), below) instead
+// of deriving "last full month" from today's date.
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+
+  // ── Sheet IDs ─────────────────────────────────────────────────────────────
+  const SYNC_SHEET_ID       = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok'; // sync-orders (MOM)
+  const HISTORICAL_SHEET_ID = '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU'; // historical cache (YOY)
+  const REVENUE_SHEET_ID    = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank'; // revenue history
+  const REVENUE_GID         = '1237377804';                                     // Évolis tab
+  const AD_SUMMARY_SHEET_ID = '13cN301QZxkEGy6-8LfdzB8zmsHhUKwZqz6lsXKUJcnI'; // advertising cache
+  const AD_SUMMARY_GID      = '2032256212';                                     // Évolis tab
+  const AD_ORDERS_SHEET_ID  = '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI'; // ad orders cache
+  const AD_ORDERS_GID       = '158578426';                                      // Évolis tab
+  const BRAND               = 'evolis';
+
+  // External replica: month is locked to the latest Approved report
+  // (window.__approvedReportMonth), resolved by initSalesExternalPage()
+  // before any of the three channel modules run. Never derived from
+  // today's date — that's the whole point of the external replica.
+  function getLastFullMonth() {
+    return window.__approvedReportMonth || { year: new Date().getFullYear(), month: 1 };
+  }
+
+  // Sheet CSV URL using gid (more reliable than sheet name)
+  function sheetCsvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  }
+
+  // Validate that response looks like CSV (not an HTML error page)
+  function isCsv(text) {
+    const t = text.trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+
+  // ── Row filtering ─────────────────────────────────────────────────────────
+  function isEvolisRow(row) {
+    const brand = (row.brand || '').toLowerCase().trim();
+    const skus  = (row.sku || row.skus || '').toUpperCase();
+    // Match 'evolis' and encoding-corrupted variants of 'Évolis' (e.g. √âvolis)
+    // that appear in older rows written before the encoding was fixed.
+    const isEvolisBrand = brand === BRAND || brand.endsWith('volis');
+    return isEvolisBrand || skus.split(',').some(s => s.trim().startsWith('EVO'));
+  }
+
+  function isValidOrder(row) {
+    const status = (row.status || '').toLowerCase().trim();
+    if (status === 'cancelled' || status === 'pending') return false;
+    const promos = (row.promotion_ids || '').toLowerCase();
+    if (promos.includes('vine')) return false;
+    return true;
+  }
+
+  function parseAmt(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+  }
+
+  function filterRows(rows) {
+    return rows.filter(r => isEvolisRow(r) && isValidOrder(r));
+  }
+
+  // ── CSV parser ────────────────────────────────────────────────────────────
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = parseCsvLine(lines[i]);
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  function parseCsvLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; cur += c; }
+      else if (c === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  // ── Normalize date to YYYY-MM-DD regardless of how Sheets formatted it ───
+  // Google Sheets auto-formats YYYY-MM-DD values as M/D/YY in CSV exports.
+  function normalizeDate(val) {
+    if (!val) return '';
+    // Already ISO: YYYY-MM-DD or YYYY-MM-DDThh...
+    if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+    // Google Sheets M/D/YY or MM/DD/YY format
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const m = parts[0].padStart(2, '0');
+      const d = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+    return val;
+  }
+
+  // ── Aggregate rows for a given year-month ─────────────────────────────────
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = rows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7); // "YYYY-MM"
+      return d === prefix;
+    });
+    if (filtered.length === 0) return null;
+
+    // Unique order IDs
+    const orderIds = new Set(filtered.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+
+    // Sum units
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+
+    // AOV — sum item_price across ALL line items per order_id, then average those sums.
+    // order_total on each row is the line item price only (one SKU), so we must
+    // accumulate across rows to get the true per-order total before averaging.
+    const orderTotals = {};
+    filtered.forEach(r => {
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    return { totalUnits, totalOrders, avgOrder };
+  }
+
+  // ── Pct change helper ─────────────────────────────────────────────────────
+  function pct(current, previous) {
+    if (!previous || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  // ── KPI rendering ─────────────────────────────────────────────────────────
+  function setKpiValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const valEl = el.querySelector('.kpi-value');
+    if (valEl) valEl.textContent = value;
+  }
+
+  function setBadge(id, selector, pctVal, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector(selector);
+    if (!badge) return;
+    if (pctVal == null) { badge.className = selector.replace('.','') + ' flat'; badge.textContent = ''; return; }
+    const isGood = pctVal > 0;
+    const cls = pctVal === 0 ? 'flat' : isGood ? 'up' : 'dn';
+    badge.className = selector.replace('.','') + ' ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
+  }
+
+  function renderKPIs(curr, prev, prevYear, adUnits = 0, prevAdUnits = 0) {
+    const fmt  = n => (n ?? 0).toLocaleString();
+    const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+    // Total Units
+    setKpiValue('x-kpi-total-units', fmt(curr.totalUnits));
+    setBadge('x-kpi-total-units', '.kpi-mom', prev   ? pct(curr.totalUnits, prev.totalUnits)       : null, 'MOM');
+    setBadge('x-kpi-total-units', '.kpi-yoy', prevYear ? pct(curr.totalUnits, prevYear.totalUnits) : null, 'YOY');
+
+    // Total Orders
+    setKpiValue('x-kpi-total-orders', fmt(curr.totalOrders));
+    setBadge('x-kpi-total-orders', '.kpi-mom', prev   ? pct(curr.totalOrders, prev.totalOrders)       : null, 'MOM');
+    setBadge('x-kpi-total-orders', '.kpi-yoy', prevYear ? pct(curr.totalOrders, prevYear.totalOrders) : null, 'YOY');
+
+    // Average Order
+    setKpiValue('x-kpi-avg-order', '$' + fmt2(curr.avgOrder));
+    setBadge('x-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+    // Units Ads — from advertising cache sheet
+    setKpiValue('x-kpi-units-ads', fmt(adUnits));
+    setBadge('x-kpi-units-ads', '.kpi-mom', (prevAdUnits != null && prev) ? pct(adUnits, prevAdUnits) : null, 'MOM');
+
+    // Units Organic = Total Units - Units Ads
+    const organicUnits = curr.totalUnits - adUnits;
+    setKpiValue('x-kpi-units-organic', fmt(organicUnits));
+    const prevOrganic = prev ? prev.totalUnits - (prevAdUnits || 0) : null;
+    setBadge('x-kpi-units-organic', '.kpi-mom', prevOrganic != null ? pct(organicUnits, prevOrganic) : null, 'MOM');
+  }
+
+  // ── Data source label ─────────────────────────────────────────────────────
+  function setSourceLabel(year, month) {
+    const el = document.getElementById('x-amazon-products-source');
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if (el) el.textContent = `Google Sheets cache · Évolis · ${monthNames[month-1]} ${year}`;
+  }
+
+  // ── Error display ─────────────────────────────────────────────────────────
+  function showError(msg) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#fff0f0;border-left:3px solid #db372d;padding:14px 18px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;margin-bottom:20px;';
+    banner.innerHTML = `<strong>Data load error:</strong> ${msg}<br><span style="color:#888;font-size:11px;">Check that the Google Sheet is publicly accessible.</span>`;
+    const page = document.getElementById('x-amazon') || document.getElementById('x-amazon');
+    if (page) page.prepend(banner);
+    ['x-kpi-total-units','x-kpi-total-orders','x-kpi-avg-order','x-kpi-units-organic'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const momEl = el.querySelector('.kpi-mom');
+      if (momEl) { momEl.className = 'kpi-mom flat'; momEl.textContent = 'Error'; }
+    });
+  }
+
+  // ── Main init ─────────────────────────────────────────────────────────────
+  // PDF export awaits this function to guarantee the chart exists before
+  // capture. Previously this set window._amazonLiveInit = true SYNCHRONOUSLY
+  // before any of the fetch/render work below had run, and a repeat call
+  // (e.g. from exportPartnerPDF, after the page-load call already flipped
+  // the flag) just returned `undefined` — not a promise for the still-
+  // in-flight work. So "await window.initAmazonExternal()" from the export
+  // function resolved instantly regardless of whether data had actually
+  // loaded yet. Caching the real promise (not a boolean) means every caller,
+  // no matter when it calls in, gets back something that only resolves once
+  // the chart is actually built. Confirmed 2026-07-14.
+  window.initAmazonExternal = function () {
+    if (window._amazonExtPromise) return window._amazonExtPromise;
+    window._amazonExtPromise = (async function () {
+    console.log('[Evolis] initAmazonExternal() called');
+
+    const { year, month } = getLastFullMonth();
+    const monthNamesAmz = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Page-level date subtitle + hero date are set centrally by
+    // initSalesExternalPage() before this function runs.
+
+    // Previous month
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // Same month last year
+    const yoyYear  = year - 1;
+    const yoyMonth = month;
+
+    try {
+      // Determine which sheet(s) hold each period:
+      // sync-orders sheet has the most recent MOM data
+      // historical sheet has everything else
+      // gid for 'evolis' tab — historical: 1249281379, sync: update once confirmed
+      const SYNC_GID = '1163928587';
+      const HIST_GID = '1249281379';
+
+      console.log('[Evolis] Starting fetch...');
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
+        fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+      ]);
+
+      console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
+      console.log('[Evolis] histCsv length:', histCsv.length, 'isCsv:', isCsv(histCsv));
+      const syncRows = isCsv(syncCsv) ? filterRows(parseCsv(syncCsv)) : [];
+      const histRows = isCsv(histCsv) ? filterRows(parseCsv(histCsv)) : [];
+
+      // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
+      const allRows = [...syncRows, ...histRows];
+
+      const curr     = aggregateMonth(allRows, year, month);
+      const prev     = aggregateMonth(allRows, prevYear, prevMonth);
+      const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
+
+      if (!curr) {
+        showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
+        return;
+      }
+
+      // Parse ad summary — find current month row for KPI adUnits
+      // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
+      let adUnitsKpi = 0;
+      let prevAdUnitsKpi = 0;
+      if (isCsv(adSummaryCsv)) {
+        const adRows = parseCsv(adSummaryCsv);
+        const adRow  = adRows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+        if (adRow) adUnitsKpi = parseInt(adRow.ad_units, 10) || 0;
+        const prevAdRow = adRows.find(r => parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth);
+        if (prevAdRow) prevAdUnitsKpi = parseInt(prevAdRow.ad_units, 10) || 0;
+      }
+
+      // Parse ad orders — ASIN-level for top products table
+      // Columns: year, month, asin, ad_units, spend, sales, acos, brand, last_updated
+      const adOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
+        parseInt(r.year, 10) === year && parseInt(r.month, 10) === month
+      ) : [];
+
+      // Parse prev month ad orders for MOM comparison in table
+      const prevAdOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv).filter(r =>
+        parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth
+      ) : [];
+
+      renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
+      setSourceLabel(year, month);
+      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows);
+
+      // Revenue chart — fetches from the separate revenue history sheet
+      buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
+
+    } catch (err) {
+      showError(err.message);
+    }
+    })();
+    return window._amazonExtPromise;
+  };
+
+  // ── Revenue chart ─────────────────────────────────────────────────────────
+  // Reads from revenue history sheet. Columns: MONTH | YEAR | REVENUE | ...
+  // Renders up to 4 years of data stopping at the last full calendar month.
+  // Colors: current year green, prior navy, -2 sand, -3 grey.
+  async function buildRevenueChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(REVENUE_SHEET_ID, REVENUE_GID))
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    // Parse all rows into { year, month(1-12), revenue }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols    = parseCsvLine(lines[i]);
+      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,''), 10);
+      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,''), 10);
+      const rev     = parseFloat((cols[revenueIdx] || '').replace(/^"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
+    }
+
+    // Last full month = last full calendar month relative to current year param
+    const now        = new Date();
+    const stopYear   = now.getFullYear();
+    const stopMonth  = now.getMonth(); // 0-indexed = last full month (1-indexed)
+
+    const COLORS = {
+      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  }, // current year
+      1: { border: '#001f60', bg: 'transparent',           fill: false }, // -1
+      2: { border: '#f4dfd0', bg: 'transparent',           fill: false }, // -2
+      3: { border: '#ccd3d5', bg: 'transparent',           fill: false }, // -3
+    };
+
+    const datasets = [];
+    for (let offset = 0; offset <= 3; offset++) {
+      const yr     = currentYear - offset;
+      const color  = COLORS[offset];
+      const data   = months12.map((_, idx) => {
+        const mo = idx + 1; // 1-indexed
+        // Don't plot future months for the current year
+        if (yr === stopYear && mo > stopMonth) return null;
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
+      });
+      // Skip year if it has no data at all
+      if (data.every(v => v === null)) continue;
+      datasets.push({
+        label: String(yr),
+        data,
+        borderColor:     color.border,
+        backgroundColor: color.bg,
+        fill:            color.fill,
+        ...lineDefaults,
+      });
+    }
+
+    if (datasets.length === 0) return;
+
+    const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+
+    if (window._amazonExtChart) window._amazonExtChart.destroy();
+    window._amazonExtChart = new Chart(document.getElementById('x-chart-amazon'), {
+      type: 'line',
+      data: { labels: months12, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          // Moved out of the canvas to the #legend-amazon header row so it
+          // can sit level with the card title instead of hugging the top of
+          // the plot area — position/align could only move it within the
+          // canvas, never up into the title's own row. Per Jaclyn 2026-07-15.
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { color: 'rgba(0,0,0,0.04)' } },
+          y: { grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { callback: fmtDollar } },
+        },
+      },
+    });
+    window.renderExternalLegend(window._amazonExtChart, 'legend-x-amazon');
+  }
+
+  // ── Top Products Table ────────────────────────────────────────────────────
+  // Product name lookup: sheet 1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA, gid 164358627
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
+
+  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = []) {
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
+
+    // Filter to last full month (same rules as KPIs)
+    const monthRows = allRows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      if (d !== prefix) return false;
+      const status = (r.status || '').toLowerCase();
+      if (status === 'cancelled' || status === 'pending') return false;
+      const promos = (r.promotion_ids || '').toLowerCase();
+      if (promos.includes('vine')) return false;
+      return true;
+    });
+
+    const tbody = document.getElementById('x-tp-tbody');
+    if (!monthRows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
+    }
+
+    // Aggregate units per ASIN.
+    // Every order row has `asin` regardless of when it was written (old or new schema),
+    // so keying on ASIN works for all historical data. This fixes the table being empty
+    // for rows written before the SKU column was added to the sheet.
+    const asinUnits = {};
+    for (const row of monthRows) {
+      const asin = (row.asin || '').trim().toUpperCase();
+      if (!asin) continue;
+      const qty = parseInt(row.unit_count, 10) || 0;
+      if (!qty) continue;
+      asinUnits[asin] = (asinUnits[asin] || 0) + qty;
+    }
+
+    // Build prev month ASIN units for MOM comparison
+    const asinUnitsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      const prevMonthRows = allRows.filter(r => {
+        const d = normalizeDate(r.date).substring(0, 7);
+        if (d !== prevPrefix) return false;
+        const status = (r.status || '').toLowerCase();
+        if (status === 'cancelled' || status === 'pending') return false;
+        const promos = (r.promotion_ids || '').toLowerCase();
+        if (promos.includes('vine')) return false;
+        return true;
+      });
+      prevMonthRows.forEach(row => {
+        const asin = (row.asin || '').trim().toUpperCase();
+        if (!asin) return;
+        const qty = parseInt(row.unit_count, 10) || 0;
+        if (!qty) return;
+        asinUnitsPrev[asin] = (asinUnitsPrev[asin] || 0) + qty;
+      });
+    }
+
+    // Build prev month ASIN → ad_units map
+    const prevAsinAdUnitsMap = {};
+    prevAdOrderRows.forEach(r => {
+      const asin = (r.asin || r.sku || '').trim().toUpperCase();
+      if (asin) prevAsinAdUnitsMap[asin] = (prevAsinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+    });
+
+    // Helper: inline stacked MOM badge (renders inside same <td> as the number)
+    function momSpan(curr, prev) {
+      if (!prev || prev === 0) return '';
+      const pctVal = Math.round(((curr - prev) / prev) * 100);
+      if (pctVal > 0) return `<span class="tp-mom-up">▲ ${pctVal}%</span>`;
+      if (pctVal < 0) return `<span class="tp-mom-dn">▼ ${Math.abs(pctVal)}%</span>`;
+      return `<span class="tp-mom-flat">—</span>`;
+    }
+    // Note: sheet column is named 'sku' but contains ASINs
+    const asinAdUnitsMap = {};
+    adOrderRows.forEach(r => {
+      const asin = (r.asin || r.sku || '').trim().toUpperCase();
+      if (asin) asinAdUnitsMap[asin] = (asinAdUnitsMap[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+    });
+
+    // Fetch product name lookup sheet.
+    // Tab gid=164358627: col A = ASIN, col B = SKU (base, no -SF), col C = Product Name.
+    // asinNameMap: ASIN → product name (col A = ASIN, col C = name)
+    let asinNameMap = {};
+    try {
+      const namesCsvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}&_cb=${Date.now()}`;
+      const resp = await fetch(namesCsvUrl);
+      if (resp.ok) {
+        const csv = await resp.text();
+        if (isCsv(csv)) {
+          const lines = csv.trim().split('\n');
+          const headerCols = parseCsvLine(lines[0]);
+          const firstHeader = (headerCols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+          if (firstHeader !== 'ASIN') {
+            console.warn('[TopProducts] Name lookup returned wrong tab — col A header:', firstHeader);
+          } else {
+            for (let i = 1; i < lines.length; i++) {
+              const cols = parseCsvLine(lines[i]);
+              const asin = (cols[0] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+              const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
+              const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+              if (asin && name) asinNameMap[asin] = name;
+            }
+            console.log('[TopProducts] Loaded', Object.keys(asinNameMap).length, 'ASIN→name mappings');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[TopProducts] Name lookup failed:', e.message);
+    }
+
+    // Sort by units desc, remove zeros
+    const sorted = Object.entries(asinUnits)
+      .filter(([, u]) => u > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    tbody.innerHTML = '';
+    sorted.forEach(([asin, units], idx) => {
+      const name         = asinNameMap[asin] || asin;
+      const adUnits      = asinAdUnitsMap[asin] || 0;
+      const orgUnits     = Math.max(0, units - adUnits);
+      const prevUnits    = asinUnitsPrev[asin] || 0;
+      const prevAdUnits  = prevAsinAdUnitsMap[asin] || 0;
+      const prevOrgUnits = Math.max(0, prevUnits - prevAdUnits);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}.</td>
+        <td>${name}</td>
+        <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
+        <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
+      tbody.appendChild(tr);
+    });
+
+    // Update source label
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const srcEl = document.getElementById('x-amazon-products-source');
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth - 1]} ${targetYear}`;
+  }
+
+
+})();
+(function () {
+  'use strict';
+
+  const SHOPIFY_SHEET_ID      = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
+  const SHOPIFY_SHEET_GID     = '597852778'; // orders tab
+  const SHOPIFY_REVENUE_GID   = '7000599';   // revenue tab
+  const SHOPIFY_ADS_GID       = '219707263'; // ads tab
+
+  // Product name lookup: col A = ASIN (unused here), col B = SKU, col C = Name
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
+
+  // External replica: month is locked to the latest Approved report.
+  function getLastFullMonth() {
+    if (window.__approvedReportMonth) return window.__approvedReportMonth;
+    const now = new Date();
+    let year = now.getFullYear(), month = now.getMonth();
+    if (month === 0) { month = 12; year--; }
+    return { year, month };
+  }
+
+  function sheetCsvUrl(id, gid) {
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+  }
+
+  function isCsv(text) {
+    const t = text.trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^\"|"$/g,'').trim());
+    return lines.slice(1).map(line => {
+      const vals = parseCsvLine(line);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (vals[i] || '').replace(/^\"|"$/g,'').trim(); });
+      return obj;
+    });
+  }
+
+  function parseCsvLine(line) {
+    const result = []; let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += ch; }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function normalizeDate(val) {
+    if (!val) return '';
+    if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+    return val;
+  }
+
+  function parseAmt(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[$,]/g,'')) || 0;
+  }
+
+  function isValidRow(r) {
+    const status = (r.financial_status || r.status || '').toLowerCase();
+    return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
+  }
+
+  // Aggregate KPIs for a given year-month from all rows
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = rows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      return d === prefix && isValidRow(r);
+    });
+    if (!filtered.length) return null;
+
+    const orderIds  = new Set(filtered.map(r => r.order_id).filter(Boolean));
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+
+    // AOV: sum item_price per unique order_id, then average
+    const orderTotals = {};
+    filtered.forEach(r => {
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder     = orderIds.size > 0 ? totalRevenue / orderIds.size : 0;
+
+    return { totalUnits, totalOrders: orderIds.size, avgOrder };
+  }
+
+  function pct(current, previous) {
+    if (!previous || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  function setKpiValue(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = el.querySelector('.kpi-value');
+    if (v) v.textContent = val;
+  }
+
+  function setBadgeWeb(id, selector, pctVal, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector(selector);
+    if (!badge) return;
+    if (pctVal == null) { badge.className = selector.replace('.','') + ' flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    badge.className = selector.replace('.','') + ' ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
+  }
+
+  // Aggregate ad conversions for a given year-month from ads sheet rows
+  function aggregateAdMonth(adsRows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = adsRows.filter(r => (r.date || '').substring(0,7) === prefix);
+    const totalConversions = filtered.reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0);
+    const prevPrefix = (() => {
+      let pm = month - 1, py = year;
+      if (pm === 0) { pm = 12; py--; }
+      return `${py}-${String(pm).padStart(2,'0')}`;
+    })();
+    const prevConversions = adsRows
+      .filter(r => (r.date || '').substring(0,7) === prevPrefix)
+      .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0);
+    return { totalConversions: Math.round(totalConversions), prevConversions: Math.round(prevConversions) };
+  }
+
+  window.initWebExternal = function () {
+    if (window._webExtPromise) return window._webExtPromise;
+    window._webExtPromise = (async function () {
+    console.log('[Evolis] initWebExternal() called');
+
+    const { year, month } = getLastFullMonth();
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const hdrEl = document.getElementById('x-web-hdr-date');
+    if (hdrEl) {
+      const lastDay = new Date(year, month, 0).getDate();
+      hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${lastDay}, ${year}`;
+      hdrEl.style.display = 'none'; // duplicated page-sub above; kept in DOM for PDF export only
+    }
+
+    try {
+      // Fetch orders and ads data in parallel
+      const [csv, adsCsv] = await Promise.all([
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+      ]);
+
+      if (!isCsv(csv)) {
+        showWebError('Could not load website data. Check sheet permissions.');
+        return;
+      }
+
+      const allRows = parseCsv(csv);
+      const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
+      const curr    = aggregateMonth(allRows, year, month);
+      const prev    = aggregateMonth(allRows, prevYear, prevMonth);
+      const ads     = aggregateAdMonth(adsRows, year, month);
+
+      const fmt  = n => (n ?? 0).toLocaleString();
+      const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+      if (!curr) {
+        setKpiValue('x-web-kpi-total-units',   '0');
+        setKpiValue('x-web-kpi-total-orders',  '0');
+        setKpiValue('x-web-kpi-avg-order',     '$0.00');
+        setKpiValue('x-web-kpi-units-ads',     '—');
+        setKpiValue('x-web-kpi-units-organic', '0');
+        document.getElementById('x-web-tp-tbody').innerHTML =
+          '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+        buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
+        return;
+      }
+
+      const adUnits      = ads.totalConversions;
+      const prevAdUnits  = ads.prevConversions;
+      const orgUnits     = Math.max(0, curr.totalUnits - adUnits);
+      const prevOrgUnits = Math.max(0, (prev ? prev.totalUnits : 0) - prevAdUnits);
+
+      // KPIs
+      setKpiValue('x-web-kpi-total-units', fmt(curr.totalUnits));
+      setBadgeWeb('x-web-kpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
+
+      setKpiValue('x-web-kpi-total-orders', fmt(curr.totalOrders));
+      setBadgeWeb('x-web-kpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
+
+      setKpiValue('x-web-kpi-avg-order', '$' + fmt2(curr.avgOrder));
+      setBadgeWeb('x-web-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+      setKpiValue('x-web-kpi-units-ads', adUnits > 0 ? fmt(adUnits) : '—');
+      setBadgeWeb('x-web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prev ? pct(adUnits, prevAdUnits) : null, 'MOM');
+
+      setKpiValue('x-web-kpi-units-organic', fmt(orgUnits));
+      setBadgeWeb('x-web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
+
+      buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
+      buildWebTopProducts(allRows, adsRows, year, month, prevYear, prevMonth);
+
+    } catch (err) {
+      console.error('[WebLive]', err.message);
+      showWebError(`Error: ${err.message}`);
+    }
+    })();
+    return window._webExtPromise;
+  };
+
+  // ── Revenue chart — computed from orders sheet ────────────────────────────
+  // ── Website revenue chart — reads from revenue tab (mirrors Amazon/Walmart) ─
+  async function buildWebChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_REVENUE_GID) + `&_cb=${Date.now()}`)
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^\"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
+    }
+    console.log('[WebChart][qa] total parsed rows:', parsed.length, '— last 4 parsed rows:', JSON.stringify(parsed.slice(-4)), '— first 4 parsed rows:', JSON.stringify(parsed.slice(0, 4)));
+    console.log('[WebChart][qa] raw header row:', headers.join(' | '));
+    console.log('[WebChart][qa] raw last 2 CSV lines (unparsed):', JSON.stringify(lines.slice(-2)));
+
+    const now       = new Date();
+    const stopYear  = now.getFullYear();
+    const stopMonth = now.getMonth(); // 0-indexed = last full month (1-indexed)
+
+    const COLORS = {
+      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  },
+      1: { border: '#001f60', bg: 'transparent',           fill: false },
+      2: { border: '#f4dfd0', bg: 'transparent',           fill: false },
+      3: { border: '#ccd3d5', bg: 'transparent',           fill: false },
+    };
+
+    const datasets = [];
+    for (let offset = 0; offset <= 3; offset++) {
+      const yr    = currentYear - offset;
+      const color = COLORS[offset];
+      const data  = months12.map((_, idx) => {
+        const mo = idx + 1;
+        if (yr === stopYear && mo > stopMonth) return null;
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
+      });
+      if (data.every(v => v === null)) continue;
+      datasets.push({
+        label: String(yr), data,
+        borderColor: color.border, backgroundColor: color.bg,
+        fill: color.fill, ...lineDefaults,
+      });
+    }
+
+    if (datasets.length === 0) return;
+
+    const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0));
+
+    if (window._webExtChart) window._webExtChart.destroy();
+    window._webExtChart = new Chart(document.getElementById('x-chart-web'), {
+      type: 'line',
+      data: { labels: months12, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }, // moved to #legend-web header row — see renderExternalLegend, Jaclyn 2026-07-15
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { color:'rgba(0,0,0,0.04)' } },
+          y: { grid: { color:'rgba(0,0,0,0.04)' }, ticks: { callback: fmtDollar } },
+        },
+      },
+    });
+    window.renderExternalLegend(window._webExtChart, 'legend-x-web');
+  }
+
+  // ── Top products table ────────────────────────────────────────────────────
+  async function buildWebTopProducts(allRows, adsRows, targetYear, targetMonth, prevYear, prevMonth) {
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
+    const tbody  = document.getElementById('x-web-tp-tbody');
+
+    const monthRows = allRows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      return d === prefix && isValidRow(r);
+    });
+
+    if (!monthRows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
+    }
+
+    // Aggregate units per SKU
+    const skuUnits = {};
+    for (const row of monthRows) {
+      const sku = (row.sku || '').trim().toUpperCase();
+      if (!sku) continue;
+      const qty = parseInt(row.unit_count, 10) || 0;
+      if (!qty) continue;
+      skuUnits[sku] = (skuUnits[sku] || 0) + qty;
+    }
+
+    // Total ad conversions for this month (not per-SKU — Google Ads doesn't break down by SKU)
+    // We show total ad units on the KPI cards; top products table shows organic as units - ad_share
+    const totalAdConversions = Math.round(
+      (adsRows || [])
+        .filter(r => (r.date || '').substring(0,7) === prefix)
+        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
+    );
+    const totalUnitsThisMonth = Object.values(skuUnits).reduce((s, v) => s + v, 0);
+    const adShare = totalUnitsThisMonth > 0 ? totalAdConversions / totalUnitsThisMonth : 0;
+
+    // Prev month for MOM
+    const skuUnitsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      allRows.filter(r => normalizeDate(r.date).substring(0,7) === prevPrefix && isValidRow(r))
+             .forEach(r => {
+               const sku = (r.sku || '').trim().toUpperCase();
+               if (!sku) return;
+               const qty = parseInt(r.unit_count, 10) || 0;
+               skuUnitsPrev[sku] = (skuUnitsPrev[sku] || 0) + qty;
+             });
+    }
+    const prevAdConversions = Math.round(
+      (adsRows || [])
+        .filter(r => {
+          const pm = prevMonth, py = prevYear;
+          return (r.date || '').substring(0,7) === `${py}-${String(pm).padStart(2,'0')}`;
+        })
+        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
+    );
+
+    // Load product name lookup — col B = SKU, col C = Name
+    const skuNameMap = {};
+    try {
+      const namesCsv = await fetch(sheetCsvUrl(PRODUCT_NAMES_SHEET_ID, PRODUCT_NAMES_GID) + `&_cb=${Date.now()}`)
+        .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
+      if (isCsv(namesCsv)) {
+        const lines = namesCsv.trim().split('\n');
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvLine(lines[i]);
+          const sku  = (cols[1] || '').replace(/^\"|"$/g,'').trim().toUpperCase().replace(/-SF$/i,'');
+          const name = (cols[2] || '').replace(/^\"|"$/g,'').trim();
+          if (sku && name) skuNameMap[sku] = name;
+        }
+        console.log('[WebTopProducts] Loaded', Object.keys(skuNameMap).length, 'SKU→name mappings');
+      }
+    } catch (e) {
+      console.warn('[WebTopProducts] Name lookup failed:', e.message);
+    }
+
+    function momSpan(curr, prev) {
+      if (!prev || prev === 0) return '';
+      const p = Math.round(((curr - prev) / prev) * 100);
+      if (p > 0) return `<span class="tp-mom-up">▲ ${p}%</span>`;
+      if (p < 0) return `<span class="tp-mom-dn">▼ ${Math.abs(p)}%</span>`;
+      return `<span class="tp-mom-flat">0%</span>`;
+    }
+
+    const sorted = Object.entries(skuUnits)
+      .filter(([, u]) => u > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    // Compute prev month ad share for MOM on organic
+    const prevTotalUnitsThisMonth = Object.values(skuUnitsPrev).reduce((s, v) => s + v, 0);
+    const prevAdShare = prevTotalUnitsThisMonth > 0 ? prevAdConversions / prevTotalUnitsThisMonth : 0;
+
+    tbody.innerHTML = '';
+    sorted.forEach(([sku, units], idx) => {
+      const name       = skuNameMap[sku] || sku;
+      const prevUnits  = skuUnitsPrev[sku] || 0;
+      // Distribute ad conversions proportionally by SKU's share of total units
+      const skuAdUnits     = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
+      const skuOrgUnits    = Math.max(0, units - skuAdUnits);
+      const skuPrevAdUnits = prevTotalUnitsThisMonth > 0 ? Math.round(prevAdShare * prevUnits) : 0;
+      const skuPrevOrgUnits = Math.max(0, prevUnits - skuPrevAdUnits);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}.</td>
+        <td>${name}</td>
+        <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
+        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span>${momSpan(skuOrgUnits, skuPrevOrgUnits)}</div></td>`;
+      tbody.appendChild(tr);
+    });
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const srcEl = document.getElementById('x-web-products-source');
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
+  }
+
+  function showWebError(msg) {
+    const tbody = document.getElementById('x-web-tp-tbody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">${msg}</td></tr>`;
+  }
+
+})();
+(function () {
+  'use strict';
+
+  const WALMART_SHEET_ID         = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
+  const WALMART_GID              = '1844526926';
+  const WALMART_REVENUE_SHEET_ID = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE';
+  const WALMART_REVENUE_GID      = '812984298';                                      // Évolis tab
+  const PRODUCT_NAMES_SHEET_ID   = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID        = '164358627';
+
+  // External replica: month is locked to the latest Approved report.
+  function getLastFullMonth() {
+    if (window.__approvedReportMonth) return window.__approvedReportMonth;
+    const now = new Date();
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    if (month === 0) { month = 12; year--; }
+    return { year, month };
+  }
+
+  function sheetCsvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}&_cb=${Date.now()}`;
+  }
+
+  function isCsv(text) {
+    const t = text.trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = parseCsvLine(lines[i]);
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  function parseCsvLine(line) {
+    const result = [];
+    let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; cur += c; }
+      else if (c === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function normalizeDate(val) {
+    if (!val) return '';
+    if (/^\d{4}-\d{2}/.test(val)) return val.substring(0, 10);
+    const parts = val.split('/');
+    if (parts.length === 3) {
+      const m = parts[0].padStart(2, '0');
+      const d = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+    return val;
+  }
+
+  function parseAmt(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[$,]/g, '')) || 0;
+  }
+
+  function isValidWalmartRow(row) {
+    const status = (row.status || '').toLowerCase().trim();
+    if (status === 'cancelled' || status === 'canceled') return false;
+    return true;
+  }
+
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    const filtered = rows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      return d === prefix && isValidWalmartRow(r);
+    });
+    if (filtered.length === 0) return null;
+    const orderIds = new Set(filtered.map(r => r.order_id).filter(Boolean));
+    const totalOrders = orderIds.size;
+    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const orderTotals = {};
+    filtered.forEach(r => {
+      if (!r.order_id) return;
+      orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+    });
+    const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+    const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    return { totalUnits, totalOrders, avgOrder };
+  }
+
+  function pct(current, previous) {
+    if (!previous || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  function setKpiValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const valEl = el.querySelector('.kpi-value');
+    if (valEl) valEl.textContent = value;
+  }
+
+  function setBadge(id, selector, pctVal) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector(selector);
+    if (!badge) return;
+    if (pctVal == null) { badge.className = selector.replace('.','') + ' flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    badge.className = selector.replace('.','') + ' ' + cls;
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% MOM`;
+  }
+
+  window.initWalmartExternal = function () {
+    if (window._walmartExtPromise) return window._walmartExtPromise;
+    window._walmartExtPromise = (async function () {
+    console.log('[Evolis] initWalmartExternal() called');
+
+    const { year, month } = getLastFullMonth();
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // Update header date
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const hdrEl = document.getElementById('x-walmart-hdr-date');
+    if (hdrEl) { hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${new Date(year, month, 0).getDate()}, ${year}`; hdrEl.style.display = 'none'; }
+
+    try {
+      const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
+      if (!isCsv(csv)) {
+        document.getElementById('x-wtp-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Could not load Walmart data. Check sheet permissions.</td></tr>';
+        return;
+      }
+
+      const allRows = parseCsv(csv);
+
+      const curr = aggregateMonth(allRows, year, month);
+      const prev = aggregateMonth(allRows, prevYear, prevMonth);
+
+      if (!curr) {
+        setKpiValue('x-wkpi-total-units',   '0');
+        setBadge('x-wkpi-total-units',  '.kpi-mom', null, 'MOM');
+        setKpiValue('x-wkpi-total-orders',  '0');
+        setBadge('x-wkpi-total-orders', '.kpi-mom', null, 'MOM');
+        setKpiValue('x-wkpi-avg-order',     '$0.00');
+        setBadge('x-wkpi-avg-order',    '.kpi-mom', null, 'MOM');
+        setKpiValue('x-wkpi-units-ads',     '—');
+        setBadge('x-wkpi-units-ads',    '.kpi-mom', null, 'MOM');
+        setKpiValue('x-wkpi-units-organic', '0');
+        setBadge('x-wkpi-units-organic','.kpi-mom', null, 'MOM');
+        document.getElementById('x-wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+        buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
+        return;
+      }
+
+      const fmt  = n => (n ?? 0).toLocaleString();
+      const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+      // Total Units
+      setKpiValue('x-wkpi-total-units', fmt(curr.totalUnits));
+      setBadge('x-wkpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
+
+      // Total Orders
+      setKpiValue('x-wkpi-total-orders', fmt(curr.totalOrders));
+      setBadge('x-wkpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
+
+      // Average Order
+      setKpiValue('x-wkpi-avg-order', '$' + fmt2(curr.avgOrder));
+      setBadge('x-wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+      // Units (Ads) — Walmart has no ads data
+      setKpiValue('x-wkpi-units-ads', '—');
+      setBadge('x-wkpi-units-ads', '.kpi-mom', null, 'MOM');
+
+      // Units (Organic) = all units (no ads to subtract)
+      setKpiValue('x-wkpi-units-organic', fmt(curr.totalUnits));
+      setBadge('x-wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
+
+      buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
+      buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
+
+    } catch (err) {
+      console.error('[WalmartLive]', err.message);
+      document.getElementById('x-wtp-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#c0392b;font-size:12px;">Error: ${err.message}</td></tr>`;
+    }
+    })();
+    return window._walmartExtPromise;
+  };
+
+  // ── Walmart Revenue chart ──────────────────────────────────────────────────
+  // Reads from Walmart revenue history sheet (WALMART_REVENUE_SHEET_ID).
+  // Mirrors buildRevenueChart on the Amazon page exactly.
+  // Renders up to 4 years of data stopping at the last full calendar month.
+  async function buildWalmartChart(currentYear) {
+    const revCsv = await fetch(sheetCsvUrl(WALMART_REVENUE_SHEET_ID, WALMART_REVENUE_GID) + `&_cb=${Date.now()}`)
+      .then(r => r.ok ? r.text() : '')
+      .catch(() => '');
+
+    if (!isCsv(revCsv)) return;
+
+    const lines   = revCsv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^\"|"$/g,'').trim().toUpperCase());
+    const monthIdx   = headers.indexOf('MONTH');
+    const yearIdx    = headers.indexOf('YEAR');
+    const revenueIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return;
+
+    // Parse all rows into { year, month(1-12), revenue }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
+      if (yr && mo >= 1 && mo <= 12) {
+        // Defensive: guards against corrupted YEAR cells at the source
+        // (confirmed 2026-07-14 — the most recent 3 rows in the Website
+        // revenue sheet had YEAR=1905 instead of 2026, silently making
+        // May/June/July look like "no data" instead of flagging the real
+        // problem). A row this implausible is corrupted data, not a
+        // legitimately old/future month — skip it and say so loudly.
+        if (yr < 2015 || yr > 2035) {
+          console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source, not a real historical month). Revenue was:', rev);
+        } else {
+          parsed.push({ year: yr, month: mo, revenue: rev });
+        }
+      }
+    }
+
+    const now       = new Date();
+    const stopYear  = now.getFullYear();
+    const stopMonth = now.getMonth(); // 0-indexed = last full month (1-indexed)
+
+    const COLORS = {
+      0: { border: '#24e9a3', bg: 'rgba(36,233,163,0.08)', fill: true  }, // current year
+      1: { border: '#001f60', bg: 'transparent',           fill: false }, // -1
+      2: { border: '#f4dfd0', bg: 'transparent',           fill: false }, // -2
+      3: { border: '#ccd3d5', bg: 'transparent',           fill: false }, // -3
+    };
+
+    const datasets = [];
+    for (let offset = 0; offset <= 3; offset++) {
+      const yr    = currentYear - offset;
+      const color = COLORS[offset];
+      const data  = months12.map((_, idx) => {
+        const mo = idx + 1;
+        if (yr === stopYear && mo > stopMonth) return null;
+        const row = parsed.find(r => r.year === yr && r.month === mo);
+        return row ? row.revenue : null;
+      });
+      if (data.every(v => v === null)) continue;
+      datasets.push({
+        label:           String(yr),
+        data,
+        borderColor:     color.border,
+        backgroundColor: color.bg,
+        fill:            color.fill,
+        ...lineDefaults,
+      });
+    }
+
+    if (datasets.length === 0) return;
+
+    const fmtDollar = v => v == null ? '' : '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0));
+
+    if (window._walmartExtChart) window._walmartExtChart.destroy();
+    window._walmartExtChart = new Chart(document.getElementById('x-chart-walmart'), {
+      type: 'line',
+      data: { labels: months12, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }, // moved to #legend-walmart header row — see renderExternalLegend, Jaclyn 2026-07-15
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtDollar(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { color: 'rgba(0,0,0,0.04)' } },
+          y: { grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { callback: fmtDollar } },
+        },
+      },
+    });
+    window.renderExternalLegend(window._walmartExtChart, 'legend-x-walmart');
+  }
+
+  async function buildWalmartTopProducts(allRows, targetYear, targetMonth, prevYear, prevMonth) {
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
+    const monthRows = allRows.filter(r => {
+      const d = normalizeDate(r.date).substring(0, 7);
+      return d === prefix && isValidWalmartRow(r);
+    });
+
+    const tbody = document.getElementById('x-wtp-tbody');
+    if (!monthRows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
+    }
+
+    // Aggregate units per SKU (strip -sticker/-stickerless suffixes)
+    const skuUnits = {};
+    for (const row of monthRows) {
+      const rawSku = (row.sku || '').trim().toUpperCase().replace(/-STICKERLESS$/i,'').replace(/-STICKER$/i,'');
+      if (!rawSku) continue;
+      const qty = parseInt(row.unit_count, 10) || 0;
+      if (!qty) continue;
+      skuUnits[rawSku] = (skuUnits[rawSku] || 0) + qty;
+    }
+
+    // Prev month SKU units for MOM
+    const skuUnitsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      allRows.filter(r => {
+        const d = normalizeDate(r.date).substring(0, 7);
+        return d === prevPrefix && isValidWalmartRow(r);
+      }).forEach(row => {
+        const rawSku = (row.sku || '').trim().toUpperCase().replace(/-STICKERLESS$/i,'').replace(/-STICKER$/i,'');
+        if (!rawSku) return;
+        const qty = parseInt(row.unit_count, 10) || 0;
+        if (!qty) return;
+        skuUnitsPrev[rawSku] = (skuUnitsPrev[rawSku] || 0) + qty;
+      });
+    }
+
+    function momSpan(curr, prev) {
+      if (!prev || prev === 0) return '';
+      const pctVal = Math.round(((curr - prev) / prev) * 100);
+      if (pctVal > 0) return `<span class="tp-mom-up">▲ ${pctVal}%</span>`;
+      if (pctVal < 0) return `<span class="tp-mom-dn">▼ ${Math.abs(pctVal)}%</span>`;
+      return `<span class="tp-mom-flat">—</span>`;
+    }
+
+    // Fetch product names
+    let skuNameMap = {};
+    try {
+      const resp = await fetch(`https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}&_cb=${Date.now()}`);
+      if (resp.ok) {
+        const csv = await resp.text();
+        if (isCsv(csv)) {
+          const lines = csv.trim().split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCsvLine(lines[i]);
+            const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i,'');
+            const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+            if (sku && name) skuNameMap[sku] = name;
+          }
+        }
+      }
+    } catch (e) { console.warn('[WalmartTopProducts] Name lookup failed:', e.message); }
+
+    const sorted = Object.entries(skuUnits).filter(([,u]) => u > 0).sort((a,b) => b[1]-a[1]);
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    tbody.innerHTML = '';
+    sorted.forEach(([sku, units], idx) => {
+      const name      = skuNameMap[sku] || sku;
+      const prevUnits = skuUnitsPrev[sku] || 0;
+      const orgUnits  = units; // no ads data for Walmart
+      const prevOrgUnits = prevUnits;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}.</td>
+        <td>${name}</td>
+        <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
+        <td><div class="tp-cell"><span class="tp-dash">—</span></div></td>
+        <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
+      tbody.appendChild(tr);
+    });
+
+    const srcEl = document.getElementById('x-walmart-products-source');
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
+  }
+
+
+})();
+// ══════════════════════════════════════════════════════════════════════════════
+// SALES PAGE (EXTERNAL REPLICA) — orchestrator
+// Resolves the most recent Approved month from SHEET_REPORT_INSIGHTS (evolis
+// tab) and locks the whole external Sales page to it — the live/current
+// month is never used here, only whatever Jaclyn has explicitly approved.
+// Depends on window.reportInsightsFetchRow (shared insight-block module,
+// defined earlier in this file) for the read-only Executive Summary / Key
+// Insight text. If nothing has ever been approved, the page shows an empty
+// state rather than falling back to any live data.
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+  const REPORT_INSIGHTS_SHEET_ID = '1Fz0bEArdx54vTSGMGj-m6TYec1kizKyPubJOZNWBaLg';
+
+  function gvizCsvUrl(tabName) {
+    return `https://docs.google.com/spreadsheets/d/${REPORT_INSIGHTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  // Scans every row on the evolis tab (not a single lookup like fetchRow,
+  // since we don't know the target year/month ahead of time here — that's
+  // the whole thing we're trying to find) and returns the most recent
+  // {year, month} whose status is exactly "Approved".
+  async function getLatestApprovedMonth() {
+    try {
+      const res = await fetch(gvizCsvUrl('evolis'));
+      if (!res.ok) return null;
+      const csv = await res.text();
+      if (!isCsv(csv)) return null;
+      const rows = parseCsv(csv).filter(r => (r.status || '').trim() === 'Approved' && r.year && r.month);
+      if (!rows.length) return null;
+      rows.sort((a, b) => {
+        const av = parseInt(a.year, 10) * 12 + parseInt(a.month, 10);
+        const bv = parseInt(b.year, 10) * 12 + parseInt(b.month, 10);
+        return bv - av;
+      });
+      return { year: parseInt(rows[0].year, 10), month: parseInt(rows[0].month, 10) };
+    } catch (e) {
+      console.warn('[SalesExternal] getLatestApprovedMonth failed:', e.message);
+      return null;
+    }
+  }
+
+  function showEmptyState(msg) {
+    const subEl = document.getElementById('x-sales-page-sub');
+    if (subEl) subEl.textContent = msg;
+    const heroEl = document.getElementById('x-overview-hero-date');
+    if (heroEl) heroEl.textContent = '—';
+  }
+
+  function setDisplay(id, val, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (val) el.innerHTML = String(val).replace(/\n/g, '<br>');
+    else el.textContent = fallback;
+  }
+
+  window.initSalesExternalPage = function () {
+    if (window.__salesExternalPromise) return window.__salesExternalPromise;
+    window.__salesExternalPromise = (async function () {
+      const key = await getLatestApprovedMonth();
+      if (!key) {
+        window.__approvedReportMonth = null;
+        showEmptyState('No approved report available yet.');
+        return;
+      }
+      window.__approvedReportMonth = key;
+
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const lastDay = new Date(key.year, key.month, 0).getDate();
+      const subEl = document.getElementById('x-sales-page-sub');
+      if (subEl) subEl.textContent = `${monthNames[key.month-1]} 1 – ${monthNames[key.month-1]} ${lastDay}, ${key.year} · Approved & Ready`;
+      const heroEl = document.getElementById('x-overview-hero-date');
+      if (heroEl) heroEl.textContent = `${monthNames[key.month-1]} ${key.year}`;
+
+      // Read-only Executive Summary + per-channel Key Insight text —
+      // reuses the same SHEET_REPORT_INSIGHTS row the internal page edits,
+      // just displayed with no edit/save affordances.
+      if (typeof window.reportInsightsFetchRow === 'function') {
+        try {
+          const row = await window.reportInsightsFetchRow('evolis', { year: String(key.year), month: String(key.month) });
+          setDisplay('x-exec-summary-headline', row && row.exec_summary_title, 'No summary added for this report yet.');
+          setDisplay('x-exec-summary-left',     row && row.exec_summary_left,  '');
+          setDisplay('x-exec-summary-right',    row && row.exec_summary_right, '');
+          setDisplay('x-tp-insight-text',       row && row.amazon_key_insight,   'No insight added yet.');
+          setDisplay('x-web-insight-text',      row && row.website_key_insight,  'No insight added yet.');
+          setDisplay('x-wtp-insight-text',      row && row.walmart_key_insight,  'No insight added yet.');
+        } catch (e) {
+          console.warn('[SalesExternal] insights fetch failed:', e.message);
+        }
+      }
+
+      await Promise.all([
+        typeof window.initAmazonExternal  === 'function' ? window.initAmazonExternal()  : null,
+        typeof window.initWebExternal     === 'function' ? window.initWebExternal()     : null,
+        typeof window.initWalmartExternal === 'function' ? window.initWalmartExternal() : null,
+      ]);
+    })();
+    return window.__salesExternalPromise;
+  };
+})();
 
 })();
 
