@@ -24,6 +24,8 @@
  * SHEET_FULFILLMENT_DAILY_SHIPMENTS Daily shipped-order counts (chart) + _kpis tab (shipped 30d, avg cost 7d, avg processing time 7d) — sync-fulfillment-daily-shipments.js, sync-fulfillment-kpis.js
  * SHEET_FULFILLMENT_STATES          Orders-by-state snapshot for the Fulfillment page's US map + table — sync-fulfillment-states.js
  * SHEET_CUSTOMER_SERVICE            Reviews Requested (H10 Follow Up, automated) + Compliance Cases (manual), one tab per brand — upload-h10-reviews.js writes reviews_requested/year/month only
+ * SHEET_PRODUCT_INVENTORY            Dated daily product+inventory snapshots, per-brand tabs (date, sku, asin, quantities, plus full listing copy) — used by run-listing-audit.js and sync-newderm-inventory-reconciliation.js. Confirmed 2026-07-22 this is the correct existing sheet, not a new one.
+ * SHEET_NEWDERM_INVENTORY            Regular (non-consignment) inventory reconciliation report — marketplace vs Cin7 Core by location, one tab per brand, pre-built 2-row merged headers (data starts row 3) — sync-newderm-inventory-reconciliation.js
  */
 
 module.exports = {
@@ -47,4 +49,6 @@ module.exports = {
   fulfillmentDailyShipments: process.env.SHEET_FULFILLMENT_DAILY_SHIPMENTS,
   fulfillmentStates:         process.env.SHEET_FULFILLMENT_STATES,
   customerService:           process.env.SHEET_CUSTOMER_SERVICE,
+  productInventory:          process.env.SHEET_PRODUCT_INVENTORY,
+  newdermInventory:          process.env.SHEET_NEWDERM_INVENTORY,
 };
