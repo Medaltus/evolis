@@ -917,6 +917,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <button class="nav-btn" onclick="showPage('sales-external',this)">
       <svg viewBox="0 0 16 16"><polyline points="1,12 5,7 8,9 12,4 15,6"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Sales
     </button>
+    <button class="nav-btn" onclick="showPage('marketing-external',this)">
+      <svg viewBox="0 0 16 16"><path d="M2 10V6l5-4h2v12H7l-5-4z"/><path d="M9 5.5c1.5.5 3 1.5 3 2.5s-1.5 2-3 2.5"/><path d="M9 3c2.5.8 5 2.5 5 5s-2.5 4.2-5 5"/></svg>Marketing
+    </button>
 
     <div class="nav-section">Operations</div>
     <button class="nav-btn soon" disabled>
@@ -1561,9 +1564,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <tbody id="x-tp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
         </table>
       </div>
-      <div class="insight-bar">
+      <div class="insight-bar" id="x-tp-insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="x-tp-insight-text">Loading…</span>
+        <span class="insight-text" id="x-tp-insight-text"></span>
       </div>
     </div>
 
@@ -1596,9 +1599,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <tbody id="x-web-tp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
         </table>
       </div>
-      <div class="insight-bar">
+      <div class="insight-bar" id="x-web-insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="x-web-insight-text">Loading…</span>
+        <span class="insight-text" id="x-web-insight-text"></span>
       </div>
     </div>
 
@@ -1631,9 +1634,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <tbody id="x-wtp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
         </table>
       </div>
-      <div class="insight-bar">
+      <div class="insight-bar" id="x-wtp-insight-bar">
         <strong>Key Insight:</strong>
-        <span class="insight-text" id="x-wtp-insight-text">Loading…</span>
+        <span class="insight-text" id="x-wtp-insight-text"></span>
       </div>
     </div>
   </div>
@@ -1833,6 +1836,203 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-cancel" id="opp-cancel-btn">Cancel</button>
           <button class="btn-save-stage" id="opp-save-btn">Save</button>
         </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ MARKETING (EXTERNAL REPLICA) ══ -->
+  <!-- Fulfillment & CS and Subscribe & Save show live/current data (same as
+       internal — these are rolling operational metrics, not month snapshots,
+       per Jaclyn 2026-07-22). Brand Stewardship and Future Opportunities lock
+       to the most recently Approved month, same mechanism as the Sales
+       replica. Wired up by initMarketingExternalPage(). -->
+  <div class="page" id="page-marketing-external">
+    <div class="page-hd">
+      <div><div class="page-title">Marketing</div><div class="page-sub">Brand stewardship · Growth opportunities</div></div>
+    </div>
+    <div class="channel-tabs">
+      <button class="ch-tab" onclick="showChannel('marketing-external','mx-fulfillment-cs',this)">Fulfillment &amp; Customer Service</button>
+      <button class="ch-tab active" onclick="showChannel('marketing-external','mx-stewardship',this)">Brand Stewardship</button>
+      <button class="ch-tab" onclick="showChannel('marketing-external','mx-opportunities',this)">Opportunities</button>
+    </div>
+
+    <div class="channel-page" id="mx-fulfillment-cs">
+
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Shipped Orders · Last 30 Days</div>
+          <div class="kpi-value" id="mx-mfc-kpi-shipped30">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Our Fulfillment Promise · Last 7 Days</div>
+          <div class="kpi-value" style="color:#1db88a;">100%</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Same Day Fulfilled · weekday orders before 1p</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Processing Time · Last 7 Days</div>
+          <div class="kpi-value" id="mx-mfc-kpi-proctime">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Business days · weekends excluded</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Shipping Cost · Last 7 Days</div>
+          <div class="kpi-value" id="mx-mfc-kpi-shipcost">—</div>
+        </div>
+        <div class="kpi-card" style="opacity:.6;">
+          <div class="kpi-label">Inventory Prepped</div>
+          <div class="kpi-value" style="color:var(--muted);">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Coming soon</div>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">Orders Shipped by Date · Last 30 Days</div>
+        <div style="position:relative;height:170px;"><canvas id="mx-mfc-shipped-chart"></canvas></div>
+        <div class="ppc-note" id="mx-mfc-chart-footer">Loading…</div>
+      </div>
+
+      <div class="section-label" style="margin-top:4px;">Customer Service</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Reviews Requested</div>
+          <div class="kpi-value" id="mx-mfc-kpi-reviews">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Helium 10 Follow Up</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Compliance Cases Resolved</div>
+          <div class="kpi-value" id="mx-mfc-kpi-compliance">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-compliance-sub">Open Cases: —</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Returns Processed · Last 30 Days</div>
+          <div class="kpi-value" id="mx-mfc-kpi-returns">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-returns-sub">Return rate: —</div>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div class="ppc-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>
+          <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">
+            <span>Fewer</span>
+            <div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>
+            <span>More</span>
+          </div>
+        </div>
+        <div style="position:relative;padding:8px 0;">
+          <div class="ff-map-tooltip" id="mx-mfc-map-tip"></div>
+          <svg id="mx-mfc-us-svg" viewBox="0 0 959 593" style="width:100%;height:auto;display:block;"></svg>
+        </div>
+        <div class="ppc-note" id="mx-mfc-map-footer">Loading…</div>
+        <div style="border-top:1px solid var(--border);margin-top:12px;overflow-y:auto;max-height:400px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+                <th>State</th><th>Orders</th>
+              </tr>
+            </thead>
+            <tbody id="mx-mfc-state-table-body"><tr><td colspan="10" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /mx-fulfillment-cs -->
+
+    <div class="channel-page active" id="mx-stewardship">
+
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;" id="mx-stewardship-date-note">Loading…</div>
+
+      <div class="section-label">Key Performance Metrics</div>
+      <div class="kpi-row">
+        <div class="kpi-card" id="mx-kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-amazon-fees"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">$613.86</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+      </div>
+
+      <div class="two-col" style="margin-bottom:20px;align-items:stretch;">
+        <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Investments</div>
+            <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--border);border-radius:2px;display:inline-block;"></span>Promos</span>
+            </div>
+          </div>
+          <div class="chart-wrap-sm" style="height:254px;flex-shrink:0;position:relative;"><canvas id="mx-chart-invest"></canvas></div>
+          <div style="margin-top:12px;">
+            <div id="mx-ltd-total-investments" style="font-size:20px;font-weight:700;color:var(--navy);">—</div>
+            <div style="font-size:10px;color:var(--muted);">Launch to date · Total Investments</div>
+          </div>
+        </div>
+        <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Ad Impressions</div>
+            <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
+              <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
+            </div>
+          </div>
+          <div class="chart-wrap-sm" style="height:320px;flex-shrink:0;position:relative;"><canvas id="mx-chart-impressions"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-label">Marketing Strategy</div>
+      <div class="three-col">
+        <div class="check-card"><div class="check-icon">✓</div><div><div class="check-title">Listing Optimized</div><div class="check-status">Complete</div></div></div>
+        <div class="check-card"><div class="check-icon">✓</div><div><div class="check-title">Keywords Optimized</div><div class="check-status">Complete</div></div></div>
+        <div class="check-card"><div class="check-icon">✓</div><div><div class="check-title">Images Optimized</div><div class="check-status">Complete</div></div></div>
+      </div>
+
+    </div>
+    <div class="channel-page" id="mx-opportunities">
+
+      <div class="section-label">Subscribe &amp; Save</div>
+      <div class="kpi-row" style="margin-bottom:20px;">
+        <div class="kpi-card" id="mx-kpi-active-subs"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card" id="mx-kpi-retention"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">—</div><div class="kpi-mom flat">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Active Subscriptions by Month</div>
+          <div id="legend-mx-sns" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="position:relative;height:320px;"><canvas id="mx-chart-sns"></canvas></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Future Opportunities</div>
+        </div>
+        <div class="opp-grid" id="mx-opp-grid">
+          <div class="opp-card" id="mx-opp-card-1" style="display:none;">
+            <div class="opp-title" id="mx-opp-title-1"></div>
+            <div class="opp-subtitle" id="mx-opp-subtitle-1"></div>
+            <div class="opp-body" id="mx-opp-body-1"></div>
+          </div>
+          <div class="opp-card" id="mx-opp-card-2" style="display:none;">
+            <div class="opp-title" id="mx-opp-title-2"></div>
+            <div class="opp-subtitle" id="mx-opp-subtitle-2"></div>
+            <div class="opp-body" id="mx-opp-body-2"></div>
+          </div>
+          <div class="opp-card" id="mx-opp-card-3" style="display:none;">
+            <div class="opp-title" id="mx-opp-title-3"></div>
+            <div class="opp-subtitle" id="mx-opp-subtitle-3"></div>
+            <div class="opp-body" id="mx-opp-body-3"></div>
+          </div>
+          <div class="opp-card" id="mx-opp-card-4" style="display:none;">
+            <div class="opp-title" id="mx-opp-title-4"></div>
+            <div class="opp-subtitle" id="mx-opp-subtitle-4"></div>
+            <div class="opp-body" id="mx-opp-body-4"></div>
+          </div>
+        </div>
+        <div id="mx-opp-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No opportunities added yet.</div>
       </div>
 
     </div>
@@ -3822,7 +4022,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 <script>
 const pageTitles = {
   home:'Home — Évolis',
-  overview:'Overview — Évolis',sales:'Sales — Évolis','sales-external':'Sales — Évolis',marketing:'Marketing — Évolis',
+  overview:'Overview — Évolis',sales:'Sales — Évolis','sales-external':'Sales — Évolis',marketing:'Marketing — Évolis','marketing-external':'Marketing — Évolis',
   events:'Events — Évolis',inventory:'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
   insights:'Insights — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
 };
@@ -3862,6 +4062,7 @@ function showPage(id, btn) {
     // sub-tabs is active; initSalesExternalPage() itself resolves the
     // Approved month once and kicks off all three channel loads together.
     if (cid && cid.indexOf('x-') === 0) window.initSalesExternalPage();
+    if (cid && cid.indexOf('mx-') === 0) window.initMarketingExternalPage();
     if (cid==='m-stewardship')   window.initStewardshipLive();
     if (cid==='m-fulfillment-cs') window.initMarketingFulfillmentCS();
     if (cid==='m-opportunities' && !window._snsChart) initSns();
@@ -3882,6 +4083,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-website')       initWebLive();
     if (channelId === 's-walmart')       initWalmartLive();
     if (channelId.indexOf('x-') === 0)   window.initSalesExternalPage();
+    if (channelId.indexOf('mx-') === 0)  window.initMarketingExternalPage();
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
@@ -7522,6 +7724,16 @@ async function initSns() {
     }
   }
 
+  // Exposed + memoized so any other external page (Marketing, etc.) can
+  // resolve the exact same Approved month without a second CSV fetch —
+  // whichever page's orchestrator runs first resolves it, the other just
+  // awaits the same cached promise.
+  window.resolveApprovedMonth = function () {
+    if (window.__approvedMonthPromise) return window.__approvedMonthPromise;
+    window.__approvedMonthPromise = getLatestApprovedMonth();
+    return window.__approvedMonthPromise;
+  };
+
   function showEmptyState(msg) {
     const subEl = document.getElementById('x-sales-page-sub');
     if (subEl) subEl.textContent = msg;
@@ -7529,17 +7741,37 @@ async function initSns() {
     if (heroEl) heroEl.textContent = '—';
   }
 
-  function setDisplay(id, val, fallback) {
+  // Blank report content simply doesn't appear on the external page — no
+  // "No insight added yet." placeholder text, since that placeholder is a
+  // useful edit-mode cue on the internal page but has nothing to invite an
+  // external viewer to do. Hides the element outright when the cell is
+  // empty, shows it (clearing any earlier inline display override) when
+  // it has content.
+  function setDisplay(id, val) {
     const el = document.getElementById(id);
     if (!el) return;
-    if (val) el.innerHTML = String(val).replace(/\n/g, '<br>');
-    else el.textContent = fallback;
+    if (val) { el.style.display = ''; el.innerHTML = String(val).replace(/\n/g, '<br>'); }
+    else { el.style.display = 'none'; }
+  }
+
+  // Same idea, but for the three Key Insight bars the text sits inside a
+  // labeled wrapper ("Key Insight: ...") — hiding just the text would leave
+  // an empty, label-only bar, so this hides the whole wrapper instead.
+  function setInsightBar(barId, textId, val) {
+    const bar = document.getElementById(barId);
+    const span = document.getElementById(textId);
+    if (val) {
+      if (span) span.innerHTML = String(val).replace(/\n/g, '<br>');
+      if (bar) bar.style.display = '';
+    } else if (bar) {
+      bar.style.display = 'none';
+    }
   }
 
   window.initSalesExternalPage = function () {
     if (window.__salesExternalPromise) return window.__salesExternalPromise;
     window.__salesExternalPromise = (async function () {
-      const key = await getLatestApprovedMonth();
+      const key = await window.resolveApprovedMonth();
       if (!key) {
         window.__approvedReportMonth = null;
         showEmptyState('No approved report available yet.');
@@ -7550,22 +7782,23 @@ async function initSns() {
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const lastDay = new Date(key.year, key.month, 0).getDate();
       const subEl = document.getElementById('x-sales-page-sub');
-      if (subEl) subEl.textContent = `${monthNames[key.month-1]} 1 – ${monthNames[key.month-1]} ${lastDay}, ${key.year} · Approved & Ready`;
+      if (subEl) subEl.textContent = `${monthNames[key.month-1]} 1 – ${monthNames[key.month-1]} ${lastDay}, ${key.year}`;
       const heroEl = document.getElementById('x-overview-hero-date');
       if (heroEl) heroEl.textContent = `${monthNames[key.month-1]} ${key.year}`;
 
       // Read-only Executive Summary + per-channel Key Insight text —
       // reuses the same SHEET_REPORT_INSIGHTS row the internal page edits,
-      // just displayed with no edit/save affordances.
+      // just displayed with no edit/save affordances, and hidden outright
+      // (rather than showing a placeholder) wherever the cell is blank.
       if (typeof window.reportInsightsFetchRow === 'function') {
         try {
           const row = await window.reportInsightsFetchRow('evolis', { year: String(key.year), month: String(key.month) });
-          setDisplay('x-exec-summary-headline', row && row.exec_summary_title, 'No summary added for this report yet.');
-          setDisplay('x-exec-summary-left',     row && row.exec_summary_left,  '');
-          setDisplay('x-exec-summary-right',    row && row.exec_summary_right, '');
-          setDisplay('x-tp-insight-text',       row && row.amazon_key_insight,   'No insight added yet.');
-          setDisplay('x-web-insight-text',      row && row.website_key_insight,  'No insight added yet.');
-          setDisplay('x-wtp-insight-text',      row && row.walmart_key_insight,  'No insight added yet.');
+          setDisplay('x-exec-summary-headline', row && row.exec_summary_title);
+          setDisplay('x-exec-summary-left',     row && row.exec_summary_left);
+          setDisplay('x-exec-summary-right',    row && row.exec_summary_right);
+          setInsightBar('x-tp-insight-bar',  'x-tp-insight-text',  row && row.amazon_key_insight);
+          setInsightBar('x-web-insight-bar', 'x-web-insight-text', row && row.website_key_insight);
+          setInsightBar('x-wtp-insight-bar', 'x-wtp-insight-text', row && row.walmart_key_insight);
         } catch (e) {
           console.warn('[SalesExternal] insights fetch failed:', e.message);
         }
@@ -7580,6 +7813,915 @@ async function initSns() {
     return window.__salesExternalPromise;
   };
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETING PAGE (EXTERNAL REPLICA) — modules
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+
+  // ── Helpers this section depends on (copied verbatim from the scope the
+  // internal Stewardship module borrows them from — no behavior change) ──
+  function sheetCsvUrl(id, gid) {
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+  }
+  function isCsv(text) {
+    const t = text.trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+  function parseCsvLine(line) {
+    const result = []; let cur = '', inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { result.push(cur); cur = ''; }
+      else { cur += ch; }
+    }
+    result.push(cur);
+    return result;
+  }
+  function parseCsv(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    return lines.slice(1).map(line => {
+      const vals = parseCsvLine(line);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (vals[i] || '').replace(/^"|"$/g,'').trim(); });
+      return obj;
+    });
+  }
+  function parseAmt(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[$,]/g,'')) || 0;
+  }
+  function pct(current, previous) {
+    if (!previous || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  // Same chart-building logic as the internal renderStewardshipCharts(),
+  // just targeting the mx- prefixed canvases and its own chart-instance
+  // globals so it never touches the internal page's charts.
+  function renderStewardshipChartsExternal(investData, impressData) {
+    const fmtUsd = n => '$' + (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const investCanvas = document.getElementById('mx-chart-invest');
+    if (investCanvas) {
+      window._investChartExt = new Chart(investCanvas, {
+        type:'bar',
+        data:{
+          labels: investData.labels,
+          datasets:[
+            { label:'Ads', data: investData.ads, backgroundColor:'#001f60', stack:'a' },
+            { label:'Vine', data: investData.vine, backgroundColor:'#f4dfd0', stack:'a' },
+            { label:'Promos', data: investData.promos, backgroundColor:'#ccd3d5', stack:'a' },
+          ]
+        },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{
+            legend:{ display:false },
+            tooltip:{
+              callbacks:{
+                label: ctx => `${ctx.dataset.label}: ${fmtUsd(ctx.parsed.y)}`,
+                footer: items => `Total: ${fmtUsd(items.reduce((s, i) => s + (i.parsed.y || 0), 0))}`,
+              },
+              footerFont: { weight: 'bold' },
+            },
+          },
+          scales:{ x:{ stacked:true, grid:{display:false} }, y:{ stacked:true, grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v>=1000?(v/1000)+'K':v } } }
+        }
+      });
+    }
+    const impressCanvas = document.getElementById('mx-chart-impressions');
+    if (impressCanvas) {
+      window._impressChartExt = new Chart(impressCanvas, {
+        type:'line',
+        data:{
+          labels: impressData.labels,
+          datasets:[
+            { label: impressData.currYearLabel, data: impressData.curr, borderColor:'#24e9a3', backgroundColor:'rgba(36,233,163,0.1)', borderWidth:2.5, pointRadius:2, tension:0.3, fill:true, spanGaps:true },
+            { label: impressData.prevYearLabel, data: impressData.prev, borderColor:'#f4dfd0', backgroundColor:'transparent', borderWidth:2, pointRadius:2, tension:0.3, spanGaps:true },
+          ]
+        },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ grid:{ color:'rgba(0,0,0,0.04)' } }, y:{ grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ callback:v=>v===0?'0':(v/1000).toFixed(v%1000===0?0:1)+'K' } } } }
+      });
+    }
+  }
+
+  // GOOGLE SHEETS DATA — Brand Stewardship page (Marketing > Brand Stewardship)
+  // ════════════════════════════════════════════════════════════════════════
+  // Reuses this IIFE's existing SYNC/HISTORICAL order sheets (for
+  // promotion_discount + Amazon Sale Promotions + total units), and AD_SUMMARY
+  // sheet (for ads spend/impressions/clicks/ad_units).
+  //
+  // VINE: reads column F ("Date Enrolled in Vine") from the "Product Short Name"
+  // tab of the master SKU/ASIN sheet (same tab already used by the products sync).
+  // Columns: A=ASIN, B=SKU, C=Product Short Name, D=Brand, E=Price, F=Date Enrolled in Vine.
+  // Each enrollment = flat $200, recognized in the month the date falls in.
+  // Rows with a blank column F are simply not yet enrolled — skipped.
+  //
+  // PROMOS: sums BOTH promotion_discount (column G of orders sheet, covers
+  // coupons/S&S discounts) AND "Amazon Sale Promotions" (column Q of orders
+  // sheet, covers Prime Day/event discounts that don't tag a promotion_id).
+  //
+  // FALLBACK DATA: any month not yet covered by a live sheet falls back to the
+  // values below. Update or delete entries here as live coverage catches up.
+  // ────────────────────────────────────────────────────────────────────────
+
+  const VINE_SHEET_ID    = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const VINE_GID         = '164358627'; // "Product Short Name" tab — col F = Date Enrolled in Vine
+  const VINE_COST_PER_ENROLLMENT = 200;
+
+  // Investments chart fallback — keyed 'YYYY-MM'. Ported from the original
+  // hardcoded 13-month series (assumed to end May 2026 based on the prior label order).
+  // Vine intentionally has NO fallback values here — see the comment at
+  // vineData.push() below for why. These vine numbers used to exist but
+  // were stale mock data (Oct/Nov 2025 = $200) that were never real
+  // enrollments; removed 2026-07-10 to prevent exactly that confusion.
+  const STEWARDSHIP_INVEST_FALLBACK = {
+    '2025-05': { ads: 2600, promos: 200 },
+    '2025-06': { ads: 2100, promos: 150 },
+    '2025-07': { ads: 2500, promos: 100 },
+    '2025-08': { ads: 1400, promos: 0   },
+    '2025-09': { ads: 2000, promos: 100 },
+    '2025-10': { ads: 2700, promos: 100 },
+    '2025-11': { ads: 1100, promos: 0   },
+    '2025-12': { ads: 1000, promos: 0   },
+    '2026-01': { ads: 800,  promos: 100 },
+    '2026-02': { ads: 700,  promos: 100 },
+    '2026-03': { ads: 500,  promos: 0   },
+    '2026-04': { ads: 400,  promos: 100 },
+    '2026-05': { ads: 500,  promos: 50  },
+  };
+
+  // Ad Impressions chart fallback — keyed 'YYYY-MM'. The 2025 comparison line has
+  // no live sheet coverage at all yet, so it will always come from here.
+  const STEWARDSHIP_IMPRESSIONS_FALLBACK = {
+    '2025-01': 130000, '2025-03': 145000, '2025-05': 520000,
+    '2025-07': 210000, '2025-09': 170000, '2025-11': 175000,
+    '2026-01': 140000, '2026-03': 160000, '2026-05': 85000,
+  };
+
+  function monthKey(y, m) { return `${y}-${String(m).padStart(2, '0')}`; }
+
+  function trailingMonths(year, month, count) {
+    const out = [];
+    let y = year, m = month;
+    for (let i = 0; i < count; i++) {
+      out.unshift({ year: y, month: m });
+      m--; if (m === 0) { m = 12; y--; }
+    }
+    return out;
+  }
+
+  // NOTE (2026-07-10): the functions below (findAdRow, aggregateStewardshipMonth,
+  // vineMonthlyCost, getMonthRevenue, and the two STEWARDSHIP_*_FALLBACK objects)
+  // are DEAD CODE as of the sync-stewardship-summary.js rewrite — nothing calls
+  // them anymore. initStewardshipExternal() now reads one pre-computed sheet instead.
+  // Left in place rather than deleted to keep that change low-risk; safe to
+  // remove in a future cleanup pass once the new approach is confirmed solid.
+  function findAdRow(rows, year, month) {
+    return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+  }
+
+  // Strips accents/diacritics — needed for brand-name matching on the
+  // Product Short Name tab where brand is stored as "évolis" (accented).
+  function stripAccents(str) {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  // Sums promotion_discount + Amazon Sale Promotions + total units for a
+  // brand-filtered order-row set in a given month.
+  // promotion_discount (col G): covers coupons, S&S, and other tagged promos.
+  // Amazon Sale Promotions (col Q): covers Prime Day / Amazon event discounts
+  //   that don't tag a promotion_id on the order — confirmed column name 2026-07-10.
+  function aggregateStewardshipMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const filtered = rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix);
+    const totalUnits    = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const promoDiscount = filtered.reduce((s, r) =>
+      s + parseAmt(r.promotion_discount) + parseAmt(r['Amazon Sale Promotions']), 0);
+    return { totalUnits, promoDiscount, hasData: filtered.length > 0 };
+  }
+
+  // Reads "Date Enrolled in Vine" (column F) from the Product Short Name tab.
+  // Columns: A=ASIN, B=SKU, C=Product Short Name, D=Brand, E=Price, F=Date Enrolled in Vine.
+  // Each row with a non-blank col F that matches this brand = $200 in that month.
+  // Rows with blank col F are simply not yet enrolled — skipped with no noise.
+  function vineMonthlyCost(vineRows) {
+    const map = {};
+    vineRows.forEach(r => {
+      const rowBrand = stripAccents((r['Brand'] || r['brand'] || r[3] || '').toLowerCase().trim());
+      const brandNorm = stripAccents(BRAND.toLowerCase());
+      if (!rowBrand || rowBrand !== brandNorm) return;
+
+      const raw = (r['Date Enrolled in Vine'] || r[5] || '').trim();
+      if (!raw) return;
+
+      // Debug: log the first few raw values so we can see what Google Sheets exports
+      if (Object.keys(map).length < 3) {
+        console.log('[Vine] raw date value:', JSON.stringify(raw), 'for brand:', rowBrand);
+      }
+
+      let yy, mm;
+      // Google Sheets may export dates as serial numbers (e.g. 45159 = Oct 5 2025)
+      if (/^\d{4,5}$/.test(raw)) {
+        // Excel/Sheets serial date: days since 1899-12-30
+        const d = new Date(Date.UTC(1899, 11, 30) + parseInt(raw, 10) * 86400000);
+        yy = String(d.getUTCFullYear());
+        mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        yy = raw.slice(0, 4);
+        mm = raw.slice(5, 7);
+      } else if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(raw)) {
+        const parts = raw.split('/');
+        mm = parts[0].padStart(2, '0');
+        yy = parts[2].trim().length === 2 ? '20' + parts[2].trim() : parts[2].trim();
+      } else {
+        console.warn('[Vine] unrecognised date format:', JSON.stringify(raw));
+        return;
+      }
+
+      const key = `${yy}-${mm}`;
+      map[key] = (map[key] || 0) + VINE_COST_PER_ENROLLMENT;
+    });
+    console.log('[Vine] vineMap:', map);
+    return map;
+  }
+
+  // Looks up a single month's revenue from the same Revenue History sheet
+  // buildRevenueChart() uses, for the % Revenue Invested KPI's denominator.
+  function getMonthRevenue(csv, year, month) {
+    if (!isCsv(csv)) return null;
+    const lines = csv.trim().split('\n');
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toUpperCase());
+    const monthIdx = headers.indexOf('MONTH'), yearIdx = headers.indexOf('YEAR'), revIdx = headers.indexOf('REVENUE');
+    if (monthIdx < 0 || yearIdx < 0 || revIdx < 0) return null;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
+      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+      if (yy === year && mm === month) {
+        return parseFloat((cols[revIdx] || '').replace(/^"|"$/g, '').replace(/[$,]/g, '')) || 0;
+      }
+    }
+    return null;
+  }
+
+  function setKpiVal(id, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = el.querySelector('.kpi-value');
+    if (v) v.textContent = text;
+  }
+
+  function setKpiMom(id, pctVal, label = 'MOM') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const badge = el.querySelector('.kpi-mom');
+    if (!badge) return;
+    if (pctVal == null) { badge.className = 'kpi-mom flat'; badge.textContent = ''; return; }
+    const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
+    const arrow = pctVal > 0 ? '▲ ' : pctVal < 0 ? '▼ ' : '';
+    badge.className = 'kpi-mom ' + cls;
+    badge.textContent = `${arrow}${Math.abs(pctVal)}% ${label}`;
+  }
+
+  window.initStewardshipExternal = function () {
+    if (window._stewardshipExtPromise) return window._stewardshipExtPromise;
+    window._stewardshipExtPromise = (async function () {
+    console.log('[Evolis] initStewardshipExternal() called');
+
+    const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const { year, month } = window.__approvedReportMonth || {};
+    if (!year || !month) { console.warn('[StewardshipExternal] no approved month resolved — skipping'); return; }
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // Pre-computed by sync-stewardship-summary.js (nightly cron) — one row
+    // per month, full history. This replaces fetching+scanning five heavy
+    // sheets (orders sync+historical, AD_SUMMARY, revenue, master SKU list)
+    // on every single page load — that work now happens once, server-side,
+    // overnight. This function just looks values up in the small result.
+    const SUMMARY_SHEET_ID = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0';
+    const SUMMARY_GID      = '1762221100'; // evolis tab
+
+    try {
+      const summaryCsv = await fetch(sheetCsvUrl(SUMMARY_SHEET_ID, SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+      const summaryRows = isCsv(summaryCsv) ? parseCsv(summaryCsv) : [];
+
+      if (summaryRows.length === 0) {
+        console.warn('[Evolis] stewardship summary sheet returned no rows — check sync-stewardship-summary cron has run');
+        return;
+      }
+
+      const findRow = (y, m) => summaryRows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
+
+      // ── Investments chart (13 trailing months) ──────────────────────────
+      const invMonths = trailingMonths(year, month, 13);
+      const investLabels = [], adsData = [], vineData = [], promosData = [];
+      invMonths.forEach(({ year: y, month: m }) => {
+        const label = `${monthAbbr[m - 1]} '${String(y).slice(2)}`;
+        investLabels.push(label);
+        const row = findRow(y, m);
+        adsData.push(row ? parseAmt(row.ads_spend) : 0);
+        vineData.push(row ? parseAmt(row.vine_total) : 0);
+        promosData.push(row ? parseAmt(row.promos_total) : 0);
+      });
+
+      // ── Ad Impressions chart (monthly, Jan–Dec, this year vs last year) ─
+      const impMonthNums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const impLabels = impMonthNums.map(m => monthAbbr[m - 1]);
+      const impCurr = [], impPrev = [];
+      impMonthNums.forEach(m => {
+        if (m > month) { impCurr.push(null); }
+        else {
+          const row = findRow(year, m);
+          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : null);
+        }
+        const prevRow = findRow(year - 1, m);
+        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : null);
+      });
+
+      renderStewardshipChartsExternal(
+        { labels: investLabels, ads: adsData, vine: vineData, promos: promosData },
+        { labels: impLabels, curr: impCurr, prev: impPrev, currYearLabel: String(year), prevYearLabel: String(year - 1) }
+      );
+
+      // ── KPIs ─────────────────────────────────────────────────────────────
+      const rowCurr = findRow(year, month);
+      const rowPrev = findRow(prevYear, prevMonth);
+
+      const clicksCurr      = rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : null;
+      const clicksPrev      = rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : null;
+      const impressionsCurr = rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : null;
+      const impressionsPrev = rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : null;
+      const adUnitsCurr     = rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0;
+      const adUnitsPrev     = rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0;
+      const unitsCurr       = rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0;
+      const unitsPrev       = rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0;
+
+      const pctUnitsAdsCurr = unitsCurr > 0 ? Math.round((adUnitsCurr / unitsCurr) * 100) : null;
+      const pctUnitsAdsPrev = unitsPrev > 0 ? Math.round((adUnitsPrev / unitsPrev) * 100) : null;
+
+      const fmt  = n => (n ?? 0).toLocaleString();
+      const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n ?? 0);
+
+      if (clicksCurr != null) setKpiVal('mx-kpi-ad-clicks', fmt(clicksCurr));
+      setKpiMom('mx-kpi-ad-clicks', pct(clicksCurr, clicksPrev));
+
+      if (impressionsCurr != null) setKpiVal('mx-kpi-ad-impressions', fmtK(impressionsCurr));
+      setKpiMom('mx-kpi-ad-impressions', pct(impressionsCurr, impressionsPrev));
+
+      if (pctUnitsAdsCurr != null) setKpiVal('mx-kpi-pct-units-ads', pctUnitsAdsCurr + '%');
+      setKpiMom('mx-kpi-pct-units-ads', pct(pctUnitsAdsCurr, pctUnitsAdsPrev));
+
+      // % Revenue Invested — (Ads + Vine/Promos this month) ÷ TOTAL revenue
+      // across ALL channels (Amazon + Website + Walmart), not just Amazon's
+      // summary-sheet revenue. Per Jaclyn 2026-07-14. Website/Walmart use
+      // the same UPPERCASE MONTH/YEAR/REVENUE positional-header convention
+      // already confirmed working for the Overview trend chart.
+      const currInvestTotal = rowCurr
+        ? (parseAmt(rowCurr.ads_spend) + parseAmt(rowCurr.vine_total) + parseAmt(rowCurr.promos_total))
+        : 0;
+      const amzRevenueThisMonth = rowCurr ? parseAmt(rowCurr.revenue) : 0;
+
+      function parseRevenueHistoryLocal(csvText) {
+        if (!isCsv(csvText)) return [];
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) return [];
+        const headers = parseCsvLine ? parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toUpperCase())
+                                      : lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toUpperCase());
+        const monthIdx = headers.indexOf('MONTH'), yearIdx = headers.indexOf('YEAR'), revenueIdx = headers.indexOf('REVENUE');
+        if (monthIdx < 0 || yearIdx < 0 || revenueIdx < 0) return [];
+        const splitLine = typeof parseCsvLine === 'function' ? parseCsvLine : (l => l.split(','));
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = splitLine(lines[i]);
+          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
+          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+          const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
+          if (yr && mo >= 1 && mo <= 12) {
+            if (yr < 2015 || yr > 2035) {
+              console.warn('[revenue-history] implausible year', yr, 'for month', mo, '— skipping row (likely corrupted YEAR cell at the source). Revenue was:', rev);
+            } else {
+              rows.push({ year: yr, month: mo, revenue: rev });
+            }
+          }
+        }
+        return rows;
+      }
+
+      let allChannelRevenue = amzRevenueThisMonth;
+      try {
+        const WEB_SHEET_ID_LOCAL = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
+        const WEB_REVENUE_GID_LOCAL = '7000599';
+        const WMT_REVENUE_SHEET_ID_LOCAL = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE';
+        const WMT_REVENUE_GID_LOCAL = '812984298';
+        const [webRevCsv, wmtRevCsv] = await Promise.all([
+          fetch(sheetCsvUrl(WEB_SHEET_ID_LOCAL, WEB_REVENUE_GID_LOCAL) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(sheetCsvUrl(WMT_REVENUE_SHEET_ID_LOCAL, WMT_REVENUE_GID_LOCAL) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        ]);
+        const webRevRows = parseRevenueHistoryLocal(webRevCsv);
+        const wmtRevRows = parseRevenueHistoryLocal(wmtRevCsv);
+        console.log('[Evolis][qa] % Revenue Invested — target year/month:', year, '/', month, '— webRevRows count:', webRevRows.length, '— last 4:', JSON.stringify(webRevRows.slice(-4)), '— first 4:', JSON.stringify(webRevRows.slice(0, 4)));
+        const webRevThisMonth = (webRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
+        const wmtRevThisMonth = (wmtRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
+        allChannelRevenue = amzRevenueThisMonth + webRevThisMonth + wmtRevThisMonth;
+        console.log('[Evolis] % Revenue Invested — revenue by channel:', 'amazon=', amzRevenueThisMonth, 'website=', webRevThisMonth, 'walmart=', wmtRevThisMonth, 'total=', allChannelRevenue);
+      } catch (e) {
+        console.warn('[Evolis] could not fetch Website/Walmart revenue for % Revenue Invested — falling back to Amazon-only revenue:', e.message);
+      }
+
+      if (allChannelRevenue) {
+        const pctRevenueInvested = Math.round((currInvestTotal / allChannelRevenue) * 100);
+        setKpiVal('mx-kpi-pct-revenue-invested', pctRevenueInvested + '%');
+      }
+
+      // ── Launch to Date — trivial now: sum every pre-computed row ────────
+      // (previously required scanning full order history + full master
+      // SKU list client-side; the cron already did that math overnight)
+      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0);
+      const ltdVine   = summaryRows.reduce((s, r) => s + parseAmt(r.vine_total), 0);
+      const ltdPromos = summaryRows.reduce((s, r) => s + parseAmt(r.promos_total), 0);
+      const ltdTotal  = ltdAds + ltdVine + ltdPromos;
+      console.log('[Evolis] LTD: ads=', ltdAds, 'vine=', ltdVine, 'promos=', ltdPromos, 'total=', ltdTotal);
+      const ltdEl = document.getElementById('mx-ltd-total-investments');
+      if (ltdEl) {
+        ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
+      }
+
+      // Amazon Fees KPI intentionally left as-is — pending a Finances/Product Fees
+      // API sync (net-new backend job), same shape as AD_SUMMARY. Do not overwrite
+      // with a guess in the meantime.
+
+    } catch (err) {
+      console.warn('[Evolis] initStewardshipExternal failed, charts/KPIs remain at last rendered values:', err.message);
+    }
+    })();
+    return window._stewardshipExtPromise;
+  };
+
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETING (EXTERNAL REPLICA) — Fulfillment & Customer Service
+// Deliberately NOT month-locked — per Jaclyn 2026-07-22, these are rolling/
+// current-state operational metrics (last 30/7 days, current open cases),
+// so this tab always shows live data identical to the internal page. Reuses
+// the same already-parameterized globals (ovCsvUrl, parseCsvToRows,
+// ffLoadStatesGeneric, ffFormatEst, the OV_* sheet ID consts) the internal
+// mfcLoad* functions use — only the non-parameterized ones needed a real
+// copy, retargeted at the mx- prefixed elements.
+// ══════════════════════════════════════════════════════════════════════════════
+let mxMfcShippedChartInstance = null;
+
+async function mxMfcLoadKpis() {
+  try {
+    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv).filter(r => (r.brand || '') === 'evolis');
+    const map = {};
+    rows.forEach(r => { if (r.metric) map[r.metric] = r.value; });
+
+    const shipped30 = document.getElementById('mx-mfc-kpi-shipped30');
+    const procTime  = document.getElementById('mx-mfc-kpi-proctime');
+    const shipCost  = document.getElementById('mx-mfc-kpi-shipcost');
+
+    if (shipped30) shipped30.textContent = map.shipped_orders_30d ? Number(map.shipped_orders_30d).toLocaleString() : '—';
+    if (procTime)  procTime.textContent  = map.avg_processing_time_7d ? `${map.avg_processing_time_7d} days` : '—';
+    if (shipCost)  shipCost.textContent  = map.avg_shipping_cost_7d ? `$${Number(map.avg_shipping_cost_7d).toFixed(2)}` : '—';
+  } catch (err) {
+    console.warn('[MarketingExternal/FulfillmentCS] KPI load failed:', err.message);
+  }
+}
+
+async function mxMfcLoadShippedChart() {
+  const footer = document.getElementById('mx-mfc-chart-footer');
+  try {
+    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '356984145')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv).filter(r => {
+      const day = new Date((r.date || '') + 'T12:00:00').getDay();
+      return day !== 0 && day !== 6;
+    });
+    if (!rows.length) { if (footer) footer.textContent = 'No data yet'; return; }
+
+    const sorted = [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const last30 = sorted.slice(-30);
+    const labels = last30.map(r => new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const totals = last30.map(r => parseInt(r.orders_shipped, 10) || 0);
+
+    const canvas = document.getElementById('mx-mfc-shipped-chart');
+    if (!canvas) return;
+
+    if (mxMfcShippedChartInstance) {
+      mxMfcShippedChartInstance.data.labels = labels;
+      mxMfcShippedChartInstance.data.datasets[0].data = totals;
+      mxMfcShippedChartInstance.update();
+    } else {
+      mxMfcShippedChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets: [{
+          label: 'Orders shipped', data: totals,
+          borderColor: '#001F60', backgroundColor: 'rgba(0,31,96,0.07)',
+          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+          pointHoverBackgroundColor: '#001F60', pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
+          fill: true, tension: 0.4,
+        }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
+              titleColor: '#001F60', bodyColor: '#6B7BA2', padding: 12, boxWidth: 8, boxHeight: 8,
+              callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+            },
+          },
+          scales: {
+            x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
+            y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
+          },
+        },
+      });
+    }
+
+    const lastRow = sorted[sorted.length - 1];
+    if (footer) footer.textContent = lastRow ? `Last synced · ${ffFormatEst(lastRow.last_updated) || lastRow.date}` : '';
+  } catch (err) {
+    console.warn('[MarketingExternal/FulfillmentCS] chart load failed:', err.message);
+    if (footer) footer.textContent = 'Error loading';
+  }
+}
+
+async function mxMfcLoadStates() {
+  await ffLoadStatesGeneric(OV_FULFILLMENT_STATES_SHEET_ID, '402779529', 'mx-mfc-us-svg', 'mx-mfc-map-tip', 'mx-mfc-state-table-body', 'mx-mfc-map-footer');
+}
+
+async function mxMfcLoadComplianceCases() {
+  const resolvedEl = document.getElementById('mx-mfc-kpi-compliance');
+  const subEl      = document.getElementById('mx-mfc-kpi-compliance-sub');
+  try {
+    const csv = await fetch(ovCsvUrl(OV_CUSTOMER_SERVICE_SHEET_ID, OV_CUSTOMER_SERVICE_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) return;
+
+    const sorted = [...rows].sort((a, b) => {
+      const ay = parseInt(a.year, 10) || 0, am = parseInt(a.month, 10) || 0;
+      const by = parseInt(b.year, 10) || 0, bm = parseInt(b.month, 10) || 0;
+      return (ay - by) || (am - bm);
+    });
+    const latest = sorted[sorted.length - 1];
+    if (!latest) return;
+
+    if (resolvedEl) resolvedEl.textContent = latest.compliance_cases_resolved !== '' ? latest.compliance_cases_resolved : '—';
+    if (subEl) subEl.textContent = `Open Cases: ${latest.compliance_cases_open !== '' ? latest.compliance_cases_open : '—'}`;
+  } catch (err) {
+    console.warn('[MarketingExternal/FulfillmentCS] compliance cases load failed:', err.message);
+  }
+}
+
+async function mxMfcLoadReturns() {
+  const valEl = document.getElementById('mx-mfc-kpi-returns');
+  const subEl = document.getElementById('mx-mfc-kpi-returns-sub');
+  try {
+    const [returnsCsv, kpisCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const returnRows = parseCsvToRows(returnsCsv);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const returns30d = returnRows.filter(r => {
+      const d = new Date((r.return_date || '') + 'T00:00:00');
+      return !isNaN(d) && d >= cutoff;
+    }).length;
+
+    const kpiRows = parseCsvToRows(kpisCsv).filter(r => (r.brand || '') === 'evolis');
+    const kpiMap = {};
+    kpiRows.forEach(r => { if (r.metric) kpiMap[r.metric] = r.value; });
+    const shipped30d = parseInt(kpiMap.shipped_orders_30d, 10) || 0;
+
+    if (valEl) valEl.textContent = returns30d.toLocaleString();
+    if (subEl) subEl.textContent = shipped30d > 0 ? `Return rate: ${((returns30d / shipped30d) * 100).toFixed(1)}%` : 'Return rate: —';
+  } catch (err) {
+    console.warn('[MarketingExternal/FulfillmentCS] returns load failed:', err.message);
+  }
+}
+
+window.initMarketingFulfillmentCSExternal = async function() {
+  if (window._mfcExternalPromise) return window._mfcExternalPromise;
+  window._mfcExternalPromise = Promise.all([
+    mxMfcLoadKpis(), mxMfcLoadShippedChart(), mxMfcLoadStates(), mxMfcLoadReturns(), mxMfcLoadComplianceCases(),
+  ]);
+  return window._mfcExternalPromise;
+};
+
+async function initSnsExternal() {
+  const canvas = document.getElementById('mx-chart-sns');
+  if (!canvas) return;
+
+  function csvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  }
+  function looksLikeCsv(t) {
+    t = (t || '').trim();
+    return t.length > 0 && !t.startsWith('<') && !t.startsWith('{');
+  }
+  function splitCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') { inQ = false; }
+        else { cur += ch; }
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+  function csvToRows(text) {
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.length > 0);
+    if (lines.length < 2) return [];
+    const headers = splitCsvLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    return lines.slice(1).map(line => {
+      const cells = splitCsvLine(line);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = (cells[i] || '').trim(); });
+      return row;
+    });
+  }
+  function num(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+    return isNaN(n) ? null : n;
+  }
+  function isEvolisRow(row) {
+    const b = (row.brand || '').toLowerCase().trim();
+    return !row.brand || b === 'evolis' || b.endsWith('volis');
+  }
+
+  // Same spreadsheet as initStewardshipLive's SUMMARY_SHEET_ID, different tab.
+  const TOTALS_SHEET_ID    = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0'; // Stewardship Summary
+  const TOTALS_GID         = '1762221100';                                   // évolis tab — corrected per Jaclyn 2026-07-14 (was 346552515, wrong tab)
+  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache
+  const RETENTION_GID      = '1742224413';                                   // per Jaclyn 2026-07-14
+
+  const kpiValues = document.querySelectorAll('#mx-opportunities .kpi-value');
+  const subsKpiEl = kpiValues[0] || null;
+  const retentionKpiEl = document.querySelector('#mx-kpi-retention .kpi-value') || null;
+
+  try {
+    const [totalsCsv, retentionCsv] = await Promise.all([
+      fetch(csvUrl(TOTALS_SHEET_ID, TOTALS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis][subscriptions] totals sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis][subscriptions] totals sheet fetch error:', e.message), '')),
+      fetch(csvUrl(RETENTION_SHEET_ID, RETENTION_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis][subscriptions] retention sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis][subscriptions] retention sheet fetch error:', e.message), '')),
+    ]);
+
+    // ── Active Subscriptions: bar chart + KPI ───────────────────────────
+    if (looksLikeCsv(totalsCsv)) {
+      const rows = csvToRows(totalsCsv);
+      console.log('[Evolis][subscriptions] totals sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
+      console.log('[Evolis][subscriptions] totals sheet total row count (before any filtering):', rows.length);
+
+      const brandRows = rows.filter(isEvolisRow);
+      const useRows = brandRows.length ? brandRows : rows;
+      console.log('[Evolis][subscriptions] rows after brand filter:', useRows.length, '(', rows.length - useRows.length, 'dropped by brand filter )');
+
+      const withDate = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
+      const sortable = withDate.length > 0 && withDate.every(x => !isNaN(x.y) && !isNaN(x.m));
+      if (sortable) withDate.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+      if (withDate.length) {
+        console.log('[Evolis][subscriptions] full year/month range present in sheet (regardless of whether total_subscriptions is populated):',
+          withDate[0].y + '-' + withDate[0].m, 'to', withDate[withDate.length - 1].y + '-' + withDate[withDate.length - 1].m);
+      }
+
+      const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const labels = [], values = [], years = [];
+      const skipped = [];
+      withDate.forEach(x => {
+        const r = x.row;
+        const total = num(r.total_subscriptions ?? r.total_subs ?? r.subscriptions ?? r.active_subscriptions);
+        if (total === null || total === 0) { skipped.push(x.y + '-' + x.m); return; }
+        const label = (!isNaN(x.y) && !isNaN(x.m)) ? `${monthAbbr[x.m - 1]} '${String(x.y).slice(2)}` : (r.month_label || r.month || r.date || '');
+        labels.push(label);
+        values.push(total);
+        years.push(x.y);
+      });
+      if (skipped.length) {
+        console.warn('[Evolis][subscriptions] skipped', skipped.length, 'row(s) with no usable total_subscriptions value — these months are NOT in the chart:', skipped.join(', '));
+      }
+
+      // Trailing 13 months only — chronologically sorted already, so this
+      // is just "keep the last 13 of however many months made it through
+      // the filtering above." Confirmed 2026-07-21.
+      const TRAILING_MONTHS = 13;
+      const trimmedLabels = labels.slice(-TRAILING_MONTHS);
+      const trimmedValues = values.slice(-TRAILING_MONTHS);
+      const trimmedYears  = years.slice(-TRAILING_MONTHS);
+
+      console.log('[Evolis][subscriptions] months actually plotted on the chart (trailing', TRAILING_MONTHS, 'of', labels.length, 'available):', trimmedLabels.join(', '));
+
+      if (values.length) {
+        // Color by calendar year: 2024 sand, 2025 slate, 2026 navy. Falls
+        // back gracefully for any other year (older -> sand-ish, newer ->
+        // navy) so this doesn't quietly break once 2027 data shows up.
+        const YEAR_COLORS = { 2024: '#f4dfd0', 2025: '#6b7ba2', 2026: '#001f60' };
+        const distinctYears = [...new Set(trimmedYears)].sort((a, b) => a - b);
+        const bg = trimmedYears.map(y => {
+          if (YEAR_COLORS[y]) return YEAR_COLORS[y];
+          const idx = distinctYears.indexOf(y);
+          return idx <= 0 ? '#f4dfd0' : (idx === distinctYears.length - 1 ? '#001f60' : '#6b7ba2');
+        });
+        window._snsChartExternal = new Chart(canvas, {
+          type: 'bar',
+          data: { labels: trimmedLabels, datasets: [{ label: 'Active Subscriptions', data: trimmedValues, backgroundColor: bg }] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { grid: { display: false } }, y: { grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true } }
+          }
+        });
+        if (subsKpiEl) subsKpiEl.textContent = Math.round(values[values.length - 1]).toLocaleString();
+        const subsMomEl = subsKpiEl ? subsKpiEl.nextElementSibling : null;
+        if (subsMomEl) {
+          if (values.length >= 2 && values[values.length - 2]) {
+            const p = Math.round(((values[values.length - 1] - values[values.length - 2]) / values[values.length - 2]) * 100);
+            const cls = p === 0 ? 'flat' : p > 0 ? 'up' : 'dn';
+            const arrow = p === 0 ? '' : p > 0 ? '▲ ' : '▼ ';
+            subsMomEl.className = 'kpi-mom ' + cls;
+            subsMomEl.textContent = `${arrow}${Math.abs(p)}% MOM`;
+          } else {
+            subsMomEl.className = 'kpi-mom flat';
+            subsMomEl.textContent = '—';
+          }
+        }
+      } else {
+        console.warn('[Evolis][subscriptions] no total_subscriptions values matched in totals sheet — check TOTALS_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
+      }
+    } else {
+      console.warn('[Evolis][subscriptions] totals sheet did not return CSV (check it is published/shared, and TOTALS_GID is correct).');
+    }
+
+    // ── Subscribe & Save Retention KPI ───────────────────────────────────
+    if (looksLikeCsv(retentionCsv)) {
+      const rows = csvToRows(retentionCsv);
+      console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
+      const brandRows = rows.filter(isEvolisRow);
+      const useRows = brandRows.length ? brandRows : rows;
+      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after brand filter:', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
+
+      // MOM only works if this sheet actually has more than one dated row
+      // per brand (i.e. it's historical, not a single current snapshot).
+      // Detecting that rather than assuming it, so this doesn't silently
+      // show a fabricated MOM if the sheet turns out to be snapshot-only.
+      const withDateR = useRows.map(r => ({ row: r, y: parseInt(r.year, 10), m: parseInt(r.month, 10) }));
+      const hasHistory = withDateR.length > 1 && withDateR.every(x => !isNaN(x.y) && !isNaN(x.m));
+      if (!hasHistory) {
+        console.warn('[Evolis][subscriptions] hasHistory=false — reason:', withDateR.length <= 1 ? ('only ' + withDateR.length + ' row(s) after brand filter, need 2+') : 'year/month not parsing as numbers on every row — check column names/values above');
+      }
+      if (hasHistory) withDateR.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+
+      const brandRow = hasHistory ? withDateR[withDateR.length - 1].row : (useRows[0] || rows[0]);
+      const prevBrandRow = hasHistory && withDateR.length >= 2 ? withDateR[withDateR.length - 2].row : null;
+
+      function readRetention(r) {
+        if (!r) return null;
+        let v = num(r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
+        if (v !== null && v > 0 && v <= 1) v = v * 100;
+        return v;
+      }
+      let retentionVal = readRetention(brandRow);
+      const retentionPrevVal = readRetention(prevBrandRow);
+
+      if (retentionVal !== null) {
+        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory);
+        if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
+        // 2026-07-16: was a fragile CSS positional selector
+        // ('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom') that
+        // silently returned null if anything about the surrounding markup
+        // didn't match exactly — leaving the static "Loading…" placeholder
+        // untouched forever, with no error anywhere to flag it. Deriving it
+        // from retentionKpiEl.nextElementSibling instead — since that same
+        // reference already correctly resolves (confirmed: the value itself
+        // displays correctly), its next sibling in the same .kpi-card is
+        // guaranteed to be the .kpi-mom div by construction, not by a
+        // selector string that has to happen to still match. Per Jaclyn
+        // 2026-07-16.
+        const retMomEl = retentionKpiEl ? retentionKpiEl.nextElementSibling : null;
+        if (retMomEl) {
+          if (retentionPrevVal) {
+            const ppDiff = Math.round(retentionVal - retentionPrevVal);
+            const cls = ppDiff === 0 ? 'flat' : ppDiff > 0 ? 'up' : 'dn';
+            const arrow = ppDiff === 0 ? '' : ppDiff > 0 ? '▲ ' : '▼ ';
+            retMomEl.className = 'kpi-mom ' + cls;
+            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}pp MOM`;
+          } else {
+            retMomEl.className = 'kpi-mom flat';
+            retMomEl.textContent = '—';
+            if (!hasHistory) console.warn('[Evolis][subscriptions] retention sheet appears to be a single current-value snapshot (no year/month history per brand) — MOM left blank rather than fabricated.');
+          }
+        } else {
+          console.warn('[Evolis][subscriptions] retMomEl not found — retentionKpiEl has no nextElementSibling, check #kpi-retention markup.');
+        }
+      } else {
+        console.warn('[Evolis][subscriptions] no retention value matched in retention sheet — check RETENTION_GID/column name. Available columns:', rows.length ? Object.keys(rows[0]) : '(none)');
+      }
+    } else {
+      console.warn('[Evolis][subscriptions] retention sheet did not return CSV (check it is published/shared, and RETENTION_GID is correct).');
+    }
+  } catch (err) {
+    console.error('[Evolis][subscriptions] fetch/parse failed:', err);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MARKETING PAGE (EXTERNAL REPLICA) — orchestrator
+// Brand Stewardship and the Future Opportunities cards lock to the same
+// Approved month Sales does (shared resolver — no second fetch if Sales was
+// already visited this session). Fulfillment & CS and Subscribe & Save are
+// deliberately left live/current — see Jaclyn 2026-07-22.
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+
+  function setDisplay(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (val) { el.style.display = ''; el.innerHTML = String(val).replace(/\n/g, '<br>'); }
+    else { el.style.display = 'none'; }
+  }
+
+  async function renderFutureOpportunitiesExternal(key) {
+    const emptyEl = document.getElementById('mx-opp-empty-state');
+    if (!key || typeof window.reportInsightsFetchRow !== 'function') {
+      [1,2,3,4].forEach(n => { const c = document.getElementById(`mx-opp-card-${n}`); if (c) c.style.display = 'none'; });
+      if (emptyEl) { emptyEl.textContent = 'No approved report available yet.'; emptyEl.style.display = 'block'; }
+      return;
+    }
+    try {
+      const row = await window.reportInsightsFetchRow('evolis', { year: String(key.year), month: String(key.month) });
+      let anyVisible = false;
+      [1,2,3,4].forEach(n => {
+        const title    = row ? (row[`opp${n}_title`]    || '') : '';
+        const subtitle = row ? (row[`opp${n}_subtitle`] || '') : '';
+        const body     = row ? (row[`opp${n}_body`]     || '') : '';
+        const card = document.getElementById(`mx-opp-card-${n}`);
+        if (!card) return;
+        if (title) {
+          anyVisible = true;
+          card.style.display = '';
+          document.getElementById(`mx-opp-title-${n}`).textContent = title;
+          const subEl = document.getElementById(`mx-opp-subtitle-${n}`);
+          if (subtitle) { subEl.textContent = subtitle; subEl.style.display = ''; }
+          else { subEl.textContent = ''; subEl.style.display = 'none'; }
+          document.getElementById(`mx-opp-body-${n}`).textContent = body;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+      if (emptyEl) { emptyEl.textContent = 'No opportunities added for this report.'; emptyEl.style.display = anyVisible ? 'none' : 'block'; }
+    } catch (e) {
+      console.warn('[MarketingExternal] Future Opportunities fetch failed:', e.message);
+    }
+  }
+
+  window.initMarketingExternalPage = function () {
+    if (window.__marketingExternalPromise) return window.__marketingExternalPromise;
+    window.__marketingExternalPromise = (async function () {
+      const key = await window.resolveApprovedMonth();
+
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const dateNoteEl = document.getElementById('mx-stewardship-date-note');
+      if (dateNoteEl) {
+        dateNoteEl.textContent = key
+          ? `Showing ${monthNames[key.month-1]} ${key.year} · most recently approved report`
+          : 'No approved report available yet.';
+      }
+
+      // Stewardship + Future Opportunities — locked to the Approved month.
+      window.__approvedReportMonth = key;
+      if (key && typeof window.initStewardshipExternal === 'function') {
+        await window.initStewardshipExternal();
+      }
+      await renderFutureOpportunitiesExternal(key);
+
+      // Fulfillment & CS + Subscribe & Save — always live/current, regardless
+      // of whether anything has ever been approved.
+      await Promise.all([
+        typeof window.initMarketingFulfillmentCSExternal === 'function' ? window.initMarketingFulfillmentCSExternal() : null,
+        typeof initSnsExternal === 'function' ? initSnsExternal() : null,
+      ]);
+    })();
+    return window.__marketingExternalPromise;
+  };
+})();
+
 
 })();
 
