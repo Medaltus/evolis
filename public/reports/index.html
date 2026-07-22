@@ -7983,51 +7983,56 @@ async function ffLoadShippedChart() {
 
     const canvas = document.getElementById('ff-shipped-chart');
     if (!canvas) return;
-    if (ffShippedChartInstance) ffShippedChartInstance.destroy();
 
-    ffShippedChartInstance = window.ffShippedChartInstance = new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Orders shipped',
-          data: totals,
-          borderColor: '#001F60',
-          backgroundColor: 'rgba(0,31,96,0.07)',
-          borderWidth: 2,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHoverBackgroundColor: '#001F60',
-          pointHoverBorderColor: '#fff',
-          pointHoverBorderWidth: 2,
-          fill: true,
-          tension: 0.4,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        // interaction option removed 2026-07-22 as a test — it was the ONLY config difference found between this chart and every working chart after exhaustive comparison; no confirmed mechanism for why it would affect resize(), but it's the last remaining lead after two other theories were disproven with real data.
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#fff',
-            borderColor: 'rgba(0,31,96,0.1)',
-            borderWidth: 1,
-            titleColor: '#001F60',
-            bodyColor: '#6B7BA2',
-            padding: 12,
-            boxWidth: 8,
-            boxHeight: 8,
-            callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+    if (ffShippedChartInstance) {
+      ffShippedChartInstance.data.labels = labels;
+      ffShippedChartInstance.data.datasets[0].data = totals;
+      ffShippedChartInstance.update();
+    } else {
+      ffShippedChartInstance = window.ffShippedChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Orders shipped',
+            data: totals,
+            borderColor: '#001F60',
+            backgroundColor: 'rgba(0,31,96,0.07)',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBackgroundColor: '#001F60',
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2,
+            fill: true,
+            tension: 0.4,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#fff',
+              borderColor: 'rgba(0,31,96,0.1)',
+              borderWidth: 1,
+              titleColor: '#001F60',
+              bodyColor: '#6B7BA2',
+              padding: 12,
+              boxWidth: 8,
+              boxHeight: 8,
+              callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+            },
+          },
+          scales: {
+            x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
+            y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
           },
         },
-        scales: {
-          x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
-          y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
-        },
-      },
-    });
+      });
+    }
 
     const lastRow = sorted[sorted.length - 1];
     if (footer) footer.textContent = lastRow ? `Last synced · ${ffFormatEst(lastRow.last_updated) || lastRow.date}` : '';
@@ -8200,34 +8205,50 @@ async function mfcLoadShippedChart() {
 
     const canvas = document.getElementById('mfc-shipped-chart');
     if (!canvas) return;
-    if (mfcShippedChartInstance) mfcShippedChartInstance.destroy();
 
-    mfcShippedChartInstance = window.mfcShippedChartInstance = new Chart(canvas, {
-      type: 'line',
-      data: { labels, datasets: [{
-        label: 'Orders shipped', data: totals,
-        borderColor: '#001F60', backgroundColor: 'rgba(0,31,96,0.07)',
-        borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
-        pointHoverBackgroundColor: '#001F60', pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
-        fill: true, tension: 0.4,
-      }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        // interaction option removed 2026-07-22 as a test — it was the ONLY config difference found between this chart and every working chart after exhaustive comparison; no confirmed mechanism for why it would affect resize(), but it's the last remaining lead after two other theories were disproven with real data.
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
-            titleColor: '#001F60', bodyColor: '#6B7BA2', padding: 12, boxWidth: 8, boxHeight: 8,
-            callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+    // Update in place instead of destroy()+recreate — added 2026-07-22.
+    // This chart's loader runs at least twice per session (once when the
+    // tab is opened, again via initPromises right before PDF export),
+    // meaning the OLD destroy+recreate pattern reused the SAME canvas
+    // element across multiple Chart.js instances every single time. None
+    // of the 6 working charts in the PDF export pipeline are ever
+    // destroyed/recreated — they're created once at page load and never
+    // touched again. Given that's the one remaining structural difference
+    // after three other theories were disproven with real console data,
+    // this eliminates the repeated-reuse pattern entirely rather than
+    // trying to explain why it might matter.
+    if (mfcShippedChartInstance) {
+      mfcShippedChartInstance.data.labels = labels;
+      mfcShippedChartInstance.data.datasets[0].data = totals;
+      mfcShippedChartInstance.update();
+    } else {
+      mfcShippedChartInstance = window.mfcShippedChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets: [{
+          label: 'Orders shipped', data: totals,
+          borderColor: '#001F60', backgroundColor: 'rgba(0,31,96,0.07)',
+          borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+          pointHoverBackgroundColor: '#001F60', pointHoverBorderColor: '#fff', pointHoverBorderWidth: 2,
+          fill: true, tension: 0.4,
+        }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
+              titleColor: '#001F60', bodyColor: '#6B7BA2', padding: 12, boxWidth: 8, boxHeight: 8,
+              callbacks: { label: ctx => `  ${ctx.parsed.y.toLocaleString()} orders` },
+            },
+          },
+          scales: {
+            x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
+            y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
           },
         },
-        scales: {
-          x: { border: { display: false }, ticks: { color: '#9ba8c0', maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
-          y: { beginAtZero: true, border: { display: false }, ticks: { color: '#9ba8c0' }, grid: { color: 'rgba(0,31,96,.04)' } },
-        },
-      },
-    });
+      });
+    }
 
     const lastRow = sorted[sorted.length - 1];
     if (footer) footer.textContent = lastRow ? `Last synced · ${ffFormatEst(lastRow.last_updated) || lastRow.date}` : '';
