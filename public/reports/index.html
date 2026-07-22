@@ -7613,7 +7613,14 @@ async function loadInventoryPage() {
 
     const consignmentMap = {};
     parseCsvToRows(consignmentCsv).forEach(r => {
-      const sku = (r.sku || '').trim().toUpperCase();
+      // Consignment SKUs always carry a "C-" prefix over the base SKU
+      // (e.g. "C-EVO0001" = base SKU "EVO0001") — same convention
+      // established for the ShipStation-based consignment cron. This map
+      // was built keyed by the RAW sheet SKU (including "C-") while the
+      // lookup below uses the product row's base SKU — a straight
+      // mismatch that meant this column could never match anything,
+      // regardless of whether the sheet had real data.
+      const sku = (r.sku || '').trim().toUpperCase().replace(/^C-/, '');
       if (sku) consignmentMap[sku] = parseFloat(r.available) || 0;
     });
 
