@@ -7606,7 +7606,7 @@ async function loadInventoryPage() {
       // 'evolis' tab doesn't exist in this sheet yet (Cin7 pipeline not
       // built) — this will just fail quietly and consignmentMap stays
       // empty, which is exactly the honest "no data yet" state.
-      fetch(ovGvizCsvUrlByName(OV_CONSIGNMENT_SHEET_ID, 'evolis')).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_CONSIGNMENT_SHEET_ID, '505131584')).then(r => r.ok ? r.text() : '').catch(() => ''),
     ]);
     const rows = parseCsvToRows(csv);
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);">No data</td></tr>'; return; }
