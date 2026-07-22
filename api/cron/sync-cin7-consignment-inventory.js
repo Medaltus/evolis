@@ -119,16 +119,35 @@ module.exports = async (req, res) => {
   if (!sheets.consignmentInventory) return res.status(500).json({ error: 'sheets.consignmentInventory is not configured in config/sheets.js' });
   if (!DRIVE_FOLDER_ID) return res.status(500).json({ error: 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set' });
 
+  // Test-only params, both optional — normal scheduled runs pass neither.
+  // ?targetDate=YYYY-MM-DD — test against a SPECIFIC day's file by name
+  // (matches "InventoryStockLevel_DD_MM_YYYY-*.xlsx") instead of whatever's
+  // currently newest. Without this, once today's file has also landed,
+  // "newest" silently stops meaning "yesterday's" — this makes the target
+  // explicit instead of relying on timing.
+  // ?dryRun=true — run the full pipeline (find/download/parse/aggregate)
+  // but skip the actual ensureTab/replaceRows write, returning the rows
+  // that WOULD have been written instead. Safe to run against the real
+  // destination sheet with zero risk of touching it.
+  const targetDate = (req.query && req.query.targetDate) || '';
+  const dryRun = String((req.query && req.query.dryRun) || '').toLowerCase() === 'true';
+
   const now = new Date().toISOString();
 
   let fileInfo;
   try {
-    fileInfo = await findNewestFile(DRIVE_FOLDER_ID);
+    fileInfo = targetDate
+      ? await findFileByDate(DRIVE_FOLDER_ID, targetDate)
+      : await findNewestFile(DRIVE_FOLDER_ID);
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to find newest Cin7 export in Drive', detail: err.message });
+    return res.status(500).json({ error: 'Failed to find the Cin7 export in Drive', detail: err.message });
   }
   if (!fileInfo) {
-    return res.status(404).json({ error: 'No files found in the Cin7 export Drive folder' });
+    return res.status(404).json({
+      error: targetDate
+        ? `No file found in the Cin7 export Drive folder matching date ${targetDate}`
+        : 'No files found in the Cin7 export Drive folder',
+    });
   }
 
   let rows;
@@ -141,7 +160,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read or parse the source file', file: fileInfo.name, detail: err.message });
   }
 
-  console.log(`[sync-cin7-consignment-inventory] source file: "${fileInfo.name}" (modified ${fileInfo.modifiedTime}) — ${rows.length} data rows`);
+  console.log(`[sync-cin7-consignment-inventory] source file: "${fileInfo.name}" (modified ${fileInfo.modifiedTime}) — ${rows.length} data rows${dryRun ? ' [DRY RUN]' : ''}`);
 
   const { groups, skippedNoCode, skippedExcluded, unmatched } = aggregateConsignmentRows(rows);
 
@@ -154,8 +173,10 @@ module.exports = async (req, res) => {
         return [g.sku, g.name, g.onHand, available, now];
       }).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
-      const token = await ensureTab(sheets.consignmentInventory, tabName, HEADERS);
-      await replaceRows(sheets.consignmentInventory, tabName, HEADERS, outRows, token);
+      if (!dryRun) {
+        const token = await ensureTab(sheets.consignmentInventory, tabName, HEADERS);
+        await replaceRows(sheets.consignmentInventory, tabName, HEADERS, outRows, token);
+      }
 
       const brandDupeNames = brandGroups.filter(([, g]) => g.names.size > 1);
       if (brandDupeNames.length) {
@@ -163,8 +184,11 @@ module.exports = async (req, res) => {
           brandDupeNames.map(([, g]) => `${g.sku}: [${Array.from(g.names).join(' | ')}]`).join('; '));
       }
 
-      console.log(`[sync-cin7-consignment-inventory] ${brandId} — ${outRows.length} consignment SKUs written`);
-      results.push({ brand: brandId, status: 'ok', skuCount: outRows.length });
+      console.log(`[sync-cin7-consignment-inventory] ${brandId} — ${outRows.length} consignment SKUs ${dryRun ? 'computed (not written)' : 'written'}`);
+      results.push({
+        brand: brandId, status: 'ok', skuCount: outRows.length,
+        ...(dryRun ? { rows: outRows } : {}), // only inline the actual data on dry runs — keep the real response small
+      });
     } catch (err) {
       console.error(`[sync-cin7-consignment-inventory] ${brandId} failed:`, err.message);
       results.push({ brand: brandId, status: 'error', error: err.message });
@@ -182,6 +206,8 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({
+    dryRun,
+    targetDate: targetDate || null,
     sourceFile: fileInfo.name,
     sourceFileModified: fileInfo.modifiedTime,
     sourceRowsProcessed: rows.length,
@@ -372,6 +398,36 @@ async function findNewestFile(folderId) {
   if (!res.ok) throw new Error(`Drive files.list failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   return (data.files && data.files[0]) || null;
+}
+
+// Test-only: find a file by DATE rather than "whatever's newest right now."
+// Real filenames look like InventoryStockLevel_21_07_2026-16_46.xlsx
+// (DD_MM_YYYY-HH_MM) — confirmed against the real 2026-07-21 sample.
+// targetDate comes in as YYYY-MM-DD (easier to type in a curl command)
+// and gets converted to that DD_MM_YYYY form to match against filenames.
+// Lists every file in the folder rather than relying on Drive's own
+// query syntax to filter by a substring in the name, since that's more
+// robust to any minor naming-convention drift Cin7 might introduce later.
+async function findFileByDate(folderId, targetDateIso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(targetDateIso);
+  if (!m) throw new Error(`targetDate must be YYYY-MM-DD, got "${targetDateIso}"`);
+  const [, yyyy, mm, dd] = m;
+  const needle = `${dd}_${mm}_${yyyy}`; // e.g. "21_07_2026"
+
+  const accessToken = await getGoogleDriveToken();
+  const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=100`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) throw new Error(`Drive files.list failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const files = data.files || [];
+  const matches = files.filter(f => f.name.includes(needle));
+  if (matches.length > 1) {
+    console.warn(`[sync-cin7-consignment-inventory] multiple files matched date ${targetDateIso} — using the most recently modified: ${matches.map(f => f.name).join(', ')}`);
+  }
+  return matches[0] || null;
 }
 
 async function downloadFile(fileId) {
