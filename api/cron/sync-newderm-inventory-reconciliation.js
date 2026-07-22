@@ -152,14 +152,25 @@ module.exports = async (req, res) => {
   }
 
   // Deliberately NOT filtered to active brands — see file header note re: High On Love.
-  const brandSkuMap = {}; // tabName -> [{sku, name}]
+  // Deduped per-brand by SKU (Map, not array/push) — the master list has
+  // genuine duplicate rows for the same SKU (confirmed 2026-07-22: several
+  // Skinuva SKUs came back as literal duplicate output rows before this
+  // fix, most likely from multiple ASIN rows sharing one SKU). Last
+  // matching row for a given SKU wins if names ever actually differ.
+  const brandSkuMap = {}; // tabName -> Map<sku, name>
   const unassigned = [];
+  let masterDupeCount = 0;
   for (const { sku, name, rawBrand } of masterRows) {
     const normSku = normalizeSku(sku);
     if (!normSku || normSku.toUpperCase().startsWith('C-')) continue; // consignment — out of scope for this cron entirely
     const matched = matchBrand(rawBrand);
     if (!matched) { unassigned.push(`${normSku} (brand: "${rawBrand}")`); continue; }
-    (brandSkuMap[matched.tabName] = brandSkuMap[matched.tabName] || []).push({ sku: normSku, name });
+    const map = (brandSkuMap[matched.tabName] = brandSkuMap[matched.tabName] || new Map());
+    if (map.has(normSku)) masterDupeCount++;
+    map.set(normSku, name); // overwrite, not push — see comment above
+  }
+  if (masterDupeCount) {
+    console.log(`[inventory-reconciliation] ${masterDupeCount} duplicate SKU row(s) in the master SKU list collapsed to one entry each.`);
   }
 
   // ── 3. Per brand ─────────────────────────────────────────────────────
@@ -167,7 +178,8 @@ module.exports = async (req, res) => {
   let noTodayRecordTotal = 0;
 
   for (const brand of brands) {
-    const brandSkus = brandSkuMap[brand.tabName] || [];
+    const brandSkuEntries = brandSkuMap[brand.tabName] || new Map();
+    const brandSkus = Array.from(brandSkuEntries.entries(), ([sku, name]) => ({ sku, name }));
     if (!brandSkus.length) continue; // nothing to reconcile for this brand
 
     // SHEET_PRODUCT_INVENTORY: today's row per SKU, if any. Tolerates a
