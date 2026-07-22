@@ -9782,6 +9782,7 @@ async function loadAuditResultsFromSheet() {
       const PDFX_POINT_RADIUS_TARGET_PX = 2.2; // dashboard's own is 2
       const captureHeightPx = Math.round(originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX));
       liveChart.resize(originalWidthPx, captureHeightPx);
+      console.log('[pdf-export][qa]', varName, '— canvas dims IMMEDIATELY after resize():', liveCanvas.width + 'x' + liveCanvas.height, '(requested', originalWidthPx + 'x' + captureHeightPx + ')');
 
       const targetW = originalWidthPx;
       const fontScale = targetW / PDFX_CARD_WIDTH_PX;
@@ -9805,6 +9806,8 @@ async function loadAuditResultsFromSheet() {
       console.log('[pdf-export][qa]', varName, '— original size:', originalWidthPx + 'x' + originalHeightPx, '— dashboardHeightPx:', Math.round(dashboardHeightPx), '(x' + PDFX_HEIGHT_FACTOR + ' factor) — re-rendered at:', originalWidthPx + 'x' + captureHeightPx, '(will display as 686x' + Math.round(dashboardHeightPx * PDFX_HEIGHT_FACTOR) + ' in the PDF) — tension:', PDFX_CAPTURE_TENSION, '— borderWidth target/scaled:', PDFX_LINE_WIDTH_TARGET_PX + '/' + scaledBorderWidth.toFixed(1), '— pointRadius target/scaled:', PDFX_POINT_RADIUS_TARGET_PX + '/' + scaledPointRadius.toFixed(1), '— data:', rawDataInfo);
 
       let img = '';
+      let capturedWidth = liveCanvas.width;
+      let capturedHeight = liveCanvas.height;
       const hasScales = !!(liveChart.options && liveChart.options.scales);
       const origScales = hasScales ? liveChart.options.scales : null;
       try {
@@ -9815,8 +9818,22 @@ async function loadAuditResultsFromSheet() {
           const scaled = pdfxWithScaledAxisFonts(liveChart.options, targetW);
           liveChart.options.scales = scaled.scales;
         }
+        console.log('[pdf-export][qa]', varName, '— canvas dims right before update():', liveCanvas.width + 'x' + liveCanvas.height);
         liveChart.update('none'); // synchronous, no animation — picks up both the scale/font change above and the tension change above
+        console.log('[pdf-export][qa]', varName, '— canvas dims right after update(), before capture:', liveCanvas.width + 'x' + liveCanvas.height);
         img = liveChart.toBase64Image('image/png');
+        // Captured HERE, at the same moment as the image itself — NOT
+        // re-read later after the finally block's unrelated restore-update
+        // runs. Confirmed by direct log evidence 2026-07-21 that reading
+        // liveCanvas.width/height AFTER that restore step (the previous
+        // behavior, still reflected in `result` below before this fix)
+        // does not reliably reflect what's actually inside the captured
+        // image for every chart — this eliminates that gap entirely by
+        // reading at the right moment instead of guessing why the later
+        // read was sometimes stale.
+        capturedWidth = liveCanvas.width;
+        capturedHeight = liveCanvas.height;
+        console.log('[pdf-export][qa]', varName, '— canvas dims captured alongside image:', capturedWidth + 'x' + capturedHeight);
       } catch (e) {
         console.warn('[pdf-export] scaled-font capture failed for', varName, '— falling back to whatever is currently rendered:', e.message);
         img = pdfxRawChartImg(varName);
@@ -9836,7 +9853,7 @@ async function loadAuditResultsFromSheet() {
         liveChart.update('none');
       }
 
-      const result = { img: img, width: liveCanvas.width, height: liveCanvas.height, displayHeightPx: dashboardHeightPx * PDFX_HEIGHT_FACTOR };
+      const result = { img: img, width: capturedWidth, height: capturedHeight, displayHeightPx: dashboardHeightPx * PDFX_HEIGHT_FACTOR };
 
       // Restore the live dashboard's own chart to its original size —
       // explicit numeric resize again, same validated synchronous technique,
