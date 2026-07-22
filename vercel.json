@@ -104,6 +104,10 @@
     {
       "path": "/api/cron/sync-listings",
       "schedule": "0 2 */2 * *"
+    },
+    {
+      "path": "/api/cron/sync-cin7-consignment-inventory",
+      "schedule": "0 22 * * *"
     }
   ],
   "functions": {
@@ -225,6 +229,9 @@
       "maxDuration": 30
     },
     "api/cron/sync-listings.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-cin7-consignment-inventory.js": {
       "maxDuration": 300
     }
   },
