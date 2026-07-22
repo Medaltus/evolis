@@ -6,7 +6,7 @@
 <title>Évolis — Internal Dashboard · Medaltus</title>
 <!-- PLACEHOLDER — replace data-clerk-publishable-key with Évolis's real Clerk publishable key -->
 <script async crossorigin="anonymous"
-  data-clerk-publishable-key="REPLACE_WITH_EVOLIS_CLERK_PUBLISHABLE_KEY"
+  data-clerk-publishable-key="pk_live_Y2xlcmsucmVwb3J0cy5tZWRhbHR1cy5jb20k"
   src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
   type="text/javascript"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11162,14 +11162,21 @@ async function loadAuditResultsFromSheet() {
 
 // ═══════════════════════════════════════════════════════════════════
 // CLERK AUTH — internal-section gating only, NOT a page-wide gate.
+// Org-membership check, matching Cosmette's own getOrganizationMemberships()
+// pattern — confirmed 2026-07-22 that this Clerk account uses per-org
+// invites, not a plain email-domain check, so membership in Évolis's own
+// org (not just having a @medaltus.com email) is what actually gates
+// internal access.
 // Unlike Cosmette's dashboard (which requires sign-in to see ANYTHING),
-// this dashboard is internal-first: non-medaltus users can see
+// this dashboard is internal-first: non-org-member users can see
 // everything except the internal-only nav section, which stays hidden
 // by default (see inline style on #nav-internal-section) and is only
-// revealed here if the signed-in user's email ends in @medaltus.com.
-// If Clerk fails to load, isn't signed in, or the key is wrong, the
+// revealed here if the signed-in user belongs to Évolis's org.
+// If Clerk fails to load, isn't signed in, or membership check fails, the
 // safe fallback is simply "internal section stays hidden" — never a
 // broken or blank page.
+const EVOLIS_ORG_ID = 'org_3GrUGVaCu0kSFTjiYl8V743UQue';
+
 window.addEventListener('load', async () => {
   try {
     if (!window.Clerk) return; // Clerk script failed to load — stay on safe default
@@ -11177,10 +11184,10 @@ window.addEventListener('load', async () => {
     const user = window.Clerk.user;
     if (!user) return; // not signed in — safe default (internal hidden)
 
-    const email = user.primaryEmailAddress?.emailAddress || '';
-    const isMedaltus = email.toLowerCase().endsWith('@medaltus.com');
+    const memberships = await window.Clerk.user.getOrganizationMemberships();
+    const hasAccess = memberships.data.some(m => m.organization.id === EVOLIS_ORG_ID);
 
-    if (isMedaltus) {
+    if (hasAccess) {
       const internalNav = document.getElementById('nav-internal-section');
       const internalBadge = document.getElementById('sb-internal-badge');
       if (internalNav) internalNav.style.display = '';
