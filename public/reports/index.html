@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Évolis — Internal Dashboard · Medaltus</title>
+<!-- PLACEHOLDER — replace data-clerk-publishable-key with Évolis's real Clerk publishable key -->
+<script async crossorigin="anonymous"
+  data-clerk-publishable-key="REPLACE_WITH_EVOLIS_CLERK_PUBLISHABLE_KEY"
+  src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+  type="text/javascript"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* Brand fonts — style guide: main headers = GT Walsheim Pro (Bold), other
@@ -58,16 +63,15 @@ nav{flex:1;padding:8px 8px 0;}
 .nav-btn.active{background:rgba(36,233,163,0.14);color:var(--green);}
 .nav-btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;flex-shrink:0;}
 .nav-btn .nav-badge{margin-left:auto;background:rgba(36,233,163,0.2);color:var(--green);font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;letter-spacing:.03em;}
+.nav-btn.soon{opacity:0.42;cursor:not-allowed;pointer-events:none;}
+.nav-soon-badge{margin-left:auto;background:rgba(36,233,163,0.18);color:var(--green);font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;letter-spacing:.03em;}
 
 /* ── Internal-only section divider ── */
 .nav-internal-divider{margin:12px 8px 4px;padding:8px 8px 0;border-top:1px solid rgba(255,255,255,0.08);}
 .nav-internal-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:rgba(36,233,163,0.5);margin-bottom:4px;}
 
 /* ── View partner button ── */
-.sb-footer{padding:12px 8px 16px;border-top:1px solid rgba(255,255,255,0.07);}
-.view-partner-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:9px 12px;background:var(--green);color:var(--navy);font-family:var(--font);font-size:12px;font-weight:600;border:none;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s;letter-spacing:.01em;}
-.view-partner-btn:hover{background:#1dd494;box-shadow:0 2px 12px rgba(36,233,163,0.35);}
-.view-partner-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;}
+
 
 /* ── Topbar ── */
 .topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 28px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
@@ -860,16 +864,40 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <img src="/reports/Medaltus_Typeface Logo_dark bground_RGB.png" alt="Medaltus" style="height:16px;width:auto;">
     </div>
     <div class="sb-brand-sub">Brand Dashboard</div>
-    <div class="sb-internal-badge">Internal</div>
+    <div class="sb-internal-badge" id="sb-internal-badge" style="display:none;">Internal</div>
   </div>
 
   <nav>
+    <div class="nav-section">Home</div>
+    <button class="nav-btn soon" disabled>
+      <svg viewBox="0 0 16 16"><path d="M2 7l6-5 6 5v7a1 1 0 01-1 1H3a1 1 0 01-1-1V7z"/><path d="M6 15V9h4v6"/></svg>Home
+      <span class="nav-soon-badge">SOON</span>
+    </button>
+
+    <div class="nav-section">Performance</div>
+    <button class="nav-btn soon" disabled>
+      <svg viewBox="0 0 16 16"><polyline points="1,12 5,7 8,9 12,4 15,6"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Sales
+      <span class="nav-soon-badge">SOON</span>
+    </button>
+
+    <div class="nav-section">Operations</div>
+    <button class="nav-btn soon" disabled>
+      <svg viewBox="0 0 16 16"><path d="M1 5l7-4 7 4v7l-7 4-7-4V5z"/><path d="M8 1v14M1 5l7 4 7-4"/></svg>Inventory
+      <span class="nav-soon-badge">SOON</span>
+    </button>
+
+    <!-- Internal-only section — everything currently built lives below this line -->
+    <div id="nav-internal-section" style="display:none;">
+    <div class="nav-internal-divider">
+      <div class="nav-internal-label">Internal Only</div>
+    </div>
+
     <div class="nav-section">Overview</div>
     <button class="nav-btn active" onclick="showPage('overview',this)">
       <svg viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>Overview
     </button>
 
-    <div class="nav-section">Operations</div>
+    <div class="nav-section">Operations (Internal)</div>
     <button class="nav-btn" onclick="showPage('inventory',this)">
       <svg viewBox="0 0 16 16"><path d="M1 5l7-4 7 4v7l-7 4-7-4V5z"/><path d="M8 1v14M1 5l7 4 7-4"/></svg>Inventory
     </button>
@@ -877,7 +905,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <svg viewBox="0 0 16 16"><rect x="1" y="5" width="14" height="9" rx="1.2"/><path d="M1 8h14M5 5V3a1 1 0 011-1h4a1 1 0 011 1v2"/><circle cx="4.5" cy="14" r="1.2"/><circle cx="11.5" cy="14" r="1.2"/></svg>Fulfillment
     </button>
 
-    <div class="nav-section">Performance</div>
+    <div class="nav-section">Performance (Internal)</div>
     <button class="nav-btn" onclick="showPage('sales',this)">
       <svg viewBox="0 0 16 16"><polyline points="1,12 5,7 8,9 12,4 15,6"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Sales
     </button>
@@ -888,10 +916,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <svg viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="12" rx="1.2"/><path d="M1 7h14M5 1v4M11 1v4"/></svg>Events
     </button>
 
-    <!-- Internal-only section -->
-    <div class="nav-internal-divider">
-      <div class="nav-internal-label">Internal Only</div>
-    </div>
     <button class="nav-btn" onclick="showPage('insights',this)">
       <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5.5v.5"/></svg>Insights
       <span class="nav-badge">3</span>
@@ -905,14 +929,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <button class="nav-btn" onclick="showPage('organic',this)">
       <svg viewBox="0 0 16 16"><path d="M8 14C8 8 3 5 3 5s1 5 5 9z"/><path d="M8 14C8 8 13 5 13 5s-1 5-5 9z"/><path d="M8 2v12"/></svg>Organic
     </button>
+    </div>
   </nav>
-
-  <div class="sb-footer">
-    <button class="view-partner-btn" onclick="alert('Opens: evolis.medaltus.com (external dashboard)')">
-      <svg viewBox="0 0 16 16"><path d="M7 2H2v12h12V9"/><path d="M10 1h5v5"/><path d="M15 1L8 8"/></svg>
-      View Partner Dashboard
-    </button>
-  </div>
 </aside>
 
 <!-- ══ MAIN ══ -->
@@ -11141,6 +11159,37 @@ async function loadAuditResultsFromSheet() {
     }
   });
 })();
+
+// ═══════════════════════════════════════════════════════════════════
+// CLERK AUTH — internal-section gating only, NOT a page-wide gate.
+// Unlike Cosmette's dashboard (which requires sign-in to see ANYTHING),
+// this dashboard is internal-first: non-medaltus users can see
+// everything except the internal-only nav section, which stays hidden
+// by default (see inline style on #nav-internal-section) and is only
+// revealed here if the signed-in user's email ends in @medaltus.com.
+// If Clerk fails to load, isn't signed in, or the key is wrong, the
+// safe fallback is simply "internal section stays hidden" — never a
+// broken or blank page.
+window.addEventListener('load', async () => {
+  try {
+    if (!window.Clerk) return; // Clerk script failed to load — stay on safe default
+    await window.Clerk.load();
+    const user = window.Clerk.user;
+    if (!user) return; // not signed in — safe default (internal hidden)
+
+    const email = user.primaryEmailAddress?.emailAddress || '';
+    const isMedaltus = email.toLowerCase().endsWith('@medaltus.com');
+
+    if (isMedaltus) {
+      const internalNav = document.getElementById('nav-internal-section');
+      const internalBadge = document.getElementById('sb-internal-badge');
+      if (internalNav) internalNav.style.display = '';
+      if (internalBadge) internalBadge.style.display = '';
+    }
+  } catch (err) {
+    console.warn('[Clerk] Auth check failed, internal section stays hidden:', err);
+  }
+});
 </script>
 </body>
 </html>
