@@ -1044,7 +1044,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>SKU</th><th>Product Name</th><th>Qty at Amazon</th><th>Qty at Medaltus (FBM)</th><th>Allocated</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th></tr></thead>
+          <thead><tr>
+            <th class="inv-sortable" data-sort="sku" style="cursor:pointer;">SKU <span class="inv-sort-arrow"></span></th>
+            <th class="inv-sortable" data-sort="name" style="cursor:pointer;">Product Name <span class="inv-sort-arrow"></span></th>
+            <th>Qty at Amazon</th><th>Qty at Medaltus (FBM)</th><th>Allocated</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th>
+          </tr></thead>
           <tbody id="inv-table-body"><tr><td colspan="9" style="color:var(--muted);">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -7674,15 +7678,24 @@ function renderInventoryKpis(rows) {
   set('inv-count-healthy', counts.healthy);
 }
 
+let _invSortKey = null; // null = default status-rank order; 'sku' or 'name' once a header is clicked
+let _invSortDir = 'asc';
+
 function renderInventoryTable(rows) {
   const tbody = document.getElementById('inv-table-body');
   if (!tbody) return;
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);">No SKUs match</td></tr>'; return; }
 
-  const sorted = [...rows].sort((a, b) => {
-    const rank = { critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
-    return (rank[a.status] ?? 5) - (rank[b.status] ?? 5);
-  });
+  let sorted;
+  if (_invSortKey === 'sku' || _invSortKey === 'name') {
+    const dir = _invSortDir === 'desc' ? -1 : 1;
+    sorted = [...rows].sort((a, b) => dir * String(a[_invSortKey]).localeCompare(String(b[_invSortKey]), undefined, { numeric: true, sensitivity: 'base' }));
+  } else {
+    sorted = [...rows].sort((a, b) => {
+      const rank = { critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
+      return (rank[a.status] ?? 5) - (rank[b.status] ?? 5);
+    });
+  }
 
   tbody.innerHTML = sorted.map(r => `
     <tr>
@@ -7716,6 +7729,28 @@ function wireInventoryControls() {
       _invActiveFilter = btn.dataset.filter;
       applyInventoryFilters();
     });
+  });
+
+  document.querySelectorAll('.inv-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (_invSortKey === key) {
+        _invSortDir = _invSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _invSortKey = key;
+        _invSortDir = 'asc';
+      }
+      updateInventorySortArrows();
+      applyInventoryFilters();
+    });
+  });
+}
+
+function updateInventorySortArrows() {
+  document.querySelectorAll('.inv-sortable').forEach(th => {
+    const arrow = th.querySelector('.inv-sort-arrow');
+    if (!arrow) return;
+    arrow.textContent = th.dataset.sort === _invSortKey ? (_invSortDir === 'asc' ? '▲' : '▼') : '';
   });
 }
 
