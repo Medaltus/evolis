@@ -144,7 +144,7 @@ nav{flex:1;padding:8px 8px 0;}
 
 /* ── Home page (adapted from Cosmette's dashboard) ── */
 .home-hero{background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);border-radius:var(--radius);padding:32px 36px;margin-bottom:20px;position:relative;}
-.home-hero-logo{height:42px;width:auto;}
+.home-hero-logo{height:42px;width:auto;margin-left:-32px;display:block;}
 .home-badges{position:absolute;top:28px;right:32px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
 .home-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(36,233,163,0.16);border:1px solid rgba(36,233,163,0.35);color:var(--green);font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 12px;border-radius:20px;}
 .home-badge svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;}
@@ -1082,22 +1082,18 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
             <div class="home-resource-sub">Dropbox folder</div>
           </div>
         </a>
-        <!-- Both link to the shared Drive folder for now, since the
-             specific file within it wasn't given — same folder for both
-             until/unless direct file links (or a Cosmette-style Drive API
-             search-by-name) are wanted instead. -->
-        <a class="home-resource-item" href="https://drive.google.com/drive/folders/1Zt-Uj7pIlDBvxq9mgmi1fDmFB2W6Qxts?usp=drive_link" target="_blank" rel="noopener">
+        <a class="home-resource-item" href="https://drive.google.com/file/d/1E40zpw9JsALXmdZ3-lNqN4afu-RZyTzt/view?usp=sharing" target="_blank" rel="noopener">
           <span class="home-resource-icon">🗓️</span>
           <div>
             <div class="home-resource-title">Holiday Schedule</div>
-            <div class="home-resource-sub">Google Drive folder</div>
+            <div class="home-resource-sub">PDF</div>
           </div>
         </a>
-        <a class="home-resource-item" href="https://drive.google.com/drive/folders/1Zt-Uj7pIlDBvxq9mgmi1fDmFB2W6Qxts?usp=drive_link" target="_blank" rel="noopener">
+        <a class="home-resource-item" href="https://drive.google.com/file/d/1psVZPNdY3IrNGuTPjJm7znfmEYG7cex_/view?usp=drive_link" target="_blank" rel="noopener">
           <span class="home-resource-icon">🚚</span>
           <div>
             <div class="home-resource-title">Inbound Shipping &amp; Routing Guide</div>
-            <div class="home-resource-sub">Google Drive folder</div>
+            <div class="home-resource-sub">PDF</div>
           </div>
         </a>
       </div>
@@ -11345,6 +11341,26 @@ async function loadHomeConsignmentKpi() {
   }
 }
 document.addEventListener('DOMContentLoaded', loadHomeConsignmentKpi);
+
+// Total SKUs KPI — same source and "latest snapshot date" pattern used
+// on the Inventory page itself (OV_PRODUCTS_CACHE_SHEET_ID/GID), counting
+// rows in the most recent daily snapshot rather than the whole history.
+async function loadHomeTotalSkus() {
+  const valEl = document.getElementById('home-kpi-skus');
+  if (!valEl) return;
+  try {
+    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { valEl.textContent = '—'; return; }
+    const latestDate = rows.reduce((max, r) => (r.date && r.date > max ? r.date : max), '');
+    const latestRows = rows.filter(r => r.date === latestDate);
+    valEl.textContent = latestRows.length.toLocaleString();
+  } catch (err) {
+    console.warn('[Home] total SKUs KPI load failed:', err);
+    valEl.textContent = '—';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadHomeTotalSkus);
 
 // CLERK AUTH — internal-section gating only, NOT a page-wide gate.
 // Org-membership check, matching Cosmette's own getOrganizationMemberships()
