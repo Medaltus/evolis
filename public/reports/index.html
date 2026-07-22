@@ -10227,7 +10227,28 @@ async function loadAuditResultsFromSheet() {
     // Map: reused verbatim from the live, already-rendered SVG rather than
     // rebuilt from raw state data — the live page already did that work
     // when the tab was opened, so this just copies the real markup.
+    //
+    // Converted to a base64-encoded <img> instead of inline <svg> —
+    // 2026-07-22, after two attempts at CSS sizing (auto, then explicit
+    // px) both failed identically (map cropped on the right, missing
+    // Eastern states). That identical failure across two different
+    // sizing approaches points away from a CSS problem entirely and
+    // toward html2canvas's own well-documented limitations rendering
+    // inline <svg> elements directly. The logo uses exactly this
+    // img+base64+data-URI pattern and has rendered correctly in every
+    // single export log seen so far — reusing that proven path here
+    // instead of continuing to fight inline SVG sizing.
     const mapInner = pdfxHTML('#mfc-us-svg') || '';
+    const mapSvgFull = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 959 593" width="959" height="593">' + mapInner + '</svg>';
+    let mapImgSrc = '';
+    try {
+      mapImgSrc = 'data:image/svg+xml;base64,' + btoa(mapSvgFull);
+    } catch (e) {
+      console.warn('[pdf-export] map svg->base64 conversion failed:', e.message);
+    }
+    const mapHtml = mapImgSrc
+      ? '<img src="' + mapImgSrc + '" style="width:377px;height:233px;display:block;margin:0 auto;" />'
+      : '<div style="color:var(--muted);font-size:11px;">Map failed to render for this export.</div>';
 
     return '' +
       '<div class="pdfx-page">' +
@@ -10243,7 +10264,7 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
             '<div class="pdfx-card-title">Orders by State · Last 30 Days</div>' +
-            '<svg viewBox="0 0 959 593" style="width:377px;height:233px;display:block;margin:0 auto;">' + mapInner + '</svg>' +
+            mapHtml +
           '</div>' +
         '</div>' +
       '</div>';
