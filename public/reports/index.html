@@ -1028,7 +1028,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="home-kpi-card">
         <div class="home-kpi-label">Units On Hand</div>
         <div class="home-kpi-value" id="home-kpi-units">&mdash;</div>
-        <div class="home-kpi-sub">Across all channels</div>
+        <div class="home-kpi-sub" id="home-kpi-units-sub">Consignment units</div>
       </div>
     </div>
 
@@ -1055,14 +1055,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </div>
         </div>
         <div class="home-team-item">
-          <div class="home-team-avatar">IF</div>
-          <div>
-            <div class="home-team-name">Isabella Fernandez</div>
-            <div class="home-team-role">Brand Manager</div>
-            <a class="home-team-email" href="mailto:ifernandez@medaltus.com">ifernandez@medaltus.com</a>
-          </div>
-        </div>
-        <div class="home-team-item">
           <div class="home-team-avatar">JR</div>
           <div>
             <div class="home-team-name">Jaclyn Risser</div>
@@ -1083,12 +1075,29 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card">
         <div class="home-card-title">Resources</div>
         <div class="home-card-sub">Shared files, routing guides, and brand docs.</div>
-        <!-- PLACEHOLDER — replace href with Evolis's actual shared resource link(s) -->
-        <a class="home-resource-item" href="#" target="_blank" rel="noopener">
+        <a class="home-resource-item" href="https://www.dropbox.com/scl/fo/779lwjw5d50lais1e6f2u/AOJK7AOPyNY0WC0-Z4q7-X8?rlkey=dudkg8i08xnsx3qcp8hqbvwhg&st=05ax0b6t&dl=0" target="_blank" rel="noopener">
           <span class="home-resource-icon">📁</span>
           <div>
             <div class="home-resource-title">Shared Files</div>
-            <div class="home-resource-sub">Add real link here</div>
+            <div class="home-resource-sub">Dropbox folder</div>
+          </div>
+        </a>
+        <!-- Both link to the shared Drive folder for now, since the
+             specific file within it wasn't given — same folder for both
+             until/unless direct file links (or a Cosmette-style Drive API
+             search-by-name) are wanted instead. -->
+        <a class="home-resource-item" href="https://drive.google.com/drive/folders/1Zt-Uj7pIlDBvxq9mgmi1fDmFB2W6Qxts?usp=drive_link" target="_blank" rel="noopener">
+          <span class="home-resource-icon">🗓️</span>
+          <div>
+            <div class="home-resource-title">Holiday Schedule</div>
+            <div class="home-resource-sub">Google Drive folder</div>
+          </div>
+        </a>
+        <a class="home-resource-item" href="https://drive.google.com/drive/folders/1Zt-Uj7pIlDBvxq9mgmi1fDmFB2W6Qxts?usp=drive_link" target="_blank" rel="noopener">
+          <span class="home-resource-icon">🚚</span>
+          <div>
+            <div class="home-resource-title">Inbound Shipping &amp; Routing Guide</div>
+            <div class="home-resource-sub">Google Drive folder</div>
           </div>
         </a>
       </div>
@@ -11297,11 +11306,9 @@ async function loadAuditResultsFromSheet() {
 })();
 
 // ═══════════════════════════════════════════════════════════════════
-// Sets the "as of" date on the Home hero. KPI values (#home-kpi-skus,
-// #home-kpi-units) are left as placeholders ("—") deliberately — wiring
-// them to real data means picking a specific source (e.g. master SKU
-// list count, live inventory totals), which hasn't been decided yet.
-// Flagging this explicitly rather than guessing at a source.
+// Sets the "as of" date on the Home hero. Total SKUs KPI is left as a
+// placeholder ("—") deliberately — wiring it means picking a specific
+// source, which hasn't been decided yet.
 function setHomeDate() {
   const el = document.getElementById('home-date');
   if (!el) return;
@@ -11309,6 +11316,35 @@ function setHomeDate() {
   el.textContent = 'As of ' + now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 document.addEventListener('DOMContentLoaded', setHomeDate);
+
+// Units On Hand KPI — sums the same consignment "available" column used
+// on the Inventory page's Consignment column (SHEET_CONSIGNMENT_INVENTORY,
+// evolis tab), and shows the most recent last_updated timestamp from that
+// same data as the sub-label, so the number's own freshness is visible
+// rather than implied.
+async function loadHomeConsignmentKpi() {
+  const valEl = document.getElementById('home-kpi-units');
+  const subEl = document.getElementById('home-kpi-units-sub');
+  if (!valEl) return;
+  try {
+    const csv = await fetch(ovCsvUrl(OV_CONSIGNMENT_SHEET_ID, '505131584')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { valEl.textContent = '—'; if (subEl) subEl.textContent = 'No consignment data yet'; return; }
+    const total = rows.reduce((sum, r) => sum + (parseFloat(r.available) || 0), 0);
+    const latest = rows.reduce((max, r) => ((r.last_updated || '') > max ? r.last_updated : max), '');
+    valEl.textContent = total.toLocaleString();
+    if (subEl && latest) {
+      const d = new Date(latest);
+      subEl.textContent = 'Consignment · updated ' + (isNaN(d) ? latest : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    } else if (subEl) {
+      subEl.textContent = 'Consignment units';
+    }
+  } catch (err) {
+    console.warn('[Home] consignment KPI load failed:', err);
+    valEl.textContent = '—';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadHomeConsignmentKpi);
 
 // CLERK AUTH — internal-section gating only, NOT a page-wide gate.
 // Org-membership check, matching Cosmette's own getOrganizationMemberships()
