@@ -123,6 +123,35 @@ module.exports = async (req, res) => {
   }
 
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  // ── Diagnostic-only test mode ────────────────────────────────────────
+  // ?testSku=DEC0001&testAsin=B0DRPPFP7Z — bypasses the cursor/masterList
+  // walk entirely and calls buildProductRow for just this one item,
+  // returning the RAW listing/inventory/catalog responses (including any
+  // {__error} objects the Promise.all .catch() below normally swallows
+  // silently — see file header note added 2026-07-22). Never writes to
+  // the sheet. Added specifically because this cron has no other way to
+  // test one SKU without waiting for the resumable cursor to reach it,
+  // which for a brand sitting late in the master list could take several
+  // real invocations.
+  if (req.query.testSku && req.query.testAsin) {
+    const testItem = { sku: req.query.testSku, asin: req.query.testAsin, name: '(test mode)' };
+    try {
+      const [listing, inventory, catalog, sfListing] = await Promise.all([
+        fetchListing(testItem.sku).catch(err => ({ __error: err.message })),
+        fetchInventory(testItem.sku).catch(err => ({ __error: err.message })),
+        fetchCatalog(testItem.asin).catch(err => ({ __error: err.message })),
+        fetchListing(`${testItem.sku}-SF`).catch(err => ({ __error: err.message })),
+      ]);
+      return res.status(200).json({
+        testMode: true, sku: testItem.sku, asin: testItem.asin,
+        listing, inventory, catalog, sfListing,
+      });
+    } catch (err) {
+      return res.status(500).json({ testMode: true, error: err.message });
+    }
+  }
+
   const force = req.query.force === 'true';
 
   let meta;
@@ -240,6 +269,16 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     fetchCatalog(asin).catch(err => ({ __error: err.message })),
     fetchListing(sfSku).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
   ]);
+
+  // ADDED 2026-07-22: these three errors used to be captured into
+  // {__error} and never read again anywhere — the row would still get
+  // built and written (with the corresponding fields blank), with zero
+  // trace in the logs that anything failed. Found while diagnosing
+  // Dearcloud coming back completely empty; logging now, regardless of
+  // whether it turns out to be the actual cause there.
+  if (listing?.__error)   console.error(`[sync-products] ${sku} (${item.brandTabName}) — Listings API failed:`, listing.__error);
+  if (inventory?.__error) console.error(`[sync-products] ${sku} (${item.brandTabName}) — FBA Inventory API failed:`, inventory.__error);
+  if (catalog?.__error)   console.error(`[sync-products] ${asin} (${item.brandTabName}) — Catalog Items API failed:`, catalog.__error);
 
   const inv = inventory?.payload?.inventorySummaries?.[0]?.inventoryDetails || {};
   // total_quantity is now a live formula (fulfillable + seller-fulfilled),
