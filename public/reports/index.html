@@ -8007,7 +8007,7 @@ async function ffLoadShippedChart() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        // interaction option removed 2026-07-22 as a test — it was the ONLY config difference found between this chart and every working chart after exhaustive comparison; no confirmed mechanism for why it would affect resize(), but it's the last remaining lead after two other theories were disproven with real data.
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -8213,7 +8213,7 @@ async function mfcLoadShippedChart() {
       }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        // interaction option removed 2026-07-22 as a test — it was the ONLY config difference found between this chart and every working chart after exhaustive comparison; no confirmed mechanism for why it would affect resize(), but it's the last remaining lead after two other theories were disproven with real data.
         plugins: {
           legend: { display: false },
           tooltip: {
