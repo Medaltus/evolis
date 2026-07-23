@@ -10,35 +10,40 @@
 // Manually-triggered from the dashboard's "Create ASN" button — no
 // CRON_SECRET, same exception already established for run-analysis.js.
 //
-// ⚠️ VERIFY BEFORE DEPLOYING:
-//   - This uses `googleapis` directly with a service account rather than
-//     the shared config/_sheets_client.js helpers (ensureTab/readRows/
-//     replaceRows/sheetsGet/sheetsPost) referenced elsewhere in this repo,
-//     since I don't have that file's exact export signatures to match
-//     against. Behavior here should be correct, but consider refactoring
-//     to use the shared client for consistency (retry-with-backoff on 429s,
-//     etc.) once you've confirmed its API.
-//   - Env var names below (GOOGLE_SERVICE_ACCOUNT_EMAIL /
-//     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) are a guess at Vercel convention —
-//     swap in whatever the vbc-states-writer service account credentials
-//     are actually stored under.
-//   - Not tested against the live sheets/Drive folder — test with curl
-//     against a real (or throwaway) ASN template + tracker sheet before
-//     trusting this in production, per the project's own "test before
-//     considering anything done" convention.
+// Uses the real config/_sheets_client.js (confirmed from GitHub commit
+// history, 2026-07-23) for the one thing it already covers well — the
+// master-tracker append, via appendRows() + its own getSheetsToken()
+// caching/retry-with-backoff. Two things it does NOT cover, so these stay
+// on direct `googleapis` calls:
+//   - Drive file-copy (the shared client only ever requests the
+//     spreadsheets scope, never drive)
+//   - Arbitrary single-cell/range writes into the new ASN sheet's header
+//     block (B3, B5, etc.) and line-item grid — ensureTab/appendRows/
+//     replaceRows are all header+full-column shaped, not a fit for writing
+//     specific cells. Worth asking Jaclyn whether it's worth exporting the
+//     module's internal sheetsPost/sheetsGet too, since this is exactly
+//     the kind of write that recurs.
+//
+// ⚠️ Built against _sheets_client (9) from commit history, not confirmed
+// HEAD — diff against your actual current file before trusting this.
+// ⚠️ Not tested against the live sheets/Drive folder — curl it against a
+// throwaway copy of the template first.
 
 const { google } = require('googleapis');
+const { appendRows, getSheetsToken } = require('./config/_sheets_client');
 
 const ASN_TEMPLATE_ID = '12wOeZryBrUKsWFrPr6SzHadwEti1SI1hEEv1X2vjHkk';
 const ASN_DRIVE_FOLDER_ID = '1UNcwvEitFys68i1xDhZNW1ly4hq1VrRE';
 const TRACKER_SHEET_ID = '1Pb50CzCb0fouNsaewQATEY_c3IpgRVPu5FoppNg19_A';
 const TRACKER_TAB = 'Inbound_Shipments';
 
-function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+// Separate from _sheets_client's own getSheetsToken() because Drive
+// file-copy needs the drive scope, which that module never requests.
+function getDriveSheetsAuth() {
+  const email = process.env.GOOGLE_CLIENT_EMAIL;
+  const key = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
   if (!email || !key) {
-    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY env vars');
+    throw new Error('Missing GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY env vars');
   }
   return new google.auth.JWT(email, null, key, [
     'https://www.googleapis.com/auth/drive',
@@ -87,7 +92,7 @@ module.exports = async function handler(req, res) {
   const totalUnits = cleanRows.reduce((s, r) => s + r.quantity, 0);
 
   try {
-    const auth = getAuth();
+    const auth = getDriveSheetsAuth();
     const drive = google.drive({ version: 'v3', auth });
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -104,12 +109,14 @@ module.exports = async function handler(req, res) {
     const driveUrl = copyRes.data.webViewLink || `https://docs.google.com/spreadsheets/d/${newFileId}/edit`;
 
     // 2) Write the header block (rows 3–11, column B) + line items (row 14+).
-    // Matches the fixed layout confirmed from Luccini's populated example:
-    //   row3 Shipment ID · row4 Upload Date · row5 Status · row6 Carrier ·
-    //   row7 PRO/Tracking # · row8 Box/Pallet Count · row9 Notes ·
-    //   row10 Total SKUs · row11 Total Units · row13 line-item header ·
-    //   row14+ line items (SKU, Product Name, Expected Qty, Received Qty,
-    //   Discrepancy, Case Qty, # of Cases, Location).
+    // Fixed layout confirmed from Luccini's populated example: row3
+    // Shipment ID · row4 Upload Date · row5 Status · row6 Carrier · row7
+    // PRO/Tracking # · row8 Box/Pallet Count · row9 Notes · row10 Total
+    // SKUs · row11 Total Units · row13 line-item header · row14+ line
+    // items (SKU, Product Name, Expected Qty, Received Qty, Discrepancy,
+    // Case Qty, # of Cases, Location). No existing helper in
+    // _sheets_client.js fits an arbitrary-range write like this one, so
+    // this part stays on googleapis directly.
     const lineItemRows = cleanRows.map(r => [r.sku, r.productName, r.quantity, '', '', '', '', 'Medaltus']);
 
     await sheets.spreadsheets.values.batchUpdate({
@@ -127,16 +134,17 @@ module.exports = async function handler(req, res) {
       },
     });
 
-    // 3) Append a row to the master tracker.
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: TRACKER_SHEET_ID,
-      range: `${TRACKER_TAB}!A:J`,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values: [[shipmentId, uploadDate, 'Open', '', '', '', '', '', '', driveUrl]],
-      },
-    });
+    // 3) Append a row to the master tracker — this part genuinely fits
+    // _sheets_client.js's own appendRows(), so it goes through the real
+    // shared helper (same token cache + 429 retry-with-backoff as every
+    // cron in this repo) rather than another one-off googleapis call.
+    const token = await getSheetsToken();
+    await appendRows(
+      TRACKER_SHEET_ID,
+      TRACKER_TAB,
+      [[shipmentId, uploadDate, 'Open', '', '', '', '', '', '', driveUrl]],
+      token
+    );
 
     res.status(200).json({ shipmentId, driveUrl, fileId: newFileId });
   } catch (err) {
