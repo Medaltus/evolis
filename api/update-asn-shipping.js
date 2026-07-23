@@ -2,30 +2,40 @@
 //
 // Fills in Carrier / PRO-Tracking# / Box-Pallet-Count after an ASN has
 // already been created (these usually aren't known at CSV-upload time).
-// Updates both the per-ASN sheet's own header cells AND the matching row
-// on the master tracker, so the two never drift out of sync.
+// Updates both the master tracker row AND the per-ASN sheet's own header
+// cells, so the two never drift out of sync.
 //
 // Manually-triggered from the dashboard's "Add shipping info" form — no
 // CRON_SECRET, same exception as run-analysis.js / create-asn.js.
 //
-// ⚠️ Same caveats as create-asn.js: written directly against `googleapis`
-// rather than the shared config/_sheets_client.js helpers (signature
-// unknown to me), and not yet tested against the live sheets — verify with
-// curl before trusting in production.
+// Uses the real config/_sheets_client.js (confirmed from GitHub commit
+// history, 2026-07-23):
+//   - readRows() + replaceRows() for the tracker update — reads all rows
+//     as header-keyed objects, patches the matching shipment's Carrier/
+//     TrackingNo/BoxCount, writes the whole tab back. A little more than
+//     is strictly needed for a one-row change, but it means this goes
+//     through the real shared retry-with-backoff path instead of a
+//     one-off call, and there's no arbitrary-single-row-write helper
+//     exported to reach for instead.
+//   - getSheetsToken() for the ASN sheet's own header-cell update (B6:B8)
+//     — that one genuinely needs an arbitrary-range write, which nothing
+//     in _sheets_client.js covers, so it's a direct authenticated fetch
+//     using the same cached token rather than pulling in googleapis for
+//     a file that otherwise doesn't need it.
+//
+// ⚠️ Built against _sheets_client (9) from commit history, not confirmed
+// HEAD — diff against your actual current file before trusting this.
+// ⚠️ Not tested against the live sheets — curl it against a throwaway
+// shipment first.
 
-const { google } = require('googleapis');
+const { readRows, replaceRows, getSheetsToken } = require('./config/_sheets_client');
 
 const TRACKER_SHEET_ID = '1Pb50CzCb0fouNsaewQATEY_c3IpgRVPu5FoppNg19_A';
 const TRACKER_TAB = 'Inbound_Shipments';
-
-function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-  if (!email || !key) {
-    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY env vars');
-  }
-  return new google.auth.JWT(email, null, key, ['https://www.googleapis.com/auth/spreadsheets']);
-}
+const TRACKER_HEADERS = [
+  'ShipmentID', 'UploadDate', 'Status', 'Carrier', 'TrackingNo',
+  'BoxCount', 'Notes', 'ReceivedDate', 'DiscrepancyCount', 'DriveUrl',
+];
 
 function fileIdFromUrl(url) {
   const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -45,48 +55,38 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const auth = getAuth();
-    const sheets = google.sheets({ version: 'v4', auth });
-
-    // Find the matching tracker row (and its DriveUrl, to reach the ASN's
-    // own sheet) by scanning column A for the shipment ID — small sheet,
-    // fine to read in full rather than maintaining a separate index.
-    const trackerRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: TRACKER_SHEET_ID,
-      range: `${TRACKER_TAB}!A:J`,
-    });
-    const trackerRows = trackerRes.data.values || [];
-    const rowIdx = trackerRows.findIndex(r => (r[0] || '').trim() === shipmentId);
-    if (rowIdx < 0) {
+    // Header-keyed rows, courtesy of the real readRows() — much easier to
+    // work with than raw column-index arrays.
+    const trackerRows = await readRows(TRACKER_SHEET_ID, TRACKER_TAB);
+    const target = trackerRows.find(r => String(r.ShipmentID || '').trim() === shipmentId);
+    if (!target) {
       res.status(404).json({ error: `Shipment ${shipmentId} not found on the tracker` });
       return;
     }
-    const sheetRowNumber = rowIdx + 1; // 1-indexed, matches the sheet directly
-    const driveUrl = trackerRows[rowIdx][9] || '';
+    const driveUrl = target.DriveUrl || '';
     const fileId = fileIdFromUrl(driveUrl);
 
-    // Update the tracker row's Carrier(D) / TrackingNo(E) / BoxCount(F).
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: TRACKER_SHEET_ID,
-      range: `${TRACKER_TAB}!D${sheetRowNumber}:F${sheetRowNumber}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [[carrier || '', trackingNo || '', boxCount || '']] },
-    });
+    target.Carrier = carrier || '';
+    target.TrackingNo = trackingNo || '';
+    target.BoxCount = boxCount || '';
+
+    // Write every row back in the sheet's real column order — replaceRows
+    // clears row 2 onward and rewrites, so this has to include every row,
+    // not just the one that changed.
+    const outputRows = trackerRows.map(r => TRACKER_HEADERS.map(h => r[h] ?? ''));
+    const token = await getSheetsToken();
+    await replaceRows(TRACKER_SHEET_ID, TRACKER_TAB, TRACKER_HEADERS, outputRows, token);
 
     // Update the ASN sheet's own header cells (B6 Carrier, B7 Tracking#,
     // B8 Box/Pallet Count) so the sheet stays the source of truth too.
+    // Arbitrary-range write — nothing in _sheets_client.js fits, so this
+    // reuses the same cached token via a direct authenticated call.
     if (fileId) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: fileId,
-        requestBody: {
-          valueInputOption: 'USER_ENTERED',
-          data: [
-            { range: 'B6', values: [[carrier || '']] },
-            { range: 'B7', values: [[trackingNo || '']] },
-            { range: 'B8', values: [[boxCount || '']] },
-          ],
-        },
-      });
+      await sheetsValuesBatchUpdate(token, fileId, [
+        { range: 'B6', values: [[carrier || '']] },
+        { range: 'B7', values: [[trackingNo || '']] },
+        { range: 'B8', values: [[boxCount || '']] },
+      ]);
     }
 
     res.status(200).json({ ok: true });
@@ -95,3 +95,17 @@ module.exports = async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Failed to update shipping info' });
   }
 };
+
+async function sheetsValuesBatchUpdate(token, spreadsheetId, data) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`Sheets batchUpdate failed (${resp.status}): ${body.slice(0, 300)}`);
+  }
+  return resp.json();
+}
