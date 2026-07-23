@@ -4039,7 +4039,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         </div>
       </div>
 
-      <!-- SEARCH QUERY PERFORMANCE — its own data source, kept separate -->
+      <!-- RANK TRACKER — its own data source (keyword tracker + live listing + PPC search terms), kept separate -->
       <div class="sub-page" id="oa-ranktracker">
         <div class="org-sqp-alert" id="oa-rt-banner">
           <span>📈</span>
@@ -4061,17 +4061,18 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr>
-                <th>Product</th><th>Keyword</th><th>Search Vol</th>
+                <th>Product</th><th>Keyword</th><th>Vol/mo</th>
                 <th id="oa-rt-col-older">Earlier</th><th id="oa-rt-col-newer">Latest</th>
-                <th>Change</th><th>Est. Market Sales</th><th>Suggested Action</th>
+                <th>Change</th><th>Where in Listing</th><th>PPC (Spend · Sales · ACoS)</th><th>Recommended Action</th>
               </tr></thead>
-              <tbody id="oa-rt-tbody"><tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+              <tbody id="oa-rt-tbody"><tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
             </table>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;">
-            "Est. Market Sales" is Helium 10's own estimate of total marketplace sales for that search term across <em>all</em> sellers — not évolis-specific purchases. Real per-keyword purchase data (from Search Query Performance / Ads search terms) isn't wired in here yet.<br>
-            Product mapping: Reverse = EVO0001 (confirmed). Promote = EVO0005, Prevent = EVO0009 — pulled from the Insights → Products tab, not yet verified against the master SKU list.<br>
-            "Suggested Action" is a simple rule based on rank direction + magnitude only — not yet the AI-generated, context-aware recommendation Run Analysis produces elsewhere on this dashboard.
+            Rows are sorted with anything needing immediate attention first (🔴), then best-performing, down to lowest-performing — not alphabetical or by volume.<br>
+            <strong>Where in Listing</strong> reflects the live listing copy as of its last sync — it can only show current placement, not when a keyword was added, since the listings sheet doesn't keep dated history yet.<br>
+            <strong>PPC</strong> is this month's search-term-level spend/sales/ACoS, exact-matched to the keyword — a keyword with no exact-match search term shows "No spend" even if a similar phrase is running.<br>
+            Product mapping: Reverse = EVO0001 (confirmed). Promote = EVO0005, Prevent = EVO0009 — pulled from the Insights → Products tab, not yet verified against the master SKU list.
           </div>
         </div>
       </div>
@@ -9574,7 +9575,77 @@ async function initSnsExternal() {
     return { text: '→ Holding steady', cls: '' };
   }
 
+  // Two more sheets this tab now reads, alongside the keyword tracker above.
+  // Declared locally (not reusing the same-named consts declared later in
+  // this file for the Listing Audit / PPC pages) to avoid any fragile
+  // cross-scope assumption — same confirmed IDs either way.
+  const RT_LISTINGS_SHEET_ID = '142l0fEr7TnNCLfqbxfK3PoS4gREaoqfXevqjB1_dB-M';
+  const RT_LISTINGS_GID      = '1253931757';
+  const RT_PPC_SHEET_ID      = '1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o';
+  const RT_PPC_GID           = '1865714213'; // evolis tab
+
+  function rtCsvUrl(sheetId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}&_cb=${Date.now()}`;
+  }
+
+  // Live listing copy has no history — SHEET_LISTINGS is overwritten per
+  // sync, one row per SKU, not appended. That means this can only report
+  // CURRENT placement, never "added on <date>" — there's nothing to diff
+  // against. Flagged in the on-page note too, not just here.
+  function computeWhereInListing(keyword, sku) {
+    if (!_listingRows) return '—';
+    const row = _listingRows.find(r => (r.sku || '').trim() === sku);
+    if (!row) return '—';
+    const kw = keyword.toLowerCase();
+    const hits = [];
+    if ((row.title || '').toLowerCase().includes(kw)) hits.push('Title');
+    for (let i = 1; i <= 5; i++) {
+      const b = row['bullet_' + i];
+      if (b && b.toLowerCase().includes(kw)) hits.push('B' + i);
+    }
+    if ((row.item_highlights || '').toLowerCase().includes(kw)) hits.push('IH');
+    if ((row.backend_keywords || '').toLowerCase().includes(kw)) hits.push('Backend');
+    return hits.length ? hits.join(', ') : 'Not in listing';
+  }
+
+  // Exact-match only (search_term === keyword, case-insensitive) — a
+  // fuzzy match that looks confident but joins the wrong term is worse
+  // than an honest "No spend" on a keyword that's actually just under a
+  // slightly different search term.
+  function aggregatePpcByTerm() {
+    const map = new Map();
+    (_ppcRows || []).forEach(r => {
+      const term = (r.search_term || r.keyword || '').trim().toLowerCase();
+      if (!term) return;
+      const e = map.get(term) || { spend: 0, purchases: 0, sales: 0 };
+      e.spend += parseFloat(r.cost) || 0;
+      e.purchases += parseInt(r.purchases, 10) || 0;
+      e.sales += parseFloat(r.sales) || 0;
+      map.set(term, e);
+    });
+    return map;
+  }
+
+  // Returns both the display string AND a performance tier — the tier
+  // drives row sorting/coloring, the string is just for display. Same
+  // number never gets computed twice.
+  function classifyPpc(entry) {
+    if (!entry || entry.spend === 0) return { label: 'No spend', tier: 'neutral', score: 0 };
+    const spend = entry.spend;
+    if (entry.purchases > 0 && entry.sales > 0) {
+      const acos = (spend / entry.sales) * 100;
+      const acosStr = acos.toFixed(1) + '% ACoS';
+      if (acos <= 25) return { label: `✅ $${spend.toFixed(2)} · ${entry.purchases} ord · ${acosStr}`, tier: 'good', score: 3 };
+      if (acos <= 75) return { label: `$${spend.toFixed(2)} · ${entry.purchases} ord · ${acosStr}`, tier: 'neutral', score: 0 };
+      return { label: `⚠️ $${spend.toFixed(2)} · ${entry.purchases} ord · ${acosStr}`, tier: 'urgent', score: -4 };
+    }
+    if (spend >= 10) return { label: `🔴 $${spend.toFixed(2)} · 0 ord — no return`, tier: 'urgent', score: -5 };
+    return { label: `$${spend.toFixed(2)} · 0 ord`, tier: 'warn', score: -1 };
+  }
+
   let _kwRows = null; // raw parsed rows, cached after first successful fetch
+  let _listingRows = null;
+  let _ppcRows = null;
 
   window.initRankTrackerActivators = function () {
     if (window.__rankTrackerPromise) return window.__rankTrackerPromise;
@@ -9582,14 +9653,20 @@ async function initSnsExternal() {
       const tbody = document.getElementById('oa-rt-tbody');
       const bannerText = document.getElementById('oa-rt-banner-text');
       try {
-        const csv = await fetch(csvUrl()).then(r => r.ok ? r.text() : '').catch(() => '');
-        if (!isCsv(csv)) throw new Error('Sheet returned no CSV data');
-        _kwRows = parseCsvRows(csv).filter(r => r.date && r.asin && r.keyword);
+        const [kwCsv, listingCsv, ppcCsv] = await Promise.all([
+          fetch(csvUrl()).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(rtCsvUrl(RT_LISTINGS_SHEET_ID, RT_LISTINGS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(rtCsvUrl(RT_PPC_SHEET_ID, RT_PPC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+        ]);
+        if (!isCsv(kwCsv)) throw new Error('Keyword tracker sheet returned no CSV data');
+        _kwRows = parseCsvRows(kwCsv).filter(r => r.date && r.asin && r.keyword);
+        _listingRows = isCsv(listingCsv) ? parseCsvRows(listingCsv) : [];
+        _ppcRows = isCsv(ppcCsv) ? parseCsvRows(ppcCsv) : [];
         window.renderRankTrackerActivators();
       } catch (err) {
         console.warn('[RankTracker] load failed:', err.message);
         if (bannerText) bannerText.textContent = 'Could not load keyword tracker data — ' + err.message;
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--danger);">Failed to load.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--danger);">Failed to load.</td></tr>';
       }
     })();
     return window.__rankTrackerPromise;
@@ -9610,7 +9687,7 @@ async function initSnsExternal() {
     const rows = _kwRows.filter(r => ASIN_MAP[r.asin]);
     if (!rows.length) {
       if (bannerText) bannerText.textContent = 'No Activator rows found in the keyword tracker sheet yet.';
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No data.</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);">No data.</td></tr>';
       return;
     }
 
@@ -9634,8 +9711,9 @@ async function initSnsExternal() {
     if (colOlderEl) colOlderEl.textContent = targetOlderDate;
     if (colNewerEl) colNewerEl.textContent = newestDateOverall;
 
-    let improved = 0, declined = 0, newlyRanking = 0, droppedOut = 0, notRanking = 0, steady = 0;
+    let improved = 0, declined = 0, newlyRanking = 0, droppedOut = 0, notRanking = 0, steady = 0, urgentCount = 0;
     const tableRows = [];
+    const ppcByTerm = aggregatePpcByTerm();
 
     groups.forEach((observations, key) => {
       const [asin, keyword] = key.split('||');
@@ -9669,15 +9747,39 @@ async function initSnsExternal() {
         ? Math.abs(olderRank.numeric - newerRank.numeric)
         : (olderObs ? 9999 : -1); // dropped-out/newly-ranking sort first; no-history sorts last
 
+      // ── New: listing placement + PPC performance, and a combined
+      // priority score driving sort order and row color. Rank-change
+      // signal (from suggestAction's cls) and PPC signal both feed in;
+      // whichever is worse wins for "urgent", scores otherwise add.
+      const sku = ASIN_MAP[asin] ? ASIN_MAP[asin].sku : '';
+      const whereInListing = computeWhereInListing(keyword, sku);
+      const ppcEntry = ppcByTerm.get(keyword.toLowerCase());
+      const ppc = classifyPpc(ppcEntry);
+
+      let rankScore = 0, rankUrgent = false;
+      if (action.cls === 'rank-top') rankScore = 2;
+      else if (action.cls === 'rank-low') { rankScore = -2; rankUrgent = action.text.indexOf('Dropped') !== -1; }
+
+      const urgent = rankUrgent || ppc.tier === 'urgent';
+      const priorityScore = rankScore + ppc.score;
+      if (urgent) urgentCount++;
+
       tableRows.push({
         asin, keyword, olderObs, newerObs, olderRank, newerRank, action,
         searchVolume: parseInt(newerObs.search_volume, 10) || 0,
-        keywordSales: newerObs.keyword_sales || '',
-        changeMagnitude,
+        changeMagnitude, whereInListing, ppc, urgent, priorityScore,
       });
     });
 
-    tableRows.sort((a, b) => b.changeMagnitude - a.changeMagnitude || b.searchVolume - a.searchVolume);
+    // Important/urgent rows always float to the top regardless of
+    // everything else; below that, best-performing to worst-performing
+    // (priorityScore descending); changeMagnitude only breaks remaining
+    // ties, it no longer drives the primary sort.
+    tableRows.sort((a, b) => {
+      if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
+      if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
+      return b.changeMagnitude - a.changeMagnitude;
+    });
 
     if (tbody) {
       tbody.innerHTML = tableRows.map(r => {
@@ -9695,14 +9797,23 @@ async function initSnsExternal() {
             changeCell = '<span style="color:var(--danger);font-weight:600;">⚠️ Dropped</span>';
           }
         }
-        return `<tr>
+        // Row background follows the same tier driving the sort — urgent
+        // rows are visibly flagged, not just floated to the top.
+        const rowBg = r.urgent ? 'rgba(219,55,45,0.06)'
+          : r.ppc.tier === 'good' ? 'var(--green-dim)'
+          : r.ppc.tier === 'warn' ? 'rgba(244,223,208,0.55)'
+          : '';
+        const rowBorder = r.urgent ? 'border-left:3px solid var(--danger);' : (r.ppc.tier === 'good' ? 'border-left:3px solid var(--green);' : '');
+        const rowStyle = (rowBg || rowBorder) ? ` style="background:${rowBg};${rowBorder}"` : '';
+        return `<tr${rowStyle}>
           <td>${escapeHtml(product)}</td>
           <td>${escapeHtml(r.keyword)}</td>
           <td>${r.searchVolume.toLocaleString()}</td>
           <td>${rankPillHtml(r.olderRank)}</td>
           <td>${rankPillHtml(r.newerRank)}</td>
           <td>${changeCell}</td>
-          <td>${r.keywordSales ? Number(r.keywordSales).toLocaleString() : '—'}</td>
+          <td style="font-size:11.5px;">${escapeHtml(r.whereInListing)}</td>
+          <td style="font-size:11.5px;">${r.ppc.label}</td>
           <td style="font-size:11.5px;${r.action.cls ? `color:${r.action.cls === 'rank-top' ? '#1db88a' : r.action.cls === 'rank-low' ? 'var(--danger)' : 'var(--navy)'};` : ''}">${escapeHtml(r.action.text)}</td>
         </tr>`;
       }).join('');
@@ -9710,14 +9821,15 @@ async function initSnsExternal() {
 
     if (bannerText) {
       const total = tableRows.length;
-      bannerText.innerHTML = `<strong>${total} tracked keywords</strong> across 3 Activator SKUs, comparing ${targetOlderDate} to ${newestDateOverall}: ` +
+      const urgentPrefix = urgentCount > 0 ? `<strong style="color:var(--danger);">🔴 ${urgentCount} need attention now</strong> — ` : '';
+      bannerText.innerHTML = urgentPrefix + `<strong>${total} tracked keywords</strong> across 3 Activator SKUs, comparing ${targetOlderDate} to ${newestDateOverall}: ` +
         `<strong style="color:#1db88a;">${improved} improved</strong>, ` +
         `<strong style="color:var(--danger);">${declined} declined</strong>, ` +
         `<strong style="color:#1db88a;">${newlyRanking} newly ranking</strong>, ` +
         `<strong style="color:var(--danger);">${droppedOut} dropped out</strong>, ` +
         `${steady} holding steady, ${notRanking} still not ranking (>306 both periods).`;
     }
-    if (banner) banner.style.borderColor = declined + droppedOut > improved + newlyRanking ? 'rgba(219,55,45,.3)' : 'rgba(36,233,163,.3)';
+    if (banner) banner.style.borderColor = urgentCount > 0 ? 'rgba(219,55,45,.4)' : (declined + droppedOut > improved + newlyRanking ? 'rgba(219,55,45,.3)' : 'rgba(36,233,163,.3)');
   };
 })();
 
