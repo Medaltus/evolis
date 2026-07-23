@@ -884,6 +884,88 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .pdfx-footer-right{text-align:right;font-size:10px;color:var(--muted);}
 .pdfx-footer-conf{color:var(--green);font-weight:700;letter-spacing:.05em;}
 
+/* ── Inbound Shipments (ASN) — external Inventory page ──────────────────
+   Adapted from Luccini's InboundTab.module.css design reference, ported to
+   évolis's own CSS variables (--navy/--green/--muted/--border/--radius)
+   rather than Luccini's --teal/--card-bg/--radius-lg, which don't exist
+   here. Scoped under .asn- to avoid any collision with existing classes. */
+.asn-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+.asn-header-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.asn-btn-primary{display:flex;align-items:center;gap:7px;padding:9px 18px;background:var(--navy);color:var(--white);border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;}
+.asn-btn-primary:hover{opacity:.85;}
+.asn-btn-secondary{display:flex;align-items:center;gap:7px;padding:9px 16px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;color:var(--muted);}
+.asn-btn-secondary:hover{border-color:var(--navy);color:var(--navy);}
+
+.asn-subtabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:18px;}
+.asn-subtab{padding:8px 16px;font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--muted);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;display:flex;align-items:center;gap:6px;}
+.asn-subtab:hover{color:var(--navy);}
+.asn-subtab.active{color:var(--navy);border-bottom-color:var(--green);}
+.asn-subtab-count{background:var(--bg);border:1px solid var(--border);color:var(--muted);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;}
+
+.asn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+.asn-card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
+.asn-card[data-status="Received"]{border-color:var(--green);}
+.asn-card-hd{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border);background:var(--bg);}
+.asn-id-link{display:inline-flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:var(--navy);text-decoration:none;border-bottom:1.5px solid var(--green);padding-bottom:1px;font-family:var(--mono);}
+.asn-id-link:hover{color:var(--green);}
+.asn-upload-date{font-size:11px;color:var(--muted);margin-top:2px;}
+.asn-badge{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
+.asn-badge[data-status="Open"]{background:rgba(200,125,47,0.13);color:var(--warn);}
+.asn-badge[data-status="Received"]{background:var(--green-dim);color:#0F6E56;}
+.asn-stats{display:flex;border-bottom:1px solid var(--border);}
+.asn-stat{flex:1;padding:11px 14px;text-align:center;border-right:1px solid var(--border);}
+.asn-stat:last-child{border-right:none;}
+.asn-stat-label{display:block;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;}
+.asn-stat-value{display:block;font-family:var(--font-subheader);font-size:19px;font-weight:700;color:var(--navy);}
+.asn-stat-value[data-disc="yes"]{color:var(--danger);}
+.asn-stat-value[data-disc="no"]{color:#0F6E56;}
+.asn-meta{padding:11px 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:40px;}
+.asn-meta-chip{font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
+.asn-edit-meta-btn{font-size:11px;color:var(--navy);background:none;border:none;cursor:pointer;padding:3px 0;font-family:var(--font);font-weight:600;text-decoration:underline;}
+.asn-meta-form{width:100%;display:flex;flex-direction:column;gap:8px;}
+.asn-meta-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;}
+.asn-meta-input{padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;background:var(--white);color:var(--text);outline:none;width:100%;}
+.asn-meta-input:focus{border-color:var(--green);}
+.asn-meta-actions{display:flex;gap:8px;}
+.asn-footer{padding:11px 14px;border-top:1px solid var(--border);background:var(--bg);}
+.asn-download-btn{display:flex;align-items:center;gap:6px;padding:7px 13px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;color:var(--text);}
+.asn-download-btn:hover{background:var(--bg);}
+.asn-empty{text-align:center;padding:50px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);}
+.asn-empty-icon{font-size:40px;opacity:.4;}
+
+/* Upload modal */
+.asn-modal-overlay{position:fixed;inset:0;background:rgba(0,31,96,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:24px;}
+.asn-modal{background:var(--white);border-radius:var(--radius);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;}
+.asn-modal-hd{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border);}
+.asn-modal-hd h2{font-size:16px;font-weight:700;color:var(--navy);}
+.asn-modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:4px 8px;border-radius:4px;}
+.asn-modal-close:hover{background:var(--bg);}
+.asn-modal-body{padding:22px;display:flex;flex-direction:column;gap:14px;}
+.asn-modal-sub{font-size:12.5px;color:var(--muted);line-height:1.5;}
+.asn-dropzone{border:2px dashed var(--border);border-radius:var(--radius);padding:36px 20px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--muted);}
+.asn-dropzone:hover{border-color:var(--green);background:var(--green-dim);}
+.asn-dropzone p{font-size:13px;color:var(--text);font-weight:600;margin:0;}
+.asn-dropzone span{font-size:11.5px;color:var(--muted);}
+.asn-modal-error{background:rgba(219,55,45,0.08);border:1px solid rgba(219,55,45,0.25);color:var(--danger);font-size:12.5px;padding:9px 13px;border-radius:var(--radius-sm);}
+.asn-review-stats{display:flex;gap:14px;}
+.asn-review-stat{flex:1;background:var(--navy);border-radius:var(--radius-sm);padding:14px;text-align:center;}
+.asn-review-stat span{display:block;font-size:24px;font-weight:700;color:var(--white);margin-bottom:3px;font-family:var(--font-subheader);}
+.asn-review-stat label{font-size:10px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+.asn-preview-table{border:1px solid var(--border);border-radius:var(--radius-sm);overflow:auto;max-height:200px;}
+.asn-preview-table table{width:100%;border-collapse:collapse;font-size:12px;}
+.asn-preview-table th{padding:6px 10px;background:var(--bg);text-align:left;font-weight:700;color:var(--muted);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid var(--border);}
+.asn-preview-table td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--text);}
+.asn-modal-actions{display:flex;gap:10px;justify-content:flex-end;}
+.asn-back-btn{padding:9px 16px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;cursor:pointer;color:var(--muted);}
+.asn-submit-btn{padding:9px 20px;background:var(--navy);color:var(--white);border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;}
+.asn-submit-btn:disabled{opacity:.5;cursor:default;}
+.asn-spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:asnspin .7s linear infinite;margin:0 auto;}
+@keyframes asnspin{to{transform:rotate(360deg);}}
+
+@media (max-width:768px){
+  .asn-grid{grid-template-columns:1fr;}
+  .asn-meta-form-grid{grid-template-columns:1fr;}
+}
 </style>
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -922,9 +1004,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </button>
 
     <div class="nav-section">Operations</div>
-    <button class="nav-btn soon" disabled>
+    <button class="nav-btn" onclick="showPage('inventory-external',this)">
       <svg viewBox="0 0 16 16"><path d="M1 5l7-4 7 4v7l-7 4-7-4V5z"/><path d="M8 1v14M1 5l7 4 7-4"/></svg>Inventory
-      <span class="nav-soon-badge">SOON</span>
     </button>
 
     <!-- Internal-only section — everything currently built lives below this line -->
@@ -2035,6 +2116,136 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div id="mx-opp-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No opportunities added yet.</div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ══ INVENTORY (EXTERNAL) ══ -->
+  <!-- Two tabs: Stock Levels (read-only consignment snapshot) and Inbound
+       Shipments (the ASN pipeline). Styled to visually match Luccini's
+       dashboard reference but built as plain HTML/vanilla JS, reusing
+       évolis's own existing .data-table/.kpi-card/.ppc-card classes where
+       they already cover the need, with a new .asn- prefixed set for the
+       shipment cards and upload modal (see CSS block, adapted from
+       Luccini's InboundTab.module.css onto évolis's own CSS variables).
+       Wired up by initInventoryExternalPage(). -->
+  <div class="page" id="page-inventory-external">
+    <div class="page-hd">
+      <div><div class="page-title">Inventory</div><div class="page-sub">Consignment stock levels · Inbound shipment tracking</div></div>
+    </div>
+
+    <div class="channel-tabs-row" style="margin-bottom:18px;">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('inventory-external','ix-stock',this)">📦 Stock Levels</button>
+        <button class="ch-tab" onclick="showChannel('inventory-external','ix-inbound',this)">🚚 Inbound Shipments</button>
+      </div>
+    </div>
+
+    <!-- ── Stock Levels ── -->
+    <div class="channel-page active" id="ix-stock">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+        <div class="kpi-card" style="border-top:3px solid var(--navy);"><div class="kpi-label">Total SKUs</div><div class="kpi-value" id="ix-kpi-total-skus">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">Active products</div></div>
+        <div class="kpi-card" style="border-top:3px solid var(--green);"><div class="kpi-label">Total Units On Hand</div><div class="kpi-value" id="ix-kpi-units-onhand">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">Across all SKUs</div></div>
+        <div class="kpi-card" style="border-top:3px solid var(--danger);"><div class="kpi-label">Out of Stock</div><div class="kpi-value" id="ix-kpi-oos">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">SKUs at zero</div></div>
+        <div class="kpi-card" style="border-top:3px solid var(--warn);"><div class="kpi-label">Low Stock</div><div class="kpi-value" id="ix-kpi-low">—</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">10 units or fewer</div></div>
+      </div>
+
+      <div class="ppc-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+          <input type="text" id="ix-stock-search" placeholder="Search SKU, product name…" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--font);font-size:12.5px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="ix-stock-updated" style="font-size:11px;color:var(--muted);"></span>
+            <button class="asn-btn-secondary" onclick="downloadStockLevelsCsv()">⬇ Download CSV</button>
+            <button class="asn-btn-secondary" onclick="loadStockLevelsExternal()">↻ Refresh</button>
+          </div>
+        </div>
+        <div id="ix-stock-count" style="font-size:11.5px;color:var(--muted);margin-bottom:8px;"></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr>
+              <th>SKU</th><th>Product Name</th><th>Category</th><th>On Hand</th><th>Inbound</th><th>Allocated</th><th>Available</th>
+            </tr></thead>
+            <tbody id="ix-stock-tbody"><tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="ppc-note">ℹ Category, Inbound, and Allocated aren't tracked in the consignment sheet yet — shown as "—" until that data exists. Inbound will pick up automatically once shipments are wired to this table.</div>
+      </div>
+    </div>
+
+    <!-- ── Inbound Shipments ── -->
+    <div class="channel-page" id="ix-inbound">
+      <div class="asn-header">
+        <div>
+          <div style="font-size:13px;color:var(--muted);">Upload a CSV to notify Medaltus of incoming inventory. Track open and received shipments here.</div>
+        </div>
+        <div class="asn-header-actions">
+          <button class="asn-btn-secondary" onclick="downloadAsnTemplate()">⬇ Download ASN Template</button>
+          <button class="asn-btn-primary" onclick="openAsnUploadModal()">⬆ Upload New ASN</button>
+        </div>
+      </div>
+
+      <div class="asn-subtabs">
+        <button class="asn-subtab active" onclick="showAsnSubTab('Open', this)">Open <span class="asn-subtab-count" id="asn-count-open">0</span></button>
+        <button class="asn-subtab" onclick="showAsnSubTab('Received', this)">Received <span class="asn-subtab-count" id="asn-count-received">0</span></button>
+      </div>
+
+      <div id="asn-list-open" class="asn-grid"></div>
+      <div id="asn-list-received" class="asn-grid" style="display:none;"></div>
+      <div id="asn-empty-state" class="asn-empty" style="display:none;">
+        <div class="asn-empty-icon">📭</div>
+        <div style="font-size:14px;font-weight:700;color:var(--navy);">No shipments yet</div>
+        <div style="font-size:12.5px;">Upload a CSV to create your first ASN.</div>
+      </div>
+      <div id="asn-error-state" class="asn-modal-error" style="display:none;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- ── ASN Upload Modal ── -->
+  <div class="asn-modal-overlay" id="asn-upload-modal" style="display:none;">
+    <div class="asn-modal">
+      <div class="asn-modal-hd">
+        <h2 id="asn-modal-title">Upload New ASN</h2>
+        <button class="asn-modal-close" onclick="closeAsnUploadModal()">✕</button>
+      </div>
+      <div class="asn-modal-body">
+
+        <!-- Step 1: drop/select file -->
+        <div id="asn-step-drop">
+          <p class="asn-modal-sub" style="margin-bottom:14px;">CSV with columns: <strong>SKU, ProductName, Quantity</strong>. One row per SKU expected in this shipment.</p>
+          <div class="asn-dropzone" id="asn-dropzone" onclick="document.getElementById('asn-file-input').click()">
+            <span style="font-size:28px;">📄</span>
+            <p>Click to select a CSV, or drag one here</p>
+            <span>.csv files only</span>
+          </div>
+          <input type="file" id="asn-file-input" accept=".csv" style="display:none;" onchange="handleAsnFileSelect(event)">
+          <div class="asn-modal-error" id="asn-modal-error" style="display:none;margin-top:12px;"></div>
+        </div>
+
+        <!-- Step 2: review + submit -->
+        <div id="asn-step-review" style="display:none;">
+          <div class="asn-review-stats">
+            <div class="asn-review-stat"><span id="asn-review-skus">0</span><label>SKUs</label></div>
+            <div class="asn-review-stat"><span id="asn-review-units">0</span><label>Expected Units</label></div>
+          </div>
+          <p class="asn-preview-label" style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:4px 0 0;">Preview</p>
+          <div class="asn-preview-table">
+            <table>
+              <thead><tr><th>SKU</th><th>Product Name</th><th>Expected Qty</th></tr></thead>
+              <tbody id="asn-preview-tbody"></tbody>
+            </table>
+          </div>
+          <div class="asn-modal-actions" style="margin-top:14px;">
+            <button class="asn-back-btn" onclick="asnBackToDrop()">Back</button>
+            <button class="asn-submit-btn" id="asn-submit-btn" onclick="submitAsnUpload()">Create ASN</button>
+          </div>
+        </div>
+
+        <!-- Step 3: submitting -->
+        <div id="asn-step-submitting" style="display:none;text-align:center;padding:30px 0;">
+          <div class="asn-spinner"></div>
+          <p style="margin-top:14px;color:var(--muted);font-size:12.5px;">Creating shipment…</p>
+        </div>
+
+      </div>
     </div>
   </div>
 
@@ -3661,6 +3872,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       <div class="sub-tabs">
         <button class="sub-tab active" onclick="showSubTab('org-activators','oa-insights',this)">Insights</button>
         <button class="sub-tab" onclick="showSubTab('org-activators','oa-tiers',this)">Keyword Tiers</button>
+        <button class="sub-tab" onclick="showSubTab('org-activators','oa-ranktracker',this); window.initRankTrackerActivators();">Rank Tracker</button>
         <button class="sub-tab" onclick="showSubTab('org-activators','oa-sqp',this)">Search Query Performance</button>
       </div>
 
@@ -3700,6 +3912,31 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
               <li>"hair mask for dry damaged hair and growth" — high-value long tail, not yet targeted</li>
               <li>Upload Seller Central SQP data to replace Cerebro estimates</li>
             </ul></div>
+          </div>
+        </div>
+
+        <div class="org-section-title">Weekly Rank Changes<span id="org-comparison-window" style="font-size:11px;color:var(--muted);font-weight:400;margin-left:8px;"></span></div>
+        <div class="ppc-card" style="margin-bottom:16px;">
+          <div class="ppc-card-title">Reading the Changes</div>
+          <div id="org-reading-changes-text" style="font-size:13px;color:var(--text);line-height:1.6;">Run Analysis to generate this week's recap.</div>
+        </div>
+        <div class="ppc-card" style="margin-bottom:16px;">
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr>
+                <th>Keyword</th><th>Vol/Mo</th><th>ABA%</th><th>Prev Rank</th><th>Curr Rank</th><th>Change</th><th>Where in Listing</th><th>PPC Signal</th><th>Recommended Action</th>
+              </tr></thead>
+              <tbody id="org-rank-changes-tbody"><tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Run Analysis to populate this table.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="ppc-card" id="org-new-converters-card" style="margin-bottom:16px;display:none;">
+          <div class="ppc-card-title">New PPC Converters — Not Yet on Tracker</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Search Term</th><th>PPC Signal</th><th>Recommended Action</th></tr></thead>
+              <tbody id="org-new-converters-tbody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -3803,6 +4040,42 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       </div>
 
       <!-- SEARCH QUERY PERFORMANCE — its own data source, kept separate -->
+      <div class="sub-page" id="oa-ranktracker">
+        <div class="org-sqp-alert" id="oa-rt-banner">
+          <span>📈</span>
+          <span id="oa-rt-banner-text">Loading…</span>
+        </div>
+        <div class="org-sqp-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+            <div class="org-sqp-title" style="margin-bottom:0;">Rank Changes <span class="org-sqp-badge" id="oa-rt-daterange">Loading…</span></div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <label style="font-size:11px;color:var(--muted);">Compare to:</label>
+              <select id="oa-rt-window" onchange="window.renderRankTrackerActivators()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-family:var(--font);">
+                <option value="7">1 week ago</option>
+                <option value="28" selected>~4 weeks ago</option>
+                <option value="84">~12 weeks ago</option>
+                <option value="9999">Earliest available</option>
+              </select>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr>
+                <th>Product</th><th>Keyword</th><th>Search Vol</th>
+                <th id="oa-rt-col-older">Earlier</th><th id="oa-rt-col-newer">Latest</th>
+                <th>Change</th><th>Est. Market Sales</th><th>Suggested Action</th>
+              </tr></thead>
+              <tbody id="oa-rt-tbody"><tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;">
+            "Est. Market Sales" is Helium 10's own estimate of total marketplace sales for that search term across <em>all</em> sellers — not évolis-specific purchases. Real per-keyword purchase data (from Search Query Performance / Ads search terms) isn't wired in here yet.<br>
+            Product mapping: Reverse = EVO0001 (confirmed). Promote = EVO0005, Prevent = EVO0009 — pulled from the Insights → Products tab, not yet verified against the master SKU list.<br>
+            "Suggested Action" is a simple rule based on rank direction + magnitude only — not yet the AI-generated, context-aware recommendation Run Analysis produces elsewhere on this dashboard.
+          </div>
+        </div>
+      </div>
+
       <div class="sub-page" id="oa-sqp">
         <div class="org-sqp-alert">
           <span>📊</span>
@@ -4023,7 +4296,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 const pageTitles = {
   home:'Home — Évolis',
   overview:'Overview — Évolis',sales:'Sales — Évolis','sales-external':'Sales — Évolis',marketing:'Marketing — Évolis','marketing-external':'Marketing — Évolis',
-  events:'Events — Évolis',inventory:'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
+  events:'Events — Évolis',inventory:'Inventory — Évolis','inventory-external':'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
   insights:'Insights — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
 };
 
@@ -4063,6 +4336,7 @@ function showPage(id, btn) {
     // Approved month once and kicks off all three channel loads together.
     if (cid && cid.indexOf('x-') === 0) window.initSalesExternalPage();
     if (cid && cid.indexOf('mx-') === 0) window.initMarketingExternalPage();
+    if (cid && cid.indexOf('ix-') === 0) window.initInventoryExternalPage();
     if (cid==='m-stewardship')   window.initStewardshipLive();
     if (cid==='m-fulfillment-cs') window.initMarketingFulfillmentCS();
     if (cid==='m-opportunities' && !window._snsChart) initSns();
@@ -4084,6 +4358,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-walmart')       initWalmartLive();
     if (channelId.indexOf('x-') === 0)   window.initSalesExternalPage();
     if (channelId.indexOf('mx-') === 0)  window.initMarketingExternalPage();
+    if (channelId.indexOf('ix-') === 0)  window.initInventoryExternalPage();
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
     if (channelId === 'm-opportunities' && !window._snsChart) initSns();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
@@ -8722,6 +8997,730 @@ async function initSnsExternal() {
   };
 })();
 
+// ══════════════════════════════════════════════════════════════════════════════
+// INVENTORY PAGE (EXTERNAL) — Stock Levels + Inbound Shipments (ASN pipeline)
+// Stock Levels reads SHEET_CONSIGNMENT_INVENTORY directly (client-side CSV,
+// same C- prefix stripping already established on the Home page KPI and the
+// internal Inventory page's Consignment column). Inbound Shipments reads the
+// master tracker (Inbound_Shipments tab) for the shipment list, then — per
+// Jaclyn's spec — pulls each card's actual stats (SKUs/Expected/Received/
+// Discrepancies) live from that shipment's own per-ASN sheet rather than
+// caching them on the tracker row. Creating a shipment and editing shipping
+// info are the only two things that need real writes, so those go through
+// /api/create-asn and /api/update-asn-shipping (service-account auth) —
+// everything else here is a plain public-CSV read.
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+
+  const CONSIGNMENT_SHEET_ID = '1tdNibpi_RAwz2TuHcp4ef-eJ65jwNlcgE2GYQnHMWAE';
+  const CONSIGNMENT_GID      = '505131584';
+  const TRACKER_SHEET_ID     = '1Pb50CzCb0fouNsaewQATEY_c3IpgRVPu5FoppNg19_A';
+  const TRACKER_TAB          = 'Inbound_Shipments';
+  const ASN_TEMPLATE_ID      = '12wOeZryBrUKsWFrPr6SzHadwEti1SI1hEEv1X2vjHkk';
+
+  function gvizCsvUrl(sheetId, tabName) {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_cb=${Date.now()}`;
+  }
+  function fileCsvUrl(fileId, gid) {
+    return `https://docs.google.com/spreadsheets/d/${fileId}/export?format=csv&gid=${gid || 0}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  // Header-keyed rows, for sheets with a normal header row (consignment sheet, tracker).
+  function parseCsvRows(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim().toLowerCase().replace(/\s+/g,''));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+  // Raw grid (array of arrays), for the per-ASN sheet's fixed header-block-
+  // plus-table layout, where row position (not a header name) is the key.
+  function parseCsvGrid(text) {
+    return text.replace(/\r/g,'').split('\n').map(parseCsvLine);
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+  function fileIdFromUrl(url) {
+    const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : null;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STOCK LEVELS
+  // ══════════════════════════════════════════════════════════════════════
+  let _stockRows = [];
+  let _stockSearchWired = false;
+
+  window.loadStockLevelsExternal = async function () {
+    const tbody = document.getElementById('ix-stock-tbody');
+    try {
+      const csv = await fetch(fileCsvUrl(CONSIGNMENT_SHEET_ID, CONSIGNMENT_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      const rows = isCsv(csv) ? parseCsvRows(csv) : [];
+      // Consignment SKUs always carry a "C-" prefix over the base SKU —
+      // same convention as the internal Inventory page's Consignment
+      // column and the Home page KPI. Strip it so this displays the same
+      // SKU naming everywhere else on the dashboard uses.
+      _stockRows = rows.map(r => ({
+        sku: (r.sku || '').trim().toUpperCase().replace(/^C-/, ''),
+        name: r.name || '',
+        onHand: parseFloat(r.on_hand ?? r.onhand) || 0,
+        available: parseFloat(r.available) || 0,
+        lastUpdated: r.last_updated || r.lastupdated || '',
+      })).filter(r => r.sku);
+
+      renderStockLevelsKpis(_stockRows);
+      wireStockSearch();
+      renderStockLevelsTable();
+
+      const latest = _stockRows.reduce((max, r) => (r.lastUpdated > max ? r.lastUpdated : max), '');
+      const updatedEl = document.getElementById('ix-stock-updated');
+      if (updatedEl && latest) {
+        const d = new Date(latest);
+        updatedEl.textContent = 'Updated ' + (isNaN(d) ? latest : d.toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }));
+      }
+    } catch (err) {
+      console.warn('[InventoryExternal] Stock Levels load failed:', err.message);
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--danger);">Failed to load — try Refresh.</td></tr>';
+    }
+  };
+
+  function renderStockLevelsKpis(rows) {
+    setText('ix-kpi-total-skus', rows.length.toLocaleString());
+    setText('ix-kpi-units-onhand', rows.reduce((s, r) => s + r.onHand, 0).toLocaleString());
+    setText('ix-kpi-oos', rows.filter(r => r.onHand === 0).length.toLocaleString());
+    setText('ix-kpi-low', rows.filter(r => r.onHand > 0 && r.onHand <= 10).length.toLocaleString());
+  }
+
+  function wireStockSearch() {
+    if (_stockSearchWired) return;
+    const el = document.getElementById('ix-stock-search');
+    if (el) { el.addEventListener('input', renderStockLevelsTable); _stockSearchWired = true; }
+  }
+
+  function renderStockLevelsTable() {
+    const tbody = document.getElementById('ix-stock-tbody');
+    const countEl = document.getElementById('ix-stock-count');
+    if (!tbody) return;
+    const q = (document.getElementById('ix-stock-search')?.value || '').trim().toLowerCase();
+    const filtered = q
+      ? _stockRows.filter(r => r.sku.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+      : _stockRows;
+    if (countEl) {
+      countEl.textContent = q
+        ? `${filtered.length.toLocaleString()} of ${_stockRows.length.toLocaleString()} SKUs`
+        : `${filtered.length.toLocaleString()} SKUs`;
+    }
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">${_stockRows.length ? 'No matching SKUs.' : 'No consignment data yet.'}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered
+      .slice()
+      .sort((a, b) => a.sku.localeCompare(b.sku))
+      .map(r => `<tr>
+        <td>${escapeHtml(r.sku)}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td style="color:var(--muted);">—</td>
+        <td>${r.onHand.toLocaleString()}</td>
+        <td style="color:var(--muted);">—</td>
+        <td style="color:var(--muted);">—</td>
+        <td>${r.available.toLocaleString()}</td>
+      </tr>`).join('');
+  }
+
+  window.downloadStockLevelsCsv = function () {
+    const headers = ['SKU', 'Product Name', 'Category', 'On Hand', 'Inbound', 'Allocated', 'Available'];
+    const lines = [headers.join(',')];
+    _stockRows.forEach(r => {
+      lines.push([r.sku, `"${(r.name || '').replace(/"/g, '""')}"`, '', r.onHand, '', '', r.available].join(','));
+    });
+    triggerCsvDownload(lines.join('\n'), `evolis-stock-levels-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  function triggerCsvDownload(csvText, filename) {
+    const blob = new Blob([csvText], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // INBOUND SHIPMENTS
+  // ══════════════════════════════════════════════════════════════════════
+  let _trackerRows = [];   // one row per shipment, from the master tracker
+  let _asnDetailCache = {}; // shipmentId -> parsed per-ASN-sheet detail
+
+  // Reads the fixed header-block-plus-line-items layout every per-ASN sheet
+  // uses (rows 3–11 = labeled header fields, row 13 = line-item header, row
+  // 14+ = line items) — position-based, not header-name-based, since column
+  // A holds a label rather than a consistent header across rows 3–11.
+  function parseAsnSheetDetail(csvText) {
+    const grid = parseCsvGrid(csvText);
+    const cell = (r, c) => (grid[r] && grid[r][c] || '').trim();
+    const detail = {
+      shipmentId: cell(2, 1), uploadDate: cell(3, 1), status: cell(4, 1),
+      carrier: cell(5, 1), trackingNo: cell(6, 1), boxCount: cell(7, 1), notes: cell(8, 1),
+      totalSkus: parseInt(cell(9, 1), 10) || 0, totalUnits: parseInt(cell(10, 1), 10) || 0,
+      lineItems: [],
+    };
+    for (let i = 13; i < grid.length; i++) {
+      const sku = cell(i, 0);
+      if (!sku) continue;
+      const expected = parseFloat(cell(i, 2)) || 0;
+      const received = cell(i, 3) === '' ? null : (parseFloat(cell(i, 3)) || 0);
+      detail.lineItems.push({
+        sku, productName: cell(i, 1), expectedQty: expected, receivedQty: received,
+        discrepancy: cell(i, 4), caseQty: cell(i, 5), numCases: cell(i, 6), location: cell(i, 7),
+      });
+    }
+    detail.receivedUnits = detail.lineItems.reduce((s, li) => s + (li.receivedQty || 0), 0);
+    detail.discrepancyCount = detail.lineItems.filter(li => li.receivedQty != null && li.receivedQty !== li.expectedQty).length;
+    detail.anyReceivedEntered = detail.lineItems.some(li => li.receivedQty != null);
+    return detail;
+  }
+
+  async function fetchAsnDetail(shipmentId, driveUrl, force) {
+    if (!force && _asnDetailCache[shipmentId]) return _asnDetailCache[shipmentId];
+    const fileId = fileIdFromUrl(driveUrl);
+    if (!fileId) return null;
+    try {
+      const csv = await fetch(fileCsvUrl(fileId, 0)).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (!isCsv(csv)) return null;
+      const detail = parseAsnSheetDetail(csv);
+      _asnDetailCache[shipmentId] = detail;
+      return detail;
+    } catch (e) {
+      console.warn('[InventoryExternal] ASN detail fetch failed for', shipmentId, e.message);
+      return null;
+    }
+  }
+
+  window.loadInboundShipmentsExternal = async function () {
+    const errEl = document.getElementById('asn-error-state');
+    try {
+      const csv = await fetch(gvizCsvUrl(TRACKER_SHEET_ID, TRACKER_TAB)).then(r => r.ok ? r.text() : '').catch(() => '');
+      const rows = isCsv(csv) ? parseCsvRows(csv) : [];
+      _trackerRows = rows.filter(r => r.shipmentid);
+      if (errEl) errEl.style.display = 'none';
+
+      // Render immediately with tracker-only info (fast first paint), then
+      // fill in each card's live stats as its per-ASN sheet loads.
+      renderAsnLists(/*detailsReady*/false);
+      await Promise.all(_trackerRows.map(r => fetchAsnDetail(r.shipmentid, r.driveurl)));
+      renderAsnLists(/*detailsReady*/true);
+    } catch (err) {
+      console.warn('[InventoryExternal] Inbound Shipments load failed:', err.message);
+      if (errEl) { errEl.textContent = 'Failed to load shipments — try refreshing the page.'; errEl.style.display = 'block'; }
+    }
+  };
+
+  function renderAsnLists() {
+    const openRows = _trackerRows.filter(r => (r.status || '').trim() === 'Open')
+      .sort((a, b) => (b.uploaddate || '').localeCompare(a.uploaddate || ''));
+    const receivedRows = _trackerRows.filter(r => (r.status || '').trim() === 'Received')
+      .sort((a, b) => (b.receiveddate || '').localeCompare(a.receiveddate || ''));
+
+    setText('asn-count-open', openRows.length);
+    setText('asn-count-received', receivedRows.length);
+
+    const openEl = document.getElementById('asn-list-open');
+    const recEl = document.getElementById('asn-list-received');
+    if (openEl) openEl.innerHTML = openRows.map(renderAsnCard).join('');
+    if (recEl) recEl.innerHTML = receivedRows.map(renderAsnCard).join('');
+
+    const emptyEl = document.getElementById('asn-empty-state');
+    if (emptyEl) emptyEl.style.display = _trackerRows.length === 0 ? 'flex' : 'none';
+  }
+
+  function renderAsnCard(r) {
+    const shipmentId = r.shipmentid || '';
+    const status = (r.status || '').trim() || 'Open';
+    const detail = _asnDetailCache[shipmentId];
+    const skus = detail ? detail.totalSkus : '…';
+    const expected = detail ? detail.totalUnits : '…';
+    const received = detail ? detail.receivedUnits : '…';
+    const discRaw = r.discrepancycount !== undefined && r.discrepancycount !== '' ? r.discrepancycount : (detail ? detail.discrepancyCount : null);
+    const disc = discRaw == null ? '…' : discRaw;
+    const hasDisc = discRaw != null && Number(discRaw) > 0;
+
+    const metaChips = [];
+    if (r.carrier) metaChips.push(`<span class="asn-meta-chip">🚚 ${escapeHtml(r.carrier)}</span>`);
+    if (r.trackingno) metaChips.push(`<span class="asn-meta-chip">📍 ${escapeHtml(r.trackingno)}</span>`);
+    if (r.boxcount) metaChips.push(`<span class="asn-meta-chip">📦 ${escapeHtml(r.boxcount)} boxes/pallets</span>`);
+
+    const metaSection = metaChips.length
+      ? `<div class="asn-meta">${metaChips.join('')}</div>`
+      : (status === 'Open'
+          ? `<div class="asn-meta"><button class="asn-edit-meta-btn" onclick="toggleAsnMetaForm('${escapeHtml(shipmentId)}')">✏️ Add shipping info</button></div>`
+          : '');
+
+    const statsRow = status === 'Received'
+      ? `<div class="asn-stats">
+           <div class="asn-stat"><span class="asn-stat-label">SKUs</span><span class="asn-stat-value">${skus}</span></div>
+           <div class="asn-stat"><span class="asn-stat-label">Expected</span><span class="asn-stat-value">${typeof expected === 'number' ? expected.toLocaleString() : expected}</span></div>
+           <div class="asn-stat"><span class="asn-stat-label">Received</span><span class="asn-stat-value">${typeof received === 'number' ? received.toLocaleString() : received}</span></div>
+           <div class="asn-stat"><span class="asn-stat-label">Discrepancies</span><span class="asn-stat-value" data-disc="${hasDisc ? 'yes' : 'no'}">${disc}</span></div>
+         </div>`
+      : `<div class="asn-stats">
+           <div class="asn-stat"><span class="asn-stat-label">SKUs</span><span class="asn-stat-value">${skus}</span></div>
+           <div class="asn-stat"><span class="asn-stat-label">Expected</span><span class="asn-stat-value">${typeof expected === 'number' ? expected.toLocaleString() : expected}</span></div>
+         </div>`;
+
+    const footer = status === 'Received'
+      ? `<div class="asn-footer"><button class="asn-download-btn" onclick="downloadDiscrepancyReport('${escapeHtml(shipmentId)}')">⬇ Download Discrepancy Report</button></div>`
+      : '';
+
+    const dateLine = status === 'Received' && r.receiveddate
+      ? `Uploaded ${escapeHtml(r.uploaddate || '')} · Received ${escapeHtml(r.receiveddate)}`
+      : `Uploaded ${escapeHtml(r.uploaddate || '')}`;
+
+    return `
+      <div class="asn-card" data-status="${status}" id="asn-card-${escapeHtml(shipmentId)}">
+        <div class="asn-card-hd">
+          <div>
+            <a class="asn-id-link" href="${escapeHtml(r.driveurl || '#')}" target="_blank" rel="noopener">${escapeHtml(shipmentId)} ↗</a>
+            <div class="asn-upload-date">${dateLine}</div>
+          </div>
+          <span class="asn-badge" data-status="${status}">${status === 'Received' ? '✅ Received' : '📦 Open'}</span>
+        </div>
+        ${statsRow}
+        ${metaSection}
+        <div class="asn-meta-form" id="asn-meta-form-${escapeHtml(shipmentId)}" style="display:none;padding:12px 14px;">
+          <div class="asn-meta-form-grid">
+            <input class="asn-meta-input" id="asn-meta-carrier-${escapeHtml(shipmentId)}" placeholder="Carrier (e.g. UPS)">
+            <input class="asn-meta-input" id="asn-meta-tracking-${escapeHtml(shipmentId)}" placeholder="PRO / Tracking #">
+            <input class="asn-meta-input" id="asn-meta-boxcount-${escapeHtml(shipmentId)}" placeholder="Box / Pallet count" style="grid-column:1 / -1;">
+          </div>
+          <div class="asn-meta-actions">
+            <button class="asn-back-btn" onclick="toggleAsnMetaForm('${escapeHtml(shipmentId)}')">Cancel</button>
+            <button class="asn-submit-btn" onclick="saveAsnMeta('${escapeHtml(shipmentId)}')">Save</button>
+          </div>
+        </div>
+        ${footer}
+      </div>`;
+  }
+
+  window.toggleAsnMetaForm = function (shipmentId) {
+    const form = document.getElementById(`asn-meta-form-${shipmentId}`);
+    if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  };
+
+  window.saveAsnMeta = async function (shipmentId) {
+    const carrier = document.getElementById(`asn-meta-carrier-${shipmentId}`)?.value.trim() || '';
+    const trackingNo = document.getElementById(`asn-meta-tracking-${shipmentId}`)?.value.trim() || '';
+    const boxCount = document.getElementById(`asn-meta-boxcount-${shipmentId}`)?.value.trim() || '';
+    try {
+      const res = await fetch('/api/update-asn-shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shipmentId, carrier, trackingNo, boxCount }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      delete _asnDetailCache[shipmentId];
+      await window.loadInboundShipmentsExternal();
+    } catch (e) {
+      alert('Failed to save shipping info: ' + e.message);
+    }
+  };
+
+  // Generated entirely client-side from the ASN sheet's own line items —
+  // no backend call needed since that sheet is already a public CSV read.
+  window.downloadDiscrepancyReport = async function (shipmentId) {
+    const row = _trackerRows.find(r => r.shipmentid === shipmentId);
+    if (!row) return;
+    const detail = await fetchAsnDetail(shipmentId, row.driveurl, /*force*/true);
+    if (!detail) { alert('Could not load this shipment\'s sheet.'); return; }
+    const lines = ['SKU,Product Name,Expected Qty,Received Qty,Discrepancy'];
+    detail.lineItems.forEach(li => {
+      const disc = li.receivedQty == null ? '' : (li.receivedQty - li.expectedQty);
+      lines.push([li.sku, `"${(li.productName || '').replace(/"/g, '""')}"`, li.expectedQty, li.receivedQty ?? '', disc].join(','));
+    });
+    triggerCsvDownload(lines.join('\n'), `${shipmentId}-discrepancy-report.csv`);
+  };
+
+  window.downloadAsnTemplate = function () {
+    window.open(`https://docs.google.com/spreadsheets/d/${ASN_TEMPLATE_ID}/copy`, '_blank');
+  };
+
+  window.showAsnSubTab = function (status, btn) {
+    document.querySelectorAll('.asn-subtab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('asn-list-open').style.display = status === 'Open' ? '' : 'none';
+    document.getElementById('asn-list-received').style.display = status === 'Received' ? '' : 'none';
+  };
+
+  // ══════════════════════════════════════════════════════════════════════
+  // UPLOAD MODAL
+  // ══════════════════════════════════════════════════════════════════════
+  let _asnParsedRows = [];
+
+  window.openAsnUploadModal = function () {
+    document.getElementById('asn-upload-modal').style.display = 'flex';
+    asnBackToDrop();
+  };
+  window.closeAsnUploadModal = function () {
+    document.getElementById('asn-upload-modal').style.display = 'none';
+  };
+  window.asnBackToDrop = function () {
+    document.getElementById('asn-step-drop').style.display = 'block';
+    document.getElementById('asn-step-review').style.display = 'none';
+    document.getElementById('asn-step-submitting').style.display = 'none';
+    document.getElementById('asn-modal-error').style.display = 'none';
+    document.getElementById('asn-file-input').value = '';
+    _asnParsedRows = [];
+  };
+
+  function showAsnModalError(msg) {
+    const el = document.getElementById('asn-modal-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  window.handleAsnFileSelect = function (event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = String(e.target.result || '');
+        const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+        if (lines.length < 2) { showAsnModalError('That CSV has no data rows.'); return; }
+        const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+        const skuIdx = headers.indexOf('sku');
+        const nameIdx = headers.findIndex(h => h === 'productname' || h === 'product name');
+        const qtyIdx = headers.indexOf('quantity');
+        if (skuIdx < 0 || nameIdx < 0 || qtyIdx < 0) {
+          showAsnModalError('Expected columns SKU, ProductName, Quantity — check the template.');
+          return;
+        }
+        const parsed = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvLine(lines[i]);
+          const sku = (cols[skuIdx] || '').trim();
+          if (!sku) continue;
+          parsed.push({
+            sku,
+            productName: (cols[nameIdx] || '').trim(),
+            quantity: parseInt(cols[qtyIdx], 10) || 0,
+          });
+        }
+        if (!parsed.length) { showAsnModalError('No valid rows found — check the SKU column is filled in.'); return; }
+        _asnParsedRows = parsed;
+        showAsnReviewStep();
+      } catch (err) {
+        showAsnModalError('Could not read that file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  function showAsnReviewStep() {
+    document.getElementById('asn-step-drop').style.display = 'none';
+    document.getElementById('asn-step-review').style.display = 'block';
+    setText('asn-review-skus', _asnParsedRows.length.toLocaleString());
+    setText('asn-review-units', _asnParsedRows.reduce((s, r) => s + r.quantity, 0).toLocaleString());
+    document.getElementById('asn-preview-tbody').innerHTML = _asnParsedRows
+      .map(r => `<tr><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.productName)}</td><td>${r.quantity.toLocaleString()}</td></tr>`)
+      .join('');
+  }
+
+  window.submitAsnUpload = async function () {
+    if (!_asnParsedRows.length) return;
+    document.getElementById('asn-step-review').style.display = 'none';
+    document.getElementById('asn-step-submitting').style.display = 'block';
+    try {
+      const res = await fetch('/api/create-asn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: _asnParsedRows }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      window.closeAsnUploadModal();
+      await window.loadInboundShipmentsExternal();
+    } catch (err) {
+      document.getElementById('asn-step-submitting').style.display = 'none';
+      document.getElementById('asn-step-review').style.display = 'block';
+      showAsnModalError('Upload failed: ' + err.message);
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Page orchestrator
+  // ══════════════════════════════════════════════════════════════════════
+  window.initInventoryExternalPage = function () {
+    if (window.__inventoryExternalPromise) return window.__inventoryExternalPromise;
+    window.__inventoryExternalPromise = Promise.all([
+      window.loadStockLevelsExternal(),
+      window.loadInboundShipmentsExternal(),
+    ]);
+    return window.__inventoryExternalPromise;
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ORGANIC > ACTIVATORS > RANK TRACKER
+// First live view built on the Helium 10 Keyword Tracker sheet now that it has
+// real week-over-week history (backfilled to 2026-01-26, synced weekly on
+// Mondays going forward). Everything else on the Organic page is still the
+// original static mockup — this is a template for extending the same pattern
+// to the other product categories once their ASIN mapping + backfill exists.
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+
+  const KW_TRACKER_SHEET_ID = '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4';
+  const KW_TRACKER_GID = '898118227'; // 'evolis' tab, confirmed from the sheet URL directly
+
+  // Reverse confirmed via screenshot. Promote/Prevent pulled from the
+  // Insights > Products tab's existing content, which also has stale-looking
+  // static example data elsewhere on that same page — treat as probable, not
+  // confirmed, until checked against the master SKU list.
+  const ASIN_MAP = {
+    'B08BJBM77V': { sku: 'EVO0001', label: 'Reverse Activator' },
+    'B07SG6S4VV': { sku: 'EVO0005', label: 'Promote Activator' },
+    'B07SJ8K9HS': { sku: 'EVO0009', label: 'Prevent Activator' },
+  };
+
+  function csvUrl() {
+    return `https://docs.google.com/spreadsheets/d/${KW_TRACKER_SHEET_ID}/export?format=csv&gid=${KW_TRACKER_GID}&_cb=${Date.now()}`;
+  }
+  function isCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+  function parseCsvLine(line) {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsvRows(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCsvLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
+      rows.push(row);
+    }
+    return rows;
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ">306" -> {numeric: 307, ranked:false}. "42" -> {numeric:42, ranked:true}.
+  // Blank -> null (no data that week, not the same as "not ranking").
+  function parseRank(val) {
+    const v = (val || '').trim();
+    if (!v) return null;
+    if (v.startsWith('>')) {
+      const n = parseInt(v.slice(1), 10);
+      return { raw: v, numeric: isNaN(n) ? 9999 : n + 1, ranked: false };
+    }
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return null;
+    return { raw: v, numeric: n, ranked: true };
+  }
+
+  function rankPillClass(rank) {
+    if (!rank || !rank.ranked) return 'rank-none';
+    if (rank.numeric <= 20) return 'rank-top';
+    if (rank.numeric <= 100) return 'rank-mid';
+    return 'rank-low';
+  }
+  function rankPillHtml(rank) {
+    if (!rank) return '<span class="rank-pill rank-none">—</span>';
+    return `<span class="rank-pill ${rankPillClass(rank)}">${escapeHtml(rank.raw)}</span>`;
+  }
+
+  function suggestAction(older, newer) {
+    const oR = older && older.ranked, nR = newer && newer.ranked;
+    if (!older && !newer) return { text: 'No data for this window', cls: '' };
+    if (!oR && !nR) return { text: 'Not ranking — needs listing optimization or PPC push', cls: '' };
+    if (!oR && nR) return { text: '🆕 Newly ranking — keep momentum, consider PPC support', cls: 'rank-top' };
+    if (oR && !nR) return { text: '⚠️ Dropped out of top 306 — investigate listing/inventory/pricing', cls: 'rank-low' };
+    const change = older.numeric - newer.numeric; // positive = improved (lower rank number = better)
+    if (change >= 10) return { text: `📈 Improved ${change} spots — monitor, no action needed`, cls: 'rank-top' };
+    if (change <= -10) return { text: `📉 Declined ${Math.abs(change)} spots — review PPC bid/listing placement`, cls: 'rank-low' };
+    return { text: '→ Holding steady', cls: '' };
+  }
+
+  let _kwRows = null; // raw parsed rows, cached after first successful fetch
+
+  window.initRankTrackerActivators = function () {
+    if (window.__rankTrackerPromise) return window.__rankTrackerPromise;
+    window.__rankTrackerPromise = (async function () {
+      const tbody = document.getElementById('oa-rt-tbody');
+      const bannerText = document.getElementById('oa-rt-banner-text');
+      try {
+        const csv = await fetch(csvUrl()).then(r => r.ok ? r.text() : '').catch(() => '');
+        if (!isCsv(csv)) throw new Error('Sheet returned no CSV data');
+        _kwRows = parseCsvRows(csv).filter(r => r.date && r.asin && r.keyword);
+        window.renderRankTrackerActivators();
+      } catch (err) {
+        console.warn('[RankTracker] load failed:', err.message);
+        if (bannerText) bannerText.textContent = 'Could not load keyword tracker data — ' + err.message;
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--danger);">Failed to load.</td></tr>';
+      }
+    })();
+    return window.__rankTrackerPromise;
+  };
+
+  window.renderRankTrackerActivators = function () {
+    if (!_kwRows) return; // not loaded yet — initRankTrackerActivators will call this once it is
+    const tbody = document.getElementById('oa-rt-tbody');
+    const bannerText = document.getElementById('oa-rt-banner-text');
+    const banner = document.getElementById('oa-rt-banner');
+    const dateRangeEl = document.getElementById('oa-rt-daterange');
+    const colOlderEl = document.getElementById('oa-rt-col-older');
+    const colNewerEl = document.getElementById('oa-rt-col-newer');
+    const windowDays = parseInt(document.getElementById('oa-rt-window').value, 10);
+
+    // Only rows for the 3 known Activator ASINs — everything else in this
+    // sheet (other product categories) isn't mapped yet, see file header.
+    const rows = _kwRows.filter(r => ASIN_MAP[r.asin]);
+    if (!rows.length) {
+      if (bannerText) bannerText.textContent = 'No Activator rows found in the keyword tracker sheet yet.';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No data.</td></tr>';
+      return;
+    }
+
+    // Group by asin+keyword -> chronological observations.
+    const groups = new Map();
+    rows.forEach(r => {
+      const key = r.asin + '||' + r.keyword;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    });
+    groups.forEach(list => list.sort((a, b) => a.date.localeCompare(b.date)));
+
+    const allDates = Array.from(new Set(rows.map(r => r.date))).sort();
+    const newestDateOverall = allDates[allDates.length - 1];
+    const oldestDateOverall = allDates[0];
+    const targetOlderDate = windowDays >= 9999
+      ? oldestDateOverall
+      : new Date(new Date(newestDateOverall + 'T00:00:00').getTime() - windowDays * 86400000).toISOString().slice(0, 10);
+
+    if (dateRangeEl) dateRangeEl.textContent = `${targetOlderDate} → ${newestDateOverall}`;
+    if (colOlderEl) colOlderEl.textContent = targetOlderDate;
+    if (colNewerEl) colNewerEl.textContent = newestDateOverall;
+
+    let improved = 0, declined = 0, newlyRanking = 0, droppedOut = 0, notRanking = 0, steady = 0;
+    const tableRows = [];
+
+    groups.forEach((observations, key) => {
+      const [asin, keyword] = key.split('||');
+      const newerObs = observations[observations.length - 1];
+      // Closest observation to the target older date, excluding the newest
+      // one itself (avoids comparing a keyword to itself when it only has
+      // one data point so far).
+      let olderObs = null, bestDiff = Infinity;
+      const targetMs = new Date(targetOlderDate + 'T00:00:00').getTime();
+      observations.slice(0, -1).forEach(o => {
+        const diff = Math.abs(new Date(o.date + 'T00:00:00').getTime() - targetMs);
+        if (diff < bestDiff) { bestDiff = diff; olderObs = o; }
+      });
+
+      const newerRank = parseRank(newerObs.organic_rank);
+      const olderRank = olderObs ? parseRank(olderObs.organic_rank) : null;
+      const action = suggestAction(olderRank, newerRank);
+
+      if (!olderObs) { /* insufficient history yet — still show the row, just no comparison */ }
+      else if (!olderRank?.ranked && !newerRank?.ranked) notRanking++;
+      else if (!olderRank?.ranked && newerRank?.ranked) newlyRanking++;
+      else if (olderRank?.ranked && !newerRank?.ranked) droppedOut++;
+      else if (olderRank && newerRank) {
+        const change = olderRank.numeric - newerRank.numeric;
+        if (change >= 10) improved++;
+        else if (change <= -10) declined++;
+        else steady++;
+      }
+
+      const changeMagnitude = (olderRank && newerRank && olderRank.ranked && newerRank.ranked)
+        ? Math.abs(olderRank.numeric - newerRank.numeric)
+        : (olderObs ? 9999 : -1); // dropped-out/newly-ranking sort first; no-history sorts last
+
+      tableRows.push({
+        asin, keyword, olderObs, newerObs, olderRank, newerRank, action,
+        searchVolume: parseInt(newerObs.search_volume, 10) || 0,
+        keywordSales: newerObs.keyword_sales || '',
+        changeMagnitude,
+      });
+    });
+
+    tableRows.sort((a, b) => b.changeMagnitude - a.changeMagnitude || b.searchVolume - a.searchVolume);
+
+    if (tbody) {
+      tbody.innerHTML = tableRows.map(r => {
+        const product = ASIN_MAP[r.asin] ? ASIN_MAP[r.asin].label : r.asin;
+        let changeCell = '<span style="color:var(--muted);">—</span>';
+        if (r.olderObs && r.olderRank && r.newerRank) {
+          if (r.olderRank.ranked && r.newerRank.ranked) {
+            const change = r.olderRank.numeric - r.newerRank.numeric;
+            changeCell = change > 0 ? `<span style="color:#1db88a;font-weight:600;">▲ +${change}</span>`
+              : change < 0 ? `<span style="color:var(--danger);font-weight:600;">▼ ${change}</span>`
+              : '<span style="color:var(--muted);">→ 0</span>';
+          } else if (!r.olderRank.ranked && r.newerRank.ranked) {
+            changeCell = '<span style="color:#1db88a;font-weight:600;">🆕 New</span>';
+          } else if (r.olderRank.ranked && !r.newerRank.ranked) {
+            changeCell = '<span style="color:var(--danger);font-weight:600;">⚠️ Dropped</span>';
+          }
+        }
+        return `<tr>
+          <td>${escapeHtml(product)}</td>
+          <td>${escapeHtml(r.keyword)}</td>
+          <td>${r.searchVolume.toLocaleString()}</td>
+          <td>${rankPillHtml(r.olderRank)}</td>
+          <td>${rankPillHtml(r.newerRank)}</td>
+          <td>${changeCell}</td>
+          <td>${r.keywordSales ? Number(r.keywordSales).toLocaleString() : '—'}</td>
+          <td style="font-size:11.5px;${r.action.cls ? `color:${r.action.cls === 'rank-top' ? '#1db88a' : r.action.cls === 'rank-low' ? 'var(--danger)' : 'var(--navy)'};` : ''}">${escapeHtml(r.action.text)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    if (bannerText) {
+      const total = tableRows.length;
+      bannerText.innerHTML = `<strong>${total} tracked keywords</strong> across 3 Activator SKUs, comparing ${targetOlderDate} to ${newestDateOverall}: ` +
+        `<strong style="color:#1db88a;">${improved} improved</strong>, ` +
+        `<strong style="color:var(--danger);">${declined} declined</strong>, ` +
+        `<strong style="color:#1db88a;">${newlyRanking} newly ranking</strong>, ` +
+        `<strong style="color:var(--danger);">${droppedOut} dropped out</strong>, ` +
+        `${steady} holding steady, ${notRanking} still not ranking (>306 both periods).`;
+    }
+    if (banner) banner.style.borderColor = declined + droppedOut > improved + newlyRanking ? 'rgba(219,55,45,.3)' : 'rgba(36,233,163,.3)';
+  };
+})();
+
 
 })();
 
@@ -11758,6 +12757,59 @@ async function loadInsightsFromSheet() {
 }
 
 // Inject only the organic/PPC/listing green boxes (not the log card)
+function escapeHtmlOrg(s) {
+  return String(s === null || s === undefined ? '—' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Renders organic.rank_changes / organic.new_ppc_converters — the
+// code-computed numbers from run-analysis.js, with Claude-written
+// recommended_action text merged in server-side. This function only ever
+// displays what it's given; it does no computation of its own.
+function renderOrganicRankChanges(organic) {
+  const windowEl = document.getElementById('org-comparison-window');
+  const readingEl = document.getElementById('org-reading-changes-text');
+  const tbody = document.getElementById('org-rank-changes-tbody');
+  const convCard = document.getElementById('org-new-converters-card');
+  const convTbody = document.getElementById('org-new-converters-tbody');
+  if (!tbody) return;
+
+  if (windowEl) {
+    windowEl.textContent = organic.comparison_window
+      ? `· ${organic.comparison_window.prev_date} vs ${organic.comparison_window.curr_date}`
+      : '';
+  }
+  if (readingEl) {
+    readingEl.textContent = organic.reading_the_changes || 'Not enough history yet for a week-over-week comparison — needs at least two weekly keyword-tracker syncs.';
+  }
+
+  const rows = organic.rank_changes || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">No rank-change data yet — needs at least two weekly syncs of the keyword tracker.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td>${escapeHtmlOrg(r.keyword)}</td>
+      <td>${r.vol_mo != null ? r.vol_mo.toLocaleString() : '—'}</td>
+      <td>${r.aba_pct != null ? r.aba_pct.toFixed(1) + '%' : '—'}</td>
+      <td>${escapeHtmlOrg(r.rank_prev)}</td>
+      <td>${escapeHtmlOrg(r.rank_curr)}</td>
+      <td>${escapeHtmlOrg(r.change_label)}</td>
+      <td>${escapeHtmlOrg(r.where_in_listing)}</td>
+      <td>${escapeHtmlOrg(r.ppc_signal)}</td>
+      <td>${escapeHtmlOrg(r.recommended_action)}</td>
+    </tr>`).join('');
+  }
+
+  const convRows = organic.new_ppc_converters || [];
+  if (convCard) convCard.style.display = convRows.length ? 'block' : 'none';
+  if (convTbody) {
+    convTbody.innerHTML = convRows.map(r => `<tr>
+      <td>${escapeHtmlOrg(r.keyword)}</td>
+      <td>${escapeHtmlOrg(r.ppc_signal)}</td>
+      <td>${escapeHtmlOrg(r.recommended_action)}</td>
+    </tr>`).join('');
+  }
+}
+
 function injectInsightsBoxes(ins) {
   // Organic redesign 2026-07-18: split into 4 separate cards (Summary/Win/
   // Action/Opportunity) matching the tabbed-by-purpose Insights subtab,
@@ -11773,6 +12825,12 @@ function injectInsightsBoxes(ins) {
     if (actEl && ins.organic.actions && ins.organic.actions.length) actEl.innerHTML = makeList(ins.organic.actions);
     const oppEl = document.getElementById('org-insight-opportunity');
     if (oppEl && ins.organic.keywords_to_watch && ins.organic.keywords_to_watch.length) oppEl.innerHTML = makeList(ins.organic.keywords_to_watch);
+  }
+  // Weekly Rank Changes table — added 2026-07-23, reads the code-computed
+  // (not Claude-computed) rank_changes/new_ppc_converters arrays run-analysis
+  // now writes alongside the four cards above.
+  if (ins.organic) {
+    renderOrganicRankChanges(ins.organic);
   }
   const ppcCardsEl = document.getElementById('ppc-insights-cards');
   if (ppcCardsEl && ins.ppc) {
