@@ -2,6 +2,14 @@
   "version": 2,
   "crons": [
     {
+      "path": "/api/cron/sale-promotions",
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/fees-estimate",
+      "schedule": "10,40 * * * *"
+    },
+    {
       "path": "/api/cron/sync-orders-request",
       "schedule": "0 */2 * * *"
     },
@@ -10,64 +18,28 @@
       "schedule": "15 */2 * * *"
     },
     {
-      "path": "/api/cron/fees-estimate",
-      "schedule": "*/30 * * * *"
+      "path": "/api/cron/sync-products",
+      "schedule": "8,23,38,53 2-4,14-19 * * *"
     },
     {
-      "path": "/api/cron/sale-promotions",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/sync-sqp-request",
+      "schedule": "7 0,12,18 * * *"
     },
     {
-      "path": "/api/cron/sync-walmart-orders",
-      "schedule": "0 6 * * *"
+      "path": "/api/cron/sync-sqp-process",
+      "schedule": "12 0,12,18 * * *"
     },
     {
       "path": "/api/cron/sync-walmart-revenue",
-      "schedule": "0 4 * * *"
+      "schedule": "3 4 * * *"
     },
     {
       "path": "/api/cron/sync-orders-backfill",
-      "schedule": "0 4 5 * *"
-    },
-    {
-      "path": "/api/cron/sync-products",
-      "schedule": "*/15 2-4 * * *"
+      "schedule": "20 4 5 * *"
     },
     {
       "path": "/api/cron/trim-products-log",
       "schedule": "45 4 * * *"
-    },
-    {
-      "path": "/api/cron/sync-advertising-request",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/sync-advertising-process",
-      "schedule": "15 3 * * *"
-    },
-    {
-      "path": "/api/cron/sync-ad-search-terms-request",
-      "schedule": "10 3 * * *"
-    },
-    {
-      "path": "/api/cron/sync-ad-search-terms-process",
-      "schedule": "25 3 * * *"
-    },
-    {
-      "path": "/api/cron/sync-sqp-request",
-      "schedule": "*/10 * 8-20 * *"
-    },
-    {
-      "path": "/api/cron/sync-sqp-process",
-      "schedule": "*/10 * 8-20 * *"
-    },
-    {
-      "path": "/api/cron/sync-subscriptions",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/trim-orders",
-      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/sync-revenue-request",
@@ -90,24 +62,80 @@
       "schedule": "50 5 * * *"
     },
     {
+      "path": "/api/cron/sync-walmart-orders",
+      "schedule": "12 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-returns-request",
+      "schedule": "20 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-returns-process",
+      "schedule": "35 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-shopify-orders",
       "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/sync-shopify-revenue",
-      "schedule": "5 7 * * *"
+      "schedule": "7 7 * * *"
     },
     {
       "path": "/api/cron/sync-google-ads",
       "schedule": "15 7 * * *"
     },
     {
+      "path": "/api/cron/sync-newderm-inventory-reconciliation",
+      "schedule": "14 8 * * *"
+    },
+    {
       "path": "/api/cron/sync-listings",
-      "schedule": "0 2 */2 * *"
+      "schedule": "35 8 */2 * *"
+    },
+    {
+      "path": "/api/cron/sync-fulfillment-kpis",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/sync-fulfillment-states",
+      "schedule": "14 21 * * *"
+    },
+    {
+      "path": "/api/cron/sync-fulfillment-daily-shipments",
+      "schedule": "20 21 * * *"
     },
     {
       "path": "/api/cron/sync-cin7-consignment-inventory",
-      "schedule": "0 22 * * *"
+      "schedule": "12 22 * * *"
+    },
+    {
+      "path": "/api/cron/sync-consignment-inventory",
+      "schedule": "17 22 * * *"
+    },
+    {
+      "path": "/api/cron/sync-advertising-request",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ad-search-terms-request",
+      "schedule": "12 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-advertising-process",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ad-search-terms-process",
+      "schedule": "25 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-subscriptions",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/trim-orders",
+      "schedule": "42 3 * * *"
     }
   ],
   "functions": {
@@ -232,6 +260,27 @@
       "maxDuration": 300
     },
     "api/cron/sync-cin7-consignment-inventory.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-newderm-inventory-reconciliation.js": {
+      "maxDuration": 900
+    },
+    "api/cron/sync-consignment-inventory.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-returns-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-returns-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-fulfillment-kpis.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-fulfillment-states.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-fulfillment-daily-shipments.js": {
       "maxDuration": 300
     }
   },
