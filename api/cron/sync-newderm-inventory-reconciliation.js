@@ -73,6 +73,7 @@ const sheets = require('../config/sheets');
 const brands = require('../config/brands');
 const XLSX = require('xlsx');
 const crypto = require('crypto');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const DRIVE_FOLDER_ID = process.env.GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID; // same Cin7 export folder as the consignment cron
 
@@ -111,9 +112,18 @@ module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!sheets.newdermInventory) return res.status(500).json({ error: 'sheets.newdermInventory is not configured in config/sheets.js' });
-  if (!sheets.productInventory) return res.status(500).json({ error: 'sheets.productInventory is not configured in config/sheets.js' });
-  if (!DRIVE_FOLDER_ID) return res.status(500).json({ error: 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set' });
+  if (!sheets.newdermInventory) {
+    await sendCronFailureAlert('sync-newderm-inventory-reconciliation', 'sheets.newdermInventory is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.newdermInventory is not configured in config/sheets.js' });
+  }
+  if (!sheets.productInventory) {
+    await sendCronFailureAlert('sync-newderm-inventory-reconciliation', 'sheets.productInventory is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.productInventory is not configured in config/sheets.js' });
+  }
+  if (!DRIVE_FOLDER_ID) {
+    await sendCronFailureAlert('sync-newderm-inventory-reconciliation', 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set');
+    return res.status(500).json({ error: 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set' });
+  }
 
   // Same test affordances as the sibling consignment cron.
   const targetDate = (req.query && req.query.targetDate) || '';
@@ -135,6 +145,7 @@ module.exports = async (req, res) => {
     cin7Rows = parseWorkbook(buffer);
   } catch (err) {
     console.error('[inventory-reconciliation] failed to read Cin7 export:', err.message);
+    await sendCronFailureAlert('sync-newderm-inventory-reconciliation', err.message, { Stage: 'finding/reading Cin7 export' });
     return res.status(500).json({ error: 'Failed to find or read the Cin7 export', detail: err.message });
   }
   console.log(`[inventory-reconciliation] Cin7 source file: "${fileInfo.name}" (modified ${fileInfo.modifiedTime}) — ${cin7Rows.length} rows`);
@@ -148,6 +159,7 @@ module.exports = async (req, res) => {
   try {
     masterRows = await fetchMasterSkuList();
   } catch (err) {
+    await sendCronFailureAlert('sync-newderm-inventory-reconciliation', err.message, { Stage: 'fetching master SKU list' });
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
   }
 
@@ -272,6 +284,15 @@ module.exports = async (req, res) => {
   }
   if (duplicateLocationPairs) {
     console.log(`[inventory-reconciliation] ${duplicateLocationPairs} duplicate SKU+location row-pair(s) aggregated (summed) rather than treated as separate rows.`);
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-newderm-inventory-reconciliation',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
   }
 
   res.status(200).json({
