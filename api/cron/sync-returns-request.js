@@ -40,6 +40,7 @@
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                                = require('../config/sheets');
+const { sendCronFailureAlert }              = require('../_alerts');
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -83,6 +84,7 @@ module.exports = async (req, res) => {
     console.log(`[sync-returns-request] report requested: ${reportId}`);
   } catch (err) {
     console.error('[sync-returns-request] failed to request report:', err.message);
+    await sendCronFailureAlert('sync-returns-request', err.message, { Stage: 'requesting report from SP-API' });
     return res.status(500).json({ error: 'Failed to request report', detail: err.message });
   }
 
@@ -106,6 +108,7 @@ module.exports = async (req, res) => {
     console.log('[sync-returns-request] meta written');
   } catch (err) {
     console.error('[sync-returns-request] failed to write meta:', err.message);
+    await sendCronFailureAlert('sync-returns-request', err.message, { Stage: 'writing reportId to _meta' });
     return res.status(500).json({ error: 'Failed to write meta', detail: err.message });
   }
 
