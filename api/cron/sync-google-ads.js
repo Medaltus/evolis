@@ -16,6 +16,7 @@
  */
 
 const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
+const { sendCronFailureAlert }            = require('../_alerts');
 
 const CUSTOMER_ID   = process.env.GOOGLE_ADS_CUSTOMER_ID;   // 7766709758
 const DEV_TOKEN     = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
@@ -41,9 +42,11 @@ module.exports = async (req, res) => {
   }
 
   if (!CUSTOMER_ID || !DEV_TOKEN || !CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
+    await sendCronFailureAlert('sync-google-ads', 'Google Ads env vars not set');
     return res.status(500).json({ error: 'Google Ads env vars not set' });
   }
   if (!SHEET_ID) {
+    await sendCronFailureAlert('sync-google-ads', 'SHOPIFY_ORDERS_SHEET not set');
     return res.status(500).json({ error: 'SHOPIFY_ORDERS_SHEET not set' });
   }
 
@@ -60,6 +63,7 @@ module.exports = async (req, res) => {
     console.log('[sync-google-ads] access token obtained');
   } catch (err) {
     console.error('[sync-google-ads] token failed:', err.message);
+    await sendCronFailureAlert('sync-google-ads', err.message, { Stage: 'Google OAuth token exchange' });
     return res.status(500).json({ error: 'Token request failed', detail: err.message });
   }
 
@@ -90,6 +94,7 @@ module.exports = async (req, res) => {
     console.log(`[sync-google-ads] ${adsRows.length} campaign-day rows from API`);
   } catch (err) {
     console.error('[sync-google-ads] API query failed:', err.message);
+    await sendCronFailureAlert('sync-google-ads', err.message, { Stage: 'Google Ads API query' });
     return res.status(500).json({ error: 'Google Ads query failed', detail: err.message });
   }
 
