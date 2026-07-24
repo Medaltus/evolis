@@ -22,6 +22,7 @@
 const https = require('https');
 const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
 const brands = require('../config/brands');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const WM_HOST       = 'marketplace.walmartapis.com';
 const WM_TOKEN_PATH = '/v3/token';
@@ -53,7 +54,10 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!SHEET_ID) return res.status(500).json({ error: 'WALMART_ORDERS_SHEET env var not set' });
+  if (!SHEET_ID) {
+    await sendCronFailureAlert('sync-walmart-orders', 'WALMART_ORDERS_SHEET env var not set');
+    return res.status(500).json({ error: 'WALMART_ORDERS_SHEET env var not set' });
+  }
 
   const mode = req.query.mode || 'rolling';
   const { startDate, endDate } = getDateRange(mode, req);
@@ -222,10 +226,20 @@ module.exports = async (req, res) => {
       }
     }
 
+    const failedBrands = results.filter(r => r.status === 'error');
+    if (failedBrands.length > 0) {
+      await sendCronFailureAlert(
+        'sync-walmart-orders',
+        failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+        { 'Brands failed': String(failedBrands.length) }
+      );
+    }
+
     return res.status(200).json({ synced: results, totalOrders: allOrders.length, mode, startDate, endDate, timestamp: now });
 
   } catch (err) {
     console.error('[sync-walmart-orders] fatal:', err.message);
+    await sendCronFailureAlert('sync-walmart-orders', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
