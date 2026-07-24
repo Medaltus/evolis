@@ -26,6 +26,7 @@
  * SHEET_CUSTOMER_SERVICE            Reviews Requested (H10 Follow Up, automated) + Compliance Cases (manual), one tab per brand — upload-h10-reviews.js writes reviews_requested/year/month only
  * SHEET_PRODUCT_INVENTORY            Dated daily product+inventory snapshots, per-brand tabs (date, sku, asin, quantities, plus full listing copy) — used by run-listing-audit.js and sync-newderm-inventory-reconciliation.js. Confirmed 2026-07-22 this is the correct existing sheet, not a new one.
  * SHEET_NEWDERM_INVENTORY            Regular (non-consignment) inventory reconciliation report — marketplace vs Cin7 Core by location, one tab per brand, pre-built 2-row merged headers (data starts row 3) — sync-newderm-inventory-reconciliation.js
+ * SHEET_WALMART_RETURNS              Walmart return orders (dedicated Returns API, GET /v3/returns — separate from the regular orders sync), one tab per brand — sync-walmart-returns.js
  */
 
 module.exports = {
@@ -51,4 +52,5 @@ module.exports = {
   customerService:           process.env.SHEET_CUSTOMER_SERVICE,
   productInventory:          process.env.SHEET_PRODUCT_INVENTORY,
   newdermInventory:          process.env.SHEET_NEWDERM_INVENTORY,
+  walmartReturns:            process.env.SHEET_WALMART_RETURNS,
 };
