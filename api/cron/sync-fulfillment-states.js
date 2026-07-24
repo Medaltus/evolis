@@ -18,6 +18,7 @@ const { ssFetch, rangeParams } = require('../_ss');
 const { FULFILLMENT_BRANDS } = require('../_fulfillment_brands');
 const { ensureTab, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const HEADERS = ['state', 'orders', 'refreshed_at', 'range'];
 
@@ -26,7 +27,10 @@ module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!sheets.fulfillmentStates) return res.status(500).json({ error: 'sheets.fulfillmentStates is not configured in config/sheets.js' });
+  if (!sheets.fulfillmentStates) {
+    await sendCronFailureAlert('sync-fulfillment-states', 'sheets.fulfillmentStates is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.fulfillmentStates is not configured in config/sheets.js' });
+  }
 
   const range = req.query.range || '30d';
   const { since, until } = rangeParams(range);
@@ -77,6 +81,15 @@ module.exports = async (req, res) => {
       console.error(`[sync-fulfillment-states] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-fulfillment-states',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${FULFILLMENT_BRANDS.length}` }
+    );
   }
 
   res.status(200).json({ range, refreshed_at: refreshedAt, results });
