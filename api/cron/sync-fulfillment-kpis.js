@@ -31,6 +31,7 @@ const { ssFetch } = require('../_ss');
 const { FULFILLMENT_BRANDS } = require('../_fulfillment_brands');
 const { ensureTab, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const KPI_TAB = '_kpis';
 const HEADERS = ['metric', 'brand', 'value', 'updated_at'];
@@ -40,7 +41,10 @@ module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!sheets.fulfillmentDailyShipments) return res.status(500).json({ error: 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js' });
+  if (!sheets.fulfillmentDailyShipments) {
+    await sendCronFailureAlert('sync-fulfillment-kpis', 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js' });
+  }
 
   const debug = req.query.debug === 'true';
   const now = new Date();
@@ -51,6 +55,7 @@ module.exports = async (req, res) => {
   const d21 = new Date(now); d21.setDate(d21.getDate() - 21); // 14-day buffer before the 7-day window's start
 
   const debugOut = [];
+  const failedBrands = [];
   const rows = [];
   const nowIso = new Date().toISOString();
 
@@ -95,6 +100,12 @@ module.exports = async (req, res) => {
       await sleep(300);
     } catch (err) {
       console.error(`[sync-fulfillment-kpis] ${brand.id} failed:`, err.message);
+      // Previously only recorded when debug=true — meaning a per-brand
+      // failure in a real scheduled run left that brand's rows silently
+      // missing from _kpis with no record anywhere except a Vercel log
+      // line nobody was watching. Tracking failedBrands unconditionally now
+      // so a real run still surfaces it.
+      failedBrands.push({ brand: brand.id, error: err.message });
       if (debug) debugOut.push({ brand: brand.id, error: err.message });
     }
   }
@@ -107,6 +118,14 @@ module.exports = async (req, res) => {
     });
   }
 
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-fulfillment-kpis',
+      failedBrands.map(b => `${b.brand}: ${b.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${FULFILLMENT_BRANDS.length}` }
+    );
+  }
+
   try {
     const token = await ensureTab(sheets.fulfillmentDailyShipments, KPI_TAB, HEADERS);
     await replaceRows(sheets.fulfillmentDailyShipments, KPI_TAB, HEADERS, rows, token);
@@ -114,6 +133,7 @@ module.exports = async (req, res) => {
     res.status(200).json({ rowsWritten: rows.length, brands: FULFILLMENT_BRANDS.map(b => b.id) });
   } catch (err) {
     console.error('[sync-fulfillment-kpis] write failed:', err.message);
+    await sendCronFailureAlert('sync-fulfillment-kpis', err.message, { Stage: 'writing _kpis tab' });
     res.status(500).json({ error: err.message });
   }
 };
