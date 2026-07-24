@@ -24,6 +24,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
 const brands                               = require('../config/brands');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const HEADERS       = ['MONTH', 'ASIN', 'START_DATE', 'END_DATE',
   'SEARCH_QUERY', 'SEARCH_QUERY_SCORE', 'SEARCH_QUERY_VOLUME',
@@ -67,6 +68,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, message: '_meta tab does not exist yet — run sync-sqp-request first' });
     }
     console.error('[sync-sqp-process] failed to read _meta:', err.message);
+    await sendCronFailureAlert('sync-sqp-process', err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
@@ -189,6 +191,15 @@ module.exports = async (req, res) => {
     return res.status(200).json({ debug: true, targetMonth, results: debugResults });
   }
 
+  const failedBrands = results.filter(r => r.status === 'error' || r.status === 'FATAL' || r.status === 'CANCELLED');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-sqp-process',
+      failedBrands.map(r => `${r.brand} (${r.status}): ${r.reason || r.errorDocumentContent || 'see logs'}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${activeBrands.length}` }
+    );
+  }
+
   // ── Persist updated per-brand statuses ───────────────────────────────────
   try {
     const metaToken = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
@@ -196,6 +207,7 @@ module.exports = async (req, res) => {
     await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, metaToken);
   } catch (err) {
     console.warn('[sync-sqp-process] failed to update _meta statuses:', err.message);
+    await sendCronFailureAlert('sync-sqp-process', err.message, { Stage: 'persisting per-brand statuses to _meta' });
   }
 
   res.status(200).json({ ok: true, targetMonth, results });
