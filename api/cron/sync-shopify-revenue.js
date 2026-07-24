@@ -17,6 +17,7 @@
  */
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const SHEET_ID = process.env.SHOPIFY_ORDERS_SHEET;
 
@@ -31,7 +32,10 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!SHEET_ID) return res.status(500).json({ error: 'SHOPIFY_ORDERS_SHEET not set' });
+  if (!SHEET_ID) {
+    await sendCronFailureAlert('sync-shopify-revenue', 'SHOPIFY_ORDERS_SHEET not set');
+    return res.status(500).json({ error: 'SHOPIFY_ORDERS_SHEET not set' });
+  }
 
   const nowEst = toEstIso(new Date());
 
@@ -225,6 +229,7 @@ module.exports = async (req, res) => {
 
   } catch (err) {
     console.error('[sync-shopify-revenue] error:', err.message);
+    await sendCronFailureAlert('sync-shopify-revenue', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
