@@ -16,6 +16,7 @@
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -78,6 +79,15 @@ module.exports = async (req, res) => {
   }
 
   const totalTrimmed = results.reduce((s, r) => s + (r.trimmed || 0), 0);
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'trim-orders',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
+  }
 
   res.status(200).json({
     cutoff: cutoffStr,
