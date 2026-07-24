@@ -46,6 +46,7 @@
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const SS_V2_BASE = 'https://api.shipstation.com';
 
@@ -83,8 +84,14 @@ module.exports = async (req, res) => {
   }
 
   const ssToken = process.env.SS_V2_TOKEN;
-  if (!ssToken) return res.status(500).json({ error: 'Missing SS_V2_TOKEN' });
-  if (!sheets.consignmentInventory) return res.status(500).json({ error: 'sheets.consignmentInventory is not configured in config/sheets.js' });
+  if (!ssToken) {
+    await sendCronFailureAlert('sync-consignment-inventory', 'Missing SS_V2_TOKEN env var');
+    return res.status(500).json({ error: 'Missing SS_V2_TOKEN' });
+  }
+  if (!sheets.consignmentInventory) {
+    await sendCronFailureAlert('sync-consignment-inventory', 'sheets.consignmentInventory is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.consignmentInventory is not configured in config/sheets.js' });
+  }
 
   const now = new Date().toISOString();
 
@@ -92,6 +99,7 @@ module.exports = async (req, res) => {
   try {
     masterSkus = await fetchMasterSkuList();
   } catch (err) {
+    await sendCronFailureAlert('sync-consignment-inventory', err.message, { Stage: 'fetching master SKU list' });
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
   }
 
@@ -155,6 +163,15 @@ module.exports = async (req, res) => {
       console.error(`[sync-consignment-inventory] ${brandId} failed:`, err.message);
       results.push({ brand: brandId, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-consignment-inventory',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${CONSIGNMENT_BRANDS.length}` }
+    );
   }
 
   res.status(200).json({ synced: results, timestamp: now });
