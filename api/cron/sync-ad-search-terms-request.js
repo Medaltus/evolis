@@ -41,6 +41,7 @@
 const { getAdToken }                      = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const https                               = require('https');
+const { sendCronFailureAlert }            = require('../_alerts');
 
 const AD_API_HOST           = 'advertising-api.amazon.com';
 const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
@@ -95,9 +96,11 @@ module.exports = async (req, res) => {
     }
 
     if (!reportIds.sp_curr && !reportIds.sb_curr) {
+      await sendCronFailureAlert('sync-ad-search-terms-request', 'All current month report requests failed (sp_curr and sb_curr both null)');
       return res.status(500).json({ error: 'All current month report requests failed' });
     }
     if (!reportIds.sp_prev && !reportIds.sb_prev) {
+      await sendCronFailureAlert('sync-ad-search-terms-request', 'All previous month report requests failed (sp_prev and sb_prev both null)');
       return res.status(500).json({ error: 'All previous month report requests failed' });
     }
 
@@ -136,6 +139,7 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-ad-search-terms-request] fatal:', err.message);
+    await sendCronFailureAlert('sync-ad-search-terms-request', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
