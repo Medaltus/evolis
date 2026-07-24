@@ -53,6 +53,7 @@ const { getAdToken }                                   = require('../_spauth');
 const { ensureTab, readRows, replaceRows }             = require('../config/_sheets_client');
 const https                                            = require('https');
 const zlib                                             = require('zlib');
+const { sendCronFailureAlert }                         = require('../_alerts');
 
 const AD_API_HOST           = 'advertising-api.amazon.com';
 const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
@@ -122,6 +123,7 @@ module.exports = async (req, res) => {
     const rawMeta = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
     rawMeta.forEach(r => { if (r.KEY) meta[r.KEY] = r.VALUE; });
   } catch (err) {
+    await sendCronFailureAlert('sync-ad-search-terms-process', err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
@@ -206,9 +208,18 @@ module.exports = async (req, res) => {
     mm['st_report_status'] = ['st_report_status', allProcessed ? 'PROCESSED' : 'REQUESTED', now];
     await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
 
+    const failedLabels = results.filter(r => r.status === 'check_failed' || r.status === 'download_failed');
+    if (failedLabels.length > 0) {
+      await sendCronFailureAlert(
+        'sync-ad-search-terms-process',
+        failedLabels.map(r => `${r.label} (${r.status}): ${r.error}`).join('\n')
+      );
+    }
+
     res.status(200).json({ checked: results, overallStatus: allProcessed ? 'PROCESSED' : 'REQUESTED', timestamp: now });
   } catch (err) {
     console.error('[sync-ad-search-terms-process] failed to persist _meta:', err.message);
+    await sendCronFailureAlert('sync-ad-search-terms-process', err.message, { Stage: 'persisting per-label status back to _meta' });
     res.status(200).json({ checked: results, warning: 'meta persist failed: ' + err.message, timestamp: now });
   }
 };
