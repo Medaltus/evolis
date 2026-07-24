@@ -37,6 +37,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
 const brands                               = require('../config/brands');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -203,6 +204,9 @@ module.exports = async (req, res) => {
   metaMap['target_month'] = targetMonth;
 
   const asinsByBrand = await getAsinsByBrand();
+  if (asinsByBrand.size === 0) {
+    await sendCronFailureAlert('sync-sqp-request', 'Master SKU List returned 0 usable rows — every brand will be skipped this run. Check sheets.masterSkuList / MASTER_SKU_TAB.');
+  }
   const activeBrands = brands.filter(b => b.active);
   const results = [];
 
@@ -219,6 +223,7 @@ module.exports = async (req, res) => {
   // scheduled run will attempt first. Confirmed 2026-07-16.
   const MAX_NEW_REQUESTS_PER_RUN = 3;
   let requestsThisRun = 0;
+  const hardErrors = []; // genuine failures only — quota/cap-reached is expected, self-throttling behavior, not alerted on
 
   for (const brand of activeBrands) {
     const brandAsins = asinsByBrand.get(brand.id) || [];
@@ -309,12 +314,20 @@ module.exports = async (req, res) => {
       results.push({ brand: brand.id, status: 'requested', batchCount: expectedBatchCount, newBatchesThisRun: batchesDoneThisRun });
     } else {
       results.push({ brand: brand.id, status: 'partial', batchesDoneThisRun, totalBatches: expectedBatchCount, reason: hardError || (quotaExhausted ? 'quota/cap reached' : 'in progress') });
+      if (hardError) hardErrors.push(`${brand.id}: ${hardError}`);
     }
 
     if (quotaExhausted) {
       console.warn(`[sync-sqp-request] stopping run early at ${brand.id} — quota/cap reached, remaining work will be picked up next scheduled run`);
+      if (hardErrors.length > 0) {
+        await sendCronFailureAlert('sync-sqp-request', hardErrors.join('\n'), { 'Brands with real errors': String(hardErrors.length) });
+      }
       return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted' });
     }
+  }
+
+  if (hardErrors.length > 0) {
+    await sendCronFailureAlert('sync-sqp-request', hardErrors.join('\n'), { 'Brands with real errors': String(hardErrors.length) });
   }
 
   res.status(200).json({ ok: true, targetMonth, results });
