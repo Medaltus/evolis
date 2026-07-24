@@ -25,6 +25,7 @@
 
 const { spRequest }                       = require('../_spauth');
 const { ensureTab, replaceRows, readRows } = require('../config/_sheets_client');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const SELLER_ID    = process.env.SP_SELLER_ID;
 const MARKETPLACE  = process.env.SP_MARKETPLACE_ID || 'ATVPDKIKX0DER';
@@ -71,8 +72,14 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!SELLER_ID) return res.status(500).json({ error: 'SP_SELLER_ID not set' });
-  if (!SHEET_ID)  return res.status(500).json({ error: 'SHEET_LISTINGS not set' });
+  if (!SELLER_ID) {
+    await sendCronFailureAlert('sync-listings', 'SP_SELLER_ID not set');
+    return res.status(500).json({ error: 'SP_SELLER_ID not set' });
+  }
+  if (!SHEET_ID) {
+    await sendCronFailureAlert('sync-listings', 'SHEET_LISTINGS not set');
+    return res.status(500).json({ error: 'SHEET_LISTINGS not set' });
+  }
 
   // ── Debug mode: return raw attributes for one SKU ──────────────────────────
   const debugSku = req.query.debug;
@@ -163,7 +170,16 @@ module.exports = async (req, res) => {
     console.log(`[sync-listings] Wrote ${rows.length} rows to ${TAB_NAME}`);
   } catch(err) {
     console.error('[sync-listings] Sheet write failed:', err.message);
+    await sendCronFailureAlert('sync-listings', err.message, { Stage: 'writing evolis tab' });
     return res.status(500).json({ error: 'Sheet write failed', detail: err.message });
+  }
+
+  if (errors.length > 0) {
+    await sendCronFailureAlert(
+      'sync-listings',
+      errors.map(e => `${e.sku}: ${e.error}`).join('\n'),
+      { 'SKUs failed': `${errors.length} of ${EVOLIS_SKUS.length}` }
+    );
   }
 
   return res.status(200).json({
