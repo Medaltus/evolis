@@ -71,6 +71,7 @@ const { spRequest }                         = require('../_spauth');
 const { ensureTab, readRows, replaceRows }  = require('../config/_sheets_client');
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
+const { sendCronFailureAlert }              = require('../_alerts');
 
 const HEADERS = [
   'year', 'month', 'active_subscriptions',
@@ -102,6 +103,7 @@ module.exports = async (req, res) => {
     asinBrandMap = await fetchAsinBrandMap();
   } catch (err) {
     console.error('[sync-subscriptions] failed to load ASIN→brand map:', err.message);
+    await sendCronFailureAlert('sync-subscriptions', err.message, { Stage: 'loading ASIN\u2192brand map' });
     return res.status(500).json({ error: 'Failed to load ASIN→brand map', detail: err.message });
   }
 
@@ -156,6 +158,15 @@ module.exports = async (req, res) => {
       console.error(`[sync-subscriptions] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-subscriptions',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
   }
 
   res.status(200).json({ synced: results, timestamp: now });
