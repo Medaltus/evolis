@@ -2162,12 +2162,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div style="overflow-x:auto;">
           <table class="data-table">
             <thead><tr>
-              <th>SKU</th><th>Product Name</th><th>Category</th><th>On Hand</th><th>Inbound</th><th>Allocated</th><th>Available</th>
+              <th>SKU</th><th>Product Name</th><th>On Hand</th><th>Inbound</th>
             </tr></thead>
-            <tbody id="ix-stock-tbody"><tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
+            <tbody id="ix-stock-tbody"><tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
           </table>
         </div>
-        <div class="ppc-note">ℹ Category, Inbound, and Allocated aren't tracked in the consignment sheet yet — shown as "—" until that data exists. Inbound will pick up automatically once shipments are wired to this table.</div>
+        <div class="ppc-note">ℹ Inbound will populate once an ASN is uploaded for that SKU.</div>
       </div>
     </div>
 
@@ -9165,7 +9165,7 @@ async function initSnsExternal() {
         : `${filtered.length.toLocaleString()} SKUs`;
     }
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">${_stockRows.length ? 'No matching SKUs.' : 'No consignment data yet.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">${_stockRows.length ? 'No matching SKUs.' : 'No consignment data yet.'}</td></tr>`;
       return;
     }
     tbody.innerHTML = filtered
@@ -9176,21 +9176,18 @@ async function initSnsExternal() {
         return `<tr>
         <td>${escapeHtml(r.sku)}</td>
         <td>${escapeHtml(r.name)}</td>
-        <td style="color:var(--muted);">—</td>
         <td>${r.onHand.toLocaleString()}</td>
         <td>${inbound !== undefined ? inbound.toLocaleString() : '<span style="color:var(--muted);">—</span>'}</td>
-        <td style="color:var(--muted);">—</td>
-        <td>${r.available.toLocaleString()}</td>
       </tr>`;
       }).join('');
   }
 
   window.downloadStockLevelsCsv = function () {
-    const headers = ['SKU', 'Product Name', 'Category', 'On Hand', 'Inbound', 'Allocated', 'Available'];
+    const headers = ['SKU', 'Product Name', 'On Hand', 'Inbound'];
     const lines = [headers.join(',')];
     _stockRows.forEach(r => {
       const inbound = _inboundBySku[r.sku];
-      lines.push([r.sku, `"${(r.name || '').replace(/"/g, '""')}"`, '', r.onHand, inbound !== undefined ? inbound : '', '', r.available].join(','));
+      lines.push([r.sku, `"${(r.name || '').replace(/"/g, '""')}"`, r.onHand, inbound !== undefined ? inbound : ''].join(','));
     });
     triggerCsvDownload(lines.join('\n'), `evolis-stock-levels-${new Date().toISOString().slice(0, 10)}.csv`);
   };
