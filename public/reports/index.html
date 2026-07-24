@@ -51,7 +51,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .sb-brand-logo{font-size:16px;font-weight:600;color:#fff;letter-spacing:-.3px;}
 .sb-brand-logo span{color:var(--green);}
 .sb-brand-sub{font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.08em;margin-top:3px;}
-.sb-internal-badge{display:inline-flex;align-items:center;gap:5px;margin:14px 4px 0;background:rgba(36,233,163,0.15);border:1px solid rgba(36,233,163,0.25);border-radius:20px;padding:3px 9px;font-size:10px;font-weight:600;color:var(--green);letter-spacing:.04em;text-transform:uppercase;}
+.sb-internal-badge{display:inline-flex;align-items:center;gap:5px;margin:0 4px 8px;background:rgba(36,233,163,0.15);border:1px solid rgba(36,233,163,0.25);border-radius:20px;padding:3px 9px;font-size:10px;font-weight:600;color:var(--green);letter-spacing:.04em;text-transform:uppercase;}
 .sb-internal-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;}
 
 /* ── Nav ── */
@@ -1016,11 +1016,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </button>
 
     <!-- Internal-only section — everything currently built lives below this line -->
-    <div class="sb-internal-badge" id="sb-internal-badge" style="display:none;">Internal</div>
     <div id="nav-internal-section" style="display:none;">
-    <div class="nav-internal-divider">
-      <div class="nav-internal-label">Internal Only</div>
-    </div>
+    <div class="nav-internal-divider"></div>
+    <div class="sb-internal-badge" id="sb-internal-badge" style="display:none;">Internal</div>
 
     <div class="nav-section">Overview</div>
     <button class="nav-btn" onclick="showPage('overview',this)">
