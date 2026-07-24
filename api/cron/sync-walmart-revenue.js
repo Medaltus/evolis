@@ -20,6 +20,7 @@
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands = require('../config/brands');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const ORDERS_SHEET_ID  = process.env.WALMART_ORDERS_SHEET;
 const REVENUE_SHEET_ID = process.env.WALMART_REVENUE_SHEET;
@@ -35,8 +36,14 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!ORDERS_SHEET_ID)  return res.status(500).json({ error: 'WALMART_ORDERS_SHEET not set' });
-  if (!REVENUE_SHEET_ID) return res.status(500).json({ error: 'WALMART_REVENUE_SHEET not set' });
+  if (!ORDERS_SHEET_ID) {
+    await sendCronFailureAlert('sync-walmart-revenue', 'WALMART_ORDERS_SHEET not set');
+    return res.status(500).json({ error: 'WALMART_ORDERS_SHEET not set' });
+  }
+  if (!REVENUE_SHEET_ID) {
+    await sendCronFailureAlert('sync-walmart-revenue', 'WALMART_REVENUE_SHEET not set');
+    return res.status(500).json({ error: 'WALMART_REVENUE_SHEET not set' });
+  }
 
   const nowEst = toEstIso(new Date());
 
@@ -176,6 +183,15 @@ module.exports = async (req, res) => {
       console.error(`[sync-walmart-revenue] ${brand.id} error:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-walmart-revenue',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${activeBrands.length}` }
+    );
   }
 
   return res.status(200).json({ synced: results, timestamp: nowEst });
