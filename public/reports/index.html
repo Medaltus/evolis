@@ -23,7 +23,7 @@
 
 :root {
   --navy:#001F60; --slate:#6B7BA2; --green:#24E9A3; --sand:#F4DFD0; --silver:#CCD3D5;
-  --white:#ffffff; --bg:#F5F6F9; --bg2:#ECEEF4;
+  --white:#ffffff; --bg:#F6F3EC; --bg2:#ECEEF4;
   --navy-dim:rgba(0,31,96,0.06); --green-dim:rgba(36,233,163,0.13);
   --border:rgba(0,31,96,0.10); --border2:rgba(0,31,96,0.06);
   --text:#001F60; --muted:#6B7BA2; --success:#24e9a3; --warn:#C87D2F; --danger:#db372d;
@@ -569,6 +569,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .ppc-note{font-size:11.5px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px solid var(--border2);line-height:1.65;}
 .inv-status-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;text-align:center;}
 .inv-status-card .kpi-value{font-size:26px;}
+.inv-status-card.oos{background:rgba(0,31,96,.07);border-color:rgba(0,31,96,.25);}
+.inv-status-card.oos .kpi-value{color:var(--navy);}
 .inv-status-card.critical{background:rgba(219,55,45,.06);border-color:rgba(219,55,45,.2);}
 .inv-status-card.critical .kpi-value{color:var(--danger);}
 .inv-status-card.low{background:rgba(200,125,47,.07);border-color:rgba(200,125,47,.2);}
@@ -580,6 +582,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .inv-filter-pill{border:1px solid var(--border);background:var(--white);padding:6px 14px;border-radius:20px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font);}
 .inv-filter-pill.active{background:var(--navy);color:var(--white);border-color:var(--navy);}
 .inv-status-pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.03em;}
+.inv-status-pill.oos{background:var(--navy);color:var(--white);}
 .inv-status-pill.critical{background:rgba(219,55,45,.12);color:var(--danger);}
 .inv-status-pill.low{background:rgba(200,125,47,.14);color:var(--warn);}
 .inv-status-pill.stable{background:rgba(212,177,6,.16);color:#a8890a;}
@@ -587,6 +590,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .inv-status-pill.unscored{background:var(--bg);color:var(--muted);}
 .inv-legend-item{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}
 .inv-legend-bar{width:3px;height:12px;border-radius:2px;display:inline-block;}
+.inv-legend-bar.oos{background:var(--navy);}
 .inv-legend-bar.critical{background:var(--danger);}
 .inv-legend-bar.low{background:var(--warn);}
 .inv-legend-bar.stable{background:#a8890a;}
@@ -1270,7 +1274,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </div>
 
     <div class="ppc-card-title">SKUs by Status</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
+      <div class="inv-status-card oos"><div class="kpi-value" id="inv-count-oos">—</div><div class="kpi-label">OOS</div></div>
       <div class="inv-status-card critical"><div class="kpi-value" id="inv-count-critical">—</div><div class="kpi-label">Critical</div></div>
       <div class="inv-status-card low"><div class="kpi-value" id="inv-count-low">—</div><div class="kpi-label">Low</div></div>
       <div class="inv-status-card stable"><div class="kpi-value" id="inv-count-stable">—</div><div class="kpi-label">Stable</div></div>
@@ -1279,6 +1284,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     <div class="ppc-card">
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
+        <span class="inv-legend-item"><span class="inv-legend-bar oos"></span>OOS = 0 units available</span>
         <span class="inv-legend-item"><span class="inv-legend-bar critical"></span>Critical ≤30 days</span>
         <span class="inv-legend-item"><span class="inv-legend-bar low"></span>Low 31–60 days</span>
         <span class="inv-legend-item"><span class="inv-legend-bar stable"></span>Stable 61–89 days</span>
@@ -1288,6 +1294,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <input type="text" id="inv-search" placeholder="Search SKU or product name…" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--font);font-size:12.5px;">
         <div id="inv-filter-pills" style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="inv-filter-pill active" data-filter="all">All</button>
+          <button class="inv-filter-pill" data-filter="oos">OOS</button>
           <button class="inv-filter-pill" data-filter="critical">Critical</button>
           <button class="inv-filter-pill" data-filter="low">Low</button>
           <button class="inv-filter-pill" data-filter="stable">Stable</button>
@@ -11787,7 +11794,7 @@ function invStatusFor(days) {
   return 'healthy';
 }
 
-const INV_STATUS_LABEL = { critical: 'Critical', low: 'Low', stable: 'Stable', healthy: 'Healthy', unscored: 'Unscored' };
+const INV_STATUS_LABEL = { oos: 'OOS', critical: 'Critical', low: 'Low', stable: 'Stable', healthy: 'Healthy', unscored: 'Unscored' };
 
 async function loadInventoryPage() {
   const tbody = document.getElementById('inv-table-body');
@@ -11846,10 +11853,16 @@ async function loadInventoryPage() {
       const days                 = (daysRaw === '' || daysRaw === null || daysRaw === undefined) ? '' : parseFloat(daysRaw);
       const skuUpper              = (r.sku || '').trim().toUpperCase();
       const consignment            = skuUpper in consignmentMap ? consignmentMap[skuUpper] : '';
+      // OOS overrides the days-of-inventory status entirely — a SKU sitting
+      // at zero Available units right now is a more urgent, direct signal
+      // than a lagging days-of-inventory projection, and previously such
+      // SKUs were getting buried under "Critical" or "Unscored" instead of
+      // being called out on their own. Per Jaclyn, 2026-07-24.
+      const status = available === 0 ? 'oos' : invStatusFor(days);
       return {
         sku: r.sku || '', name: r.name || r.sku || '',
         qtyAtAmazon, qtyAtMedaltus, available, allocated, onHand, consignment,
-        days, status: invStatusFor(days),
+        days, status,
         discontinued: statusMap[skuUpper] === 'DELETED',
       };
     }).filter(r => !(r.discontinued && r.onHand === 0));
@@ -11871,8 +11884,9 @@ function renderInventoryKpis(rows) {
   set('inv-kpi-allocated', sum(r => r.allocated));
   set('inv-kpi-onhand', sum(r => r.onHand));
 
-  const counts = { critical: 0, low: 0, stable: 0, healthy: 0 };
+  const counts = { oos: 0, critical: 0, low: 0, stable: 0, healthy: 0 };
   rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  set('inv-count-oos', counts.oos);
   set('inv-count-critical', counts.critical);
   set('inv-count-low', counts.low);
   set('inv-count-stable', counts.stable);
@@ -11897,7 +11911,7 @@ function renderInventoryTable(rows) {
   } else {
     sorted = [...rows].sort((a, b) => {
       if (a.discontinued !== b.discontinued) return a.discontinued ? 1 : -1;
-      const rank = { critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
+      const rank = { oos: -1, critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
       return (rank[a.status] ?? 5) - (rank[b.status] ?? 5);
     });
   }
