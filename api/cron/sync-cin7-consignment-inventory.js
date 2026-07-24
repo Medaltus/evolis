@@ -95,6 +95,7 @@
 const { ensureTab, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
 const XLSX = require('xlsx');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const DRIVE_FOLDER_ID = process.env.GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID; // = 1basS09tY_yw348xDiJbUmRxsIboKe5ux
 const HEADERS = ['sku', 'name', 'on_hand', 'available', 'last_updated'];
@@ -116,8 +117,14 @@ module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!sheets.consignmentInventory) return res.status(500).json({ error: 'sheets.consignmentInventory is not configured in config/sheets.js' });
-  if (!DRIVE_FOLDER_ID) return res.status(500).json({ error: 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set' });
+  if (!sheets.consignmentInventory) {
+    await sendCronFailureAlert('sync-cin7-consignment-inventory', 'sheets.consignmentInventory is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.consignmentInventory is not configured in config/sheets.js' });
+  }
+  if (!DRIVE_FOLDER_ID) {
+    await sendCronFailureAlert('sync-cin7-consignment-inventory', 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set');
+    return res.status(500).json({ error: 'GOOGLE_CIN7_CONSIGNMENT_FOLDER_ID is not set' });
+  }
 
   // Test-only params, both optional — normal scheduled runs pass neither.
   // ?targetDate=YYYY-MM-DD — test against a SPECIFIC day's file by name
@@ -140,14 +147,17 @@ module.exports = async (req, res) => {
       ? await findFileByDate(DRIVE_FOLDER_ID, targetDate)
       : await findNewestFile(DRIVE_FOLDER_ID);
   } catch (err) {
+    await sendCronFailureAlert('sync-cin7-consignment-inventory', err.message, { Stage: 'finding the Cin7 export in Drive' });
     return res.status(500).json({ error: 'Failed to find the Cin7 export in Drive', detail: err.message });
   }
   if (!fileInfo) {
-    return res.status(404).json({
-      error: targetDate
-        ? `No file found in the Cin7 export Drive folder matching date ${targetDate}`
-        : 'No files found in the Cin7 export Drive folder',
-    });
+    const msg = targetDate
+      ? `No file found in the Cin7 export Drive folder matching date ${targetDate}`
+      : 'No files found in the Cin7 export Drive folder';
+    // A missing daily export is exactly the kind of silent gap this whole
+    // system is trying to catch — worth an alert, not just a 404 nobody sees.
+    await sendCronFailureAlert('sync-cin7-consignment-inventory', msg);
+    return res.status(404).json({ error: msg });
   }
 
   let rows;
@@ -157,6 +167,7 @@ module.exports = async (req, res) => {
   } catch (err) {
     console.error(`[sync-cin7-consignment-inventory] failed to read "${fileInfo.name}" (${fileInfo.id}):`, err.message);
     // Per spec: never erase existing destination data on a bad/missing file.
+    await sendCronFailureAlert('sync-cin7-consignment-inventory', err.message, { Stage: 'reading/parsing source file', File: fileInfo.name });
     return res.status(500).json({ error: 'Failed to read or parse the source file', file: fileInfo.name, detail: err.message });
   }
 
@@ -203,6 +214,15 @@ module.exports = async (req, res) => {
   }
   if (unmatched.length) {
     console.log(`[sync-cin7-consignment-inventory] ${unmatched.length} row(s) looked like consignment SKUs but didn't match any of the 4 supported brand prefixes:`, unmatched.slice(0, 20).join('; '));
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-cin7-consignment-inventory',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${CONSIGNMENT_BRANDS.length}` }
+    );
   }
 
   res.status(200).json({
