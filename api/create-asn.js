@@ -111,6 +111,19 @@ module.exports = async function handler(req, res) {
     const newFileId = copyRes.data.id;
     const driveUrl = copyRes.data.webViewLink || `https://docs.google.com/spreadsheets/d/${newFileId}/edit`;
 
+    // 1b) Drive's files.copy does NOT carry over "Anyone with the link"
+    // sharing from the source template — that's a separate, per-file
+    // permission from the service account's own Editor access. Since the
+    // dashboard reads each ASN sheet's SKUs/Units/line-items via an
+    // unauthenticated CSV export (fileCsvUrl in index.html), every new copy
+    // needs this set explicitly or that fetch silently returns nothing and
+    // the card shows "…" forever.
+    await drive.permissions.create({
+      fileId: newFileId,
+      supportsAllDrives: true,
+      requestBody: { role: 'reader', type: 'anyone' },
+    });
+
     // 2) The source template is blank (confirmed — Luccini's is too), so the
     // title bar / field labels / header row you see on a finished ASN sheet
     // aren't coming from the template at all. This writes that structure
