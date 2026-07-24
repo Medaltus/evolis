@@ -13,6 +13,7 @@
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -68,6 +69,7 @@ module.exports = async (req, res) => {
       console.log(`[sync-revenue-request] ${range.month} report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error(`[sync-revenue-request] failed to request report for ${range.month}:`, err.message);
+      await sendCronFailureAlert('sync-revenue-request', err.message, { Stage: `requesting report for ${range.month}` });
       return res.status(500).json({ error: `Failed to request report for ${range.month}`, detail: err.message });
     }
   }
@@ -94,6 +96,7 @@ module.exports = async (req, res) => {
     console.log(`[sync-revenue-request] meta written`);
   } catch (err) {
     console.error('[sync-revenue-request] failed to write meta:', err.message);
+    await sendCronFailureAlert('sync-revenue-request', err.message, { Stage: 'writing reportIds to _meta' });
   }
 
   res.status(200).json({ reportIds, targetMonths: Object.keys(reportIds) });
