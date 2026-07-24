@@ -24,6 +24,7 @@
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brandsConfig                         = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 // Must match sync-orders-process.js's HEADERS exactly — same tab, same shape.
 const HEADERS = [
@@ -89,6 +90,7 @@ module.exports = async (req, res) => {
     console.log(`[sale-promotions] events loaded: ${eventWindows.length}, prices: ${priceRef.size}`);
   } catch (err) {
     console.error('[sale-promotions] failed to load events/prices — aborting run:', err.message);
+    await sendCronFailureAlert('sale-promotions', err.message, { Stage: 'loading Events + Product Short Name reference data' });
     return res.status(500).json({ error: 'Failed to load events/price reference', detail: err.message });
   }
 
@@ -103,6 +105,15 @@ module.exports = async (req, res) => {
       console.error(`[sale-promotions] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sale-promotions',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${activeBrands.length}` }
+    );
   }
 
   res.status(200).json({ dryRun, results });
