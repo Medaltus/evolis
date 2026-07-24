@@ -1210,6 +1210,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="kpi-card" id="ov-kpi-acos"><div class="kpi-label">Blended ACOS</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
     </div>
 
+    <div class="kpi-row">
+      <div class="kpi-card" id="ov-kpi-organic-orders"><div class="kpi-label">MTD Organic Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-ad-orders"><div class="kpi-label">MTD Ad-Driven Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-pending"><div class="kpi-label">Pending Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+    </div>
+
     <div class="two-col" style="margin-bottom:22px;">
       <div class="card" style="margin-top:0;">
         <div class="card-title" id="ov-donut-title">Revenue by Channel — Month to Date</div>
@@ -9083,6 +9089,7 @@ async function initSnsExternal() {
   let _stockRows = [];
   let _stockSearchWired = false;
   let _skuNameMap = {};   // SKU (base, no -SF) -> Product Short Name, from the master sheet
+  let _skuStatusMap = {}; // SKU (base, no -SF) -> 'LIVE' | 'DELETED', col H of the same master sheet
   let _inboundBySku = {}; // SKU -> summed Expected Qty across all *Open* ASNs
 
   // Same SKU-keyed lookup pattern already used elsewhere on this dashboard.
@@ -9093,9 +9100,11 @@ async function initSnsExternal() {
       const lines = csv.trim().split('\n');
       for (let i = 1; i < lines.length; i++) {
         const cols = parseCsvLine(lines[i]);
-        const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
-        const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+        const sku    = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
+        const name   = (cols[2] || '').replace(/^"|"$/g,'').trim();
+        const status = (cols[7] || '').replace(/^"|"$/g,'').trim().toUpperCase();
         if (sku && name) _skuNameMap[sku] = name;
+        if (sku && status) _skuStatusMap[sku] = status;
       }
     } catch (e) {
       console.warn('[InventoryExternal] Product name lookup failed:', e.message);
@@ -9125,8 +9134,15 @@ async function initSnsExternal() {
           onHand: parseFloat(r.on_hand ?? r.onhand) || 0,
           available: parseFloat(r.available) || 0,
           lastUpdated: r.last_updated || r.lastupdated || '',
+          discontinued: _skuStatusMap[sku] === 'DELETED',
         };
-      }).filter(r => r.sku);
+      }).filter(r => r.sku)
+        // Discontinued (Status = DELETED on the master sheet) products drop
+        // off this page entirely once On Hand hits zero — nothing left to
+        // track. Until then they still show (greyed, sorted to the bottom
+        // in renderStockLevelsTable) so leftover stock isn't silently
+        // hidden. Per Jaclyn, 2026-07-24.
+        .filter(r => !(r.discontinued && r.onHand === 0));
 
       renderStockLevelsKpis(_stockRows);
       wireStockSearch();
@@ -9176,12 +9192,14 @@ async function initSnsExternal() {
     }
     tbody.innerHTML = filtered
       .slice()
-      .sort((a, b) => a.sku.localeCompare(b.sku))
+      .sort((a, b) => (a.discontinued === b.discontinued ? a.sku.localeCompare(b.sku) : (a.discontinued ? 1 : -1)))
       .map(r => {
         const inbound = _inboundBySku[r.sku];
-        return `<tr>
+        const rowStyle = r.discontinued ? ' style="opacity:0.5;"' : '';
+        const badge = r.discontinued ? ' <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 6px;">Discontinued</span>' : '';
+        return `<tr${rowStyle}>
         <td>${escapeHtml(r.sku)}</td>
-        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.name)}${badge}</td>
         <td>${r.onHand.toLocaleString()}</td>
         <td>${inbound !== undefined ? inbound.toLocaleString() : '<span style="color:var(--muted);">—</span>'}</td>
       </tr>`;
@@ -11775,12 +11793,17 @@ async function loadInventoryPage() {
   const tbody = document.getElementById('inv-table-body');
   if (!tbody) return;
   try {
-    const [csv, consignmentCsv] = await Promise.all([
+    const [csv, consignmentCsv, statusCsv] = await Promise.all([
       fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       // 'evolis' tab doesn't exist in this sheet yet (Cin7 pipeline not
       // built) — this will just fail quietly and consignmentMap stays
       // empty, which is exactly the honest "no data yet" state.
       fetch(ovCsvUrl(OV_CONSIGNMENT_SHEET_ID, '505131584')).then(r => r.ok ? r.text() : '').catch(() => ''),
+      // Master Product Short Name sheet's own Status column (LIVE/DELETED)
+      // — same sheet/gid as the name lookups used elsewhere, col B=SKU,
+      // col H=Status. Used to grey out + sort discontinued SKUs to the
+      // bottom, and drop them entirely once there's no stock left at all.
+      fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => ''),
     ]);
     const rows = parseCsvToRows(csv);
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);">No data</td></tr>'; return; }
@@ -11796,6 +11819,13 @@ async function loadInventoryPage() {
       // regardless of whether the sheet had real data.
       const sku = (r.sku || '').trim().toUpperCase().replace(/^C-/, '');
       if (sku) consignmentMap[sku] = parseFloat(r.available) || 0;
+    });
+
+    const statusMap = {};
+    parseCsvToRows(statusCsv).forEach(r => {
+      const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      const status = (r.status || '').trim().toUpperCase();
+      if (sku && status) statusMap[sku] = status;
     });
 
     // Daily snapshot cron — most recent date only
@@ -11820,8 +11850,9 @@ async function loadInventoryPage() {
         sku: r.sku || '', name: r.name || r.sku || '',
         qtyAtAmazon, qtyAtMedaltus, available, allocated, onHand, consignment,
         days, status: invStatusFor(days),
+        discontinued: statusMap[skuUpper] === 'DELETED',
       };
-    });
+    }).filter(r => !(r.discontinued && r.onHand === 0));
 
     renderInventoryKpis(_invAllRows);
     renderInventoryTable(_invAllRows);
@@ -11859,18 +11890,22 @@ function renderInventoryTable(rows) {
   let sorted;
   if (_invSortKey === 'sku' || _invSortKey === 'name') {
     const dir = _invSortDir === 'desc' ? -1 : 1;
-    sorted = [...rows].sort((a, b) => dir * String(a[_invSortKey]).localeCompare(String(b[_invSortKey]), undefined, { numeric: true, sensitivity: 'base' }));
+    sorted = [...rows].sort((a, b) => {
+      if (a.discontinued !== b.discontinued) return a.discontinued ? 1 : -1;
+      return dir * String(a[_invSortKey]).localeCompare(String(b[_invSortKey]), undefined, { numeric: true, sensitivity: 'base' });
+    });
   } else {
     sorted = [...rows].sort((a, b) => {
+      if (a.discontinued !== b.discontinued) return a.discontinued ? 1 : -1;
       const rank = { critical: 0, low: 1, unscored: 2, stable: 3, healthy: 4 };
       return (rank[a.status] ?? 5) - (rank[b.status] ?? 5);
     });
   }
 
   tbody.innerHTML = sorted.map(r => `
-    <tr>
+    <tr${r.discontinued ? ' style="opacity:0.5;"' : ''}>
       <td style="font-family:var(--mono);font-size:11px;">${r.sku}</td>
-      <td>${r.name}</td>
+      <td>${r.name}${r.discontinued ? ' <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 6px;">Discontinued</span>' : ''}</td>
       <td>${r.qtyAtAmazon.toLocaleString()}</td>
       <td>${r.qtyAtMedaltus.toLocaleString()}</td>
       <td>${r.allocated.toLocaleString()}</td>
@@ -15069,6 +15104,20 @@ async function loadAuditResultsFromSheet() {
     }
   }
 
+  // For KPIs with no reliable day-level source to build a true MTD-vs-MTD
+  // comparison from (e.g. the ad orders sheet buckets by month only, no
+  // date field) — shows a plain static label instead of a misleading
+  // percentage. Per Jaclyn 2026-07-24: drop the MOM badge rather than
+  // fake a comparison the underlying data can't actually support.
+  function setKpiPlain(cardId, value, label) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const valEl = card.querySelector('.kpi-value');
+    const momEl = card.querySelector('.kpi-mom');
+    if (valEl) valEl.textContent = value;
+    if (momEl) { momEl.className = 'kpi-mom flat'; momEl.textContent = label || ''; }
+  }
+
   window.initOverviewLive = async function () {
     if (window._overviewLiveInit) return;
     window._overviewLiveInit = true;
@@ -15122,6 +15171,43 @@ async function loadAuditResultsFromSheet() {
       setKpi('ov-kpi-units',  mtd.units.toLocaleString(),  pctChange(mtd.units, prev.units));
       setKpi('ov-kpi-orders', mtd.orders.toLocaleString(), pctChange(mtd.orders, prev.orders));
       setKpi('ov-kpi-aov',    '$' + aov.toFixed(2),        pctChange(Math.round(aov * 100), Math.round(aovPrev * 100)));
+
+      // -- MTD Organic Orders / MTD Ad-Driven Orders / Pending Orders --
+      // Per Jaclyn (2026-07-24): the ad orders cron runs daily and captures
+      // every order, but only buckets by month — no day-of-purchase field —
+      // so a true day-level MTD-vs-MTD comparison isn't possible here. No
+      // MOM badge on these two solves that: the current month's row count
+      // IS already "so far this month" by construction (the cron only ever
+      // adds today's orders as they happen), no proration needed. Each row
+      // on the ad orders sheet is one order-level event (confirmed by
+      // Jaclyn), not a pre-aggregated units total, so counting rows for
+      // the current month = the actual ad-driven order count directly.
+      let adDrivenOrders = 0;
+      if (isCsv(adOrdersCsv)) {
+        adDrivenOrders = parseCsv(adOrdersCsv).filter(r =>
+          parseInt(r.year, 10) === now.getFullYear() &&
+          parseInt(r.month, 10) === now.getMonth() + 1 &&
+          (r.brand || '').trim().toLowerCase() === 'evolis'
+        ).length;
+      }
+      // Subtracted from the blended (Amazon + Website + Walmart) MTD order
+      // count, not Amazon-only — Website/Walmart orders have no paid-ads
+      // program tracked in this data at all, so they're organic by
+      // definition and should simply add on top of whatever's left after
+      // removing Amazon's ad-attributed subset.
+      const organicOrders = Math.max(0, mtd.orders - adDrivenOrders);
+      setKpiPlain('ov-kpi-organic-orders', organicOrders.toLocaleString(), 'This month');
+      setKpiPlain('ov-kpi-ad-orders', adDrivenOrders.toLocaleString(), 'This month (Amazon Ads)');
+
+      // Pending Orders — a live snapshot, intentionally NOT date-scoped
+      // (an order still sitting in Pending from any date is still open and
+      // worth surfacing, not just ones placed this month). Amazon only,
+      // per Jaclyn's source (SHEET_ORDERS).
+      const pendingOrderIds = new Set(
+        amzRows.filter(r => (r.status || '').trim().toLowerCase() === 'pending')
+               .map(r => r.order_id).filter(Boolean)
+      );
+      setKpiPlain('ov-kpi-pending', pendingOrderIds.size.toLocaleString(), 'Currently open');
 
       const heroRevEl = document.getElementById('ov-hero-revenue');
       if (heroRevEl) heroRevEl.textContent = mtd.revenue >= 1000 ? '$' + (mtd.revenue / 1000).toFixed(1) + 'K' : '$' + mtd.revenue.toFixed(0);
