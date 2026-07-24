@@ -33,6 +33,7 @@ const { ssFetch } = require('../_ss');
 const { FULFILLMENT_BRANDS } = require('../_fulfillment_brands');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const HEADERS = ['date', 'orders_shipped', 'last_updated'];
 const TIME_BUDGET_MS = 250_000; // stay safely under Vercel's 300s cap
@@ -42,7 +43,10 @@ module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!sheets.fulfillmentDailyShipments) return res.status(500).json({ error: 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js' });
+  if (!sheets.fulfillmentDailyShipments) {
+    await sendCronFailureAlert('sync-fulfillment-daily-shipments', 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js');
+    return res.status(500).json({ error: 'sheets.fulfillmentDailyShipments is not configured in config/sheets.js' });
+  }
 
   const startTime = Date.now();
 
@@ -116,6 +120,16 @@ module.exports = async (req, res) => {
     }
 
     console.log(`[sync-fulfillment-daily-shipments] processed ${dateList.length} date(s) across ${results.length}/${FULFILLMENT_BRANDS.length} brands${timedOut ? ' (TIMED OUT — incomplete)' : ''}`);
+
+    const failedBrands = results.filter(r => r.status === 'error');
+    if (failedBrands.length > 0) {
+      await sendCronFailureAlert(
+        'sync-fulfillment-daily-shipments',
+        failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+        { 'Brands failed': `${failedBrands.length} of ${FULFILLMENT_BRANDS.length}` }
+      );
+    }
+
     res.status(200).json({
       datesProcessed: dateList.length,
       dateRange: [dateList[0], dateList[dateList.length - 1]],
@@ -124,6 +138,7 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-fulfillment-daily-shipments]', err.message);
+    await sendCronFailureAlert('sync-fulfillment-daily-shipments', err.message);
     res.status(500).json({ error: err.message });
   }
 };
