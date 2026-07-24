@@ -904,7 +904,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
 .asn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
 .asn-card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
-.asn-card[data-status="Received"]{border-color:var(--green);}
+.asn-card[data-status="Open"]{background:var(--sand);}
+.asn-card[data-status="Received"]{background:var(--slate);}
+.asn-card[data-status="Received"] .asn-upload-date,
+.asn-card[data-status="Received"] .asn-stat-label{color:rgba(255,255,255,0.7);}
+.asn-card[data-status="Received"] .asn-stat-value{color:var(--white);}
+.asn-card[data-status="Received"] .asn-id-link{color:var(--white);border-bottom-color:var(--white);}
 .asn-card-hd{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border);background:var(--bg);}
 .asn-id-link{display:inline-flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:var(--navy);text-decoration:none;border-bottom:1.5px solid var(--green);padding-bottom:1px;font-family:var(--mono);}
 .asn-id-link:hover{color:var(--green);}
