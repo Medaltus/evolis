@@ -75,7 +75,19 @@ const BRAND_DESCRIPTIONS = {
   default: 'a Medaltus brand'
 };
 
-const INSIGHTS_HEADERS = ['DATE', 'BRAND', 'ORGANIC_JSON', 'PPC_JSON', 'LISTING_JSON', 'LOG_SUMMARY'];
+// CONFIRMED 2026-07-23 against a screenshot of the actual live sheet
+// (tab "Evolis"): real columns are date, organic_json, ppc_json,
+// listing_json, summary, uploaded_at — no brand column at all (brand
+// identity is already the tab name, e.g. "Evolis" vs "skinuva", so a
+// BRAND column was always redundant). The prior INSIGHTS_HEADERS list
+// below had 'BRAND' as its 2nd entry, which doesn't exist in the real
+// sheet — since ensureTab() never rewrites an existing tab's header row,
+// every write was silently shifting one column left of where it belonged
+// (brand.id landing under "organic_json", real organic_json content
+// landing under "ppc_json", etc.). Visible directly in the live sheet:
+// one row per date with real JSON, one row per date with "evolis" sitting
+// in the organic_json column instead. Fixed to match reality below.
+const INSIGHTS_HEADERS = ['date', 'organic_json', 'ppc_json', 'listing_json', 'summary', 'uploaded_at'];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const COMPARISON_WINDOW_DAYS = 28;
@@ -497,11 +509,11 @@ async function writeInsightsToSheet(brand, insights) {
   const token = await ensureTab(sheets.insights, brand.tabName, INSIGHTS_HEADERS);
   const row = [
     insights.date,
-    brand.id,
     JSON.stringify(insights.organic || {}),
     JSON.stringify(insights.ppc || {}),
     JSON.stringify(insights.listing || {}),
     insights.log_summary || '',
+    new Date().toISOString(),
   ];
   await appendRows(sheets.insights, brand.tabName, [row], token);
   console.log(`[run-analysis] ${brand.id} — insights written for ${insights.date}`);
