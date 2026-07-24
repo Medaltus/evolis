@@ -16,6 +16,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA UNITS', 'FBM UNITS'];
 const META_TAB     = '_meta';
@@ -60,6 +61,7 @@ module.exports = async (req, res) => {
       console.log(`[sync-revenue-process] backfill report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to request backfill report:', err.message);
+      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'requesting backfill report', Month: req.query.month });
       return res.status(500).json({ error: 'Failed to request report', detail: err.message });
     }
 
@@ -99,6 +101,7 @@ module.exports = async (req, res) => {
       console.log(`[sync-revenue-process] processing ${jobs.length} reports: ${jobs.map(j => j.month).join(', ')}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to read _meta:', err.message);
+      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'reading _meta tab' });
       return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
     }
   }
@@ -297,7 +300,17 @@ module.exports = async (req, res) => {
       await replaceRows(sheets.revenue, META_TAB, META_HEADERS, metaRows, token);
     } catch (err) {
       console.warn('[sync-revenue-process] failed to update _meta status:', err.message);
+      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'marking report processed in _meta' });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-revenue-process',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
   }
 
   res.status(200).json({ synced: results });
