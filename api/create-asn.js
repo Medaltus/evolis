@@ -111,28 +111,106 @@ module.exports = async function handler(req, res) {
     const newFileId = copyRes.data.id;
     const driveUrl = copyRes.data.webViewLink || `https://docs.google.com/spreadsheets/d/${newFileId}/edit`;
 
-    // 2) Write the header block (rows 3–11, column B) + line items (row 14+).
-    // Fixed layout confirmed from Luccini's populated example: row3
-    // Shipment ID · row4 Upload Date · row5 Status · row6 Carrier · row7
-    // PRO/Tracking # · row8 Box/Pallet Count · row9 Notes · row10 Total
-    // SKUs · row11 Total Units · row13 line-item header · row14+ line
-    // items (SKU, Product Name, Expected Qty, Received Qty, Discrepancy,
-    // Case Qty, # of Cases, Location). No existing helper in
-    // _sheets_client.js fits an arbitrary-range write like this one, so
-    // this part stays on googleapis directly.
+    // 2) The source template is blank (confirmed — Luccini's is too), so the
+    // title bar / field labels / header row you see on a finished ASN sheet
+    // aren't coming from the template at all. This writes that structure
+    // from scratch on every new sheet, then formats it to match Luccini's
+    // look (navy title bar, bold white text, bold header row). Fixed layout:
+    // row1 title · row3 Shipment ID · row4 Upload Date · row5 Status · row6
+    // Carrier · row7 PRO/Tracking # · row8 Box/Pallet Count · row9 Notes ·
+    // row10 Total SKUs · row11 Total Units · row13 line-item header · row14+
+    // line items (SKU, Product Name, Expected Qty, Received Qty,
+    // Discrepancy, Case Qty, # of Cases, Location).
     const lineItemRows = cleanRows.map(r => [r.sku, r.productName, r.quantity, '', '', '', '', 'Medaltus']);
+    const lineItemsEndRow = 13 + lineItemRows.length;
 
+    // 2a) Find the sheetId of the copied file's one tab — needed for the
+    // formatting requests below (values.batchUpdate only takes A1 ranges,
+    // but merge/color/bold requests need the numeric sheetId).
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: newFileId,
+      fields: 'sheets.properties.sheetId',
+    });
+    const sheetId = meta.data.sheets[0].properties.sheetId;
+
+    // 2b) Write every value in one pass — title text, static field labels,
+    // dynamic values, the line-item header row, and the line items themselves.
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: newFileId,
       requestBody: {
         valueInputOption: 'USER_ENTERED',
         data: [
-          { range: 'B3', values: [[shipmentId]] },
-          { range: 'B4', values: [[uploadDate]] },
-          { range: 'B5', values: [['Open']] },
-          { range: 'B10', values: [[totalSkus]] },
-          { range: 'B11', values: [[totalUnits]] },
-          { range: `A14:H${13 + lineItemRows.length}`, values: lineItemRows },
+          { range: 'A1', values: [['ÉVOLIS × MEDALTUS — ADVANCED SHIPPING NOTICE']] },
+          { range: 'A3:B11', values: [
+            ['Shipment ID', shipmentId],
+            ['Upload Date', uploadDate],
+            ['Status', 'Open'],
+            ['Carrier', ''],
+            ['PRO / Tracking #', ''],
+            ['Box / Pallet Count', ''],
+            ['Notes', ''],
+            ['Total SKUs', totalSkus],
+            ['Total Units', totalUnits],
+          ] },
+          { range: 'A13:H13', values: [
+            ['SKU', 'Product Name', 'Expected Qty', 'Received Qty', 'Discrepancy', 'Case Qty', '# of Cases', 'Location'],
+          ] },
+          { range: `A14:H${lineItemsEndRow}`, values: lineItemRows },
+        ],
+      },
+    });
+
+    // 2c) Formatting pass — merge + style the title bar, bold the field
+    // labels, and style the line-item header row to match. This is a
+    // separate spreadsheets.batchUpdate (not values.batchUpdate) since
+    // background color / bold / merge are cell-format requests, not values.
+    const NAVY = { red: 0, green: 0.1216, blue: 0.3765 };
+    const WHITE = { red: 1, green: 1, blue: 1 };
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: newFileId,
+      requestBody: {
+        requests: [
+          // Title bar: merge A1:H1, navy background, bold white text.
+          {
+            mergeCells: {
+              range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+              mergeType: 'MERGE_ALL',
+            },
+          },
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: NAVY,
+                  textFormat: { bold: true, foregroundColor: WHITE, fontSize: 13 },
+                  verticalAlignment: 'MIDDLE',
+                },
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment)',
+            },
+          },
+          // Field labels (A3:A11): bold.
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 2, endRowIndex: 11, startColumnIndex: 0, endColumnIndex: 1 },
+              cell: { userEnteredFormat: { textFormat: { bold: true } } },
+              fields: 'userEnteredFormat.textFormat.bold',
+            },
+          },
+          // Line-item header row (A13:H13): navy background, bold white text.
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 12, endRowIndex: 13, startColumnIndex: 0, endColumnIndex: 8 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: NAVY,
+                  textFormat: { bold: true, foregroundColor: WHITE },
+                },
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat)',
+            },
+          },
         ],
       },
     });
