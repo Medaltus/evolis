@@ -904,12 +904,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
 .asn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
 .asn-card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
-.asn-card[data-status="Open"]{background:var(--sand);}
-.asn-card[data-status="Received"]{background:var(--slate);}
-.asn-card[data-status="Received"] .asn-upload-date,
-.asn-card[data-status="Received"] .asn-stat-label{color:rgba(255,255,255,0.7);}
-.asn-card[data-status="Received"] .asn-stat-value{color:var(--white);}
-.asn-card[data-status="Received"] .asn-id-link{color:var(--white);border-bottom-color:var(--white);}
+.asn-card[data-status="Received"]{border-color:var(--green);}
 .asn-card-hd{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border);background:var(--bg);}
 .asn-id-link{display:inline-flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:var(--navy);text-decoration:none;border-bottom:1.5px solid var(--green);padding-bottom:1px;font-family:var(--mono);}
 .asn-id-link:hover{color:var(--green);}
@@ -9025,6 +9020,10 @@ async function initSnsExternal() {
   const TRACKER_SHEET_ID     = '1Pb50CzCb0fouNsaewQATEY_c3IpgRVPu5FoppNg19_A';
   const TRACKER_TAB          = 'Inbound_Shipments';
   const ASN_TEMPLATE_ID      = '12wOeZryBrUKsWFrPr6SzHadwEti1SI1hEEv1X2vjHkk';
+  // Same master Product Short Name sheet used elsewhere on this dashboard
+  // (col A=ASIN, col B=SKU (base, no -SF), col C=Product Short Name).
+  const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_NAMES_GID      = '164358627';
 
   function gvizCsvUrl(sheetId, tabName) {
     return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_cb=${Date.now()}`;
@@ -9077,23 +9076,51 @@ async function initSnsExternal() {
   // ══════════════════════════════════════════════════════════════════════
   let _stockRows = [];
   let _stockSearchWired = false;
+  let _skuNameMap = {};   // SKU (base, no -SF) -> Product Short Name, from the master sheet
+  let _inboundBySku = {}; // SKU -> summed Expected Qty across all *Open* ASNs
+
+  // Same SKU-keyed lookup pattern already used elsewhere on this dashboard.
+  async function loadSkuNameMap() {
+    try {
+      const csv = await fetch(fileCsvUrl(PRODUCT_NAMES_SHEET_ID, PRODUCT_NAMES_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (!isCsv(csv)) return;
+      const lines = csv.trim().split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
+        const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+        if (sku && name) _skuNameMap[sku] = name;
+      }
+    } catch (e) {
+      console.warn('[InventoryExternal] Product name lookup failed:', e.message);
+    }
+  }
 
   window.loadStockLevelsExternal = async function () {
     const tbody = document.getElementById('ix-stock-tbody');
     try {
-      const csv = await fetch(fileCsvUrl(CONSIGNMENT_SHEET_ID, CONSIGNMENT_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+      const [csv] = await Promise.all([
+        fetch(fileCsvUrl(CONSIGNMENT_SHEET_ID, CONSIGNMENT_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+        Object.keys(_skuNameMap).length ? Promise.resolve() : loadSkuNameMap(),
+      ]);
       const rows = isCsv(csv) ? parseCsvRows(csv) : [];
       // Consignment SKUs always carry a "C-" prefix over the base SKU —
       // same convention as the internal Inventory page's Consignment
       // column and the Home page KPI. Strip it so this displays the same
-      // SKU naming everywhere else on the dashboard uses.
-      _stockRows = rows.map(r => ({
-        sku: (r.sku || '').trim().toUpperCase().replace(/^C-/, ''),
-        name: r.name || '',
-        onHand: parseFloat(r.on_hand ?? r.onhand) || 0,
-        available: parseFloat(r.available) || 0,
-        lastUpdated: r.last_updated || r.lastupdated || '',
-      })).filter(r => r.sku);
+      // SKU naming everywhere else on the dashboard uses. Product name
+      // comes from the master Product Short Name sheet (same lookup used
+      // elsewhere), falling back to the consignment sheet's own raw name
+      // if a SKU isn't in the master list yet.
+      _stockRows = rows.map(r => {
+        const sku = (r.sku || '').trim().toUpperCase().replace(/^C-/, '');
+        return {
+          sku,
+          name: _skuNameMap[sku] || r.name || '',
+          onHand: parseFloat(r.on_hand ?? r.onhand) || 0,
+          available: parseFloat(r.available) || 0,
+          lastUpdated: r.last_updated || r.lastupdated || '',
+        };
+      }).filter(r => r.sku);
 
       renderStockLevelsKpis(_stockRows);
       wireStockSearch();
@@ -9144,22 +9171,26 @@ async function initSnsExternal() {
     tbody.innerHTML = filtered
       .slice()
       .sort((a, b) => a.sku.localeCompare(b.sku))
-      .map(r => `<tr>
+      .map(r => {
+        const inbound = _inboundBySku[r.sku];
+        return `<tr>
         <td>${escapeHtml(r.sku)}</td>
         <td>${escapeHtml(r.name)}</td>
         <td style="color:var(--muted);">—</td>
         <td>${r.onHand.toLocaleString()}</td>
-        <td style="color:var(--muted);">—</td>
+        <td>${inbound !== undefined ? inbound.toLocaleString() : '<span style="color:var(--muted);">—</span>'}</td>
         <td style="color:var(--muted);">—</td>
         <td>${r.available.toLocaleString()}</td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
   }
 
   window.downloadStockLevelsCsv = function () {
     const headers = ['SKU', 'Product Name', 'Category', 'On Hand', 'Inbound', 'Allocated', 'Available'];
     const lines = [headers.join(',')];
     _stockRows.forEach(r => {
-      lines.push([r.sku, `"${(r.name || '').replace(/"/g, '""')}"`, '', r.onHand, '', '', r.available].join(','));
+      const inbound = _inboundBySku[r.sku];
+      lines.push([r.sku, `"${(r.name || '').replace(/"/g, '""')}"`, '', r.onHand, inbound !== undefined ? inbound : '', '', r.available].join(','));
     });
     triggerCsvDownload(lines.join('\n'), `evolis-stock-levels-${new Date().toISOString().slice(0, 10)}.csv`);
   };
@@ -9237,6 +9268,23 @@ async function initSnsExternal() {
       renderAsnLists(/*detailsReady*/false);
       await Promise.all(_trackerRows.map(r => fetchAsnDetail(r.shipmentid, r.driveurl)));
       renderAsnLists(/*detailsReady*/true);
+
+      // Aggregate Expected Qty per SKU across all *Open* shipments only —
+      // Received shipments' expected units are already reflected in stock
+      // on-hand, so counting them here would double-count as "inbound."
+      _inboundBySku = {};
+      _trackerRows
+        .filter(r => (r.status || '').trim() === 'Open')
+        .forEach(r => {
+          const detail = _asnDetailCache[r.shipmentid];
+          if (!detail) return;
+          detail.lineItems.forEach(li => {
+            const sku = (li.sku || '').trim().toUpperCase();
+            if (!sku) return;
+            _inboundBySku[sku] = (_inboundBySku[sku] || 0) + (li.expectedQty || 0);
+          });
+        });
+      renderStockLevelsTable(); // refresh now that inbound numbers are available
     } catch (err) {
       console.warn('[InventoryExternal] Inbound Shipments load failed:', err.message);
       if (errEl) { errEl.textContent = 'Failed to load shipments — try refreshing the page.'; errEl.style.display = 'block'; }
