@@ -43,6 +43,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { sendCronFailureAlert }             = require('../_alerts');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -85,6 +86,7 @@ module.exports = async (req, res) => {
     }
   } catch (err) {
     console.error('[sync-orders-process] failed to read _meta:', err.message);
+    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
@@ -106,6 +108,7 @@ module.exports = async (req, res) => {
         break;
       }
       if (status === 'FATAL' || status === 'CANCELLED') {
+        await sendCronFailureAlert('sync-orders-process', `Report ${status}`, { 'Report ID': reportId });
         return res.status(500).json({ error: `Report ${status}`, reportId });
       }
     } catch (err) {
@@ -140,6 +143,7 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-orders-process] failed to download/decompress report:', err.message);
+    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'downloading/decompressing report' });
     return res.status(500).json({ error: 'Failed to download report', detail: err.message });
   }
 
@@ -266,6 +270,16 @@ module.exports = async (req, res) => {
     await replaceRows(sheets.orders, META_TAB, META_HEADERS, metaRows, token);
   } catch (err) {
     console.warn('[sync-orders-process] failed to update _meta status:', err.message);
+    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'marking report processed in _meta' });
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'sync-orders-process',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
   }
 
   res.status(200).json({ synced: results, reportId, timestamp: nowEst });
