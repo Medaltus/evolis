@@ -18,6 +18,7 @@
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands = require('../config/brands');
 const sheets = require('../config/sheets');
+const { sendCronFailureAlert } = require('../_alerts');
 
 const RETENTION_DAYS = 730; // 2 years
 
@@ -64,6 +65,15 @@ module.exports = async (req, res) => {
       console.error(`[trim-products-log] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'trim-products-log',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': String(failedBrands.length) }
+    );
   }
 
   res.status(200).json({ results, cutoffDate: cutoffStr, timestamp: new Date().toISOString() });
