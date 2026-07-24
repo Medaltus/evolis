@@ -28,6 +28,7 @@
  */
 
 const { spRequest }                        = require('../_spauth');
+const { sendCronFailureAlert }             = require('../_alerts');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brandsConfig                         = require('../config/brands');
 const sheets                               = require('../config/sheets');
@@ -71,6 +72,7 @@ module.exports = async (req, res) => {
     }
   } catch (err) {
     console.error('[fees-estimate] failed to read _meta:', err.message);
+    await sendCronFailureAlert('fees-estimate', err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
@@ -120,7 +122,20 @@ module.exports = async (req, res) => {
       await replaceRows(sheets.orders, META_TAB, META_HEADERS, metaRows, metaToken);
     } catch (err) {
       console.warn('[fees-estimate] failed to persist cursors:', err.message);
+      // Not fatal to the response, but a silently-lost cursor is exactly
+      // the kind of thing that causes a slow, invisible data gap later —
+      // worth an alert even though the run itself "succeeded."
+      await sendCronFailureAlert('fees-estimate', err.message, { Stage: 'persisting brand cursors to _meta' });
     }
+  }
+
+  const failedBrands = results.filter(r => r.status === 'error');
+  if (failedBrands.length > 0) {
+    await sendCronFailureAlert(
+      'fees-estimate',
+      failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
+      { 'Brands failed': `${failedBrands.length} of ${activeBrands.length}` }
+    );
   }
 
   res.status(200).json({ dryRun, results });
