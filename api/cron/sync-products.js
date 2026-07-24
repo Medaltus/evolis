@@ -83,6 +83,7 @@ const { spRequest }                                     = require('../_spauth');
 const { ensureTab, readRows, replaceRows, appendRows }  = require('../config/_sheets_client');
 const brands                                            = require('../config/brands');
 const sheets                                            = require('../config/sheets');
+const { sendCronFailureAlert }                          = require('../_alerts');
 
 const MASTER_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
 const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand
@@ -158,6 +159,7 @@ module.exports = async (req, res) => {
   try {
     meta = await readMeta();
   } catch (err) {
+    await sendCronFailureAlert('sync-products', err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
@@ -169,6 +171,7 @@ module.exports = async (req, res) => {
     try {
       await clearRowsForDate(today);
     } catch (err) {
+      await sendCronFailureAlert('sync-products', err.message, { Stage: "clearing today's rows for ?force=true" });
       return res.status(500).json({ error: 'Failed to clear today\'s existing rows before forced re-run', detail: err.message });
     }
     console.log(`[sync-products] force=true — cleared today's (${today}) existing rows, restarting from cursor 0`);
@@ -184,6 +187,7 @@ module.exports = async (req, res) => {
   try {
     masterList = await fetchMasterSkuList();
   } catch (err) {
+    await sendCronFailureAlert('sync-products', err.message, { Stage: 'fetching master SKU list' });
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
   }
 
@@ -196,6 +200,7 @@ module.exports = async (req, res) => {
   const tabTokens = {};
   const tabNextRow = {};       // brandTabName -> next row number to write to
   const brand90dMaps = {};     // brandTabName -> { [asin]: unitsSoldLast90d } — see fetchBrand90dUnits
+  const failedSkus = [];
 
   for (; i < masterList.length; i++) {
     if (Date.now() - startTime > TIME_BUDGET_MS) break;
@@ -231,6 +236,7 @@ module.exports = async (req, res) => {
       processed++;
     } catch (err) {
       console.error(`[sync-products] ${item.sku} (${item.brandTabName}) failed:`, err.message);
+      failedSkus.push(`${item.sku} (${item.brandTabName}): ${err.message}`);
       // Continue to the next SKU — one bad SKU shouldn't stall the whole run.
     }
   }
@@ -244,6 +250,19 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.warn('[sync-products] failed to update _meta:', err.message);
+    // This is the cursor itself — losing this write means tomorrow's run
+    // can't tell where today's pass left off. Given the whole reason this
+    // schedule was redesigned was a silent cursor problem, a failure here
+    // gets an alert every time, not just a log line.
+    await sendCronFailureAlert('sync-products', err.message, { Stage: 'persisting cursor to _meta', Cursor: String(i), 'Total SKUs': String(totalCount) });
+  }
+
+  if (failedSkus.length > 0) {
+    await sendCronFailureAlert(
+      'sync-products',
+      failedSkus.slice(0, 20).join('\n') + (failedSkus.length > 20 ? `\n...and ${failedSkus.length - 20} more` : ''),
+      { 'SKUs failed this run': String(failedSkus.length) }
+    );
   }
 
   res.status(200).json({
