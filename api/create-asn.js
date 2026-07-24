@@ -99,6 +99,9 @@ module.exports = async function handler(req, res) {
     // 1) Copy the template into the ASNs folder.
     const copyRes = await drive.files.copy({
       fileId: ASN_TEMPLATE_ID,
+      supportsAllDrives: true, // required if the template/folder live in a Shared Drive —
+      // without this, Drive API v3 only looks at My Drive and returns 404 "File not
+      // found" even when the service account has full Editor access to the file.
       requestBody: {
         name: `${uploadDate.replace(/-/g, ' ')} — ${shipmentId}`,
         parents: [ASN_DRIVE_FOLDER_ID],
