@@ -17,6 +17,7 @@
  */
 
 const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
+const { sendCronFailureAlert }            = require('../_alerts');
 
 const STORE_DOMAIN  = process.env.SHOPIFY_STORE_DOMAIN;
 const CLIENT_ID     = process.env.SHOPIFY_CLIENT_ID;
@@ -39,9 +40,11 @@ module.exports = async (req, res) => {
   }
 
   if (!STORE_DOMAIN || !CLIENT_ID || !CLIENT_SECRET) {
+    await sendCronFailureAlert('sync-shopify-orders', 'Shopify env vars not set');
     return res.status(500).json({ error: 'Shopify env vars not set' });
   }
   if (!SHEET_ID) {
+    await sendCronFailureAlert('sync-shopify-orders', 'SHOPIFY_ORDERS_SHEET not set');
     return res.status(500).json({ error: 'SHOPIFY_ORDERS_SHEET not set' });
   }
 
@@ -58,6 +61,7 @@ module.exports = async (req, res) => {
     console.log('[sync-shopify-orders] token obtained');
   } catch (err) {
     console.error('[sync-shopify-orders] token failed:', err.message);
+    await sendCronFailureAlert('sync-shopify-orders', err.message, { Stage: 'Shopify token request' });
     return res.status(500).json({ error: 'Token request failed', detail: err.message });
   }
 
@@ -121,6 +125,7 @@ module.exports = async (req, res) => {
       if (page >= 100) { console.warn('[sync-shopify-orders] hit page cap'); break; }
     } catch (err) {
       console.error(`[sync-shopify-orders] page ${page} failed:`, err.message);
+      await sendCronFailureAlert('sync-shopify-orders', err.message, { Stage: `GraphQL fetch, page ${page}` });
       return res.status(500).json({ error: 'GraphQL fetch failed', detail: err.message });
     }
   } while (true);
