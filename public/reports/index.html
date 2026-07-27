@@ -1018,6 +1018,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <button class="nav-btn" onclick="showPage('inventory-external',this)">
       <svg viewBox="0 0 16 16"><path d="M1 5l7-4 7 4v7l-7 4-7-4V5z"/><path d="M8 1v14M1 5l7 4 7-4"/></svg>Inventory
     </button>
+    <button class="nav-btn" onclick="showPage('fulfillment',this)">
+      <svg viewBox="0 0 16 16"><rect x="1" y="5" width="14" height="9" rx="1.2"/><path d="M1 8h14M5 5V3a1 1 0 011-1h4a1 1 0 011 1v2"/><circle cx="4.5" cy="14" r="1.2"/><circle cx="11.5" cy="14" r="1.2"/></svg>Fulfillment
+    </button>
 
     <!-- Internal-only section — everything currently built lives below this line -->
     <div id="nav-internal-section" style="display:none;">
@@ -1032,9 +1035,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <div class="nav-section">Operations (Internal)</div>
     <button class="nav-btn" onclick="showPage('inventory',this)">
       <svg viewBox="0 0 16 16"><path d="M1 5l7-4 7 4v7l-7 4-7-4V5z"/><path d="M8 1v14M1 5l7 4 7-4"/></svg>Inventory
-    </button>
-    <button class="nav-btn" onclick="showPage('fulfillment',this)">
-      <svg viewBox="0 0 16 16"><rect x="1" y="5" width="14" height="9" rx="1.2"/><path d="M1 8h14M5 5V3a1 1 0 011-1h4a1 1 0 011 1v2"/><circle cx="4.5" cy="14" r="1.2"/><circle cx="11.5" cy="14" r="1.2"/></svg>Fulfillment
     </button>
 
     <div class="nav-section">Performance (Internal)</div>
@@ -1331,7 +1331,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
       <div class="kpi-card">
-        <div class="kpi-label">Shipped Orders · Last 30 Days</div>
+        <div class="kpi-label">Shipped Website Orders • Last 30 Days</div>
         <div class="kpi-value" id="ff-kpi-shipped30">—</div>
       </div>
       <div class="kpi-card">
@@ -1348,15 +1348,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="kpi-label">Avg Shipping Cost · Last 7 Days</div>
         <div class="kpi-value" id="ff-kpi-shipcost">—</div>
       </div>
-      <div class="kpi-card" style="opacity:.6;">
+      <div class="kpi-card">
         <div class="kpi-label">Inventory Prepped</div>
-        <div class="kpi-value" style="color:var(--muted);">—</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Coming soon</div>
+        <div class="kpi-value" id="ff-kpi-invprepped">—</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Units received this month</div>
       </div>
     </div>
 
     <div class="ppc-card">
-      <div class="ppc-card-title">Orders Shipped by Date · Last 30 Days</div>
+      <div class="ppc-card-title">Website Orders Shipped by Date · Last 30 Days</div>
       <div style="position:relative;height:320px;"><canvas id="ff-shipped-chart"></canvas></div>
       <div class="ppc-note" id="ff-chart-footer">Loading…</div>
     </div>
@@ -1756,7 +1756,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
-          <div class="kpi-label">Shipped Website Orders • Last 30 Days</div>
+          <div class="kpi-label" id="mfc-lbl-shipped">Shipped Website Orders</div>
           <div class="kpi-value" id="mfc-kpi-shipped30">—</div>
         </div>
         <div class="kpi-card">
@@ -1776,12 +1776,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="kpi-card">
           <div class="kpi-label">Inventory Prepped</div>
           <div class="kpi-value" id="mfc-kpi-invprepped">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Units received this month</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-lbl-invprepped">Units received</div>
         </div>
       </div>
 
       <div class="ppc-card">
-        <div class="ppc-card-title">Website Orders Shipped by Date · Last 30 Days</div>
+        <div class="ppc-card-title" id="mfc-lbl-chart">Website Orders Shipped by Date</div>
         <div style="position:relative;height:170px;"><canvas id="mfc-shipped-chart"></canvas></div>
         <div class="ppc-note" id="mfc-chart-footer">Loading…</div>
       </div>
@@ -1799,7 +1799,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-compliance-sub">Open Cases: —</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Returns Processed · Last 30 Days</div>
+          <div class="kpi-label" id="mfc-lbl-returns">Returns Processed</div>
           <div class="kpi-value" id="mfc-kpi-returns">—</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-returns-sub">Return rate: —</div>
         </div>
@@ -12447,8 +12447,35 @@ window.initFulfillmentPage = async function() {
   // Was sequential before; that added up as a real, perceptible delay
   // once this page had 3 fetches of its own, on top of every other
   // page's own eagerly-loaded fetches at initial page load.
-  await Promise.all([ffLoadKpis(), ffLoadShippedChart(), ffLoadStates()]);
+  await Promise.all([ffLoadKpis(), ffLoadShippedChart(), ffLoadStates(), ffLoadInventoryPrepped()]);
 };
+
+// Reuses the same self-contained mfc* helpers (mfcGvizCsvUrl, mfcIsCsv,
+// mfcParseCsvRows, mfcSumReceivedQtyForAsn, MFC_ASN_TRACKER_SHEET_ID/TAB)
+// built for the Marketing > Fulfillment & Customer Service tab — same
+// tracker sheet, same calculation, just a different target element ID.
+async function ffLoadInventoryPrepped() {
+  const el = document.getElementById('ff-kpi-invprepped');
+  if (!el) return;
+  try {
+    const csv = await fetch(mfcGvizCsvUrl(MFC_ASN_TRACKER_SHEET_ID, MFC_ASN_TRACKER_TAB)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = mfcIsCsv(csv) ? mfcParseCsvRows(csv) : [];
+
+    const now = new Date();
+    const thisMonthReceived = rows.filter(r => {
+      if (!r.shipmentid) return false;
+      if ((r.status || '').trim() !== 'Received') return false;
+      const d = new Date((r.receiveddate || '') + 'T00:00:00');
+      return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    if (!thisMonthReceived.length) { el.textContent = '0'; return; }
+
+    const sums = await Promise.all(thisMonthReceived.map(r => mfcSumReceivedQtyForAsn(r.driveurl)));
+    el.textContent = sums.reduce((a, b) => a + b, 0).toLocaleString();
+  } catch (err) {
+    console.warn('[FulfillmentPage] Inventory Prepped load failed:', err.message);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // MARKETING > FULFILLMENT & CUSTOMER SERVICE — same KPI/chart/map as
@@ -12468,20 +12495,61 @@ const OV_RETURNS_EVOLIS_GID = '267551179';
 
 let mfcShippedChartInstance = null;
 
+// Per Jaclyn 2026-07-27: this whole tab is part of the fixed monthly
+// report and should track "last full month" the same way the rest of the
+// report does — NOT a rolling 30-day window. Same 0-indexed-getMonth()
+// trick used elsewhere on this dashboard (getLastFullMonth() in the
+// Report Insights module): current month's 0-indexed number already
+// equals last month's 1-indexed number, except across a January boundary.
+function mfcGetLastFullMonth() {
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth();
+  if (month === 0) { month = 12; year--; }
+  return { year, month };
+}
+function mfcMonthLabel(year, month) {
+  return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 async function mfcLoadKpis() {
   try {
-    const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv).filter(r => (r.brand || '') === 'evolis');
+    const { year, month, } = mfcGetLastFullMonth();
+    const monthLabel = mfcMonthLabel(year, month);
+    const lblShipped = document.getElementById('mfc-lbl-shipped');
+    if (lblShipped) lblShipped.textContent = `Shipped Website Orders • ${monthLabel}`;
+
+    // Shipped Website Orders is recomputed from the daily raw data (same
+    // sheet/tab the chart below uses) filtered to last full month, rather
+    // than read from the _kpis tab's shipped_orders_30d — that figure is a
+    // rolling 30-day aggregate, not a calendar-month one, and doesn't line
+    // up with the rest of this report's fixed month.
+    const dailyCsv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '356984145')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const dailyRows = parseCsvToRows(dailyCsv).filter(r => {
+      const d = new Date((r.date || '') + 'T12:00:00');
+      if (isNaN(d)) return false;
+      const day = d.getDay();
+      return day !== 0 && day !== 6 && d.getFullYear() === year && (d.getMonth() + 1) === month;
+    });
+    const shippedTotal = dailyRows.reduce((s, r) => s + (parseInt(r.orders_shipped, 10) || 0), 0);
+    const shipped30El = document.getElementById('mfc-kpi-shipped30');
+    if (shipped30El) shipped30El.textContent = shippedTotal.toLocaleString();
+
+    // Avg Processing Time / Avg Shipping Cost: the _kpis tab this reads
+    // from only stores rolling 7-day averages (avg_processing_time_7d,
+    // avg_shipping_cost_7d) — there's no calendar-month version of these
+    // two specific metrics in any sheet currently visible to this code.
+    // Left as real-time 7-day figures until a daily-granularity source
+    // for these two exists to compute a true June average from — flag if
+    // you have one and want these swapped over too.
+    const kpisCsv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '106183169')).then(r => r.ok ? r.text() : '').catch(() => '');
+    const kpiRows = parseCsvToRows(kpisCsv).filter(r => (r.brand || '') === 'evolis');
     const map = {};
-    rows.forEach(r => { if (r.metric) map[r.metric] = r.value; });
-
-    const shipped30 = document.getElementById('mfc-kpi-shipped30');
-    const procTime  = document.getElementById('mfc-kpi-proctime');
-    const shipCost   = document.getElementById('mfc-kpi-shipcost');
-
-    if (shipped30) shipped30.textContent = map.shipped_orders_30d ? Number(map.shipped_orders_30d).toLocaleString() : '—';
-    if (procTime)   procTime.textContent  = map.avg_processing_time_7d ? `${map.avg_processing_time_7d} days` : '—';
-    if (shipCost)    shipCost.textContent  = map.avg_shipping_cost_7d ? `$${Number(map.avg_shipping_cost_7d).toFixed(2)}` : '—';
+    kpiRows.forEach(r => { if (r.metric) map[r.metric] = r.value; });
+    const procTime = document.getElementById('mfc-kpi-proctime');
+    const shipCost  = document.getElementById('mfc-kpi-shipcost');
+    if (procTime) procTime.textContent = map.avg_processing_time_7d ? `${map.avg_processing_time_7d} days` : '—';
+    if (shipCost)  shipCost.textContent  = map.avg_shipping_cost_7d ? `$${Number(map.avg_shipping_cost_7d).toFixed(2)}` : '—';
   } catch (err) {
     console.warn('[Marketing/FulfillmentCS] KPI load failed:', err.message);
   }
@@ -12490,17 +12558,23 @@ async function mfcLoadKpis() {
 async function mfcLoadShippedChart() {
   const footer = document.getElementById('mfc-chart-footer');
   try {
+    const { year, month } = mfcGetLastFullMonth();
+    const monthLabel = mfcMonthLabel(year, month);
+    const lblChart = document.getElementById('mfc-lbl-chart');
+    if (lblChart) lblChart.textContent = `Website Orders Shipped by Date • ${monthLabel}`;
+
     const csv = await fetch(ovCsvUrl(OV_FULFILLMENT_DAILY_SHEET_ID, '356984145')).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv).filter(r => {
-      const day = new Date((r.date || '') + 'T12:00:00').getDay();
-      return day !== 0 && day !== 6;
+      const d = new Date((r.date || '') + 'T12:00:00');
+      if (isNaN(d)) return false;
+      const day = d.getDay();
+      return day !== 0 && day !== 6 && d.getFullYear() === year && (d.getMonth() + 1) === month;
     });
     if (!rows.length) { if (footer) footer.textContent = 'No data yet'; return; }
 
     const sorted = [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    const last30 = sorted.slice(-30);
-    const labels = last30.map(r => new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-    const totals = last30.map(r => parseInt(r.orders_shipped, 10) || 0);
+    const labels = sorted.map(r => new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const totals = sorted.map(r => parseInt(r.orders_shipped, 10) || 0);
 
     const canvas = document.getElementById('mfc-shipped-chart');
     if (!canvas) return;
@@ -12612,55 +12686,68 @@ const OV_WMT_ORDERS_GID      = '1844526926';
 const OV_WMT_RETURNS_SHEET_ID = '1XxYmX0NT-4bqKh4N96zNAPIAzctXDQaK6Yzp6hVWjJc'; // confirmed headers: return_order_id, order_id, sku, quantity, refund_amount, return_status, event_tag, return_date, brand, last_updated
 const OV_WMT_RETURNS_GID      = '344983459';
 
-// Total orders, last 30 days, blended across all 3 channels — dedup by
-// order_id, same convention used everywhere else on this dashboard. Shared
-// by both the internal and external Fulfillment > Customer Service pages'
-// Return Rate calculation. Per Jaclyn 2026-07-24: the RETURNS numerator
-// stays Amazon-only for now (Walmart/Shopify returns crons don't exist
-// yet), but the DENOMINATOR should be true total orders across all
-// channels, not Amazon's own shipped_orders_30d figure.
-async function getBlendedOrders30dTotal(cutoff) {
+// Total orders, blended across all 3 channels, within [start, end] —
+// dedup by order_id, same convention used everywhere else on this
+// dashboard. Takes an explicit range (not just a rolling cutoff) so the
+// external Operations Fulfillment page can keep its rolling "last 30
+// days" window while the internal Marketing report tab uses last-full-
+// month instead, per Jaclyn 2026-07-27 ("this is a page on our report and
+// should be pulling June data the same as our other sales data").
+async function getBlendedOrdersInRange(start, end) {
   const [amzCsv, webCsv, wmtCsv] = await Promise.all([
     fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
     fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
     fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
   ]);
-  function countOrders30d(csv, evolisCheck, validFn) {
+  function countOrdersInRange(csv, evolisCheck, validFn) {
     const ids = new Set();
     parseCsvToRows(csv).filter(evolisCheck).forEach(r => {
       const d = new Date((r.date || '') + 'T00:00:00');
-      if (isNaN(d) || d < cutoff) return;
+      if (isNaN(d) || d < start || d > end) return;
       if (!validFn(r)) return;
       if (r.order_id) ids.add(r.order_id);
     });
     return ids.size;
   }
   const isEvolisAmzRow = r => (r.brand || '').toLowerCase().trim() === 'evolis' || (r.sku || '').toUpperCase().startsWith('EVO');
-  const amzOrders30d = countOrders30d(amzCsv, isEvolisAmzRow, r => {
+  const amzOrders = countOrdersInRange(amzCsv, isEvolisAmzRow, r => {
     const status = (r.status || '').toLowerCase().trim();
     return status !== 'cancelled' && status !== 'pending';
   });
-  const webOrders30d = countOrders30d(webCsv, () => true, r => {
+  const webOrders = countOrdersInRange(webCsv, () => true, r => {
     const status = (r.financial_status || r.status || '').toLowerCase();
     return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
   });
-  const wmtOrders30d = countOrders30d(wmtCsv, () => true, r => {
+  const wmtOrders = countOrdersInRange(wmtCsv, () => true, r => {
     const status = (r.status || '').toLowerCase().trim();
     return status !== 'cancelled' && status !== 'canceled';
   });
-  return amzOrders30d + webOrders30d + wmtOrders30d;
+  return amzOrders + webOrders + wmtOrders;
+}
+// Last-full-month boundaries — same "current month's 0-indexed number ==
+// last month's 1-indexed number" trick used by the Sales Overview page's
+// own getLastFullMonth(), kept local here rather than reusing that one
+// since it lives in a different, inaccessible closure.
+function mfcLastFullMonthRange() {
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth(); // 0-indexed = last month's 0-indexed value already
+  if (month < 0) { month = 11; year--; } // defensive; getMonth() is never negative
+  const start = new Date(year, month, 1, 0, 0, 0);
+  const end = new Date(year, month + 1, 0, 23, 59, 59); // day 0 of next month = last day of this month
+  return { start, end };
 }
 
 async function mfcLoadReturns() {
   const valEl = document.getElementById('mfc-kpi-returns');
   const subEl = document.getElementById('mfc-kpi-returns-sub');
   try {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    const [amzCsv, wmtCsv, webCsv, totalOrders30d] = await Promise.all([
+    const { start, end } = mfcLastFullMonthRange();
+    const [amzCsv, wmtCsv, webCsv, totalOrdersThisMonth] = await Promise.all([
       fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-      getBlendedOrders30dTotal(cutoff),
+      getBlendedOrdersInRange(start, end),
     ]);
 
     // Each of these is a shared, multi-brand sheet with its own brand
@@ -12668,21 +12755,26 @@ async function mfcLoadReturns() {
     // though the Amazon returns GID's name ("EVOLIS_GID") suggests it may
     // already be brand-scoped, since Walmart/Shopify aren't confirmed to
     // be tab-per-brand the same way.
-    const isEvolis = r => (r.brand || '').toLowerCase().trim() === 'evolis';
-    function countReturns30d(csv, dateField) {
+    // Accent-insensitive brand match — Évolis's accented É is a known
+    // recurring cause of silent brand-filter failures elsewhere in this
+    // codebase; stripping diacritics before comparing avoids the same trap
+    // here.
+    const stripAccents = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isEvolis = r => stripAccents(r.brand || '').toLowerCase().trim() === 'evolis';
+    function countReturnsInRange(csv, dateField) {
       return parseCsvToRows(csv).filter(isEvolis).filter(r => {
         const d = new Date((r[dateField] || '') + 'T00:00:00');
-        return !isNaN(d) && d >= cutoff;
+        return !isNaN(d) && d >= start && d <= end;
       }).length;
     }
     // Amazon & Walmart both use return_date; Shopify uses refund_date.
-    const amzReturns30d = countReturns30d(amzCsv, 'return_date');
-    const wmtReturns30d = countReturns30d(wmtCsv, 'return_date');
-    const webReturns30d = countReturns30d(webCsv, 'refund_date');
-    const returns30d = amzReturns30d + wmtReturns30d + webReturns30d;
+    const amzReturnsThisMonth = countReturnsInRange(amzCsv, 'return_date');
+    const wmtReturnsThisMonth = countReturnsInRange(wmtCsv, 'return_date');
+    const webReturnsThisMonth = countReturnsInRange(webCsv, 'refund_date');
+    const returnsThisMonth = amzReturnsThisMonth + wmtReturnsThisMonth + webReturnsThisMonth;
 
-    if (valEl) valEl.textContent = returns30d.toLocaleString();
-    if (subEl) subEl.textContent = totalOrders30d > 0 ? `Return rate: ${((returns30d / totalOrders30d) * 100).toFixed(1)}%` : 'Return rate: —';
+    if (valEl) valEl.textContent = returnsThisMonth.toLocaleString();
+    if (subEl) subEl.textContent = totalOrdersThisMonth > 0 ? `Return rate: ${((returnsThisMonth / totalOrdersThisMonth) * 100).toFixed(1)}%` : 'Return rate: —';
   } catch (err) {
     console.warn('[Marketing/FulfillmentCS] returns load failed:', err.message);
   }
@@ -12763,19 +12855,22 @@ async function mfcLoadInventoryPrepped() {
   const el = document.getElementById('mfc-kpi-invprepped');
   if (!el) return;
   try {
+    const { year, month } = mfcGetLastFullMonth();
+    const lbl = document.getElementById('mfc-lbl-invprepped');
+    if (lbl) lbl.textContent = `Units received in ${mfcMonthLabel(year, month)}`;
+
     const csv = await fetch(mfcGvizCsvUrl(MFC_ASN_TRACKER_SHEET_ID, MFC_ASN_TRACKER_TAB)).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = mfcIsCsv(csv) ? mfcParseCsvRows(csv) : [];
 
-    const now = new Date();
-    const thisMonthReceived = rows.filter(r => {
+    const monthReceived = rows.filter(r => {
       if (!r.shipmentid) return false;
       if ((r.status || '').trim() !== 'Received') return false;
       const d = new Date((r.receiveddate || '') + 'T00:00:00');
-      return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      return !isNaN(d) && d.getFullYear() === year && (d.getMonth() + 1) === month;
     });
-    if (!thisMonthReceived.length) { el.textContent = '0'; return; }
+    if (!monthReceived.length) { el.textContent = '0'; return; }
 
-    const sums = await Promise.all(thisMonthReceived.map(r => mfcSumReceivedQtyForAsn(r.driveurl)));
+    const sums = await Promise.all(monthReceived.map(r => mfcSumReceivedQtyForAsn(r.driveurl)));
     el.textContent = sums.reduce((a, b) => a + b, 0).toLocaleString();
   } catch (err) {
     console.warn('[Marketing/FulfillmentCS] Inventory Prepped load failed:', err.message);
