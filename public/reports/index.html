@@ -9290,6 +9290,14 @@ async function initSnsExternal() {
     }
   }
 
+  // TEMP DEBUG (2026-07-27) — exposed so this specific gid bug can be
+  // diagnosed directly from the console instead of hunting through the
+  // Network tab's ~130 unrelated requests. Safe to remove once confirmed
+  // fixed; read-only, doesn't change any behavior.
+  window._debugTrackerRows = () => _trackerRows;
+  window._debugGidFromUrl = gidFromUrl;
+  window._debugFetchAsnDetail = fetchAsnDetail;
+
   window.loadInboundShipmentsExternal = async function () {
     const errEl = document.getElementById('asn-error-state');
     try {
