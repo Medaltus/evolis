@@ -77,20 +77,32 @@ module.exports = async function handler(req, res) {
 
   try {
     if (scope === 'monthly') {
-      if (!year || !month) return res.status(400).json({ error: 'year and month are required for scope=monthly' });
+      const yearStr = String(year ?? '').trim();
+      const monthStr = String(month ?? '').trim();
+      if (!yearStr || !monthStr) return res.status(400).json({ error: 'year and month are required for scope=monthly' });
+      // Extra sanity check: month should be a real 1-12 value. Catches
+      // anything that survived the trim (e.g. a non-numeric string) before
+      // it gets written to the sheet, rather than silently upserting a
+      // row keyed on garbage.
+      const monthNum = Number(monthStr);
+      if (!Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+        return res.status(400).json({ error: `month must be an integer 1-12, got '${month}'` });
+      }
       const result = await upsertRow({
         tabName: brand.tabName,
         headers: MONTHLY_HEADERS,
-        matchFields: { year: String(year), month: String(month) },
+        matchFields: { year: yearStr, month: monthStr },
         fields, action, actor,
       });
       return res.status(200).json({ ok: true, row: result });
     } else {
-      if (!eventName || !eventYear) return res.status(400).json({ error: 'eventName and eventYear are required for scope=event' });
+      const eventNameStr = String(eventName ?? '').trim();
+      const eventYearStr = String(eventYear ?? '').trim();
+      if (!eventNameStr || !eventYearStr) return res.status(400).json({ error: 'eventName and eventYear are required for scope=event' });
       const result = await upsertRow({
         tabName: `${brand.tabName}_events`,
         headers: EVENT_HEADERS,
-        matchFields: { event_name: String(eventName), event_year: String(eventYear) },
+        matchFields: { event_name: eventNameStr, event_year: eventYearStr },
         fields, action, actor,
       });
       return res.status(200).json({ ok: true, row: result });
