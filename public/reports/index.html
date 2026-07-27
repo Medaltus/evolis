@@ -9444,19 +9444,50 @@ async function initSnsExternal() {
     }
   };
 
-  // Generated entirely client-side from the ASN sheet's own line items —
-  // no backend call needed since that sheet is already a public CSV read.
+  // Builds the same two-tab .xlsx as the Close Shipment email attachment
+  // (see buildDiscrepancyXlsxBlob in the Apps Script) — Discrepancies tab
+  // filtered to mismatched SKUs only, plus a tab named after the shipment
+  // with every SKU. Uses the SheetJS library already loaded on this page.
   window.downloadDiscrepancyReport = async function (shipmentId) {
     const row = _trackerRows.find(r => r.shipmentid === shipmentId);
     if (!row) return;
     const detail = await fetchAsnDetail(shipmentId, row.driveurl, /*force*/true);
     if (!detail) { alert('Could not load this shipment\'s sheet.'); return; }
-    const lines = ['SKU,Product Name,Expected Qty,Received Qty,Discrepancy'];
-    detail.lineItems.forEach(li => {
-      const disc = li.receivedQty == null ? '' : (li.receivedQty - li.expectedQty);
-      lines.push([li.sku, `"${(li.productName || '').replace(/"/g, '""')}"`, li.expectedQty, li.receivedQty ?? '', disc].join(','));
-    });
-    triggerCsvDownload(lines.join('\n'), `${shipmentId}-discrepancy-report.csv`);
+
+    const withVariance = detail.lineItems.map(li => ({
+      sku: li.sku,
+      productName: li.productName,
+      shipQty: li.expectedQty,
+      receivedQty: li.receivedQty ?? 0,
+      variance: (li.receivedQty ?? 0) - li.expectedQty,
+    }));
+    const mismatched = withVariance.filter(i => i.variance !== 0);
+
+    const headerBlock = [
+      ['Shipment ID', shipmentId],
+      ['Carrier', row.carrier || ''],
+      ['Tracking', row.trackingno || ''],
+      ['Upload Date', row.uploaddate || ''],
+      [],
+    ];
+    const buildRows = (items, includeType) => {
+      const headers = includeType
+        ? ['SKU', 'Product Name', 'Ship Qty', 'Received Qty', 'Variance', 'Type']
+        : ['SKU', 'Product Name', 'Ship Qty', 'Received Qty', 'Variance'];
+      const dataRows = items.map(i => {
+        const r = [i.sku, i.productName, i.shipQty, i.receivedQty, i.variance];
+        if (includeType) r.push(i.variance < 0 ? 'Short' : 'Over');
+        return r;
+      });
+      return [...headerBlock, headers, ...dataRows];
+    };
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildRows(mismatched, true)), 'Discrepancies');
+    // Sheet names can't exceed 31 chars or contain []*/\?: — shipment IDs
+    // here are short and alphanumeric-plus-hyphen, so this is safe as-is.
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildRows(withVariance, false)), shipmentId);
+    XLSX.writeFile(wb, `${shipmentId}-Discrepancy-Report.xlsx`);
   };
 
   window.downloadAsnTemplate = function () {
