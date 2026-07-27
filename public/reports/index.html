@@ -9086,6 +9086,15 @@ async function initSnsExternal() {
     const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
     return m ? m[1] : null;
   }
+  // Needed since 2026-07-27 — every ASN now lives as its own TAB inside one
+  // shared spreadsheet (see create-asn.js) rather than as gid 0 of its own
+  // separate file. driveUrl now looks like ".../edit#gid=123456789", and
+  // that gid is different for every ASN, so it has to be read from the URL
+  // instead of assumed to be 0.
+  function gidFromUrl(url) {
+    const m = String(url || '').match(/[#&?]gid=(\d+)/);
+    return m ? m[1] : '0';
+  }
 
   // ══════════════════════════════════════════════════════════════════════
   // STOCK LEVELS
@@ -9268,8 +9277,9 @@ async function initSnsExternal() {
     if (!force && _asnDetailCache[shipmentId]) return _asnDetailCache[shipmentId];
     const fileId = fileIdFromUrl(driveUrl);
     if (!fileId) return null;
+    const gid = gidFromUrl(driveUrl);
     try {
-      const csv = await fetch(fileCsvUrl(fileId, 0)).then(r => r.ok ? r.text() : '').catch(() => '');
+      const csv = await fetch(fileCsvUrl(fileId, gid)).then(r => r.ok ? r.text() : '').catch(() => '');
       if (!isCsv(csv)) return null;
       const detail = parseAsnSheetDetail(csv);
       _asnDetailCache[shipmentId] = detail;
