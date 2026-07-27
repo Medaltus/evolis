@@ -2,31 +2,23 @@
 //
 // Fills in Carrier / PRO-Tracking# / Box-Pallet-Count after an ASN has
 // already been created (these usually aren't known at CSV-upload time).
-// Updates both the master tracker row AND the per-ASN sheet's own header
+// Updates both the master tracker row AND the specific ASN's own header
 // cells, so the two never drift out of sync.
 //
 // Manually-triggered from the dashboard's "Add shipping info" form — no
 // CRON_SECRET, same exception as run-analysis.js / create-asn.js.
 //
-// Uses the real config/_sheets_client.js (confirmed from GitHub commit
-// history, 2026-07-23):
-//   - readRows() + replaceRows() for the tracker update — reads all rows
-//     as header-keyed objects, patches the matching shipment's Carrier/
-//     TrackingNo/BoxCount, writes the whole tab back. A little more than
-//     is strictly needed for a one-row change, but it means this goes
-//     through the real shared retry-with-backoff path instead of a
-//     one-off call, and there's no arbitrary-single-row-write helper
-//     exported to reach for instead.
-//   - getSheetsToken() for the ASN sheet's own header-cell update (B6:B8)
-//     — that one genuinely needs an arbitrary-range write, which nothing
-//     in _sheets_client.js covers, so it's a direct authenticated fetch
-//     using the same cached token rather than pulling in googleapis for
-//     a file that otherwise doesn't need it.
-//
-// ⚠️ Built against _sheets_client (9) from commit history, not confirmed
-// HEAD — diff against your actual current file before trusting this.
-// ⚠️ Not tested against the live sheets — curl it against a throwaway
-// shipment first.
+// UPDATED 2026-07-27: every ASN now lives as a TAB inside the Evolis ASN
+// spreadsheet (TRACKER_SHEET_ID) instead of a separate Drive file — see
+// create-asn.js for the full reasoning. That means the header-cell writes
+// below now target `'${shipmentId}'!B6` etc. (a specific tab within the
+// shared spreadsheet) rather than an unqualified 'B6' on a separate
+// file's only tab. An unqualified range would default to whichever tab
+// happens to be first/active in the spreadsheet — wrong now that there
+// are many ASN tabs living together in one file. Since the tab name is
+// always exactly the shipmentId (set at creation in create-asn.js), no
+// URL-parsing is needed to find it — shipmentId is already the request's
+// primary key.
 
 const { readRows, replaceRows, getSheetsToken } = require('./config/_sheets_client');
 
@@ -36,11 +28,6 @@ const TRACKER_HEADERS = [
   'ShipmentID', 'UploadDate', 'Status', 'Carrier', 'TrackingNo',
   'BoxCount', 'Notes', 'ReceivedDate', 'DiscrepancyCount', 'DriveUrl',
 ];
-
-function fileIdFromUrl(url) {
-  const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
-}
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -63,8 +50,6 @@ module.exports = async function handler(req, res) {
       res.status(404).json({ error: `Shipment ${shipmentId} not found on the tracker` });
       return;
     }
-    const driveUrl = target.DriveUrl || '';
-    const fileId = fileIdFromUrl(driveUrl);
 
     target.Carrier = carrier || '';
     target.TrackingNo = trackingNo || '';
@@ -77,17 +62,17 @@ module.exports = async function handler(req, res) {
     const token = await getSheetsToken();
     await replaceRows(TRACKER_SHEET_ID, TRACKER_TAB, TRACKER_HEADERS, outputRows, token);
 
-    // Update the ASN sheet's own header cells (B6 Carrier, B7 Tracking#,
-    // B8 Box/Pallet Count) so the sheet stays the source of truth too.
-    // Arbitrary-range write — nothing in _sheets_client.js fits, so this
-    // reuses the same cached token via a direct authenticated call.
-    if (fileId) {
-      await sheetsValuesBatchUpdate(token, fileId, [
-        { range: 'B6', values: [[carrier || '']] },
-        { range: 'B7', values: [[trackingNo || '']] },
-        { range: 'B8', values: [[boxCount || '']] },
-      ]);
-    }
+    // Update this specific ASN's own header cells (B6 Carrier, B7
+    // Tracking#, B8 Box/Pallet Count) so the tab stays the source of
+    // truth too. The tab name is always exactly the shipmentId (set at
+    // creation), so no lookup is needed — just quote it for A1-notation
+    // safety, same as create-asn.js does.
+    const tabPrefix = `'${shipmentId}'!`;
+    await sheetsValuesBatchUpdate(token, TRACKER_SHEET_ID, [
+      { range: `${tabPrefix}B6`, values: [[carrier || '']] },
+      { range: `${tabPrefix}B7`, values: [[trackingNo || '']] },
+      { range: `${tabPrefix}B8`, values: [[boxCount || '']] },
+    ]);
 
     res.status(200).json({ ok: true });
   } catch (err) {
