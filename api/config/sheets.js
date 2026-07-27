@@ -27,6 +27,7 @@
  * SHEET_PRODUCT_INVENTORY            Dated daily product+inventory snapshots, per-brand tabs (date, sku, asin, quantities, plus full listing copy) — used by run-listing-audit.js and sync-newderm-inventory-reconciliation.js. Confirmed 2026-07-22 this is the correct existing sheet, not a new one.
  * SHEET_NEWDERM_INVENTORY            Regular (non-consignment) inventory reconciliation report — marketplace vs Cin7 Core by location, one tab per brand, pre-built 2-row merged headers (data starts row 3) — sync-newderm-inventory-reconciliation.js
  * SHEET_WALMART_RETURNS              Walmart return orders (dedicated Returns API, GET /v3/returns — separate from the regular orders sync), one tab per brand — sync-walmart-returns.js
+ * SHEET_REPORT_INSIGHTS               Editable report content for the internal dashboard (Executive Summary, Key Insights, Opportunity cards, per-event summaries) + approval status, one {brand}/{brand}_events tab pair per brand — write-report-insights.js. NOT the same sheet as SHEET_INSIGHTS above (that's an older, unrelated "brand insights / monthly takeaways" sheet).
  */
 
 module.exports = {
@@ -41,6 +42,7 @@ module.exports = {
   listingAudit:           process.env.SHEET_LISTING_AUDIT,
   keywordStrategy:        process.env.SHEET_KEYWORD_STRATEGY,
   insights:               process.env.SHEET_INSIGHTS,
+  reportInsights:         process.env.SHEET_REPORT_INSIGHTS,
   uploads:                process.env.SHEET_UPLOADS,
   businessReport:         process.env.SHEET_BUSINESS_REPORT,
   searchQueryPerformance: process.env.SHEET_SEARCH_QUERY_PERFORMANCE,
