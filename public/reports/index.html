@@ -1756,7 +1756,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
-          <div class="kpi-label">Shipped Orders · Last 30 Days</div>
+          <div class="kpi-label">Shipped Website Orders • Last 30 Days</div>
           <div class="kpi-value" id="mfc-kpi-shipped30">—</div>
         </div>
         <div class="kpi-card">
@@ -1773,10 +1773,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div class="kpi-label">Avg Shipping Cost · Last 7 Days</div>
           <div class="kpi-value" id="mfc-kpi-shipcost">—</div>
         </div>
-        <div class="kpi-card" style="opacity:.6;">
+        <div class="kpi-card">
           <div class="kpi-label">Inventory Prepped</div>
-          <div class="kpi-value" style="color:var(--muted);">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Coming soon</div>
+          <div class="kpi-value" id="mfc-kpi-invprepped">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Units received this month</div>
         </div>
       </div>
 
@@ -9290,14 +9290,6 @@ async function initSnsExternal() {
     }
   }
 
-  // TEMP DEBUG (2026-07-27) — exposed so this specific gid bug can be
-  // diagnosed directly from the console instead of hunting through the
-  // Network tab's ~130 unrelated requests. Safe to remove once confirmed
-  // fixed; read-only, doesn't change any behavior.
-  window._debugTrackerRows = () => _trackerRows;
-  window._debugGidFromUrl = gidFromUrl;
-  window._debugFetchAsnDetail = fetchAsnDetail;
-
   window.loadInboundShipmentsExternal = async function () {
     const errEl = document.getElementById('asn-error-state');
     try {
@@ -12614,8 +12606,11 @@ async function mfcLoadComplianceCases() {
 // Return Rate denominator's rolling 30-day window.
 const OV_WEB_ORDERS_SHEET_ID = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
 const OV_WEB_ORDERS_GID      = '597852778';
+const OV_WEB_RETURNS_GID     = '1033366681'; // same spreadsheet as web orders, different tab — confirmed headers: order_id, refund_id, refund_date, sku, quantity, refund_amount, note, brand, last_updated
 const OV_WMT_ORDERS_SHEET_ID = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
 const OV_WMT_ORDERS_GID      = '1844526926';
+const OV_WMT_RETURNS_SHEET_ID = '1XxYmX0NT-4bqKh4N96zNAPIAzctXDQaK6Yzp6hVWjJc'; // confirmed headers: return_order_id, order_id, sku, quantity, refund_amount, return_status, event_tag, return_date, brand, last_updated
+const OV_WMT_RETURNS_GID      = '344983459';
 
 // Total orders, last 30 days, blended across all 3 channels — dedup by
 // order_id, same convention used everywhere else on this dashboard. Shared
@@ -12661,16 +12656,30 @@ async function mfcLoadReturns() {
   const subEl = document.getElementById('mfc-kpi-returns-sub');
   try {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    const [returnsCsv, totalOrders30d] = await Promise.all([
+    const [amzCsv, wmtCsv, webCsv, totalOrders30d] = await Promise.all([
       fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       getBlendedOrders30dTotal(cutoff),
     ]);
 
-    const returnRows = parseCsvToRows(returnsCsv);
-    const returns30d = returnRows.filter(r => {
-      const d = new Date((r.return_date || '') + 'T00:00:00');
-      return !isNaN(d) && d >= cutoff;
-    }).length;
+    // Each of these is a shared, multi-brand sheet with its own brand
+    // column (confirmed 2026-07-27) — filtered defensively here even
+    // though the Amazon returns GID's name ("EVOLIS_GID") suggests it may
+    // already be brand-scoped, since Walmart/Shopify aren't confirmed to
+    // be tab-per-brand the same way.
+    const isEvolis = r => (r.brand || '').toLowerCase().trim() === 'evolis';
+    function countReturns30d(csv, dateField) {
+      return parseCsvToRows(csv).filter(isEvolis).filter(r => {
+        const d = new Date((r[dateField] || '') + 'T00:00:00');
+        return !isNaN(d) && d >= cutoff;
+      }).length;
+    }
+    // Amazon & Walmart both use return_date; Shopify uses refund_date.
+    const amzReturns30d = countReturns30d(amzCsv, 'return_date');
+    const wmtReturns30d = countReturns30d(wmtCsv, 'return_date');
+    const webReturns30d = countReturns30d(webCsv, 'refund_date');
+    const returns30d = amzReturns30d + wmtReturns30d + webReturns30d;
 
     if (valEl) valEl.textContent = returns30d.toLocaleString();
     if (subEl) subEl.textContent = totalOrders30d > 0 ? `Return rate: ${((returns30d / totalOrders30d) * 100).toFixed(1)}%` : 'Return rate: —';
@@ -12679,8 +12688,102 @@ async function mfcLoadReturns() {
   }
 }
 
+// Sums units actually received (not just expected) across every ASN
+// closed this calendar month. Self-contained — does NOT reuse the
+// Inventory page's private _trackerRows/fetchAsnDetail (those live in a
+// separate closure and aren't reachable from here), so this fetches and
+// parses independently, using the same tracker sheet ID and per-ASN
+// layout (Received Qty = column D, data starts row 14) established
+// elsewhere in this dashboard.
+// Per Jaclyn, 2026-07-27: "current month so far" is the assumed window,
+// since this KPI has no explicit date range shown next to it the way the
+// 7d/30d cards do — flag if a different window is wanted.
+const MFC_ASN_TRACKER_SHEET_ID = '1Pb50CzCb0fouNsaewQATEY_c3IpgRVPu5FoppNg19_A';
+const MFC_ASN_TRACKER_TAB = 'Inbound_Shipments';
+
+function mfcGvizCsvUrl(sheetId, tabName) {
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}&_cb=${Date.now()}`;
+}
+function mfcFileCsvUrl(fileId, gid) {
+  return `https://docs.google.com/spreadsheets/d/${fileId}/export?format=csv&gid=${gid || 0}&_cb=${Date.now()}`;
+}
+function mfcIsCsv(text) { return !!text && text.trim().length > 0 && !text.trim().startsWith('<'); }
+function mfcParseCsvLine(line) {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+    else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+  }
+  out.push(cur);
+  return out;
+}
+function mfcParseCsvRows(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = mfcParseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim().toLowerCase().replace(/\s+/g,''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = mfcParseCsvLine(lines[i]);
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+    rows.push(row);
+  }
+  return rows;
+}
+function mfcFileIdFromUrl(url) {
+  const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function mfcGidFromUrl(url) {
+  const m = String(url || '').match(/[#&?]gid=(\d+)/);
+  return m ? m[1] : '0';
+}
+// Sums column D (Received Qty) starting row 14 of a single ASN tab's raw
+// grid — same fixed layout (header block rows 1-13, line items from 14)
+// used by create-asn.js and the Apps Script.
+async function mfcSumReceivedQtyForAsn(driveUrl) {
+  const fileId = mfcFileIdFromUrl(driveUrl);
+  if (!fileId) return 0;
+  const gid = mfcGidFromUrl(driveUrl);
+  const csv = await fetch(mfcFileCsvUrl(fileId, gid)).then(r => r.ok ? r.text() : '').catch(() => '');
+  if (!mfcIsCsv(csv)) return 0;
+  const grid = csv.replace(/\r/g, '').split('\n').map(mfcParseCsvLine);
+  let sum = 0;
+  for (let i = 13; i < grid.length; i++) { // row 14 = index 13
+    const row = grid[i];
+    if (!row || !row[0]) continue; // col A = SKU; blank means no more line items
+    sum += parseInt(row[3], 10) || 0; // col D = Received Qty
+  }
+  return sum;
+}
+
+async function mfcLoadInventoryPrepped() {
+  const el = document.getElementById('mfc-kpi-invprepped');
+  if (!el) return;
+  try {
+    const csv = await fetch(mfcGvizCsvUrl(MFC_ASN_TRACKER_SHEET_ID, MFC_ASN_TRACKER_TAB)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = mfcIsCsv(csv) ? mfcParseCsvRows(csv) : [];
+
+    const now = new Date();
+    const thisMonthReceived = rows.filter(r => {
+      if (!r.shipmentid) return false;
+      if ((r.status || '').trim() !== 'Received') return false;
+      const d = new Date((r.receiveddate || '') + 'T00:00:00');
+      return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    if (!thisMonthReceived.length) { el.textContent = '0'; return; }
+
+    const sums = await Promise.all(thisMonthReceived.map(r => mfcSumReceivedQtyForAsn(r.driveurl)));
+    el.textContent = sums.reduce((a, b) => a + b, 0).toLocaleString();
+  } catch (err) {
+    console.warn('[Marketing/FulfillmentCS] Inventory Prepped load failed:', err.message);
+  }
+}
+
 window.initMarketingFulfillmentCS = async function() {
-  await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns(), mfcLoadComplianceCases()]);
+  await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns(), mfcLoadComplianceCases(), mfcLoadInventoryPrepped()]);
 };
 
 
