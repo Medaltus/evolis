@@ -14326,15 +14326,19 @@ async function loadAuditResultsFromSheet() {
     // just reasoned about. Check the other 6 charts still export
     // correctly after this change, not just this one.
     mfcShippedChartInstance: 'mfc-shipped-chart',
-    // _pdTopSellersChart deliberately NOT registered here — reverted
-    // 2026-07-18 per Jaclyn. Adding it caused the whole shared force-
-    // ancestors-visible capture pipeline (the one that took a long time to
-    // get right — see the extensive notes throughout this file) to also
-    // force the entire Events page hierarchy visible during every export,
-    // which broke rendering for the other charts too. Prime Day's event
-    // page will show the "chart not yet loaded" fallback text in the PDF
-    // for now rather than the real chart image; its KPI numbers still
-    // export fine since those come from plain DOM text, not this pipeline.
+    // RE-ADDED 2026-07-28 per Jaclyn — all 4 event Top Sellers charts
+    // together this time, not just Prime Day alone (the 2026-07-18 attempt
+    // that got reverted only registered _pdTopSellersChart by itself, which
+    // may be exactly why it force-visibled Prime Day's ancestors while its
+    // sibling event tabs stayed hidden, causing whatever cross-chart
+    // collision broke the other charts). Registering the full sibling set
+    // at once is a different scenario, but NOT proven safe by an actual
+    // test — if other charts in the export come out wrong after this,
+    // that's the first thing to suspect and revert.
+    _pdTopSellersChart:   'pd-chart-top-sellers',
+    _bssTopSellersChart:  'bss-chart-top-sellers',
+    _pbddTopSellersChart: 'pbdd-chart-top-sellers',
+    _bfcmTopSellersChart: 'bfcm-chart-top-sellers',
   };
   let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages() — now {varName: {img, width, height}}
 
@@ -14932,7 +14936,7 @@ async function loadAuditResultsFromSheet() {
       { label: 'Fulfillment Promise (7d)', value: '100%' },
       { label: 'Avg Processing Time (7d)', value: pdfxText('#mfc-kpi-proctime') },
       { label: 'Avg Shipping Cost (7d)', value: pdfxText('#mfc-kpi-shipcost') },
-      { label: 'Inventory Prepped', value: 'Soon' },
+      { label: 'Inventory Prepped', value: pdfxText('#mfc-kpi-invprepped') },
     ];
     // 3 items, matching the live dashboard's merged 3-column row (Returns
     // moved in here, no longer a separate row) — .pdfx-kpis defaults to a
