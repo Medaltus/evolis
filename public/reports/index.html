@@ -4662,8 +4662,8 @@ async function initSns() {
   // Same spreadsheet as initStewardshipLive's SUMMARY_SHEET_ID, different tab.
   const TOTALS_SHEET_ID    = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0'; // Stewardship Summary
   const TOTALS_GID         = '1762221100';                                   // évolis tab — corrected per Jaclyn 2026-07-14 (was 346552515, wrong tab)
-  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache
-  const RETENTION_GID      = '1742224413';                                   // per Jaclyn 2026-07-14
+  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache — confirmed correct directly from Jaclyn's own URL text 2026-07-28 (my prior 'KR' correction was wrong — misread a screenshot; P and R look nearly identical in that font). The real bug was ONLY the gid below, which pointed at a tab with pbj's data instead of évolis's.
+  const RETENTION_GID      = '1364801955';                                   // 'evolis' tab, confirmed directly from Jaclyn's screenshot 2026-07-28 (previous gid 1742224413 was also wrong — different tab in the wrong file entirely)
 
   const kpiValues = document.querySelectorAll('#m-opportunities .kpi-value');
   const subsKpiEl = kpiValues[0] || null;
@@ -8835,8 +8835,8 @@ async function initSnsExternal() {
   // Same spreadsheet as initStewardshipLive's SUMMARY_SHEET_ID, different tab.
   const TOTALS_SHEET_ID    = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0'; // Stewardship Summary
   const TOTALS_GID         = '1762221100';                                   // évolis tab — corrected per Jaclyn 2026-07-14 (was 346552515, wrong tab)
-  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache
-  const RETENTION_GID      = '1742224413';                                   // per Jaclyn 2026-07-14
+  const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache — confirmed correct directly from Jaclyn's own URL text 2026-07-28 (my prior 'KR' correction was wrong — misread a screenshot; P and R look nearly identical in that font). The real bug was ONLY the gid below, which pointed at a tab with pbj's data instead of évolis's.
+  const RETENTION_GID      = '1364801955';                                   // 'evolis' tab, confirmed directly from Jaclyn's screenshot 2026-07-28 (previous gid 1742224413 was also wrong — different tab in the wrong file entirely)
 
   const kpiValues = document.querySelectorAll('#mx-opportunities .kpi-value');
   const subsKpiEl = kpiValues[0] || null;
