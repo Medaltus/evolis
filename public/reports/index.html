@@ -12895,6 +12895,49 @@ async function mfcLoadInventoryPrepped() {
   }
 }
 
+// TEMP DEBUG (2026-07-28) — exposed to directly inspect each channel's
+// contribution to the return-rate denominator, since the final percentage
+// alone isn't enough to tell which channel is under/over-counting. Safe
+// to remove once confirmed fixed; read-only.
+window._debugOrdersBreakdown = async function (start, end) {
+  const [amzCsv, webCsv, wmtCsv] = await Promise.all([
+    fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+    fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+    fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+  ]);
+  function countOrdersInRange(csv, evolisCheck, validFn) {
+    const ids = new Set();
+    let totalRows = 0, evolisRows = 0, dateOk = 0, validOk = 0;
+    parseCsvToRows(csv).forEach(r => {
+      totalRows++;
+      if (!evolisCheck(r)) return;
+      evolisRows++;
+      const d = new Date((r.date || '') + 'T00:00:00');
+      if (isNaN(d) || d < start || d > end) return;
+      dateOk++;
+      if (!validFn(r)) return;
+      validOk++;
+      if (r.order_id) ids.add(r.order_id);
+    });
+    return { count: ids.size, totalRows, evolisRows, dateOk, validOk };
+  }
+  const isEvolisAmzRow = r => (r.brand || '').toLowerCase().trim() === 'evolis' || (r.sku || '').toUpperCase().startsWith('EVO');
+  const amz = countOrdersInRange(amzCsv, isEvolisAmzRow, r => {
+    const status = (r.status || '').toLowerCase().trim();
+    return status !== 'cancelled' && status !== 'pending';
+  });
+  const web = countOrdersInRange(webCsv, () => true, r => {
+    const status = (r.financial_status || r.status || '').toLowerCase();
+    return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
+  });
+  const wmt = countOrdersInRange(wmtCsv, () => true, r => {
+    const status = (r.status || '').toLowerCase().trim();
+    return status !== 'cancelled' && status !== 'canceled';
+  });
+  return { amz, web, wmt, total: amz.count + web.count + wmt.count };
+};
+window._debugMfcLastFullMonthRange = mfcLastFullMonthRange;
+
 window.initMarketingFulfillmentCS = async function() {
   await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns(), mfcLoadComplianceCases(), mfcLoadInventoryPrepped()]);
 };
