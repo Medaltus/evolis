@@ -10561,8 +10561,29 @@ async function initSnsExternal() {
         const { ctx, chartArea } = chart;
         ctx.save();
 
+        // All the pixel values below (font sizes, box height, padding,
+        // offsets) were hardcoded, with no awareness that the PDF export
+        // pipeline temporarily resizes this canvas to a much larger
+        // physical pixel size (pdfxCaptureOneChart) so the image survives
+        // downscaling without blurring. Chart.js's own bars/axes scale
+        // correctly during that resize because they're driven by the
+        // declarative options Chart.js itself manages — but this plugin
+        // draws directly via ctx.fillText/fillRect, entirely outside that
+        // system, so it kept drawing at a fixed 10px regardless of how
+        // much bigger the canvas actually was. Relative to the now-huge
+        // bars, that fixed-size text read as tiny/squished in the
+        // exported PDF. Confirmed by Jaclyn's screenshot, 2026-07-28.
+        // Fix: capture this chart's own native (dashboard-display) width
+        // once, on the very first draw, then scale every pixel value
+        // below by however much the CURRENT width has grown relative to
+        // that baseline — 1x on the live dashboard (no visible change),
+        // several times larger during PDF capture (text/boxes grow to
+        // match the bars, so the downscaled result reads correctly).
+        if (!chart.$pdxNativeWidth) chart.$pdxNativeWidth = chart.width;
+        const s = chart.width / chart.$pdxNativeWidth;
+
         // Per-bar unit-count labels
-        ctx.font = "600 10px 'Montserrat', sans-serif";
+        ctx.font = `600 ${10 * s}px 'Montserrat', sans-serif`;
         ctx.textBaseline = 'middle';
         [0, 1].forEach(dsIndex => {
           const meta = chart.getDatasetMeta(dsIndex);
@@ -10571,20 +10592,20 @@ async function initSnsExternal() {
             const label = String(values[i]);
             const textW = ctx.measureText(label).width;
             const barWidth = bar.x - bar.base;
-            if (barWidth > textW + 12) {
+            if (barWidth > textW + 12 * s) {
               ctx.fillStyle = '#fff';
               ctx.textAlign = 'right';
-              ctx.fillText(label, bar.x - 8, bar.y);
+              ctx.fillText(label, bar.x - 8 * s, bar.y);
             } else {
               ctx.fillStyle = '#8a94a6';
               ctx.textAlign = 'left';
-              ctx.fillText(label, bar.x + 6, bar.y);
+              ctx.fillText(label, bar.x + 6 * s, bar.y);
             }
           });
         });
 
         // YOY% pill per row, fixed column just past the plot area
-        ctx.font = "700 10px 'Montserrat', sans-serif";
+        ctx.font = `700 ${10 * s}px 'Montserrat', sans-serif`;
         ctx.textAlign = 'left';
         entries.forEach((e, i) => {
           const p = pct(e.curr, e.prev);
@@ -10595,11 +10616,11 @@ async function initSnsExternal() {
           if (!meta2025 || !meta2026) return;
           const y = (meta2025.y + meta2026.y) / 2;
           const textW = ctx.measureText(label).width;
-          const padX = 6, boxH = 16;
-          const boxX = chartArea.right + 10;
+          const padX = 6 * s, boxH = 16 * s;
+          const boxX = chartArea.right + 10 * s;
           ctx.fillStyle = isGood ? 'rgba(36,233,163,.15)' : 'rgba(219,55,45,.12)';
           ctx.beginPath();
-          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3);
+          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3 * s);
           ctx.fill();
           ctx.fillStyle = isGood ? '#1a9b6f' : '#c0392b';
           ctx.fillText(label, boxX + padX, y + 1);
@@ -10934,7 +10955,12 @@ async function initSnsExternal() {
       afterDatasetsDraw(chart) {
         const { ctx, chartArea } = chart;
         ctx.save();
-        ctx.font = "600 10px 'Montserrat', sans-serif";
+        // See the matching comment on Prime Day's own yoyLabelPlugin above
+        // for the full explanation — same fix, same reasoning, applied
+        // here for the other 3 events' charts.
+        if (!chart.$pdxNativeWidth) chart.$pdxNativeWidth = chart.width;
+        const s = chart.width / chart.$pdxNativeWidth;
+        ctx.font = `600 ${10 * s}px 'Montserrat', sans-serif`;
         ctx.textBaseline = 'middle';
         [0, 1].forEach(dsIndex => {
           const meta = chart.getDatasetMeta(dsIndex);
@@ -10943,18 +10969,18 @@ async function initSnsExternal() {
             const label = String(values[i]);
             const textW = ctx.measureText(label).width;
             const barWidth = bar.x - bar.base;
-            if (barWidth > textW + 12) {
+            if (barWidth > textW + 12 * s) {
               ctx.fillStyle = '#fff';
               ctx.textAlign = 'right';
-              ctx.fillText(label, bar.x - 8, bar.y);
+              ctx.fillText(label, bar.x - 8 * s, bar.y);
             } else {
               ctx.fillStyle = '#8a94a6';
               ctx.textAlign = 'left';
-              ctx.fillText(label, bar.x + 6, bar.y);
+              ctx.fillText(label, bar.x + 6 * s, bar.y);
             }
           });
         });
-        ctx.font = "700 10px 'Montserrat', sans-serif";
+        ctx.font = `700 ${10 * s}px 'Montserrat', sans-serif`;
         ctx.textAlign = 'left';
         entries.forEach((e, i) => {
           const p = pct(e.curr, e.prev);
@@ -10965,11 +10991,11 @@ async function initSnsExternal() {
           if (!metaPrev || !metaCurr) return;
           const y = (metaPrev.y + metaCurr.y) / 2;
           const textW = ctx.measureText(label).width;
-          const padX = 6, boxH = 16;
-          const boxX = chartArea.right + 10;
+          const padX = 6 * s, boxH = 16 * s;
+          const boxX = chartArea.right + 10 * s;
           ctx.fillStyle = isGood ? 'rgba(36,233,163,.15)' : 'rgba(219,55,45,.12)';
           ctx.beginPath();
-          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3);
+          ctx.roundRect(boxX, y - boxH/2, textW + padX * 2, boxH, 3 * s);
           ctx.fill();
           ctx.fillStyle = isGood ? '#1a9b6f' : '#c0392b';
           ctx.fillText(label, boxX + padX, y + 1);
