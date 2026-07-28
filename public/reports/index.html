@@ -1874,7 +1874,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
             </div>
           </div>
-          <div class="chart-wrap-sm" style="height:320px;flex-shrink:0;position:relative;"><canvas id="chart-impressions"></canvas></div>
+          <div class="chart-wrap-sm" style="flex:1;min-height:0;position:relative;"><canvas id="chart-impressions"></canvas></div>
+          <div class="insight-bar" style="margin-top:12px;flex-shrink:0;">
+            <strong>Note:</strong>
+            <span class="insight-text" id="adimp-insight-text">Loading…</span>
+            <div class="insight-actions">
+              <button class="btn-edit" id="adimp-insight-edit-btn">✏️ Edit</button>
+            </div>
+          </div>
+          <div class="insight-editor" id="adimp-insight-editor">
+            <textarea id="adimp-insight-textarea"></textarea>
+            <div class="editor-footer">
+              <span class="editor-note">Saves directly to the report sheet as a draft.</span>
+              <button class="btn-cancel" id="adimp-insight-cancel">Cancel</button>
+              <button class="btn-save-stage" id="adimp-insight-save">Save</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2081,7 +2096,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
             </div>
           </div>
-          <div class="chart-wrap-sm" style="height:320px;flex-shrink:0;position:relative;"><canvas id="mx-chart-impressions"></canvas></div>
+          <div class="chart-wrap-sm" style="flex:1;min-height:0;position:relative;"><canvas id="mx-chart-impressions"></canvas></div>
+          <div class="insight-bar" id="mx-adimp-insight-bar" style="margin-top:12px;flex-shrink:0;">
+            <strong>Note:</strong>
+            <span class="insight-text" id="mx-adimp-insight-text"></span>
+          </div>
         </div>
       </div>
 
@@ -4794,7 +4813,7 @@ async function initSns() {
       const retentionPrevVal = readRetention(prevBrandRow);
 
       if (retentionVal !== null) {
-        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory);
+        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory); console.log('[Evolis][subscriptions] DEBUG brandRow:', JSON.stringify(brandRow), '— prevBrandRow:', JSON.stringify(prevBrandRow), '— all rows w/ y/m/retention:', JSON.stringify(withDateR.map(x => ({y:x.y, m:x.m, retention_90_day: x.row.retention_90_day}))));
         if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
         // 2026-07-16: was a fragile CSS positional selector
         // ('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom') that
@@ -8468,6 +8487,26 @@ async function initSns() {
         { labels: impLabels, curr: impCurr, prev: impPrev, currYearLabel: String(year), prevYearLabel: String(year - 1) }
       );
 
+      // Ad Impressions Note — read-only, reuses the same SHEET_REPORT_INSIGHTS
+      // row the internal page edits (same pattern as the Key Insight bars
+      // elsewhere on this external dashboard).
+      if (typeof window.reportInsightsFetchRow === 'function') {
+        try {
+          const insightRow = await window.reportInsightsFetchRow('evolis', { year: String(year), month: String(month) });
+          const noteBar  = document.getElementById('mx-adimp-insight-bar');
+          const noteText = document.getElementById('mx-adimp-insight-text');
+          const noteVal = insightRow && insightRow.ad_impressions_note;
+          if (noteVal) {
+            if (noteText) noteText.innerHTML = String(noteVal).replace(/\n/g, '<br>');
+            if (noteBar) noteBar.style.display = '';
+          } else if (noteBar) {
+            noteBar.style.display = 'none';
+          }
+        } catch (e) {
+          console.warn('[StewardshipExternal] Ad Impressions Note fetch failed:', e.message);
+        }
+      }
+
       // ── KPIs ─────────────────────────────────────────────────────────────
       const rowCurr = findRow(year, month);
       const rowPrev = findRow(prevYear, prevMonth);
@@ -8937,7 +8976,7 @@ async function initSnsExternal() {
       const retentionPrevVal = readRetention(prevBrandRow);
 
       if (retentionVal !== null) {
-        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory);
+        console.log('[Evolis][subscriptions] raw retention value:', retentionVal, '— history available for MOM:', hasHistory); console.log('[Evolis][subscriptions] DEBUG brandRow:', JSON.stringify(brandRow), '— prevBrandRow:', JSON.stringify(prevBrandRow), '— all rows w/ y/m/retention:', JSON.stringify(withDateR.map(x => ({y:x.y, m:x.m, retention_90_day: x.row.retention_90_day}))));
         if (retentionKpiEl) retentionKpiEl.textContent = Math.round(retentionVal) + '%';
         // 2026-07-16: was a fragile CSS positional selector
         // ('#m-opportunities .kpi-row .kpi-card:nth-child(2) .kpi-mom') that
@@ -11067,6 +11106,11 @@ document.addEventListener('DOMContentLoaded', function() {
     scope: 'monthly',
     fields: [{ key: 'walmart_key_insight', displayId: 'wtp-insight-text', textareaId: 'wtp-insight-textarea', placeholder: 'No insight added yet — click Edit to add one.' }],
     editBtnId: 'wtp-insight-edit-btn', saveBtnId: 'wtp-insight-save', cancelBtnId: 'wtp-insight-cancel', editorId: 'wtp-insight-editor',
+  });
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [{ key: 'ad_impressions_note', displayId: 'adimp-insight-text', textareaId: 'adimp-insight-textarea', placeholder: 'No note added yet — click Edit to add one.' }],
+    editBtnId: 'adimp-insight-edit-btn', saveBtnId: 'adimp-insight-save', cancelBtnId: 'adimp-insight-cancel', editorId: 'adimp-insight-editor',
   });
 
   // Events — one summary block per event tab. No per-block Approve anymore.
