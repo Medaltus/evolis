@@ -27,12 +27,25 @@ const SHEET_ID          = process.env.SHOPIFY_ORDERS_SHEET;
 const LOGIN_CUSTOMER_ID = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '6274557152';
 const API_VERSION   = 'v24';
 
-const ORDERS_TAB = 'orders';
-const ADS_TAB    = 'ads';
+const ORDERS_TAB   = 'orders';
+const ADS_TAB      = 'ads';
+const SHOPPING_TAB = 'shopping'; // new — per-product data, separate tab so the
+                                  // existing campaign-level ads tab (and every
+                                  // dashboard KPI already reading it) is untouched
 
 const ADS_HEADERS = [
   'date', 'campaign_name', 'impressions', 'clicks',
   'spend', 'conversions', 'revenue', 'acos', 'last_updated',
+];
+
+// item_id matches shopify_item_id written by sync-shopify-orders.js
+// (shopify_us_<product_id>_<variant_id>, confirmed 2026-07-28 against a real
+// product side by side with Google Ads' own Products page). conversions_value
+// comes directly from Google Ads itself here, so acos is spend/conversions_value
+// — no Shopify revenue join needed for this tab, unlike the campaign-level one.
+const SHOPPING_HEADERS = [
+  'date', 'item_id', 'product_title', 'impressions', 'clicks',
+  'spend', 'conversions', 'conversions_value', 'acos', 'last_updated',
 ];
 
 module.exports = async (req, res) => {
@@ -171,15 +184,96 @@ module.exports = async (req, res) => {
     console.log('[sync-google-ads] 0 new rows (all duplicates)');
   }
 
+  // ── 6. Shopping performance (per-product) — new, best-effort ─────────────
+  // Deliberately isolated in its own try/catch: campaign-level ads sync above
+  // already succeeded and every dashboard KPI depends on it — a bug in this
+  // new per-product query should never take that down with it.
+  let shoppingResult = { rows: 0, skipped: 0, error: null };
+  try {
+    shoppingResult = await syncShoppingPerformance(accessToken, startDate, endDate, nowEst);
+  } catch (err) {
+    console.error('[sync-google-ads] shopping performance sync failed:', err.message);
+    await sendCronFailureAlert('sync-google-ads', err.message, { Stage: 'Shopping performance view (non-fatal)' });
+    shoppingResult = { rows: 0, skipped: 0, error: err.message };
+  }
+
   return res.status(200).json({
     rows:      rowsToWrite.length,
     skipped:   dupCount,
+    shopping:  shoppingResult,
     mode,
     startDate,
     endDate,
     timestamp: nowEst,
   });
 };
+
+// ── Shopping performance (per-product) sync ───────────────────────────────────
+// item_id here matches shopify_item_id from sync-shopify-orders.js exactly —
+// join on that string, no transformation needed on either side.
+async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) {
+  const gaqlDate = startDate === endDate
+    ? `segments.date = '${startDate}'`
+    : `segments.date >= '${startDate}' AND segments.date <= '${endDate}'`;
+
+  const query = `
+    SELECT
+      segments.date,
+      segments.product_item_id,
+      segments.product_title,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM shopping_performance_view
+    WHERE ${gaqlDate}
+      AND metrics.impressions > 0
+    ORDER BY segments.date DESC, metrics.cost_micros DESC
+  `;
+
+  const resp = await googleAdsSearch(accessToken, query);
+  const rows = resp.results || [];
+  console.log(`[sync-google-ads] ${rows.length} shopping product-day rows from API`);
+  if (rows.length === 0) return { rows: 0, skipped: 0, error: null };
+
+  const newLineItems = rows.map(r => {
+    const spend            = round2(parseInt(r.metrics?.costMicros || '0', 10) / 1_000_000);
+    const conversionsValue = round2(r.metrics?.conversionsValue || 0);
+    return {
+      date:              r.segments?.date || '',
+      item_id:           r.segments?.productItemId || '',
+      product_title:     r.segments?.productTitle || '',
+      impressions:       parseInt(r.metrics?.impressions || '0', 10),
+      clicks:            parseInt(r.metrics?.clicks || '0', 10),
+      spend,
+      conversions:       round2(r.metrics?.conversions || 0),
+      conversions_value: conversionsValue,
+      acos:              conversionsValue > 0 ? round2(spend / conversionsValue) : '',
+      last_updated:      nowEst,
+    };
+  }).filter(r => r.date && r.item_id);
+
+  const token        = await ensureTab(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS);
+  const existingRows = await readRows(SHEET_ID, SHOPPING_TAB);
+  const existingKeys = new Set(
+    existingRows.map(r => `${r.date}||${r.item_id}`).filter(k => k !== '||')
+  );
+
+  const rowsToWrite = newLineItems
+    .filter(r => !existingKeys.has(`${r.date}||${r.item_id}`))
+    .map(r => SHOPPING_HEADERS.map(h => r[h] ?? ''));
+
+  const dupCount = newLineItems.length - rowsToWrite.length;
+  if (dupCount > 0) console.log(`[sync-google-ads] shopping: skipped ${dupCount} duplicate date+item_id rows`);
+
+  if (rowsToWrite.length > 0) {
+    await appendRows(SHEET_ID, SHOPPING_TAB, rowsToWrite, token);
+    console.log(`[sync-google-ads] shopping: wrote ${rowsToWrite.length} rows`);
+  }
+
+  return { rows: rowsToWrite.length, skipped: dupCount, error: null };
+}
 
 // ── Google OAuth token exchange ───────────────────────────────────────────────
 
