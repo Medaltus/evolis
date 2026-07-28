@@ -16,7 +16,7 @@
  * Schedule: daily at 7AM UTC ("0 7 * * *")
  */
 
-const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
+const { ensureTab, appendRows, replaceRows, readRows } = require('../config/_sheets_client');
 const { sendCronFailureAlert }            = require('../_alerts');
 
 const STORE_DOMAIN  = process.env.SHOPIFY_STORE_DOMAIN;
@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'SHOPIFY_ORDERS_SHEET not set' });
   }
 
-  const mode = req.query.mode || 'day';
+  const mode = req.query.mode || 'rolling30';
   const { startDate, endDate } = getDateRange(mode, req);
   const nowEst = toEstIso(new Date());
 
@@ -206,34 +206,44 @@ module.exports = async (req, res) => {
 
   console.log(`[sync-shopify-orders] total line items: ${lineItems.length}`);
 
-  // ── 4. Dedup and write ────────────────────────────────────────────────────
+  // ── 4. Upsert (not append-only) ───────────────────────────────────────────
+  // CHANGED 2026-07-28: this used to skip any order_id+sku already in the
+  // sheet, permanently — an order synced while UNFULFILLED would show
+  // UNFULFILLED forever, even after it actually shipped, since nothing ever
+  // re-wrote that row. Combined with the new rolling30 default window, every
+  // order gets re-fetched from Shopify and its row fully overwritten with
+  // current data for the next 30 days after it's first seen — status,
+  // financial_status, quantity_shipped, and the shopify_variant_id/
+  // product_id/item_id columns (in case an older row predates those being
+  // captured) all refresh automatically as long as the order stays inside
+  // that window. An order that changes again more than 30 days after it was
+  // placed (a very late fulfillment or refund) would need a manual
+  // mode=week re-run to pick up — rare enough not to warrant a wider
+  // default window, but worth knowing this isn't literally forever-live.
   const token        = await ensureTab(SHEET_ID, TAB_NAME, HEADERS);
   const existingRows = await readRows(SHEET_ID, TAB_NAME);
-  const existingKeys = new Set(
-    existingRows
-      .map(r => `${r.order_id}||${r.sku}`)
-      .filter(k => k !== '||')
-  );
 
-  const newRows = lineItems
-    .filter(item => !existingKeys.has(`${item.order_id}||${item.sku}`))
-    .map(item => HEADERS.map(h => item[h] ?? ''));
+  const existingByKey = new Map();
+  existingRows.forEach(r => {
+    const key = `${r.order_id}||${r.sku}`;
+    if (key !== '||') existingByKey.set(key, r);
+  });
 
-  const dupCount = lineItems.length - newRows.length;
-  if (dupCount > 0) {
-    console.log(`[sync-shopify-orders] skipped ${dupCount} duplicate order+sku rows`);
-  }
+  let updatedCount = 0, newCount = 0;
+  lineItems.forEach(item => {
+    const key = `${item.order_id}||${item.sku}`;
+    if (existingByKey.has(key)) updatedCount++; else newCount++;
+    existingByKey.set(key, item); // overwrite if present, insert if not
+  });
 
-  if (newRows.length > 0) {
-    await appendRows(SHEET_ID, TAB_NAME, newRows, token);
-    console.log(`[sync-shopify-orders] wrote ${newRows.length} rows`);
-  } else {
-    console.log('[sync-shopify-orders] 0 new rows (all duplicates)');
-  }
+  const outputRows = Array.from(existingByKey.values()).map(r => HEADERS.map(h => r[h] ?? ''));
+  await replaceRows(SHEET_ID, TAB_NAME, HEADERS, outputRows, token);
+  console.log(`[sync-shopify-orders] ${newCount} new rows, ${updatedCount} existing rows refreshed, ${outputRows.length} total`);
 
   return res.status(200).json({
-    rows:      newRows.length,
-    skipped:   dupCount,
+    new:       newCount,
+    updated:   updatedCount,
+    totalRows: outputRows.length,
     orders:    allOrders.length,
     mode,
     startDate,
@@ -297,6 +307,17 @@ function getDateRange(mode, req) {
     const d = new Date(now); d.setDate(d.getDate() - 1);
     const y = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
     return { startDate: `${y}-${m}-${day}T00:00:00Z`, endDate: `${y}-${m}-${day}T23:59:59Z` };
+  }
+
+  // Self-healing window: the scheduled cron uses this so a day Vercel fails
+  // to fire on (confirmed happened on 2026-07-27) gets automatically picked
+  // up by the next successful run, instead of being permanently lost the
+  // way mode=day (today only, no lookback) allows.
+  if (mode === 'rolling30') {
+    const start = new Date(now);
+    start.setUTCDate(start.getUTCDate() - 30);
+    start.setUTCHours(0, 0, 0, 0);
+    return { startDate: fmt(start), endDate: fmt(safeBefore) };
   }
 
   if (mode === 'week') {
