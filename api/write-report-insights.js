@@ -48,6 +48,13 @@ const MONTHLY_HEADERS = [
   'opp3_title', 'opp3_subtitle', 'opp3_body',
   'opp4_title', 'opp4_subtitle', 'opp4_body',
   'status', 'approved_by', 'approved_at', 'last_updated', 'last_updated_by',
+  'ad_impressions_note', // NEW 2026-07-28 — Note box under the Ad Impressions
+  // chart on Marketing > Brand Stewardship. Added at the END of the array
+  // deliberately, not interspersed — upsertRow() writes values.map(h =>
+  // r[h]) positionally against whatever order this array lists, so a new
+  // field HAS to go at the end to match wherever the real sheet's header
+  // row physically has its own newest column, or every existing row's data
+  // silently shifts into the wrong columns on the next save.
 ];
 
 const EVENT_HEADERS = [
