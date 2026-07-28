@@ -1754,6 +1754,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     <div class="channel-page" id="m-fulfillment-cs">
 
+      <div class="page-sub" id="mfc-page-sub" style="margin-bottom:14px;">Loading…</div>
+
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
           <div class="kpi-label" id="mfc-lbl-shipped">Shipped Website Orders</div>
@@ -12519,6 +12521,15 @@ async function mfcLoadKpis() {
     const lblShipped = document.getElementById('mfc-lbl-shipped');
     if (lblShipped) lblShipped.textContent = `Shipped Website Orders • ${monthLabel}`;
 
+    // Date-range subtitle, same format as the Sales page's own page-sub
+    // ("Jun 1 – Jun 30, 2026 · Last full month").
+    const subEl = document.getElementById('mfc-page-sub');
+    if (subEl) {
+      const monthNamesShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const lastDay = new Date(year, month, 0).getDate();
+      subEl.textContent = `${monthNamesShort[month-1]} 1 – ${monthNamesShort[month-1]} ${lastDay}, ${year} · Last full month`;
+    }
+
     // Shipped Website Orders is recomputed from the daily raw data (same
     // sheet/tab the chart below uses) filtered to last full month, rather
     // than read from the _kpis tab's shipped_orders_30d — that figure is a
@@ -12729,12 +12740,19 @@ async function getBlendedOrdersInRange(start, end) {
 // own getLastFullMonth(), kept local here rather than reusing that one
 // since it lives in a different, inaccessible closure.
 function mfcLastFullMonthRange() {
-  const now = new Date();
-  let year = now.getFullYear();
-  let month = now.getMonth(); // 0-indexed = last month's 0-indexed value already
-  if (month < 0) { month = 11; year--; } // defensive; getMonth() is never negative
-  const start = new Date(year, month, 1, 0, 0, 0);
-  const end = new Date(year, month + 1, 0, 23, 59, 59); // day 0 of next month = last day of this month
+  // Reuses mfcGetLastFullMonth() (already correct — verified against
+  // mfcLoadKpis's dates) instead of recomputing this separately. The
+  // previous version of this function assumed now.getMonth() was already
+  // 0-indexed for LAST month, but it's actually 1-indexed for last month
+  // (July's getMonth()=6 represents June as month "6", not month "5") —
+  // feeding that straight into `new Date(year, month, 1)` produced July
+  // 1st instead of June 1st, which silently made every "last full month"
+  // filter on this page match the wrong month. Confirmed by Jaclyn
+  // 2026-07-27: Returns Processed showed 0 despite June return rows
+  // existing in all three source sheets.
+  const { year, month } = mfcGetLastFullMonth(); // month is 1-indexed
+  const start = new Date(year, month - 1, 1, 0, 0, 0);
+  const end = new Date(year, month, 0, 23, 59, 59); // day 0 of next month = last day of this month
   return { start, end };
 }
 
