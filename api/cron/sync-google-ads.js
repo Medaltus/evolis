@@ -15,7 +15,7 @@
  * Schedule: daily at 15 7 * * * (after orders + revenue sync)
  */
 
-const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
+const { ensureTab, appendRows, replaceRows, readRows } = require('../config/_sheets_client');
 const { sendCronFailureAlert }            = require('../_alerts');
 
 const CUSTOMER_ID   = process.env.GOOGLE_ADS_CUSTOMER_ID;   // 7766709758
@@ -43,9 +43,13 @@ const ADS_HEADERS = [
 // product side by side with Google Ads' own Products page). conversions_value
 // comes directly from Google Ads itself here, so acos is spend/conversions_value
 // — no Shopify revenue join needed for this tab, unlike the campaign-level one.
+// sku added at the END, not inserted logically next to item_id — this tab
+// already has real rows written under the original 10-column layout from
+// today's earlier test runs, and ensureTab() never rewrites an existing
+// header row. Same lesson as the orders-sheet and insights-sheet bugs.
 const SHOPPING_HEADERS = [
   'date', 'item_id', 'product_title', 'impressions', 'clicks',
-  'spend', 'conversions', 'conversions_value', 'acos', 'last_updated',
+  'spend', 'conversions', 'conversions_value', 'acos', 'last_updated', 'sku',
 ];
 
 module.exports = async (req, res) => {
@@ -188,13 +192,13 @@ module.exports = async (req, res) => {
   // Deliberately isolated in its own try/catch: campaign-level ads sync above
   // already succeeded and every dashboard KPI depends on it — a bug in this
   // new per-product query should never take that down with it.
-  let shoppingResult = { rows: 0, skipped: 0, error: null };
+  let shoppingResult = { new: 0, updated: 0, totalRows: 0, error: null };
   try {
     shoppingResult = await syncShoppingPerformance(accessToken, startDate, endDate, nowEst);
   } catch (err) {
     console.error('[sync-google-ads] shopping performance sync failed:', err.message);
     await sendCronFailureAlert('sync-google-ads', err.message, { Stage: 'Shopping performance view (non-fatal)' });
-    shoppingResult = { rows: 0, skipped: 0, error: err.message };
+    shoppingResult = { new: 0, updated: 0, totalRows: 0, error: err.message };
   }
 
   return res.status(200).json({
@@ -235,14 +239,29 @@ async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) 
   const resp = await googleAdsSearch(accessToken, query);
   const rows = resp.results || [];
   console.log(`[sync-google-ads] ${rows.length} shopping product-day rows from API`);
-  if (rows.length === 0) return { rows: 0, skipped: 0, error: null };
+  if (rows.length === 0) return { new: 0, updated: 0, totalRows: 0, error: null };
+
+  // Resolve item_id -> sku here, once, at sync time — not something the
+  // dashboard should be doing itself on every page load by cross-referencing
+  // two sheets client-side. shopify_item_id lives on the orders tab (added
+  // 2026-07-28); any item_id with at least one order carrying that field
+  // resolves to a real SKU. Anything with zero orders so far (advertised,
+  // never purchased) stays blank — genuinely unresolvable yet, not a bug.
+  const orderRows = await readRows(SHEET_ID, ORDERS_TAB).catch(() => []);
+  const skuByItemId = new Map();
+  orderRows.forEach(r => {
+    const itemId = r.shopify_item_id;
+    if (itemId && r.sku && !skuByItemId.has(itemId)) skuByItemId.set(itemId, r.sku);
+  });
+  console.log(`[sync-google-ads] shopping: resolved ${skuByItemId.size} distinct item_id -> sku pairs from orders`);
 
   const newLineItems = rows.map(r => {
     const spend            = round2(parseInt(r.metrics?.costMicros || '0', 10) / 1_000_000);
     const conversionsValue = round2(r.metrics?.conversionsValue || 0);
+    const itemId           = r.segments?.productItemId || '';
     return {
       date:              r.segments?.date || '',
-      item_id:           r.segments?.productItemId || '',
+      item_id:           itemId,
       product_title:     r.segments?.productTitle || '',
       impressions:       parseInt(r.metrics?.impressions || '0', 10),
       clicks:            parseInt(r.metrics?.clicks || '0', 10),
@@ -251,28 +270,35 @@ async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) 
       conversions_value: conversionsValue,
       acos:              conversionsValue > 0 ? round2(spend / conversionsValue) : '',
       last_updated:      nowEst,
+      sku:               skuByItemId.get(itemId) || '',
     };
   }).filter(r => r.date && r.item_id);
 
-  const token        = await ensureTab(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS);
-  const existingRows = await readRows(SHEET_ID, SHOPPING_TAB);
-  const existingKeys = new Set(
-    existingRows.map(r => `${r.date}||${r.item_id}`).filter(k => k !== '||')
-  );
+  // Upsert, not skip-duplicate — same reasoning as the orders-sheet fix:
+  // a row written before an order existed for that item_id would have a
+  // permanently blank sku otherwise, even after a real order comes in and
+  // resolves it. Overwriting on every run means sku (and any metric
+  // corrections Google Ads makes after the fact) stay current.
+  const token         = await ensureTab(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS);
+  const existingRows  = await readRows(SHEET_ID, SHOPPING_TAB);
+  const existingByKey = new Map();
+  existingRows.forEach(r => {
+    const key = `${r.date}||${r.item_id}`;
+    if (key !== '||') existingByKey.set(key, r);
+  });
 
-  const rowsToWrite = newLineItems
-    .filter(r => !existingKeys.has(`${r.date}||${r.item_id}`))
-    .map(r => SHOPPING_HEADERS.map(h => r[h] ?? ''));
+  let updatedCount = 0, newCount = 0;
+  newLineItems.forEach(item => {
+    const key = `${item.date}||${item.item_id}`;
+    if (existingByKey.has(key)) updatedCount++; else newCount++;
+    existingByKey.set(key, item);
+  });
 
-  const dupCount = newLineItems.length - rowsToWrite.length;
-  if (dupCount > 0) console.log(`[sync-google-ads] shopping: skipped ${dupCount} duplicate date+item_id rows`);
+  const outputRows = Array.from(existingByKey.values()).map(r => SHOPPING_HEADERS.map(h => r[h] ?? ''));
+  await replaceRows(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS, outputRows, token);
+  console.log(`[sync-google-ads] shopping: ${newCount} new, ${updatedCount} refreshed, ${outputRows.length} total`);
 
-  if (rowsToWrite.length > 0) {
-    await appendRows(SHEET_ID, SHOPPING_TAB, rowsToWrite, token);
-    console.log(`[sync-google-ads] shopping: wrote ${rowsToWrite.length} rows`);
-  }
-
-  return { rows: rowsToWrite.length, skipped: dupCount, error: null };
+  return { new: newCount, updated: updatedCount, totalRows: outputRows.length, error: null };
 }
 
 // ── Google OAuth token exchange ───────────────────────────────────────────────
