@@ -10517,6 +10517,32 @@ async function initSnsExternal() {
 
   const TOP_SELLERS_COUNT = 7; // per Jaclyn 2026-07-17 — "top 5-7 products, a little bigger"
 
+  // Wraps a long product name onto multiple lines instead of letting it run
+  // the full label column width — Chart.js renders an array returned from
+  // a tick callback as stacked lines for that tick. Per Jaclyn 2026-07-28:
+  // frees up horizontal room for the bars themselves, on both the live
+  // dashboard and the PDF export (same chart config drives both). Defined
+  // separately here and again in the generic multi-event chart builder's
+  // own scope, rather than shared — the two buildTopSellersChart functions
+  // (this file's Prime-Day-specific one and the other 3 events' generic
+  // one) already live in separate, non-overlapping closures.
+  function wrapBarLabel(label, maxLen) {
+    const words = String(label).split(' ');
+    const lines = [];
+    let current = '';
+    words.forEach(w => {
+      const test = current ? current + ' ' + w : w;
+      if (test.length > maxLen && current) {
+        lines.push(current);
+        current = w;
+      } else {
+        current = test;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
   function buildTopSellersChart(currRows, prevRows, nameMap) {
     const byAsin = {}; // asin -> { curr, prev }
     currRows.forEach(r => {
@@ -10579,8 +10605,12 @@ async function initSnsExternal() {
         // that baseline — 1x on the live dashboard (no visible change),
         // several times larger during PDF capture (text/boxes grow to
         // match the bars, so the downscaled result reads correctly).
-        if (!chart.$pdxNativeWidth) chart.$pdxNativeWidth = chart.width;
-        const s = chart.width / chart.$pdxNativeWidth;
+        // Reads the scale factor pdfxCaptureOneChart stashes directly on
+        // the chart right before its capture-time update() — the exact
+        // same ratio already proven correct for axis fonts, rather than
+        // this plugin trying to infer its own baseline (see the comment
+        // where $pdxFontScale is set for why that approach failed).
+        const s = chart.$pdxFontScale || 1;
 
         // Per-bar unit-count labels
         ctx.font = `600 ${10 * s}px 'Montserrat', sans-serif`;
@@ -10664,7 +10694,7 @@ async function initSnsExternal() {
         // toggling the grid off while keeping ticks/border.
         scales: {
           x: { display: false, beginAtZero: true },
-          y: { grid: { display: false } }
+          y: { grid: { display: false }, ticks: { callback: function (value) { return wrapBarLabel(this.getLabelForValue(value), 16); } } }
         }
       }
     });
@@ -10915,6 +10945,25 @@ async function initSnsExternal() {
     return map;
   }
 
+  // Same wrapBarLabel as Prime Day's own version above — duplicated here
+  // rather than shared, since this function lives in a separate closure.
+  function wrapBarLabel(label, maxLen) {
+    const words = String(label).split(' ');
+    const lines = [];
+    let current = '';
+    words.forEach(w => {
+      const test = current ? current + ' ' + w : w;
+      if (test.length > maxLen && current) {
+        lines.push(current);
+        current = w;
+      } else {
+        current = test;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
   // eventLabel/currYear/prevYear drive the dataset labels and legend text —
   // unlike Prime Day's chart (which hardcodes "2025"/"2026" since those are
   // its actual years), PBDD and BFCM's most-recent pair is 2025-vs-2024, so
@@ -10958,8 +11007,12 @@ async function initSnsExternal() {
         // See the matching comment on Prime Day's own yoyLabelPlugin above
         // for the full explanation — same fix, same reasoning, applied
         // here for the other 3 events' charts.
-        if (!chart.$pdxNativeWidth) chart.$pdxNativeWidth = chart.width;
-        const s = chart.width / chart.$pdxNativeWidth;
+        // Reads the scale factor pdfxCaptureOneChart stashes directly on
+        // the chart right before its capture-time update() — the exact
+        // same ratio already proven correct for axis fonts, rather than
+        // this plugin trying to infer its own baseline (see the comment
+        // where $pdxFontScale is set for why that approach failed).
+        const s = chart.$pdxFontScale || 1;
         ctx.font = `600 ${10 * s}px 'Montserrat', sans-serif`;
         ctx.textBaseline = 'middle';
         [0, 1].forEach(dsIndex => {
@@ -11036,7 +11089,7 @@ async function initSnsExternal() {
         },
         scales: {
           x: { display: false, beginAtZero: true },
-          y: { grid: { display: false } }
+          y: { grid: { display: false }, ticks: { callback: function (value) { return wrapBarLabel(this.getLabelForValue(value), 16); } } }
         }
       }
     });
@@ -14581,6 +14634,17 @@ async function loadAuditResultsFromSheet() {
       const scaledBorderWidth = PDFX_LINE_WIDTH_TARGET_PX * fontScale;
       const scaledPointRadius = PDFX_POINT_RADIUS_TARGET_PX * fontScale;
 
+      // Exposed so custom plugins that draw their own text directly via
+      // ctx.fillText (e.g. yoyLabelPlugin on the event Top Sellers charts)
+      // can scale themselves by the exact same factor Chart.js's own axis
+      // fonts already use — rather than each plugin trying to infer scale
+      // from its own "first draw" baseline, which breaks if the chart
+      // instance gets freshly created during the export flow itself
+      // (its first-ever draw would then BE the oversized capture render,
+      // making any self-computed baseline always read as 1x — confirmed
+      // 2026-07-28 as the reason the first attempt at this didn't work).
+      liveChart.$pdxFontScale = fontScale;
+
       const origLineStyles = (liveChart.data && liveChart.data.datasets)
         ? liveChart.data.datasets.map(function (ds) { return { tension: ds.tension, borderWidth: ds.borderWidth, pointRadius: ds.pointRadius }; })
         : [];
@@ -14630,6 +14694,7 @@ async function loadAuditResultsFromSheet() {
         console.warn('[pdf-export] scaled-font capture failed for', varName, '— falling back to whatever is currently rendered:', e.message);
         img = pdfxRawChartImg(varName);
       } finally {
+        delete liveChart.$pdxFontScale; // back to normal (undefined -> plugin falls back to 1x) for live dashboard redraws
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
         }
