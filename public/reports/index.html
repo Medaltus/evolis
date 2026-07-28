@@ -4760,15 +4760,36 @@ async function initSns() {
       }
       if (hasHistory) withDateR.sort((a, b) => (a.y - b.y) || (a.m - b.m));
 
-      const brandRow = hasHistory ? withDateR[withDateR.length - 1].row : (useRows[0] || rows[0]);
-      const prevBrandRow = hasHistory && withDateR.length >= 2 ? withDateR[withDateR.length - 2].row : null;
-
       function readRetention(r) {
         if (!r) return null;
         let v = num(r.retention_90_day ?? r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
         if (v !== null && v > 0 && v <= 1) v = v * 100;
         return v;
       }
+
+      // Walk backward from the most recent dated row to find the latest
+      // one that actually HAS a retention value — the current calendar
+      // month's row can exist (year/month populated) with retention still
+      // blank if this month isn't finished computing yet. Picking strictly
+      // "the last row by date" regardless of blankness was the actual bug
+      // here: 2026-07's row exists but is blank, while 2026-03 through
+      // 2026-06 all have real 70.4 values. Confirmed via Jaclyn's sheet
+      // screenshot, 2026-07-28.
+      let brandRow = null, prevBrandRow = null;
+      if (hasHistory) {
+        for (let i = withDateR.length - 1; i >= 0; i--) {
+          if (readRetention(withDateR[i].row) === null) continue;
+          brandRow = withDateR[i].row;
+          for (let j = i - 1; j >= 0; j--) {
+            if (readRetention(withDateR[j].row) === null) continue;
+            prevBrandRow = withDateR[j].row;
+            break;
+          }
+          break;
+        }
+      }
+      if (!brandRow) brandRow = useRows[0] || rows[0];
+
       let retentionVal = readRetention(brandRow);
       const retentionPrevVal = readRetention(prevBrandRow);
 
@@ -8882,15 +8903,36 @@ async function initSnsExternal() {
       }
       if (hasHistory) withDateR.sort((a, b) => (a.y - b.y) || (a.m - b.m));
 
-      const brandRow = hasHistory ? withDateR[withDateR.length - 1].row : (useRows[0] || rows[0]);
-      const prevBrandRow = hasHistory && withDateR.length >= 2 ? withDateR[withDateR.length - 2].row : null;
-
       function readRetention(r) {
         if (!r) return null;
         let v = num(r.retention_90_day ?? r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
         if (v !== null && v > 0 && v <= 1) v = v * 100;
         return v;
       }
+
+      // Walk backward from the most recent dated row to find the latest
+      // one that actually HAS a retention value — the current calendar
+      // month's row can exist (year/month populated) with retention still
+      // blank if this month isn't finished computing yet. Picking strictly
+      // "the last row by date" regardless of blankness was the actual bug
+      // here: 2026-07's row exists but is blank, while 2026-03 through
+      // 2026-06 all have real 70.4 values. Confirmed via Jaclyn's sheet
+      // screenshot, 2026-07-28.
+      let brandRow = null, prevBrandRow = null;
+      if (hasHistory) {
+        for (let i = withDateR.length - 1; i >= 0; i--) {
+          if (readRetention(withDateR[i].row) === null) continue;
+          brandRow = withDateR[i].row;
+          for (let j = i - 1; j >= 0; j--) {
+            if (readRetention(withDateR[j].row) === null) continue;
+            prevBrandRow = withDateR[j].row;
+            break;
+          }
+          break;
+        }
+      }
+      if (!brandRow) brandRow = useRows[0] || rows[0];
+
       let retentionVal = readRetention(brandRow);
       const retentionPrevVal = readRetention(prevBrandRow);
 
