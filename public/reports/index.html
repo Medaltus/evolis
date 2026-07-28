@@ -5460,7 +5460,8 @@ async function initSns() {
   const SHOPIFY_SHEET_ID      = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
   const SHOPIFY_SHEET_GID     = '597852778'; // orders tab
   const SHOPIFY_REVENUE_GID   = '7000599';   // revenue tab
-  const SHOPIFY_ADS_GID       = '219707263'; // ads tab
+  const SHOPIFY_ADS_GID       = '219707263'; // ads tab (campaign-level, all campaign types — still the KPI's source)
+  const SHOPIFY_SHOPPING_GID  = '1841786277'; // shopping tab (per-SKU, Shopping/PMax only — new 2026-07-28)
 
   // Product name lookup: col A = ASIN (unused here), col B = SKU, col C = Name
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
@@ -5603,11 +5604,14 @@ async function initSns() {
     }
 
     try {
-      // Fetch orders and ads data in parallel
-      const [csv, adsCsv] = await Promise.all([
+      // Fetch orders, ads (campaign-level, still the KPI's source), and
+      // shopping (per-SKU, new 2026-07-28) data in parallel
+      const [csv, adsCsv, shoppingCsv] = await Promise.all([
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHOPPING_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
       ]);
 
@@ -5618,6 +5622,7 @@ async function initSns() {
 
       const allRows = parseCsv(csv);
       const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
+      const shoppingRows = isCsv(shoppingCsv) ? parseCsv(shoppingCsv) : [];
       const curr    = aggregateMonth(allRows, year, month);
       const prev    = aggregateMonth(allRows, prevYear, prevMonth);
       const ads     = aggregateAdMonth(adsRows, year, month);
@@ -5659,7 +5664,7 @@ async function initSns() {
       setBadgeWeb('web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
 
       buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-      buildWebTopProducts(allRows, adsRows, year, month, prevYear, prevMonth);
+      buildWebTopProducts(allRows, adsRows, shoppingRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
       console.error('[WebLive]', err.message);
@@ -5762,7 +5767,7 @@ async function initSns() {
   }
 
   // ── Top products table ────────────────────────────────────────────────────
-  async function buildWebTopProducts(allRows, adsRows, targetYear, targetMonth, prevYear, prevMonth) {
+  async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
     const tbody  = document.getElementById('web-tp-tbody');
 
@@ -5786,15 +5791,23 @@ async function initSns() {
       skuUnits[sku] = (skuUnits[sku] || 0) + qty;
     }
 
-    // Total ad conversions for this month (not per-SKU — Google Ads doesn't break down by SKU)
-    // We show total ad units on the KPI cards; top products table shows organic as units - ad_share
-    const totalAdConversions = Math.round(
-      (adsRows || [])
-        .filter(r => (r.date || '').substring(0,7) === prefix)
-        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
-    );
+    // Real per-SKU ad conversions from the shopping tab (Shopping/PMax
+    // campaigns only, sku resolved server-side by sync-google-ads.js as of
+    // 2026-07-28) — replaces the old site-wide-percentage estimate that
+    // applied the same ratio to every product regardless of whether that
+    // product was ever actually advertised. Note this only ever covers
+    // Shopping-campaign activity, not Search/Brand/Display — the top KPI
+    // card intentionally stays on the broader campaign-level source; see
+    // web-products-source note below the table.
+    const skuAdConversions = {};
+    (shoppingRows || [])
+      .filter(r => (r.date || '').substring(0,7) === prefix)
+      .forEach(r => {
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return; // not yet resolved to a real SKU
+        skuAdConversions[sku] = (skuAdConversions[sku] || 0) + (parseFloat(r.conversions) || 0);
+      });
     const totalUnitsThisMonth = Object.values(skuUnits).reduce((s, v) => s + v, 0);
-    const adShare = totalUnitsThisMonth > 0 ? totalAdConversions / totalUnitsThisMonth : 0;
 
     // Prev month for MOM
     const skuUnitsPrev = {};
@@ -5808,14 +5821,17 @@ async function initSns() {
                skuUnitsPrev[sku] = (skuUnitsPrev[sku] || 0) + qty;
              });
     }
-    const prevAdConversions = Math.round(
-      (adsRows || [])
-        .filter(r => {
-          const pm = prevMonth, py = prevYear;
-          return (r.date || '').substring(0,7) === `${py}-${String(pm).padStart(2,'0')}`;
-        })
-        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
-    );
+    const skuAdConversionsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefixForAds = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      (shoppingRows || [])
+        .filter(r => (r.date || '').substring(0,7) === prevPrefixForAds)
+        .forEach(r => {
+          const sku = (r.sku || '').trim().toUpperCase();
+          if (!sku) return;
+          skuAdConversionsPrev[sku] = (skuAdConversionsPrev[sku] || 0) + (parseFloat(r.conversions) || 0);
+        });
+    }
 
     // Load product name lookup — col B = SKU, col C = Name
     const skuNameMap = {};
@@ -5848,32 +5864,33 @@ async function initSns() {
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
 
-    // Compute prev month ad share for MOM on organic
-    const prevTotalUnitsThisMonth = Object.values(skuUnitsPrev).reduce((s, v) => s + v, 0);
-    const prevAdShare = prevTotalUnitsThisMonth > 0 ? prevAdConversions / prevTotalUnitsThisMonth : 0;
-
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
       const name       = skuNameMap[sku] || sku;
       const prevUnits  = skuUnitsPrev[sku] || 0;
-      // Distribute ad conversions proportionally by SKU's share of total units
-      const skuAdUnits     = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
-      const skuOrgUnits    = Math.max(0, units - skuAdUnits);
-      const skuPrevAdUnits = prevTotalUnitsThisMonth > 0 ? Math.round(prevAdShare * prevUnits) : 0;
+      // "—" means this SKU has no Shopping-campaign data at all this month
+      // (never advertised via Shopping/PMax, or no order yet to resolve it
+      // to a SKU) — genuinely unknown, not "confirmed zero". A SKU that DOES
+      // have shopping data but converted 0 times this month shows a real 0.
+      const hasAdData      = Object.prototype.hasOwnProperty.call(skuAdConversions, sku);
+      const skuAdUnits     = hasAdData ? Math.round(skuAdConversions[sku]) : null;
+      const skuOrgUnits    = Math.max(0, units - (skuAdUnits || 0));
+      const hasPrevAdData  = Object.prototype.hasOwnProperty.call(skuAdConversionsPrev, sku);
+      const skuPrevAdUnits = hasPrevAdData ? Math.round(skuAdConversionsPrev[sku]) : 0;
       const skuPrevOrgUnits = Math.max(0, prevUnits - skuPrevAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell">${hasAdData ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
         <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span>${momSpan(skuOrgUnits, skuPrevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const srcEl = document.getElementById('web-products-source');
-    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear} · Ads column = Shopping-campaign conversions only, may be blank where a SKU has no Shopping-campaign data yet`;
   }
 
   function showWebError(msg) {
@@ -7197,7 +7214,8 @@ async function initSns() {
   const SHOPIFY_SHEET_ID      = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
   const SHOPIFY_SHEET_GID     = '597852778'; // orders tab
   const SHOPIFY_REVENUE_GID   = '7000599';   // revenue tab
-  const SHOPIFY_ADS_GID       = '219707263'; // ads tab
+  const SHOPIFY_ADS_GID       = '219707263'; // ads tab (campaign-level, all campaign types — still the KPI's source)
+  const SHOPIFY_SHOPPING_GID  = '1841786277'; // shopping tab (per-SKU, Shopping/PMax only — new 2026-07-28)
 
   // Product name lookup: col A = ASIN (unused here), col B = SKU, col C = Name
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
@@ -7342,11 +7360,14 @@ async function initSns() {
     }
 
     try {
-      // Fetch orders and ads data in parallel
-      const [csv, adsCsv] = await Promise.all([
+      // Fetch orders, ads (campaign-level, still the KPI's source), and
+      // shopping (per-SKU, new 2026-07-28) data in parallel
+      const [csv, adsCsv, shoppingCsv] = await Promise.all([
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
+          .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHOPPING_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
       ]);
 
@@ -7357,6 +7378,7 @@ async function initSns() {
 
       const allRows = parseCsv(csv);
       const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
+      const shoppingRows = isCsv(shoppingCsv) ? parseCsv(shoppingCsv) : [];
       const curr    = aggregateMonth(allRows, year, month);
       const prev    = aggregateMonth(allRows, prevYear, prevMonth);
       const ads     = aggregateAdMonth(adsRows, year, month);
@@ -7398,7 +7420,7 @@ async function initSns() {
       setBadgeWeb('x-web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
 
       buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-      buildWebTopProducts(allRows, adsRows, year, month, prevYear, prevMonth);
+      buildWebTopProducts(allRows, adsRows, shoppingRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
       console.error('[WebLive]', err.message);
@@ -7501,7 +7523,7 @@ async function initSns() {
   }
 
   // ── Top products table ────────────────────────────────────────────────────
-  async function buildWebTopProducts(allRows, adsRows, targetYear, targetMonth, prevYear, prevMonth) {
+  async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
     const tbody  = document.getElementById('x-web-tp-tbody');
 
@@ -7525,15 +7547,23 @@ async function initSns() {
       skuUnits[sku] = (skuUnits[sku] || 0) + qty;
     }
 
-    // Total ad conversions for this month (not per-SKU — Google Ads doesn't break down by SKU)
-    // We show total ad units on the KPI cards; top products table shows organic as units - ad_share
-    const totalAdConversions = Math.round(
-      (adsRows || [])
-        .filter(r => (r.date || '').substring(0,7) === prefix)
-        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
-    );
+    // Real per-SKU ad conversions from the shopping tab (Shopping/PMax
+    // campaigns only, sku resolved server-side by sync-google-ads.js as of
+    // 2026-07-28) — replaces the old site-wide-percentage estimate that
+    // applied the same ratio to every product regardless of whether that
+    // product was ever actually advertised. Note this only ever covers
+    // Shopping-campaign activity, not Search/Brand/Display — the top KPI
+    // card intentionally stays on the broader campaign-level source; see
+    // web-products-source note below the table.
+    const skuAdConversions = {};
+    (shoppingRows || [])
+      .filter(r => (r.date || '').substring(0,7) === prefix)
+      .forEach(r => {
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return; // not yet resolved to a real SKU
+        skuAdConversions[sku] = (skuAdConversions[sku] || 0) + (parseFloat(r.conversions) || 0);
+      });
     const totalUnitsThisMonth = Object.values(skuUnits).reduce((s, v) => s + v, 0);
-    const adShare = totalUnitsThisMonth > 0 ? totalAdConversions / totalUnitsThisMonth : 0;
 
     // Prev month for MOM
     const skuUnitsPrev = {};
@@ -7547,14 +7577,17 @@ async function initSns() {
                skuUnitsPrev[sku] = (skuUnitsPrev[sku] || 0) + qty;
              });
     }
-    const prevAdConversions = Math.round(
-      (adsRows || [])
-        .filter(r => {
-          const pm = prevMonth, py = prevYear;
-          return (r.date || '').substring(0,7) === `${py}-${String(pm).padStart(2,'0')}`;
-        })
-        .reduce((s, r) => s + (parseFloat(r.conversions) || 0), 0)
-    );
+    const skuAdConversionsPrev = {};
+    if (prevYear && prevMonth) {
+      const prevPrefixForAds = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+      (shoppingRows || [])
+        .filter(r => (r.date || '').substring(0,7) === prevPrefixForAds)
+        .forEach(r => {
+          const sku = (r.sku || '').trim().toUpperCase();
+          if (!sku) return;
+          skuAdConversionsPrev[sku] = (skuAdConversionsPrev[sku] || 0) + (parseFloat(r.conversions) || 0);
+        });
+    }
 
     // Load product name lookup — col B = SKU, col C = Name
     const skuNameMap = {};
@@ -7587,32 +7620,33 @@ async function initSns() {
       .filter(([, u]) => u > 0)
       .sort((a, b) => b[1] - a[1]);
 
-    // Compute prev month ad share for MOM on organic
-    const prevTotalUnitsThisMonth = Object.values(skuUnitsPrev).reduce((s, v) => s + v, 0);
-    const prevAdShare = prevTotalUnitsThisMonth > 0 ? prevAdConversions / prevTotalUnitsThisMonth : 0;
-
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
       const name       = skuNameMap[sku] || sku;
       const prevUnits  = skuUnitsPrev[sku] || 0;
-      // Distribute ad conversions proportionally by SKU's share of total units
-      const skuAdUnits     = totalUnitsThisMonth > 0 ? Math.round(adShare * units) : 0;
-      const skuOrgUnits    = Math.max(0, units - skuAdUnits);
-      const skuPrevAdUnits = prevTotalUnitsThisMonth > 0 ? Math.round(prevAdShare * prevUnits) : 0;
+      // "—" means this SKU has no Shopping-campaign data at all this month
+      // (never advertised via Shopping/PMax, or no order yet to resolve it
+      // to a SKU) — genuinely unknown, not "confirmed zero". A SKU that DOES
+      // have shopping data but converted 0 times this month shows a real 0.
+      const hasAdData      = Object.prototype.hasOwnProperty.call(skuAdConversions, sku);
+      const skuAdUnits     = hasAdData ? Math.round(skuAdConversions[sku]) : null;
+      const skuOrgUnits    = Math.max(0, units - (skuAdUnits || 0));
+      const hasPrevAdData  = Object.prototype.hasOwnProperty.call(skuAdConversionsPrev, sku);
+      const skuPrevAdUnits = hasPrevAdData ? Math.round(skuAdConversionsPrev[sku]) : 0;
       const skuPrevOrgUnits = Math.max(0, prevUnits - skuPrevAdUnits);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${skuAdUnits > 0 ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell">${hasAdData ? `<span class="tp-units">${skuAdUnits.toLocaleString()}</span>${momSpan(skuAdUnits, skuPrevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
         <td><div class="tp-cell"><span class="tp-units">${skuOrgUnits.toLocaleString()}</span>${momSpan(skuOrgUnits, skuPrevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const srcEl = document.getElementById('x-web-products-source');
-    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
+    if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear} · Ads column = Shopping-campaign conversions only, may be blank where a SKU has no Shopping-campaign data yet`;
   }
 
   function showWebError(msg) {
