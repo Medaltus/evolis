@@ -26,11 +26,18 @@ const SHEET_ID      = process.env.SHOPIFY_ORDERS_SHEET;
 const TAB_NAME      = 'orders';
 const API_VERSION   = '2025-01';
 
+// New columns appended at the END, not inserted alphabetically/logically —
+// this sheet already has real data under the old 16-column layout, and
+// ensureTab() never rewrites an existing header row. Inserting in the
+// "natural" spot (next to sku) would silently shift every value after it
+// for every new row, corrupting brand/last_updated exactly like the
+// run-analysis.js insights-sheet bug from earlier this week.
 const HEADERS = [
   'order_id', 'date', 'status', 'financial_status',
   'order_total', 'discount_codes', 'is_subscription', 'is_b2b',
   'promotion_discount', 'item_price', 'quantity_ordered',
   'quantity_shipped', 'unit_count', 'sku', 'brand', 'last_updated',
+  'shopify_variant_id', 'shopify_product_id', 'shopify_item_id',
 ];
 
 module.exports = async (req, res) => {
@@ -91,6 +98,7 @@ module.exports = async (req, res) => {
                   title
                   sku
                   quantity
+                  variant { id product { id } }
                   originalUnitPriceSet  { shopMoney { amount } }
                   discountedUnitPriceSet { shopMoney { amount } }
                 }
@@ -158,6 +166,19 @@ module.exports = async (req, res) => {
       const qty      = parseInt(li.quantity, 10) || 0;
       const unitPrice = round2(parseFloat(li.discountedUnitPriceSet?.shopMoney?.amount || '0'));
       const itemPrice = round2(unitPrice * qty);
+      // CONFIRMED 2026-07-28 against a real product (Skinuva Scar 15mL):
+      // Google Ads' Merchant Center Item ID is exactly
+      // shopify_<market>_<product_id>_<variant_id> — not just variant ID
+      // alone, which was the original (wrong) guess. "us" is hardcoded
+      // below since every example seen so far uses it — revisit if this
+      // store ever sells into a Shopify Market other than US.
+      const variantGid = li.variant?.id || '';
+      const productGid = li.variant?.product?.id || '';
+      const shopifyVariantId = variantGid.split('/').pop();
+      const shopifyProductId = productGid.split('/').pop();
+      const shopifyItemId = (shopifyProductId && shopifyVariantId)
+        ? `shopify_us_${shopifyProductId}_${shopifyVariantId}`
+        : '';
 
       lineItems.push({
         order_id:          orderId,
@@ -176,6 +197,9 @@ module.exports = async (req, res) => {
         sku,
         brand:             'evolis',
         last_updated:      nowEst,
+        shopify_variant_id: shopifyVariantId,
+        shopify_product_id: shopifyProductId,
+        shopify_item_id:    shopifyItemId,
       });
     }
   }
