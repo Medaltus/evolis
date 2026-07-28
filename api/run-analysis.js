@@ -58,6 +58,33 @@
  *
  * FIX 2026-07-17 (kept): this endpoint is called directly from the browser
  * with no Authorization header — no CRON_SECRET check, single-brand only.
+ *
+ * EXPANDED 2026-07-27 per Jaclyn — three real additions, all deterministic
+ * (computed in code, Claude only writes the prose against them, same
+ * philosophy as the 07-23 rewrite above):
+ *   1. Item-count caps removed entirely from every list field. Report
+ *      what's actually there — some weeks 2 wins, other weeks 10.
+ *   2. organic.page1_opportunities — keywords at rank 49-100 (real
+ *      page-1 depth varies ~24-60; 48 is a working cutoff, see
+ *      PAGE1_RANK_CUTOFF/CLOSE_TO_PAGE1_MAX below), sorted by volume, so a
+ *      keyword close to page 1 with real search volume doesn't get lost
+ *      in the full rank-change table.
+ *   3. organic.ranking_diagnostic — the "why are we only ranking for our
+ *      own brand name" question. Splits tracked keywords into high/low
+ *      volume using this brand's OWN median volume (not a fixed number),
+ *      and reports the real ranking rate in each bucket. Per Jaclyn:
+ *      "keywords with higher search volume are more difficult" as the
+ *      rule of thumb — there's no competing-ASIN-count field in the
+ *      keyword tracker to use instead (checked, not assumed absent).
+ *   4. listing.implementation_status — compares each SKU's last audit
+ *      recommendation (title_rewrite/backend_rewrite) against today's
+ *      actual live copy in SHEET_PRODUCT_INVENTORY. Deliberately NOT
+ *      extended to PPC/ads recommendations — those aren't independently
+ *      verifiable (no log of what the ads team actually changed), so
+ *      tracking "did this get acted on" for anything but listing copy
+ *      would be pretending to know something this system can't actually
+ *      confirm. See buildListingImplementationStatus() for the honesty
+ *      caveat on what a "no match" here does and doesn't prove.
  */
 
 const { readRows, ensureTab, appendRows } = require('./config/_sheets_client');
@@ -91,6 +118,14 @@ const INSIGHTS_HEADERS = ['date', 'organic_json', 'ppc_json', 'listing_json', 's
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const COMPARISON_WINDOW_DAYS = 28;
+
+// Added 2026-07-27 per Jaclyn: page-1 opportunity band and the "why aren't
+// we ranking beyond the brand term" diagnostic. Rank ≤48 = "page 1" (real
+// depth varies ~24-60 depending on layout/sponsored density — 48 is a
+// working middle, adjust here if it's consistently off in practice).
+// 49-100 = "close" — a realistic push target, not "anything not page 1."
+const PAGE1_RANK_CUTOFF = 48;
+const CLOSE_TO_PAGE1_MAX = 100;
 
 const LISTING_FIELD_CANDIDATES = {
   title: ['title', 'Title', 'listing_title'],
@@ -269,13 +304,15 @@ function buildRankChanges(kwRows, ppcByTerm, sqpRows, listingBySku, comparison) 
     const { change, label } = formatChange(prevRow && prevRow.organic_rank, currRow && currRow.organic_rank);
     const ppcEntry = ppcByTerm.get(kwKey);
     const listingRow = listingBySku.get((anyRow.sku || '').trim());
+    const currRankParsed = currRow ? parseRank(currRow.organic_rank) : { numeric: null, raw: '—' };
 
     rows.push({
       keyword,
       sku: anyRow.sku || '',
       vol_mo: currRow ? (parseInt(currRow.search_volume, 10) || null) : (prevRow ? (parseInt(prevRow.search_volume, 10) || null) : null),
       rank_prev: prevRow ? parseRank(prevRow.organic_rank).raw : '—',
-      rank_curr: currRow ? parseRank(currRow.organic_rank).raw : '—',
+      rank_curr: currRankParsed.raw,
+      rank_curr_numeric: currRankParsed.numeric, // NOT sent to Claude directly — used to build page1_protects/page1_opportunities and the ranking diagnostic below
       change,
       change_label: label,
       aba_pct: computeAbaPct(sqpRows, keyword),
@@ -319,10 +356,88 @@ function buildNewPpcConverters(ppcByTerm, trackedKeywordSet) {
   return rows;
 }
 
+function normalizeForCompare(s) {
+  return String(s || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Per Jaclyn 2026-07-27: "changes can only be tracked based off listing
+// updates... on the products sheet you can see daily what the listings
+// are showing." This is the one kind of "did our suggestion get acted on"
+// tracking that's actually verifiable — unlike a PPC bid change, listing
+// copy is a fact you can check, not an assumption. NOTE ON HONESTY: the
+// audit sheet only ever stored the RECOMMENDED rewrite, never the
+// "before" text — so this can only say whether current copy now matches
+// (or doesn't match) the exact recommended wording, not "changed" vs.
+// "unchanged" from before. A false match could mean "not yet updated" OR
+// "fixed with different wording" — framed that way below rather than
+// asserting more confidence than the data supports.
+function buildListingImplementationStatus(latestAuditBySku, latestInventoryBySku) {
+  const out = [];
+  latestAuditBySku.forEach((auditRow, sku) => {
+    const invRow = latestInventoryBySku.get(sku);
+    if (!invRow) return;
+    const checks = [
+      { field: 'title', recommended: auditRow.title_rewrite, current: invRow.title },
+      { field: 'backend_keywords', recommended: auditRow.backend_rewrite, current: invRow.backend_keywords },
+    ];
+    checks.forEach(({ field, recommended, current }) => {
+      if (!recommended) return; // nothing was recommended for this field
+      const matches = normalizeForCompare(recommended) === normalizeForCompare(current);
+      out.push({
+        sku,
+        field,
+        recommended: String(recommended).slice(0, 200),
+        current_matches_recommendation: matches,
+        audited_at: (auditRow.audited_at || '').slice(0, 10),
+      });
+    });
+  });
+  return out;
+}
+
 function mergeRecommendedActions(rows, actionsByKeyword, fallback) {
   rows.forEach(r => {
     r.recommended_action = (actionsByKeyword && actionsByKeyword[r.keyword]) || fallback;
   });
+}
+
+// Keywords sitting just off page 1 with real volume behind them — a
+// realistic push target, not just "everything unranked." Sorted by volume
+// so the highest-payoff pushes surface first. Added 2026-07-27 per Jaclyn:
+// "as keywords get close to first page, we want to make sure we are taking
+// advantage of trying to get it pushed to first page."
+function buildPage1Opportunities(rankChanges) {
+  return rankChanges
+    .filter(r => r.rank_curr_numeric !== null && r.rank_curr_numeric > PAGE1_RANK_CUTOFF && r.rank_curr_numeric <= CLOSE_TO_PAGE1_MAX)
+    .sort((a, b) => (b.vol_mo || 0) - (a.vol_mo || 0))
+    .map(r => ({ ...r, recommended_action: null }));
+}
+
+// The "why are we only ranking for our own brand name" diagnostic. Splits
+// tracked keywords into high/low volume using the MEDIAN of this brand's
+// OWN tracked keyword volumes (not a fixed number) — relative to each
+// brand's actual keyword landscape rather than one magic threshold that
+// wouldn't generalize across brands with very different search volumes.
+// Per Jaclyn 2026-07-27: higher search volume = harder to rank for, as a
+// rule of thumb (no competing-ASIN-count field available to use instead —
+// confirmed absent from the keyword tracker sheet). Gives Claude the real
+// ranking-rate split by volume tier — Claude reasons about WHY using only
+// these numbers, does not invent the diagnosis from nothing.
+function buildRankingDiagnostic(rankChanges) {
+  const withVolume = rankChanges.filter(r => r.vol_mo !== null && r.vol_mo > 0);
+  if (!withVolume.length) return null;
+  const sortedVolumes = withVolume.map(r => r.vol_mo).sort((a, b) => a - b);
+  const medianVolume = sortedVolumes[Math.floor(sortedVolumes.length / 2)];
+  const highVol = withVolume.filter(r => r.vol_mo >= medianVolume);
+  const lowVol = withVolume.filter(r => r.vol_mo < medianVolume);
+  const rankingCount = arr => arr.filter(r => r.rank_curr_numeric !== null).length;
+  return {
+    median_volume_threshold: medianVolume,
+    high_volume_total: highVol.length,
+    high_volume_ranking: rankingCount(highVol),
+    low_volume_total: lowVol.length,
+    low_volume_ranking: rankingCount(lowVol),
+  };
 }
 
 // ── Per-brand analysis ──────────────────────────────────────────────────────
@@ -330,7 +445,7 @@ function mergeRecommendedActions(rows, actionsByKeyword, fallback) {
 async function runAnalysisForBrand(brand, apiKey) {
   const brandDesc = BRAND_DESCRIPTIONS[brand.id] || BRAND_DESCRIPTIONS.default;
 
-  const [kwRows, bizRows, sqpRows, ppcRows, adOrdersRows, listingRows, historyRows] = await Promise.all([
+  const [kwRows, bizRows, sqpRows, ppcRows, adOrdersRows, listingRows, historyRows, productInventoryRows] = await Promise.all([
     readRows(KEYWORD_TRACKER_SHEET_ID, brand.tabName).catch(() => []),
     readRows(sheets.businessReport, brand.tabName).catch(() => []),
     readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []),
@@ -338,6 +453,7 @@ async function runAnalysisForBrand(brand, apiKey) {
     readRows(sheets.adOrders, brand.tabName).catch(() => []),
     readRows(sheets.listingAudit, brand.tabName).catch(() => []),
     readRows(sheets.insights, brand.tabName).catch(() => []),
+    readRows(sheets.productInventory, brand.tabName).catch(() => []),
   ]);
 
   const bizTrimmed      = bizRows.slice(-15);
@@ -354,6 +470,17 @@ async function runAnalysisForBrand(brand, apiKey) {
   });
   const listingCtxTrimmed = JSON.stringify(Array.from(latestBySku.values())).slice(0, 3000);
 
+  // Real current listing copy, collapsed to most-recent-date per SKU — same
+  // pattern run-listing-audit.js already uses on this same sheet. Needed
+  // for buildListingImplementationStatus() below.
+  const latestInventoryBySku = new Map();
+  productInventoryRows.forEach(r => {
+    const sku = (r.sku || '').trim();
+    if (!sku) return;
+    const existing = latestInventoryBySku.get(sku);
+    if (!existing || (r.date || '') > (existing.date || '')) latestInventoryBySku.set(sku, r);
+  });
+
   const historicalCtx = historyRows.length
     ? historyRows.slice(-4).map(r => r['LOG_SUMMARY'] || '').filter(Boolean).join('\n---\n').slice(0, 2000)
     : 'First automated run — no prior data.';
@@ -364,6 +491,9 @@ async function runAnalysisForBrand(brand, apiKey) {
   const trackedKeywordSet = new Set(kwRows.map(r => normalizeTerm(r.keyword)));
   const rankChanges = buildRankChanges(kwRows, ppcByTerm, sqpRows, latestBySku, comparison);
   const newPpcConverters = buildNewPpcConverters(ppcByTerm, trackedKeywordSet);
+  const page1Opportunities = buildPage1Opportunities(rankChanges);
+  const rankingDiagnostic = buildRankingDiagnostic(rankChanges);
+  const listingImplementationStatus = buildListingImplementationStatus(latestBySku, latestInventoryBySku);
 
   const systemPrompt = `You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly performance data for ${brandDesc}.
 
@@ -388,19 +518,46 @@ CRITICAL: Respond with a single valid JSON object only. No markdown fences, no p
     ? `\n\nNEW PPC CONVERTERS NOT YET ON THE KEYWORD TRACKER (already computed; write recommended_action for each):\n${JSON.stringify(newPpcConverters.map(r => ({ keyword: r.keyword, ppc_signal: r.ppc_signal })))}`
     : '';
 
+  // Added 2026-07-27 per Jaclyn — "as keywords get close to first page, we
+  // want to make sure we are taking advantage of trying to get it pushed
+  // to first page." Already computed/sorted by volume; Claude writes the
+  // push tactic per keyword, same merge-back pattern as rank changes.
+  const page1OpportunitiesSection = page1Opportunities.length
+    ? `\n\nPAGE 1 PUSH OPPORTUNITIES — rank ${PAGE1_RANK_CUTOFF + 1}-${CLOSE_TO_PAGE1_MAX}, sorted by volume (already computed; write recommended_action for each — a specific tactic to push this keyword onto page 1, not a generic note):\n${JSON.stringify(page1Opportunities.map(r => ({ keyword: r.keyword, vol_mo: r.vol_mo, rank_curr: r.rank_curr, ppc_signal: r.ppc_signal, aba_pct: r.aba_pct })))}`
+    : '\n\nPAGE 1 PUSH OPPORTUNITIES: none in the 49-100 rank band this week.';
+
+  // Added 2026-07-27 per Jaclyn's évolis-brand-term example: "if the
+  // keyword tracker is showing that we are only ranking for evolis... I
+  // want to know if we are not ranking for other keywords - why & what we
+  // should do about it." Real ranking-rate split by volume tier, computed
+  // in code — Claude reasons about WHY using only these numbers.
+  const rankingDiagnosticSection = rankingDiagnostic
+    ? `\n\nRANKING DIAGNOSTIC (already computed — real counts, not an estimate): of ${rankingDiagnostic.high_volume_total} higher-volume tracked keywords (≥${rankingDiagnostic.median_volume_threshold}/mo), ${rankingDiagnostic.high_volume_ranking} currently rank at all. Of ${rankingDiagnostic.low_volume_total} lower-volume tracked keywords, ${rankingDiagnostic.low_volume_ranking} currently rank at all. If BOTH figures are near zero, that points toward something structural (possible suppression, indexing issue, or a listing genuinely thin on these terms) rather than just difficulty — say so plainly. If only the higher-volume group is failing while lower-volume terms show real ranking success, that instead points toward those specific terms simply being too competitive to win right now — say that instead, and suggest whether effort is better spent on comparatively attainable lower-volume expansion. Do not claim a diagnosis stronger than these two numbers actually support.`
+    : '\n\nRANKING DIAGNOSTIC: not enough keywords with recorded search volume to compute this week.';
+
+  // Added 2026-07-27 per Jaclyn: "changes can only be tracked based off
+  // listing updates... on the products sheet you can see daily what the
+  // listings are showing." Real comparison of past audit recommendations
+  // against today's actual live copy — not a guess about whether ads/PPC
+  // suggestions were acted on (that's not independently verifiable and
+  // was deliberately dropped, see file history).
+  const listingImplementationSection = listingImplementationStatus.length
+    ? `\n\nPAST LISTING RECOMMENDATIONS VS. CURRENT LIVE COPY (already computed by directly comparing text — not a guess): ${JSON.stringify(listingImplementationStatus)}. For any entry where current_matches_recommendation is false, note in listing.rewrites_recommended (or listing.summary if more than a couple) that the recommendation from that entry's audited_at date does not yet match current live copy — it may not have been implemented yet, or may have been addressed with different wording; do not assume which.`
+    : '';
+
   const userPrompt = `Analyze this week vs history. Return ONLY this JSON structure, nothing else:
 
-{"date":"YYYY-MM-DD","organic":{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"keywords_to_watch":["string"],"recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"}},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"]},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
+{"date":"YYYY-MM-DD","organic":{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"keywords_to_watch":["string"],"ranking_diagnostic":"string","recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"},"recommended_actions_page1_opportunities":{"<keyword>":"string"}},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"]},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
 
 Rules for the response:
 - date: today's date in YYYY-MM-DD format
-- organic.reading_the_changes: 3-5 sentences, prose, in the style of a sharp weekly recap — call out the single biggest win, the single biggest drop, and one clear next action, using ONLY the rank-change data provided below (do not invent numbers)
+- organic.reading_the_changes: prose, in the style of a sharp weekly recap — call out the single biggest win, the single biggest drop, and one clear next action, using ONLY the rank-change data provided below (do not invent numbers)
 - organic.recommended_actions_by_keyword: one entry per keyword from KEYWORD RANK CHANGES below, keyed EXACTLY as given. Each value is one tactical sentence (bid amount, campaign type, or "no action" if genuinely nothing to do) — same style as: "Add exact-match PPC at $1.00-1.25 to rebuild this term." Do not add or omit keywords from what's given.
 - organic.recommended_actions_new_converters: same idea, one entry per term from NEW PPC CONVERTERS below, keyed EXACTLY as given
-- organic.wins: 3-4 items. organic.actions: 4-6 items. organic.keywords_to_watch: 4-6 items
-- ppc.wins: 3-4 items. ppc.actions: 4-6 items. ppc.opportunities: 4-6 items
-- listing.violations: 1-2 items. listing.keyword_gaps: 1-2 items. listing.rewrites_recommended: 1-2 items
-- log_summary: 3-4 sentences maximum
+- organic.recommended_actions_page1_opportunities: same idea, one entry per keyword from PAGE 1 PUSH OPPORTUNITIES below, keyed EXACTLY as given
+- organic.opportunities: the page-1-push keywords framed as prose opportunities (not a duplicate of the keyed action map above — this is the human-readable version for the insights card)
+- organic.ranking_diagnostic: 2-4 sentences using ONLY the RANKING DIAGNOSTIC numbers below. If nothing notable, say organic ranking looks proportional to keyword difficulty this week rather than forcing a concern that isn't there.
+- IMPORTANT — DO NOT LIMIT THE NUMBER OF ITEMS IN ANY LIST FIELD (wins, actions, opportunities, keywords_to_watch, violations, keyword_gaps, rewrites_recommended, etc). Report every genuine finding the data actually supports. Do not pad weak filler to reach a minimum, and do not cut real findings to fit an artificial maximum — some weeks may have 2 real wins, other weeks may have 10; both are fine, report what's actually there.
 - No apostrophes in string values — use "does not" not "doesn't", etc.
 - Keep all string values under 200 characters
 
@@ -408,7 +565,7 @@ BUSINESS REPORT (sessions/units/revenue):
 ${JSON.stringify(bizTrimmed)}
 
 PPC (search terms / ad performance):
-${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${rankChangesSection}${newConvertersSection}
+${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${rankChangesSection}${newConvertersSection}${page1OpportunitiesSection}${rankingDiagnosticSection}${listingImplementationSection}
 
 HISTORY (last 4 weeks):
 ${historicalCtx}
@@ -479,7 +636,8 @@ ${listingCtxTrimmed}`;
   insights.date = new Date().toISOString().slice(0, 10); // always override — Claude often hallucinates dates
 
   // Merge Claude's prose back onto the code-computed numbers — this is the
-  // only place organic.rank_changes / organic.new_ppc_converters get built.
+  // only place organic.rank_changes / organic.new_ppc_converters /
+  // organic.page1_opportunities get built.
   mergeRecommendedActions(
     rankChanges,
     insights.organic && insights.organic.recommended_actions_by_keyword,
@@ -490,14 +648,25 @@ ${listingCtxTrimmed}`;
     insights.organic && insights.organic.recommended_actions_new_converters,
     'Add to keyword tracker and monitor.'
   );
+  mergeRecommendedActions(
+    page1Opportunities,
+    insights.organic && insights.organic.recommended_actions_page1_opportunities,
+    'Increase exact-match PPC bid to build ranking velocity toward page 1.'
+  );
   if (insights.organic) {
     insights.organic.rank_changes = rankChanges;
     insights.organic.new_ppc_converters = newPpcConverters;
+    insights.organic.page1_opportunities = page1Opportunities;
+    insights.organic.ranking_diagnostic_data = rankingDiagnostic; // real numbers behind organic.ranking_diagnostic's prose
     insights.organic.comparison_window = comparison.hasHistory
       ? { prev_date: comparison.prevDate, curr_date: comparison.currDate }
       : null;
     delete insights.organic.recommended_actions_by_keyword;
     delete insights.organic.recommended_actions_new_converters;
+    delete insights.organic.recommended_actions_page1_opportunities;
+  }
+  if (insights.listing) {
+    insights.listing.implementation_status = listingImplementationStatus; // real comparison data backing any "not yet implemented" notes above
   }
 
   return insights;
