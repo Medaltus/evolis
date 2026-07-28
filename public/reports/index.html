@@ -12697,75 +12697,80 @@ const OV_WMT_ORDERS_GID      = '1844526926';
 const OV_WMT_RETURNS_SHEET_ID = '1XxYmX0NT-4bqKh4N96zNAPIAzctXDQaK6Yzp6hVWjJc'; // confirmed headers: return_order_id, order_id, sku, quantity, refund_amount, return_status, event_tag, return_date, brand, last_updated
 const OV_WMT_RETURNS_GID      = '344983459';
 
-// Total orders, blended across all 3 channels, within [start, end] —
-// dedup by order_id, same convention used everywhere else on this
-// dashboard. Takes an explicit range (not just a rolling cutoff) so the
-// external Operations Fulfillment page can keep its rolling "last 30
-// days" window while the internal Marketing report tab uses last-full-
-// month instead, per Jaclyn 2026-07-27 ("this is a page on our report and
-// should be pulling June data the same as our other sales data").
-async function getBlendedOrdersInRange(start, end) {
+// Same date-normalization approach as the trusted aggregateMonth()
+// elsewhere on this dashboard — handles both ISO (YYYY-MM-DD) and Google
+// Sheets' M/D/YY slash format. The previous version of this function
+// compared JS Date objects built via `new Date(r.date + 'T00:00:00')`,
+// which silently mis-parses (or outright fails on) non-ISO date strings —
+// confirmed 2026-07-28: Amazon Orders undercounted at 90 instead of the
+// real 129 for June, while Website/Walmart (already ISO-formatted)
+// matched exactly. String-prefix matching avoids this class of bug
+// entirely rather than trying to get Date-object parsing right for every
+// possible format.
+function mfcNormalizeDate(val) {
+  if (!val) return '';
+  const s = String(val);
+  if (/^\d{4}-\d{2}/.test(s)) return s.substring(0, 10);
+  const parts = s.split('/');
+  if (parts.length === 3) {
+    const m = parts[0].padStart(2, '0');
+    const d = parts[1].padStart(2, '0');
+    const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  return s;
+}
+
+// Total orders, blended across all 3 channels, for a given calendar month
+// (year, 1-indexed month) — dedup by order_id, same convention used
+// everywhere else on this dashboard.
+async function getBlendedOrdersForMonth(year, month) {
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
   const [amzCsv, webCsv, wmtCsv] = await Promise.all([
     fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
     fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
     fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
   ]);
-  function countOrdersInRange(csv, evolisCheck, validFn) {
+  function countOrdersForMonth(csv, evolisCheck, validFn) {
     const ids = new Set();
     parseCsvToRows(csv).filter(evolisCheck).forEach(r => {
-      const d = new Date((r.date || '') + 'T00:00:00');
-      if (isNaN(d) || d < start || d > end) return;
+      if (mfcNormalizeDate(r.date).substring(0, 7) !== prefix) return;
       if (!validFn(r)) return;
       if (r.order_id) ids.add(r.order_id);
     });
     return ids.size;
   }
   const isEvolisAmzRow = r => (r.brand || '').toLowerCase().trim() === 'evolis' || (r.sku || '').toUpperCase().startsWith('EVO');
-  const amzOrders = countOrdersInRange(amzCsv, isEvolisAmzRow, r => {
+  const amzOrders = countOrdersForMonth(amzCsv, isEvolisAmzRow, r => {
     const status = (r.status || '').toLowerCase().trim();
     return status !== 'cancelled' && status !== 'pending';
   });
-  const webOrders = countOrdersInRange(webCsv, () => true, r => {
+  const webOrders = countOrdersForMonth(webCsv, () => true, r => {
     const status = (r.financial_status || r.status || '').toLowerCase();
     return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
   });
-  const wmtOrders = countOrdersInRange(wmtCsv, () => true, r => {
+  const wmtOrders = countOrdersForMonth(wmtCsv, () => true, r => {
     const status = (r.status || '').toLowerCase().trim();
     return status !== 'cancelled' && status !== 'canceled';
   });
   return amzOrders + webOrders + wmtOrders;
 }
-// Last-full-month boundaries — same "current month's 0-indexed number ==
-// last month's 1-indexed number" trick used by the Sales Overview page's
-// own getLastFullMonth(), kept local here rather than reusing that one
-// since it lives in a different, inaccessible closure.
-function mfcLastFullMonthRange() {
-  // Reuses mfcGetLastFullMonth() (already correct — verified against
-  // mfcLoadKpis's dates) instead of recomputing this separately. The
-  // previous version of this function assumed now.getMonth() was already
-  // 0-indexed for LAST month, but it's actually 1-indexed for last month
-  // (July's getMonth()=6 represents June as month "6", not month "5") —
-  // feeding that straight into `new Date(year, month, 1)` produced July
-  // 1st instead of June 1st, which silently made every "last full month"
-  // filter on this page match the wrong month. Confirmed by Jaclyn
-  // 2026-07-27: Returns Processed showed 0 despite June return rows
-  // existing in all three source sheets.
-  const { year, month } = mfcGetLastFullMonth(); // month is 1-indexed
-  const start = new Date(year, month - 1, 1, 0, 0, 0);
-  const end = new Date(year, month, 0, 23, 59, 59); // day 0 of next month = last day of this month
-  return { start, end };
-}
+// (mfcLastFullMonthRange, which built a start/end Date range, was removed
+// 2026-07-28 — mfcLoadReturns now works directly off mfcGetLastFullMonth()'s
+// year/month and string-based date matching instead, avoiding Date-object
+// comparison entirely, per the fix above.)
 
 async function mfcLoadReturns() {
   const valEl = document.getElementById('mfc-kpi-returns');
   const subEl = document.getElementById('mfc-kpi-returns-sub');
   try {
-    const { start, end } = mfcLastFullMonthRange();
+    const { year, month } = mfcGetLastFullMonth();
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
     const [amzCsv, wmtCsv, webCsv, totalOrdersThisMonth] = await Promise.all([
       fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-      getBlendedOrdersInRange(start, end),
+      getBlendedOrdersForMonth(year, month),
     ]);
 
     // Each of these is a shared, multi-brand sheet with its own brand
@@ -12779,16 +12784,19 @@ async function mfcLoadReturns() {
     // here.
     const stripAccents = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const isEvolis = r => stripAccents(r.brand || '').toLowerCase().trim() === 'evolis';
-    function countReturnsInRange(csv, dateField) {
+    // Same string-based date normalization as getBlendedOrdersForMonth,
+    // rather than JS Date object comparison — consistent with the fix
+    // applied there, in case any of these date columns use non-ISO
+    // formatting too.
+    function countReturnsForMonth(csv, dateField) {
       return parseCsvToRows(csv).filter(isEvolis).filter(r => {
-        const d = new Date((r[dateField] || '') + 'T00:00:00');
-        return !isNaN(d) && d >= start && d <= end;
+        return mfcNormalizeDate(r[dateField]).substring(0, 7) === prefix;
       }).length;
     }
     // Amazon & Walmart both use return_date; Shopify uses refund_date.
-    const amzReturnsThisMonth = countReturnsInRange(amzCsv, 'return_date');
-    const wmtReturnsThisMonth = countReturnsInRange(wmtCsv, 'return_date');
-    const webReturnsThisMonth = countReturnsInRange(webCsv, 'refund_date');
+    const amzReturnsThisMonth = countReturnsForMonth(amzCsv, 'return_date');
+    const wmtReturnsThisMonth = countReturnsForMonth(wmtCsv, 'return_date');
+    const webReturnsThisMonth = countReturnsForMonth(webCsv, 'refund_date');
     const returnsThisMonth = amzReturnsThisMonth + wmtReturnsThisMonth + webReturnsThisMonth;
 
     if (valEl) valEl.textContent = returnsThisMonth.toLocaleString();
@@ -12894,49 +12902,6 @@ async function mfcLoadInventoryPrepped() {
     console.warn('[Marketing/FulfillmentCS] Inventory Prepped load failed:', err.message);
   }
 }
-
-// TEMP DEBUG (2026-07-28) — exposed to directly inspect each channel's
-// contribution to the return-rate denominator, since the final percentage
-// alone isn't enough to tell which channel is under/over-counting. Safe
-// to remove once confirmed fixed; read-only.
-window._debugOrdersBreakdown = async function (start, end) {
-  const [amzCsv, webCsv, wmtCsv] = await Promise.all([
-    fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-    fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-    fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-  ]);
-  function countOrdersInRange(csv, evolisCheck, validFn) {
-    const ids = new Set();
-    let totalRows = 0, evolisRows = 0, dateOk = 0, validOk = 0;
-    parseCsvToRows(csv).forEach(r => {
-      totalRows++;
-      if (!evolisCheck(r)) return;
-      evolisRows++;
-      const d = new Date((r.date || '') + 'T00:00:00');
-      if (isNaN(d) || d < start || d > end) return;
-      dateOk++;
-      if (!validFn(r)) return;
-      validOk++;
-      if (r.order_id) ids.add(r.order_id);
-    });
-    return { count: ids.size, totalRows, evolisRows, dateOk, validOk };
-  }
-  const isEvolisAmzRow = r => (r.brand || '').toLowerCase().trim() === 'evolis' || (r.sku || '').toUpperCase().startsWith('EVO');
-  const amz = countOrdersInRange(amzCsv, isEvolisAmzRow, r => {
-    const status = (r.status || '').toLowerCase().trim();
-    return status !== 'cancelled' && status !== 'pending';
-  });
-  const web = countOrdersInRange(webCsv, () => true, r => {
-    const status = (r.financial_status || r.status || '').toLowerCase();
-    return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
-  });
-  const wmt = countOrdersInRange(wmtCsv, () => true, r => {
-    const status = (r.status || '').toLowerCase().trim();
-    return status !== 'cancelled' && status !== 'canceled';
-  });
-  return { amz, web, wmt, total: amz.count + web.count + wmt.count };
-};
-window._debugMfcLastFullMonthRange = mfcLastFullMonthRange;
 
 window.initMarketingFulfillmentCS = async function() {
   await Promise.all([mfcLoadKpis(), mfcLoadShippedChart(), mfcLoadStates(), mfcLoadReturns(), mfcLoadComplianceCases(), mfcLoadInventoryPrepped()]);
