@@ -5766,6 +5766,20 @@ async function initSns() {
     window.renderExternalLegend(window._webChart, 'legend-web');
   }
 
+  // Looks up a field by name ignoring case — protects against a hand-typed
+  // sheet header ("SKU" vs "sku" etc.) silently breaking a lookup the way
+  // it just did on the shopping tab's sku column. Only needed for fields
+  // sourced from manually-typed headers, not the crons' own consistent
+  // lowercase output.
+  function findCI(row, key) {
+    if (row[key] !== undefined) return row[key];
+    const lower = key.toLowerCase();
+    for (const k in row) {
+      if (k.toLowerCase() === lower) return row[k];
+    }
+    return undefined;
+  }
+
   // ── Top products table ────────────────────────────────────────────────────
   async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
@@ -5803,7 +5817,7 @@ async function initSns() {
     (shoppingRows || [])
       .filter(r => (r.date || '').substring(0,7) === prefix)
       .forEach(r => {
-        const sku = (r.sku || '').trim().toUpperCase();
+        const sku = (findCI(r, 'sku') || '').trim().toUpperCase();
         if (!sku) return; // not yet resolved to a real SKU
         skuAdConversions[sku] = (skuAdConversions[sku] || 0) + (parseFloat(r.conversions) || 0);
       });
@@ -5827,7 +5841,7 @@ async function initSns() {
       (shoppingRows || [])
         .filter(r => (r.date || '').substring(0,7) === prevPrefixForAds)
         .forEach(r => {
-          const sku = (r.sku || '').trim().toUpperCase();
+          const sku = (findCI(r, 'sku') || '').trim().toUpperCase();
           if (!sku) return;
           skuAdConversionsPrev[sku] = (skuAdConversionsPrev[sku] || 0) + (parseFloat(r.conversions) || 0);
         });
@@ -7522,6 +7536,20 @@ async function initSns() {
     window.renderExternalLegend(window._webExtChart, 'legend-x-web');
   }
 
+  // Looks up a field by name ignoring case — protects against a hand-typed
+  // sheet header ("SKU" vs "sku" etc.) silently breaking a lookup the way
+  // it just did on the shopping tab's sku column. Only needed for fields
+  // sourced from manually-typed headers, not the crons' own consistent
+  // lowercase output.
+  function findCI(row, key) {
+    if (row[key] !== undefined) return row[key];
+    const lower = key.toLowerCase();
+    for (const k in row) {
+      if (k.toLowerCase() === lower) return row[k];
+    }
+    return undefined;
+  }
+
   // ── Top products table ────────────────────────────────────────────────────
   async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
@@ -7559,7 +7587,7 @@ async function initSns() {
     (shoppingRows || [])
       .filter(r => (r.date || '').substring(0,7) === prefix)
       .forEach(r => {
-        const sku = (r.sku || '').trim().toUpperCase();
+        const sku = (findCI(r, 'sku') || '').trim().toUpperCase();
         if (!sku) return; // not yet resolved to a real SKU
         skuAdConversions[sku] = (skuAdConversions[sku] || 0) + (parseFloat(r.conversions) || 0);
       });
@@ -7583,7 +7611,7 @@ async function initSns() {
       (shoppingRows || [])
         .filter(r => (r.date || '').substring(0,7) === prevPrefixForAds)
         .forEach(r => {
-          const sku = (r.sku || '').trim().toUpperCase();
+          const sku = (findCI(r, 'sku') || '').trim().toUpperCase();
           if (!sku) return;
           skuAdConversionsPrev[sku] = (skuAdConversionsPrev[sku] || 0) + (parseFloat(r.conversions) || 0);
         });
