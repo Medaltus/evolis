@@ -74,7 +74,7 @@
       "schedule": "35 6 * * *"
     },
     {
-      "path": "/api/cron/sync-shopify-orders",
+      "path": "/api/cron/sync-shopify-orders?mode=rolling30",
       "schedule": "0 7 * * *"
     },
     {
