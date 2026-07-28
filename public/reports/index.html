@@ -4843,7 +4843,7 @@ async function initSns() {
             const cls = ppDiff === 0 ? 'flat' : ppDiff > 0 ? 'up' : 'dn';
             const arrow = ppDiff === 0 ? '' : ppDiff > 0 ? '▲ ' : '▼ ';
             retMomEl.className = 'kpi-mom ' + cls;
-            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}pp MOM`;
+            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}% MOM`;
           } else {
             retMomEl.className = 'kpi-mom flat';
             retMomEl.textContent = '—';
@@ -9016,7 +9016,7 @@ async function initSnsExternal() {
             const cls = ppDiff === 0 ? 'flat' : ppDiff > 0 ? 'up' : 'dn';
             const arrow = ppDiff === 0 ? '' : ppDiff > 0 ? '▲ ' : '▼ ';
             retMomEl.className = 'kpi-mom ' + cls;
-            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}pp MOM`;
+            retMomEl.textContent = `${arrow}${Math.abs(ppDiff)}% MOM`;
           } else {
             retMomEl.className = 'kpi-mom flat';
             retMomEl.textContent = '—';
