@@ -401,6 +401,69 @@ function mergeRecommendedActions(rows, actionsByKeyword, fallback) {
   });
 }
 
+// Added 2026-07-28 after a real truncated response failed to parse even
+// after the old log_summary-based repair attempt. That approach only
+// works if truncation happened to land AFTER the log_summary field
+// started — this one tracks actual bracket/brace nesting and string state
+// through the whole text, so it can validly close whatever was left open
+// regardless of WHERE the cut happened. Not guaranteed to produce
+// SEMANTICALLY complete data (a cut mid-array means that array's later
+// items are just gone), but it produces syntactically valid JSON far more
+// reliably than guessing at a specific field name or blindly grabbing the
+// last '}' in the text, which can leave a dangling comma or an unclosed
+// string — differently invalid, not fixed.
+function repairTruncatedJson(text) {
+  const stack = [];
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escapeNext) { escapeNext = false; continue; }
+    if (ch === '\\' && inString) { escapeNext = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+
+  let repaired = text;
+  if (inString) repaired += '"'; // cut off mid-string-value — close it first
+  // A cut landing right after a property name (with or without its colon)
+  // leaves a key with no value at all — that can't be closed validly, has
+  // to be removed entirely along with its leading comma. Checked against
+  // 4 realistic truncation points before trusting this, not just assumed.
+  repaired = repaired.replace(/,\s*"(?:[^"\\]|\\.)*"\s*:?\s*$/, '');
+  repaired = repaired.replace(/,\s*$/, '').replace(/:\s*$/, ''); // trailing dangling comma/colon from elsewhere
+  for (let i = stack.length - 1; i >= 0; i--) {
+    repaired += stack[i] === '{' ? '}' : ']';
+  }
+  return repaired;
+}
+
+// Last resort when Claude's response can't be salvaged at all (rare, but
+// real — see the two repair attempts above). Everything in here was
+// already fully computed in code regardless of what Claude returned, so
+// this still writes real numbers to the sheet with a clearly-labeled
+// placeholder narrative, rather than the whole run producing nothing.
+// Matches the same "never let one bad response destroy the whole result"
+// principle the cron reliability playbook already applies elsewhere.
+function buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, comparison }) {
+  const note = 'Claude\'s narrative response could not be parsed this run (likely truncated) — the numbers below are real and fully computed, but the written summary/wins/actions text is a placeholder until the next successful run.';
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    organic: {
+      summary: note, reading_the_changes: note, wins: [], actions: [], opportunities: [], keywords_to_watch: [],
+      ranking_diagnostic: rankingDiagnostic ? note : 'Not enough data this week to compute.',
+      rank_changes: rankChanges, new_ppc_converters: newPpcConverters, page1_opportunities: page1Opportunities,
+      ranking_diagnostic_data: rankingDiagnostic,
+      comparison_window: comparison.hasHistory ? { prev_date: comparison.prevDate, curr_date: comparison.currDate } : null,
+    },
+    ppc: { summary: note, wins: [], actions: [], opportunities: [] },
+    listing: { summary: note, violations: [], keyword_gaps: [], rewrites_recommended: [], implementation_status: listingImplementationStatus },
+    log_summary: note,
+  };
+}
+
 // Keywords sitting just off page 1 with real volume behind them — a
 // realistic push target, not just "everything unranked." Sorted by volume
 // so the highest-payoff pushes surface first. Added 2026-07-27 per Jaclyn:
@@ -582,7 +645,15 @@ ${listingCtxTrimmed}`;
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 5000,
+      // Raised from 5000 to 12000 on 2026-07-28 — the item-count caps
+      // removed earlier that same day made responses genuinely longer
+      // (uncapped wins/actions/opportunities/keywords_to_watch, plus a
+      // keyed recommended-action sentence per keyword in rank_changes,
+      // which scales with however many keywords this brand tracks), and
+      // 5000 started truncating mid-response for evolis the same day this
+      // shipped. See the repair logic below for what happens if a
+      // response still exceeds this.
+      max_tokens: 12000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }]
     })
@@ -605,32 +676,44 @@ ${listingCtxTrimmed}`;
     .map(b => b.text)
     .join('');
 
-  let clean = raw
+  const clean0 = raw
     .replace(/^```json\s*/i, '')
     .replace(/\s*```\s*$/, '')
     .trim();
 
-  if (!clean.endsWith('}')) {
-    console.warn(`[run-analysis] ${brand.id} — response may be truncated, attempting repair`);
-    const lastBrace = clean.lastIndexOf('"log_summary"');
+  // Three escalating attempts before giving up — see repairTruncatedJson()
+  // and buildFallbackInsights() above for why each exists.
+  let insights = null;
+  let lastParseErr = null;
+
+  // Attempt 1: as-is (covers the common case — not actually truncated).
+  try { insights = JSON.parse(clean0); } catch (e) { lastParseErr = e; }
+
+  // Attempt 2: the original log_summary-based repair — cheap, and still
+  // exactly right when truncation happens to land late in the response.
+  if (!insights && !clean0.endsWith('}')) {
+    console.warn(`[run-analysis] ${brand.id} — response may be truncated, attempting repair (1/2: log_summary cut)`);
+    const lastBrace = clean0.lastIndexOf('"log_summary"');
     if (lastBrace > 0) {
-      clean = clean.slice(0, lastBrace) + '"log_summary":"Analysis complete — see organic, PPC and listing sections above."}';
-    } else {
-      const lastClose = clean.lastIndexOf('}');
-      if (lastClose > 0) clean = clean.slice(0, lastClose + 1);
+      const attempt = clean0.slice(0, lastBrace) + '"log_summary":"Analysis complete — see organic, PPC and listing sections above."}';
+      try { insights = JSON.parse(attempt); } catch (e) { lastParseErr = e; }
     }
   }
 
-  let insights;
-  try {
-    insights = JSON.parse(clean);
-  } catch (parseErr) {
-    console.error(`[run-analysis] ${brand.id} JSON parse failed. Raw length:`, raw.length);
-    console.error('[run-analysis] Parse error:', parseErr.message);
-    console.error('[run-analysis] Clean (first 500):', clean.slice(0, 500));
-    const e = new Error(`Could not parse Claude response as JSON: ${parseErr.message}`);
-    e.status = 500;
-    throw e;
+  // Attempt 3: real bracket/string-tracking repair — works regardless of
+  // WHERE the cut happened, unlike attempt 2.
+  if (!insights) {
+    console.warn(`[run-analysis] ${brand.id} — attempting repair (2/2: bracket-tracking)`);
+    try { insights = JSON.parse(repairTruncatedJson(clean0)); } catch (e) { lastParseErr = e; }
+  }
+
+  // All three failed — fall back to deterministic-only data rather than
+  // throwing and writing nothing at all for this week.
+  if (!insights) {
+    console.error(`[run-analysis] ${brand.id} — all JSON repair attempts failed. Raw length: ${raw.length}. Last error: ${lastParseErr && lastParseErr.message}. Falling back to deterministic-only insights.`);
+    console.error('[run-analysis] Raw (first 500):', clean0.slice(0, 500));
+    insights = buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, comparison });
+    return insights; // already has rank_changes/etc. attached — skip the merge-back below, it's already in final shape
   }
 
   insights.date = new Date().toISOString().slice(0, 10); // always override — Claude often hallucinates dates
