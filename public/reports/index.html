@@ -1363,7 +1363,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     <div class="ppc-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div class="ppc-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>
+        <div class="ppc-card-title" style="margin-bottom:0;">Website Orders by State · Last 30 Days</div>
         <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">
           <span>Fewer</span>
           <div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>
@@ -1809,7 +1809,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <div class="ppc-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div class="ppc-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>
+          <div class="ppc-card-title" style="margin-bottom:0;">Website Orders by State · Last 30 Days</div>
           <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">
             <span>Fewer</span>
             <div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>
@@ -4765,7 +4765,7 @@ async function initSns() {
 
       function readRetention(r) {
         if (!r) return null;
-        let v = num(r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
+        let v = num(r.retention_90_day ?? r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
         if (v !== null && v > 0 && v <= 1) v = v * 100;
         return v;
       }
@@ -8887,7 +8887,7 @@ async function initSnsExternal() {
 
       function readRetention(r) {
         if (!r) return null;
-        let v = num(r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
+        let v = num(r.retention_90_day ?? r.retention_90 ?? r.retention ?? r.retention_rate ?? r.subscribe_save_retention);
         if (v !== null && v > 0 && v <= 1) v = v * 100;
         return v;
       }
