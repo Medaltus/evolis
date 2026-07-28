@@ -4764,9 +4764,19 @@ async function initSns() {
     if (looksLikeCsv(retentionCsv)) {
       const rows = csvToRows(retentionCsv);
       console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
-      const brandRows = rows.filter(isEvolisRow);
-      const useRows = brandRows.length ? brandRows : rows;
-      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after brand filter:', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
+      // Strict, explicit brand match on this sheet's own 'brand' column —
+      // NOT the shared isEvolisRow() helper, and deliberately NO fallback
+      // to "use all rows" if zero match. Confirmed 2026-07-28: this sheet
+      // is shared across multiple brands (a real row came back with
+      // brand:"pbj"), and the old fallback silently showed that other
+      // brand's retention value as if it were évolis's own — worse than
+      // showing nothing. Logging every row's actual brand value so a
+      // future mismatch (e.g. a casing/accent variant) is visible
+      // immediately instead of silently falling back to wrong data again.
+      console.log('[Evolis][subscriptions] retention sheet — raw brand value per row:', JSON.stringify(rows.map(r => ({ year: r.year, month: r.month, brand: r.brand }))));
+      const stripAccentsSns = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const useRows = rows.filter(r => stripAccentsSns(r.brand).toLowerCase().trim() === 'evolis');
+      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after STRICT brand filter (no fallback):', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
 
       // MOM only works if this sheet actually has more than one dated row
       // per brand (i.e. it's historical, not a single current snapshot).
@@ -8927,9 +8937,19 @@ async function initSnsExternal() {
     if (looksLikeCsv(retentionCsv)) {
       const rows = csvToRows(retentionCsv);
       console.log('[Evolis][subscriptions] retention sheet columns:', rows.length ? Object.keys(rows[0]) : '(no rows)');
-      const brandRows = rows.filter(isEvolisRow);
-      const useRows = brandRows.length ? brandRows : rows;
-      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after brand filter:', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
+      // Strict, explicit brand match on this sheet's own 'brand' column —
+      // NOT the shared isEvolisRow() helper, and deliberately NO fallback
+      // to "use all rows" if zero match. Confirmed 2026-07-28: this sheet
+      // is shared across multiple brands (a real row came back with
+      // brand:"pbj"), and the old fallback silently showed that other
+      // brand's retention value as if it were évolis's own — worse than
+      // showing nothing. Logging every row's actual brand value so a
+      // future mismatch (e.g. a casing/accent variant) is visible
+      // immediately instead of silently falling back to wrong data again.
+      console.log('[Evolis][subscriptions] retention sheet — raw brand value per row:', JSON.stringify(rows.map(r => ({ year: r.year, month: r.month, brand: r.brand }))));
+      const stripAccentsSns = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const useRows = rows.filter(r => stripAccentsSns(r.brand).toLowerCase().trim() === 'evolis');
+      console.log('[Evolis][subscriptions] retention rows — total:', rows.length, '— after STRICT brand filter (no fallback):', useRows.length, '— raw year/month per row:', JSON.stringify(useRows.map(r => ({ year: r.year, month: r.month }))));
 
       // MOM only works if this sheet actually has more than one dated row
       // per brand (i.e. it's historical, not a single current snapshot).
@@ -14827,6 +14847,7 @@ async function loadAuditResultsFromSheet() {
   function buildStewardshipPage(monthYear) {
     const kpis = ['kpi-pct-revenue-invested', 'kpi-amazon-fees', 'kpi-pct-units-ads', 'kpi-ad-clicks', 'kpi-ad-impressions'].map(pdfxKpi);
     const ltdVal = pdfxText('#ltd-total-investments');
+    const adimpInsight = pdfxText('#adimp-insight-text');
     const checkCards = Array.prototype.map.call(document.querySelectorAll('#m-stewardship .check-card'), function (c) {
       return {
         title: pdfxText('.check-title', c),
@@ -14864,6 +14885,7 @@ async function loadAuditResultsFromSheet() {
                 '</div>' +
               '</div>' +
               pdfxChartBlock('_impressChart') +
+              (adimpInsight ? '<div class="pdfx-insight" style="margin-top:10px;"><strong>Note:</strong> ' + pdfxEscape(adimpInsight) + '</div>' : '') +
             '</div>' +
           '</div>' +
           '<div class="pdfx-chlabel" style="margin-top:16px;">Marketing Strategy</div>' +
