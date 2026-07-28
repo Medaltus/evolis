@@ -33,6 +33,30 @@
  *   { brand, sourceSheetId, auditSheetId, auditGid, sku? }
  *   sku — optional, limits run to one SKU for testing
  *
+ * EXPANDED 2026-07-27 per Jaclyn — 3-tier keyword priority replacing the
+ * old "prioritize unranked keywords" logic entirely:
+ *   TIER 1 (protect) — already ranking page 1 (rank <= PAGE1_RANK_CUTOFF).
+ *     Highest priority of anything in the audit: a rewrite must never
+ *     remove or weaken these, full stop, even to make room for something
+ *     that sounds more strategically important.
+ *   TIER 2 (push) — rank 49-100, sorted by volume. The priority for NEW
+ *     placement — closest realistic wins beat any unranked keyword,
+ *     regardless of how "important" the unranked one seems.
+ *   TIER 3 (reconsider) — present in the listing 30+ consecutive days
+ *     (checked against SHEET_PRODUCT_INVENTORY's real daily snapshots,
+ *     not assumed) with zero ranking progress. Raised as an open QUESTION
+ *     with a suggested lower-volume Reach-tier alternative, not resolved
+ *     automatically — "maybe this is too competitive to win" is a human
+ *     call, not something to decide silently.
+ * This needed a new data source this file didn't have before: rank alone
+ * (from the uploads log) isn't enough to build real tiers, volume is
+ * required too, and volume only exists in the keyword tracker sheet —
+ * same sheet run-analysis.js already reads, added here as a second
+ * fetch. Field-priority hierarchy for placement (Title > Item Highlights
+ * > Bullets > Product Description > Backend Keywords) added to the
+ * system prompt for the same reason — a keyword missing from Title is a
+ * bigger gap than the same keyword only missing from Backend.
+ *
  * Vercel config: maxDuration: 300
  */
 
@@ -105,6 +129,140 @@ const AUDIT_HEADERS = [
   'backend_notes', 'backend_rewrite',
   'skip_reason', 'audited_at'
 ];
+
+// ─── Keyword priority tiers — added 2026-07-27 per Jaclyn ───────────────────
+// Same sheet run-analysis.js reads (confirmed there against a real screenshot
+// + upload-keyword-tracker.js's own example) — reused here rather than
+// relying only on the uploads-log rankings, since the tracker has BOTH
+// rank and search volume per keyword, and volume is required to do this
+// prioritization at all (the uploads log has rank only).
+const KEYWORD_TRACKER_SHEET_ID = '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4';
+
+// Real page-1 depth varies ~24-60 depending on layout/sponsored density —
+// 48 is a working middle, same cutoff run-analysis.js uses, adjust here if
+// it's consistently off in practice. 49-100 = "close" — a realistic push
+// target, not "anything not page 1."
+const PAGE1_RANK_CUTOFF = 48;
+const CLOSE_TO_PAGE1_MAX = 100;
+// How long a keyword needs to have sat unchanged in the listing with zero
+// ranking progress before it's worth questioning whether it's simply too
+// competitive to win. Adjustable — 30 days was chosen as "long enough to
+// rule out normal indexing lag," not because of any specific data point.
+const LONG_TENURE_DAYS = 30;
+
+function normTerm(s) { return String(s || '').trim().toLowerCase(); }
+
+// Real Helium 10 ranks come through as either a plain integer or ">306" /
+// ">96" meaning "not found within the checked depth" — never a real
+// number, and must never be parsed as one. Same logic run-analysis.js uses.
+function parseRankValue(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const s = String(raw).trim();
+  if (s.startsWith('>')) return null;
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Builds keyword -> {rank, volume} for one SKU from the keyword tracker
+// sheet's most recent snapshot date. Falls back to null volume (not zero —
+// zero would wrongly imply "no search volume" rather than "unknown") when
+// a keyword isn't on the tracker at all.
+function buildKwTrackerLookup(kwTrackerRows, sku) {
+  const rowsForSku = kwTrackerRows.filter(r => (r.sku || '').trim() === sku);
+  if (!rowsForSku.length) return {};
+  const latestDate = rowsForSku.reduce((max, r) => (r.date || '') > max ? (r.date || '') : max, '');
+  const map = {};
+  rowsForSku.forEach(r => {
+    if ((r.date || '') !== latestDate) return;
+    const kw = normTerm(r.keyword);
+    if (!kw) return;
+    map[kw] = { rank: parseRankValue(r.organic_rank), volume: parseInt(r.search_volume, 10) || null };
+  });
+  return map;
+}
+
+// Sorts a SKU's keyword targets into 3 tiers. Volume-unknown keywords
+// (not on the tracker) fall into "other" rather than being guessed into
+// tier 2 or 3 — no invented numbers.
+function categorizeKeywordTiers(allKeywords, kwTrackerLookup, kwRankingsFallback) {
+  const tier1Protect = [];  // rank <= PAGE1_RANK_CUTOFF — already page 1, do not lose
+  const tier2Push = [];     // rank 49-100 — close, push toward page 1
+  const other = [];         // unranked, or ranked >100 — not a placement priority this pass
+
+  allKeywords.forEach(kw => {
+    const key = normTerm(kw);
+    const tracked = kwTrackerLookup[key];
+    const rank = tracked ? tracked.rank : (kwRankingsFallback[key] || null);
+    const volume = tracked ? tracked.volume : null;
+    const entry = { keyword: kw, rank, volume };
+    if (rank !== null && rank <= PAGE1_RANK_CUTOFF) tier1Protect.push(entry);
+    else if (rank !== null && rank <= CLOSE_TO_PAGE1_MAX) tier2Push.push(entry);
+    else other.push(entry);
+  });
+
+  tier2Push.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+  return { tier1Protect, tier2Push, other };
+}
+
+// Checks how many consecutive days (counting back from the most recent
+// snapshot) a keyword has been continuously present in this SKU's title,
+// bullets, or backend keywords. Returns null if the keyword isn't
+// currently present at all (nothing to question — it's simply not there
+// yet, a placement gap, not a "reconsider this keyword" case).
+function computeKeywordTenureDays(sku, keyword, allRawRowsForSku) {
+  const kw = normTerm(keyword);
+  const datedRows = allRawRowsForSku
+    .filter(row => (row[COL.sku] || '').trim() === sku)
+    .map(row => ({
+      date: (row[COL.date] || '').trim(),
+      text: normTerm([row[COL.title], row[COL.bullet_1], row[COL.bullet_2], row[COL.bullet_3], row[COL.bullet_4], row[COL.bullet_5], row[COL.backend_keywords]].join(' ')),
+    }))
+    .filter(r => r.date)
+    .sort((a, b) => b.date.localeCompare(a.date)); // most recent first
+
+  if (!datedRows.length || !datedRows[0].text.includes(kw)) return null; // not present today at all
+
+  let consecutiveDays = 0;
+  let lastDate = null;
+  for (const row of datedRows) {
+    if (!row.text.includes(kw)) break; // presence streak broken
+    if (lastDate !== null) {
+      const gapDays = Math.round((new Date(lastDate) - new Date(row.date)) / (24 * 60 * 60 * 1000));
+      if (gapDays > 3) break; // real gap in snapshots, not continuous presence — stop counting
+    }
+    consecutiveDays = Math.round((new Date(datedRows[0].date) - new Date(row.date)) / (24 * 60 * 60 * 1000)) + 1;
+    lastDate = row.date;
+  }
+  return consecutiveDays;
+}
+
+// Tier 3 — "this keyword has been in the listing a long time and still
+// isn't ranking, maybe it's too competitive." Per Jaclyn 2026-07-27:
+// "consider as a question in the insight that there is another keyword
+// with less search volume but might be more attainable." Suggests a
+// Reach-tier alternative (lower volume, by definition, since Reach is the
+// long-tail tier) rather than just flagging the problem with no next step.
+function buildTier3Reconsiderations(otherKeywords, sku, allRawRowsForSku, reachKeywords, kwTrackerLookup) {
+  const alreadyUsedReach = new Set(); // don't suggest the same alternative twice in one audit
+  const out = [];
+  otherKeywords.forEach(({ keyword, rank, volume }) => {
+    if (rank !== null) return; // it IS ranking somewhere past 100 — not the "stuck" case being asked about here
+    const tenureDays = computeKeywordTenureDays(sku, keyword, allRawRowsForSku);
+    if (tenureDays === null || tenureDays < LONG_TENURE_DAYS) return;
+    const alternative = reachKeywords.find(rk => {
+      const key = normTerm(rk);
+      return !alreadyUsedReach.has(key) && key !== normTerm(keyword);
+    });
+    if (alternative) alreadyUsedReach.add(normTerm(alternative));
+    out.push({
+      keyword,
+      volume,
+      tenure_days: tenureDays,
+      suggested_alternative: alternative || null,
+    });
+  });
+  return out;
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -369,6 +527,33 @@ module.exports = async function handler(req, res) {
 
   console.log(`[listing-audit] Starting audit: ${rows.length} SKUs (brand: ${brand})`);
 
+  // ── 1b. Keyword tracker — real rank + volume, for the 3-tier priority
+  // system below. Fetched once for the whole brand, filtered per-SKU
+  // inside the loop, rather than once per SKU. ─────────────────────────
+  let kwTrackerRows = [];
+  try {
+    const kwTrackerUrl = `https://docs.google.com/spreadsheets/d/${KEYWORD_TRACKER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(brand)}`;
+    const kwTrackerRes = await fetch(kwTrackerUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (kwTrackerRes.ok) {
+      const csvText = await kwTrackerRes.text();
+      const lines = csvText.trim().split('\n');
+      if (lines.length > 1) {
+        const headers = parseSimpleCsv(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+        for (let i = 1; i < lines.length; i++) {
+          const cells = parseSimpleCsv(lines[i]).map(c => c.replace(/^"|"$/g, '').trim());
+          const obj = {};
+          headers.forEach((h, idx) => { obj[h] = cells[idx] || ''; });
+          kwTrackerRows.push(obj);
+        }
+      }
+      console.log(`[listing-audit] keyword tracker: ${kwTrackerRows.length} rows loaded for ${brand}`);
+    } else {
+      console.warn(`[listing-audit] keyword tracker fetch failed (${kwTrackerRes.status}) — tier 1/2/3 keyword priority will fall back to uploads-log rank only, no volume`);
+    }
+  } catch (e) {
+    console.warn('[listing-audit] keyword tracker fetch error:', e.message);
+  }
+
   // ── 2. Ensure audit sheet has headers ────────────────────────────────────
   const auditTabName = brand; // tab is named after the brand, e.g. "evolis"
   await ensureAuditHeaders(auditSheetId, auditTabName, token);
@@ -398,13 +583,13 @@ CRITICAL RULES:
 - Item Highlights must not contain unqualified efficacy timelines.
 - INGREDIENT QA: When ingredients are provided, cross-check every specific ingredient named in bullets and description against the actual ingredient list. If a bullet claims an ingredient (e.g. "keratin", "rosemary oil", "hyaluronic acid", "vitamin C") that does NOT appear in the ingredient list, flag it as a violation: "Ingredient '[X]' listed in bullet [N] not found in actual ingredient list — remove or verify." Only flag ingredients that are definitively absent. Common ingredient aliases are acceptable (e.g. "Rosmarinus Officinalis" = rosemary oil). If a timeline claim is present in IH without qualifier, flag it and rewrite removing the timeline or moving it to a bullet.
 
-KEYWORD COVERAGE RULES:
-- When keyword targets are provided, check that Tier 1 keywords appear in the listing (title, bullets, backend, or description). Flag any Tier 1 keyword that is completely absent from all copy fields.
-- Prioritize flagging keywords that are NOT ranking (shown as "not ranking") — these need copy placement most urgently.
-- For opportunity keywords (Tier 2) with rank > 50 or not ranking: recommend specific placement in bullets 3-5 or backend.
-- Do NOT recommend adding drug-claim keywords or any keyword that violates compliance rules.
-- In BACKEND_NOTES: flag missing Tier 1 keywords not covered by other fields. In BACKEND_REWRITE: ensure all Tier 1 keywords not in title/bullets are in the backend.
-- In BULLETS_NOTES: flag the 2-3 highest-priority keyword gaps with specific placement recommendations.
+KEYWORD COVERAGE RULES — priority order matters, read the tiers below carefully:
+- TIER 1 keywords (already ranking page 1) are the HIGHEST priority of anything in this audit — higher than adding any new keyword, higher than fixing a coverage gap. If a rewrite would remove or weaken a Tier 1 keyword's presence in whatever field it currently occupies, that is a critical problem — flag it explicitly and do not let the rewrite do that. We never want to lose a page-1 ranking to make room for something else.
+- TIER 2 keywords (close to page 1, sorted by volume) are the priority for NEW placement — these are the closest realistic wins. When choosing what to add to a field, prefer a Tier 2 keyword over an unranked keyword every time, even if the unranked one seems more "important" — proximity to page 1 with real volume behind it is worth more right now than a keyword with no ranking traction at all, no matter how strategically desirable that keyword sounds.
+- TIER 3 items (in the listing a long time, still not ranking) are NOT a placement task — do not just try to shove them into more fields. Raise them as a genuine open question in the relevant NOTES field: is this keyword too competitive for this listing to win, and does the suggested lower-volume alternative deserve a try instead? Do not resolve this question yourself — surface it for a human decision.
+- Do NOT recommend adding drug-claim keywords or any keyword that violates compliance rules, regardless of tier.
+- In BACKEND_NOTES: flag any Tier 1 or Tier 2 keyword missing from every field. In BACKEND_REWRITE: ensure Tier 1 and Tier 2 keywords not already in title/bullets/item highlights are in the backend.
+- In BULLETS_NOTES: flag the highest-priority keyword gaps by tier order (Tier 1 gaps first, then Tier 2), with specific placement recommendations respecting the field-priority order given above.
 
 BULLET FORMATTING RULES (apply to all bullet rewrites):
 - Every bullet must open with an ALL-CAPS phrase (3-6 words) followed by a colon, then sentence-case detail. Example: "CLINICALLY TESTED HAIR GROWTH SERUM: In 3 independent studies, 95% of users reported visibly thicker hair."
@@ -466,44 +651,50 @@ Backend: ${backend}`;
           .slice(0, 8)
           .join(', ');
 
-        // Build keyword coverage context
+        // Build keyword coverage context — 3-tier priority system, added
+        // 2026-07-27 per Jaclyn (see header comment). Replaces the old
+        // "prioritize unranked keywords" logic entirely.
         const asin = (row[COL.asin] || '').trim();
         const skuKws = skuKeywordMap[sku] || null;
+        const kwTrackerLookup = buildKwTrackerLookup(kwTrackerRows, sku);
         let kwContext = '';
+
         if (skuKws && skuKws.top20.length) {
-          // Annotate each keyword with current rank from uploads log
-          function kwWithRank(kw) {
-            const rank = kwRankings[kw.toLowerCase().trim()];
-            return rank ? `${kw} (rank #${rank})` : `${kw} (not ranking)`;
-          }
-          const t1 = skuKws.top20.map(kwWithRank).join(', ');
-          const opp = skuKws.opportunity.length
-            ? skuKws.opportunity.map(kwWithRank).filter(k => {
-                // Only include opportunity keywords not already ranking well (rank > 50 or not ranking)
-                const r = kwRankings[k.replace(/ \(.*\)/, '').toLowerCase().trim()];
-                return !r || r > 50;
-              }).slice(0, 10).join(', ')
-            : '';
+          const allTargetKeywords = [...skuKws.top20, ...(skuKws.opportunity || [])];
+          const { tier1Protect, tier2Push, other } = categorizeKeywordTiers(allTargetKeywords, kwTrackerLookup, kwRankings);
+          const tier3 = buildTier3Reconsiderations(other, sku, allRawRows, skuKws.reach || [], kwTrackerLookup);
+
+          const fmt = e => `${e.keyword}${e.rank !== null ? ` (rank #${e.rank}` : ' (not ranking'}${e.volume !== null ? `, ${e.volume}/mo)` : ')'}`;
+
           kwContext = `
-KEYWORD TARGETS (Tier 1 — must appear in title, bullets, or backend):
-${t1}
-${opp ? `OPPORTUNITY KEYWORDS (Tier 2 — high ABA, low competition — prioritize in bullets 3-5 and backend):
-${opp}` : ''}`;
+TIER 1 — PROTECT (already ranking page 1 — DO NOT let a rewrite remove or weaken these; this is the highest priority, above adding anything new):
+${tier1Protect.length ? tier1Protect.map(fmt).join(', ') : 'None currently on page 1 for this SKU.'}
+
+TIER 2 — PUSH (rank ${PAGE1_RANK_CUTOFF + 1}-${CLOSE_TO_PAGE1_MAX}, sorted by volume — closest realistic wins, prioritize placement for these over anything unranked):
+${tier2Push.length ? tier2Push.map(fmt).join(', ') : 'None in this range currently.'}
+${tier3.length ? `
+TIER 3 — RECONSIDER (already in the listing ${LONG_TENURE_DAYS}+ consecutive days per daily listing snapshots, still not ranking at all — raise as a QUESTION, not a directive: is this keyword too competitive to win, and would a lower-volume alternative be more attainable?):
+${tier3.map(t => `"${t.keyword}"${t.volume !== null ? ` (${t.volume}/mo)` : ''} — in listing ${t.tenure_days} days, no rank${t.suggested_alternative ? `. Consider substituting: "${t.suggested_alternative}"` : ''}`).join('; ')}` : ''}
+
+FIELD PRIORITY FOR PLACEMENT (highest SEO weight to lowest): Title > Item Highlights > Bullets > Product Description > Backend Keywords. When a Tier 1 or Tier 2 keyword is missing, place it in the HIGHEST-weight field it can compliantly fit in that's currently missing it — do not default to backend just because there's room there.`;
         } else if (Object.keys(kwRankings).length > 0) {
-          // No strategy sheet tab for this SKU — use top ranking keywords from upload as proxy
+          // No strategy sheet tab for this SKU — use top ranking keywords from upload as proxy.
+          // No volume data available in this fallback path, so this can only
+          // sort by rank, not build real tiers — noted to Claude as such.
           const ranked = Object.entries(kwRankings)
             .filter(([kw]) => {
-              // Basic relevance filter — must contain a word from the product name
               const nameParts = name.toLowerCase().split(' ');
               return nameParts.some(p => p.length > 3 && kw.includes(p));
             })
-            .sort(([,a],[,b]) => a - b)
+            .sort(([, a], [, b]) => a - b)
             .slice(0, 15)
             .map(([kw, rank]) => `${kw} (rank #${rank})`);
           if (ranked.length) {
             kwContext = `
-KEYWORD RANKINGS FROM TRACKER (use these to identify coverage gaps):
-${ranked.join(', ')}`;
+KEYWORD RANKINGS FROM TRACKER (no keyword strategy tab for this SKU, so no volume data available — ranked by position only, real 3-tier volume-weighted prioritization not possible this run):
+${ranked.join(', ')}
+
+FIELD PRIORITY FOR PLACEMENT (highest SEO weight to lowest): Title > Item Highlights > Bullets > Product Description > Backend Keywords.`;
           }
         }
 
