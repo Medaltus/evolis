@@ -14645,6 +14645,24 @@ async function loadAuditResultsFromSheet() {
       // 2026-07-28 as the reason the first attempt at this didn't work).
       liveChart.$pdxFontScale = fontScale;
 
+      // Any fixed-pixel layout.padding (e.g. the Top Sellers charts' 64px
+      // right margin reserved for the YOY% badge column) needs to scale up
+      // right along with the text/pills that live inside it — otherwise
+      // the badge, now correctly sized per the fix above, is wider than
+      // its still-original-size reserved margin and gets clipped at the
+      // canvas edge. Confirmed by Jaclyn's screenshot, 2026-07-28 (badges
+      // rendering as truncated colored slivers). Scaling ALL sides
+      // generically here (not just "right") in case any other chart in
+      // this file's export pipeline also relies on fixed layout padding.
+      const origPadding = (liveChart.options.layout && liveChart.options.layout.padding)
+        ? Object.assign({}, liveChart.options.layout.padding)
+        : null;
+      if (origPadding) {
+        const scaledPadding = {};
+        Object.keys(origPadding).forEach(side => { scaledPadding[side] = origPadding[side] * fontScale; });
+        liveChart.options.layout.padding = scaledPadding;
+      }
+
       const origLineStyles = (liveChart.data && liveChart.data.datasets)
         ? liveChart.data.datasets.map(function (ds) { return { tension: ds.tension, borderWidth: ds.borderWidth, pointRadius: ds.pointRadius }; })
         : [];
@@ -14695,6 +14713,9 @@ async function loadAuditResultsFromSheet() {
         img = pdfxRawChartImg(varName);
       } finally {
         delete liveChart.$pdxFontScale; // back to normal (undefined -> plugin falls back to 1x) for live dashboard redraws
+        if (origPadding && liveChart.options.layout) {
+          liveChart.options.layout.padding = origPadding;
+        }
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
         }
