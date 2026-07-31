@@ -392,6 +392,7 @@ table.perf-compare tr:last-child td{border-bottom:none;}
 .pcard-exec-hd b{font-family:var(--font-subheader);font-size:16px;font-weight:700;color:#fff;}
 .pcard-exec-hd .meta{font-size:11px;color:rgba(255,255,255,.65);margin-left:8px;}
 .pcard-exec-hd .sc-badge,.ppc-strategy-hd .sc-badge{background:#fff;}
+.pcard-exec-hd .sc-badge{font-size:12px;padding:4px 12px;border-radius:12px;}
 
 /* ── Event Strategy page (Events > Strategy) ────────────────────────────
    2026-07-16, per Jaclyn: hardcoded to match the exact reference layout
@@ -787,9 +788,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .la-update-status.pending{color:var(--warn);}
 
 /* Audit button in the panel — clean outlined pill matching the primary button's shape */
-.audit-run-btn{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--slate) 0%,#56658f 100%);color:#fff;border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(107,123,162,.25);}
-.audit-run-btn:hover{box-shadow:0 4px 14px rgba(107,123,162,.35);transform:translateY(-1px);}
-.audit-run-btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none;}
+.audit-run-btn{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);color:#fff;border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(0,31,96,.18);}
+.audit-run-btn:hover{box-shadow:0 4px 14px rgba(0,31,96,.28);transform:translateY(-1px);}
+.audit-run-btn:disabled{background:var(--muted);cursor:not-allowed;box-shadow:none;transform:none;}
 .audit-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
 .audit-run-btn.running .spinner{display:block;}
 .audit-run-btn.running .btn-label{opacity:.7;}
@@ -2021,7 +2022,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-compliance-sub">Open Cases: —</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Returns Processed · Last 30 Days</div>
+          <div class="kpi-label">Returns Processed</div>
           <div class="kpi-value" id="mx-mfc-kpi-returns">—</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-returns-sub">Return rate: —</div>
         </div>
@@ -8818,20 +8819,29 @@ async function mxMfcLoadReturns() {
   const valEl = document.getElementById('mx-mfc-kpi-returns');
   const subEl = document.getElementById('mx-mfc-kpi-returns-sub');
   try {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    const [returnsCsv, totalOrders30d] = await Promise.all([
+    const { year, month } = mfcGetLastFullMonth();
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const [amzCsv, wmtCsv, webCsv, totalOrdersThisMonth] = await Promise.all([
       fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-      getBlendedOrders30dTotal(cutoff),
+      fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      getBlendedOrdersForMonth(year, month),
     ]);
 
-    const returnRows = parseCsvToRows(returnsCsv);
-    const returns30d = returnRows.filter(r => {
-      const d = new Date((r.return_date || '') + 'T00:00:00');
-      return !isNaN(d) && d >= cutoff;
-    }).length;
+    const stripAccents = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isEvolis = r => stripAccents(r.brand || '').toLowerCase().trim() === 'evolis';
+    function countReturnsForMonth(csv, dateField) {
+      return parseCsvToRows(csv).filter(isEvolis).filter(r => {
+        return mfcNormalizeDate(r[dateField]).substring(0, 7) === prefix;
+      }).length;
+    }
+    const amzReturnsThisMonth = countReturnsForMonth(amzCsv, 'return_date');
+    const wmtReturnsThisMonth = countReturnsForMonth(wmtCsv, 'return_date');
+    const webReturnsThisMonth = countReturnsForMonth(webCsv, 'refund_date');
+    const returnsThisMonth = amzReturnsThisMonth + wmtReturnsThisMonth + webReturnsThisMonth;
 
-    if (valEl) valEl.textContent = returns30d.toLocaleString();
-    if (subEl) subEl.textContent = totalOrders30d > 0 ? `Return rate: ${((returns30d / totalOrders30d) * 100).toFixed(1)}%` : 'Return rate: —';
+    if (valEl) valEl.textContent = returnsThisMonth.toLocaleString();
+    if (subEl) subEl.textContent = totalOrdersThisMonth > 0 ? `Return rate: ${((returnsThisMonth / totalOrdersThisMonth) * 100).toFixed(1)}%` : 'Return rate: —';
   } catch (err) {
     console.warn('[MarketingExternal/FulfillmentCS] returns load failed:', err.message);
   }
@@ -16134,19 +16144,30 @@ async function loadHomeConsignmentKpi() {
 }
 document.addEventListener('DOMContentLoaded', loadHomeConsignmentKpi);
 
-// Total SKUs KPI — same source and "latest snapshot date" pattern used
-// on the Inventory page itself (OV_PRODUCTS_CACHE_SHEET_ID/GID), counting
-// rows in the most recent daily snapshot rather than the whole history.
+// Total SKUs KPI — per Jaclyn 2026-07-31, switched from counting
+// DISCOVERABLE listings in the daily products-cache snapshot to counting
+// rows with Status=LIVE (col H) on the master Product Short Name sheet —
+// the same sheet/status convention already established for the
+// Discontinued/OOS handling on the Inventory pages. This is a genuinely
+// different definition of "active" (catalog-registration status, not
+// "currently showing up in a daily crawl"), so the number here may not
+// match what the old snapshot-based version used to show.
 async function loadHomeTotalSkus() {
   const valEl = document.getElementById('home-kpi-skus');
   if (!valEl) return;
   try {
-    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const csv = await fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
     if (!rows.length) { valEl.textContent = '—'; return; }
-    const latestDate = rows.reduce((max, r) => (r.date && r.date > max ? r.date : max), '');
-    const latestRows = rows.filter(r => r.date === latestDate);
-    valEl.textContent = latestRows.length.toLocaleString();
+    // Accent-insensitive brand match — Évolis's accented É is a known
+    // recurring cause of silent brand-filter failures elsewhere in this
+    // codebase.
+    const stripAccents = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const activeCount = rows.filter(r =>
+      stripAccents(r.brand).toLowerCase().trim() === 'evolis' &&
+      (r.status || '').trim().toUpperCase() === 'LIVE'
+    ).length;
+    valEl.textContent = activeCount.toLocaleString();
   } catch (err) {
     console.warn('[Home] total SKUs KPI load failed:', err);
     valEl.textContent = '—';
