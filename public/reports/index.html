@@ -2798,19 +2798,19 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <!-- Competitors -->
         <div class="card">
           <div class="card-title">Competitive Landscape</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · This is the shared competitive set évolis competes against brand-wide — same tables now repeated on the Shampoos, Conditioners, Hair Masks, and Dry Shampoo tabs. <span style="color:var(--warn);">Only 6 Current Competitors / 4 Category Leaders currently on file — flagged for expansion to 10/10.</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Live from the competitor research sheet · This is the shared competitive set évolis competes against brand-wide — same live tables now repeated on the Shampoos, Conditioners, Hair Masks, and Dry Shampoo tabs.</div>
           <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+              <tbody id="cl-activators-current"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="sec-lbl">Category Leaders</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody id="cl-activators-leaders"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div style="background:rgba(0,31,96,.04);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;margin-top:16px;font-size:12px;color:var(--navy);line-height:1.6;">
@@ -2871,22 +2871,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </tbody></table></div>
         </div>
 
-        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31) -->
+        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31; live-loaded from SHEET_COMPETITOR 2026-07-31) -->
         <div class="card">
           <div class="card-title">Competitive Landscape</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Same competitive set évolis competes against brand-wide, shown here for the Shampoos category. <span style="color:var(--warn);">Only 6 Current Competitors / 4 Category Leaders currently on file — flagged for expansion to 10/10.</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Live from the competitor research sheet · Same competitive set évolis competes against brand-wide, shown here for the Shampoos category.</div>
           <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+              <tbody id="cl-shampoos-current"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="sec-lbl">Category Leaders</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody id="cl-shampoos-leaders"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2921,22 +2921,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </tbody></table></div>
         </div>
 
-        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31) -->
+        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31; live-loaded from SHEET_COMPETITOR 2026-07-31) -->
         <div class="card">
           <div class="card-title">Competitive Landscape</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Same competitive set évolis competes against brand-wide, shown here for the Conditioners category. <span style="color:var(--warn);">Only 6 Current Competitors / 4 Category Leaders currently on file — flagged for expansion to 10/10.</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Live from the competitor research sheet · Same competitive set évolis competes against brand-wide, shown here for the Conditioners category.</div>
           <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+              <tbody id="cl-conditioners-current"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="sec-lbl">Category Leaders</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody id="cl-conditioners-leaders"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2969,22 +2969,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </tbody></table></div>
         </div>
 
-        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31) -->
+        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31; live-loaded from SHEET_COMPETITOR 2026-07-31) -->
         <div class="card">
           <div class="card-title">Competitive Landscape</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Same competitive set évolis competes against brand-wide, shown here for the Hair Masks category. <span style="color:var(--warn);">Only 6 Current Competitors / 4 Category Leaders currently on file — flagged for expansion to 10/10.</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Live from the competitor research sheet · Same competitive set évolis competes against brand-wide, shown here for the Hair Masks category.</div>
           <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+              <tbody id="cl-masks-current"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="sec-lbl">Category Leaders</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody id="cl-masks-leaders"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -3032,22 +3032,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </tbody></table></div>
         </div>
 
-        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31) -->
+        <!-- Competitors — shared category-wide set, same as Activators (moved from PPC → Blended Context, 2026-07-31; live-loaded from SHEET_COMPETITOR 2026-07-31) -->
         <div class="card">
           <div class="card-title">Competitive Landscape</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Same competitive set évolis competes against brand-wide, shown here for the Dry Shampoo category. <span style="color:var(--warn);">Only 6 Current Competitors / 4 Category Leaders currently on file — flagged for expansion to 10/10.</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Data: Helium 10 · Live from the competitor research sheet · Same competitive set évolis competes against brand-wide, shown here for the Dry Shampoo category.</div>
           <div class="sec-lbl" style="margin-top:0;">Current Competitors</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
               <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0D3QR9F9K</td><td>Nutrafol Women's Hair Serum</td><td>$49.00</td><td>4.1 ★</td><td>3,388</td><td>#45</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B07GRHV9XQ</td><td>DS Labs Spectral DNC-N</td><td>$42.00</td><td>4.0 ★</td><td>1,317</td><td>#68</td><td><span class="sc-badge danger">HIGH</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0DDVGBTMX</td><td>IGK Scalp Treatment Serum</td><td>$45.00</td><td>4.3 ★</td><td>135</td><td>#391</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0B89WYK6N</td><td>HairMax Acceler8</td><td>$44.79</td><td>4.4 ★</td><td>29</td><td>#833</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0CVN267TL</td><td>Grande Cosmetics GrandeHAIR</td><td>$38.35</td><td>3.9 ★</td><td>135</td><td>#593</td><td><span class="sc-badge warn">MED</span></td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B0F9H43N4D</td><td>Advanced Trichology HairStem</td><td>$49.95</td><td>4.2 ★</td><td>28</td><td>#831</td><td><span class="sc-badge warn">MED</span></td></tr></tbody>
+              <tbody id="cl-dryshampoo-current"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
           <div class="sec-lbl">Category Leaders</div>
           <div style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th></tr></thead>
-              <tbody><tr><td style="font-family:var(--mono);font-size:10px;">B0012BNVE8</td><td>Men's Rogaine 5% Minoxidil Foam</td><td>$49.97</td><td>4.2 ★</td><td>28,753</td><td>#3</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B00M6I5SNI</td><td>Women's Rogaine 5% Minoxidil</td><td>$39.99</td><td>4.1 ★</td><td>18,634</td><td>#7</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B085S8DGWT</td><td>Viviscal Women's Supplements</td><td>$45.99</td><td>4.3 ★</td><td>30,028</td><td>#4</td></tr><tr><td style="font-family:var(--mono);font-size:10px;">B004PVLWW0</td><td>Advanced Trichology DHT Blocker</td><td>$43.95</td><td>4.3 ★</td><td>10,940</td><td>#12</td></tr></tbody>
+              <thead><tr><th>ASIN</th><th>Brand / Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Threat</th></tr></thead>
+              <tbody id="cl-dryshampoo-leaders"><tr><td colspan="7" style="color:var(--muted);">Loading…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -10198,6 +10198,7 @@ async function initSnsExternal() {
     // Defined later in the file (needs INSIGHTS_SHEET_ID etc which are declared
     // further down) and exposed on window so it can be called from here.
     if (typeof window.initInsightsOverview === 'function') window.initInsightsOverview();
+    if (typeof window.initCompetitorLandscape === 'function') window.initCompetitorLandscape();
     if (typeof window.initPpcPage === 'function') window.initPpcPage();
     if (typeof window.initInventoryPage === 'function') window.initInventoryPage();
     if (typeof window.initFulfillmentPage === 'function') window.initFulfillmentPage();
@@ -11795,6 +11796,147 @@ window.initInsightsOverview = async function() {
   await ovLoadActiveSkus(result && result.year, result && result.month);
   await ovLoadSessionsAndConversion(result && result.year, result && result.month);
   await ovLoadBrandGlance();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPETITIVE LANDSCAPE (Insights → Products, all 5 product types) —
+// Added 2026-07-31 per Jaclyn: Current Competitors / Category Leaders
+// tables were hardcoded per product type; now pulled live from a
+// dedicated competitor-research spreadsheet. One tab per product type,
+// each tab holding two ~10-row tables ("Current Competitors" and
+// "Category Leaders") stacked under a Top-20-keywords section that this
+// module ignores (that's the separate keyword tracker sheet's job).
+//
+// Parsed by matching on the section-title text and reading the real
+// column-header row directly beneath it — NOT by fixed column indices —
+// since column order isn't guaranteed identical across all 5 tabs, and
+// this sheet has ~30 columns (INCI, bullets, image URLs, etc.) of which
+// the dashboard only ever displays a handful.
+// ═══════════════════════════════════════════════════════════════════
+
+const SHEET_COMPETITOR_ID = '19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M';
+const COMPETITOR_GID_BY_PRODUCT_TYPE = {
+  activators:   '486436437',
+  shampoos:     '506089487',
+  conditioners: '1468676198',
+  masks:        '1350976977',
+  dryshampoo:   '358283602',
+};
+
+function clFindSectionRow(rows, needle) {
+  const n = needle.toLowerCase();
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].some(cell => (cell || '').toLowerCase().includes(n))) return i;
+  }
+  return -1;
+}
+
+function clEscapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function clTruncate(s, max) {
+  s = (s || '').trim();
+  return s.length > max ? s.slice(0, max - 1).trim() + '…' : s;
+}
+
+function clThreatBadge(raw) {
+  const t = (raw || '').trim().toUpperCase();
+  if (!t) return '—';
+  if (t.startsWith('HIGH')) return '<span class="sc-badge danger">HIGH</span>';
+  if (t.startsWith('MED') || t.startsWith('MID')) return '<span class="sc-badge warn">MED</span>';
+  if (t.startsWith('LOW')) return '<span class="sc-badge good">LOW</span>';
+  return `<span class="sc-badge warn">${clEscapeHtml(t)}</span>`; // unrecognized value — show as-is rather than silently dropping it
+}
+
+// Parses ONE section (Current Competitors or Category Leaders). titleRowIdx
+// is the row holding the section's merged title text; the real column
+// headers sit directly beneath it. Reads by header NAME, not position, so
+// this survives column reordering between tabs.
+function clParseSection(rows, titleRowIdx, maxRows) {
+  if (titleRowIdx < 0 || titleRowIdx + 1 >= rows.length) return [];
+  const headers = rows[titleRowIdx + 1].map(h => (h || '').trim().toLowerCase());
+  const col = name => headers.findIndex(h => h === name);
+  const colIncludes = frag => headers.findIndex(h => h.includes(frag));
+  const idx = {
+    asin:    col('asin'),
+    brand:   col('brand'),
+    product: colIncludes('product name'),
+    price:   col('price'),
+    rating:  col('rating'),
+    reviews: colIncludes('review'),
+    bsr:     colIncludes('bsr'),
+    threat:  colIncludes('threat'),
+  };
+
+  const out = [];
+  for (let i = titleRowIdx + 2; i < rows.length && out.length < maxRows; i++) {
+    const r = rows[i];
+    // Hitting either section's title text again means we've run past this
+    // section's real data into the next one — stop rather than keep going.
+    if (r.some(cell => /current competitors|category leaders/i.test(cell || ''))) break;
+    const asin = idx.asin >= 0 ? (r[idx.asin] || '') : '';
+    const product = idx.product >= 0 ? (r[idx.product] || '') : '';
+    if (!asin && !product) continue; // skip a blank row without treating it as the end of the section
+
+    const brand = idx.brand >= 0 ? (r[idx.brand] || '') : '';
+    // The sheet's real Product Name is a full Amazon SEO title (often
+    // 150+ chars) that already starts with the brand name — avoid
+    // "Nutrafol Nutrafol Women's..." duplication, and truncate either way
+    // since this renders in a compact table cell, not a listing page.
+    const display = (brand && product.toLowerCase().startsWith(brand.toLowerCase()))
+      ? clTruncate(product, 42)
+      : clTruncate([brand, product].filter(Boolean).join(' '), 42);
+
+    out.push({
+      asin,
+      brand_product: display,
+      price:   idx.price   >= 0 ? (r[idx.price]   || '') : '',
+      rating:  idx.rating  >= 0 ? (r[idx.rating]  || '') : '',
+      reviews: idx.reviews >= 0 ? (r[idx.reviews] || '') : '',
+      bsr:     idx.bsr     >= 0 ? (r[idx.bsr]     || '') : '',
+      threat:  idx.threat  >= 0 ? (r[idx.threat]  || '') : '',
+    });
+  }
+  return out;
+}
+
+function clRenderRows(list) {
+  if (!list.length) return '<tr><td colspan="7" style="color:var(--muted);">No data yet — check the competitor sheet tab.</td></tr>';
+  return list.map(c => `<tr>
+    <td style="font-family:var(--mono);font-size:10px;">${clEscapeHtml(c.asin)}</td>
+    <td>${clEscapeHtml(c.brand_product)}</td>
+    <td>${clEscapeHtml(c.price)}</td>
+    <td>${clEscapeHtml(c.rating)}${c.rating ? ' ★' : ''}</td>
+    <td>${clEscapeHtml(c.reviews)}</td>
+    <td>${clEscapeHtml(c.bsr)}</td>
+    <td>${clThreatBadge(c.threat)}</td>
+  </tr>`).join('');
+}
+
+async function clLoadProductType(key) {
+  const gid = COMPETITOR_GID_BY_PRODUCT_TYPE[key];
+  const currentEl = document.getElementById('cl-' + key + '-current');
+  const leadersEl = document.getElementById('cl-' + key + '-leaders');
+  if (!currentEl && !leadersEl) return; // this product type's card isn't on the page — nothing to do
+
+  try {
+    const csv = await fetch(ovCsvUrl(SHEET_COMPETITOR_ID, gid)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvFull(csv);
+    const currentTitleRow = clFindSectionRow(rows, 'current competitors');
+    const leadersTitleRow = clFindSectionRow(rows, 'category leaders');
+    if (currentEl) currentEl.innerHTML = clRenderRows(clParseSection(rows, currentTitleRow, 10));
+    if (leadersEl) leadersEl.innerHTML = clRenderRows(clParseSection(rows, leadersTitleRow, 10));
+  } catch (err) {
+    console.warn('[Competitive Landscape] ' + key + ' failed to load:', err.message);
+    const errMsg = `<tr><td colspan="7" style="color:var(--danger);">Error loading — check SHEET_COMPETITOR / the "${key}" gid.</td></tr>`;
+    if (currentEl) currentEl.innerHTML = errMsg;
+    if (leadersEl) leadersEl.innerHTML = errMsg;
+  }
+}
+
+window.initCompetitorLandscape = function() {
+  Object.keys(COMPETITOR_GID_BY_PRODUCT_TYPE).forEach(clLoadProductType);
 };
 
 // ═══════════════════════════════════════════════════════════════════
