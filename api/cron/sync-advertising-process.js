@@ -1,46 +1,113 @@
 /**
- * api/cron/sync-business-report-process.js
- * Step 2 of 2 — reads the reportIds stored by sync-business-report-request.js,
- * polls each until DONE, downloads, aggregates by brand, and writes to
- * SHEET_BUSINESS_REPORT — one tab per brand, one row per month.
+ * api/cron/sync-ad-search-terms-process.js
+ * Step 2 of 2 — checks on the search term reports requested by
+ * sync-ad-search-terms-request.js, downloads any that are ready, and
+ * writes to SHEET_AD_SEARCH_TERMS — one tab per brand, one row per
+ * (search term + matched keyword + match type + ad type + DAY).
  *
- * Runs at 5:15 UTC daily (15 min after sync-business-report-request).
- * Safe to re-run manually if the first attempt failed.
+ * CHANGED (2026-07-14) — two changes:
  *
- * Backfill a single month:
- *   GET /api/cron/sync-business-report-process?month=YYYY-MM
- *   Authorization: Bearer <CRON_SECRET>
+ * 1. Daily grain. Reports are now requested with timeUnit: DAILY (see
+ *    sync-ad-search-terms-request.js), so each row carries its own `date`
+ *    field. Rows are bucketed/upserted by that per-row date, not by the
+ *    report's overall curr/prev period. year/month are still stored
+ *    alongside `date` for convenience, but derived from the row's date.
  *
- * Debug mode — logs the raw report structure for one month instead of
- * writing to the sheet, so you can confirm Amazon's field names before
- * trusting the aggregation (same defensive pattern used elsewhere in this
- * codebase, e.g. sync-listings.js?debug=SKU):
- *   GET /api/cron/sync-business-report-process?debug=true&month=YYYY-MM
- *   Authorization: Bearer <CRON_SECRET>
+ * 2. Non-blocking polling. The OLD version looped inside a single
+ *    invocation, sleeping for up to POLL_TIMEOUT_MS (240s) waiting for
+ *    COMPLETED. That's the wrong shape for a Vercel serverless function:
+ *    reports can take 5–90 minutes (per Amazon_Ads_Search_Term_API_Guide.md),
+ *    which is far longer than any Vercel execution-time ceiling. Blocking
+ *    and sleeping just gets the function killed by the platform, which
+ *    looks identical to "stuck in PENDING" from the outside — this was
+ *    very likely the real cause of the reports that "never" completed.
  *
- * IMPORTANT — unlike sync-revenue-process.js, this report is JSON, not a
- * TSV flat file, and it's already scoped to exactly one month per report
- * (see sync-business-report-request.js comment header for why). That means
- * no per-order-line date filtering here — we just sum sessions/units by
- * SKU prefix straight from `salesAndTrafficByAsin`. The field names below
- * (sku, sessions, unitsOrdered, pageViews, orderedProductSales) are per
- * Amazon's documented schema — VERIFY with ?debug=true before relying on
- * this in production, in case Amazon's actual response differs.
+ *    Now each invocation makes ONE status check per not-yet-processed
+ *    report, persists status/processed flags to _meta, and returns
+ *    immediately. Progress happens across MULTIPLE invocations — schedule
+ *    this endpoint to run every ~5 minutes in vercel.json (instead of the
+ *    old single one-off run ~10-15 min after the request step) until
+ *    st_report_status flips to PROCESSED. Each report is downloaded and
+ *    written to the sheet at most once (tracked via st_processed_<label>).
+ *
+ * SP and SB report different native columns for the same concepts (see
+ * sync-ad-search-terms-request.js for the full confirmed column lists).
+ * This step normalizes both into the same output shape:
+ *   search_term, keyword, match_type, ad_type, campaign_name,
+ *   ad_group_name, date, year, month, impressions, clicks, ctr, cost, cpc,
+ *   cpm, purchases, sales, acos, conversion_rate, current_bid, last_updated
+ *
+ * Conversion rate: SP reports it directly (purchaseClickRate14d, requested
+ * as a column in sync-ad-search-terms-request.js) so it's used as-is. SB
+ * has no equivalent column, so it's calculated here as
+ * (purchases / clicks) * 100. Both paths already existed in the prior
+ * version of this file — unchanged by the daily-grain rewrite.
+ *
+ * Upsert, not full replace: rows are keyed by
+ * (search_term, keyword, match_type, ad_type, date), so re-running this
+ * for a report that's already been processed, or for a different report,
+ * never touches unrelated dates.
  */
 
-const zlib                                 = require('zlib');
-const { spRequest }                        = require('../_spauth');
-const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
-const brands                               = require('../config/brands');
-const sheets                               = require('../config/sheets');
+const { getAdToken }                                   = require('../_spauth');
+const { ensureTab, readRows, replaceRows }             = require('../config/_sheets_client');
+const https                                            = require('https');
+const zlib                                             = require('zlib');
 
-const HEADERS      = ['MONTH', 'YEAR', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE'];
-const META_TAB     = '_meta';
-const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
+const AD_API_HOST           = 'advertising-api.amazon.com';
+const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
+const META_TAB               = '_meta';
 
-// Report should be ready after 15 min — short poll per report (same as sync-revenue-process.js)
-const REPORT_POLL_TIMEOUT_MS  = 60_000;
-const REPORT_POLL_INTERVAL_MS = 4_000;
+const HEADERS = [
+  'search_term', 'keyword', 'match_type', 'ad_type',
+  'campaign_name', 'ad_group_name', 'date', 'year', 'month',
+  'impressions', 'clicks', 'ctr', 'cost', 'cpc', 'cpm',
+  'purchases', 'sales', 'acos', 'conversion_rate', 'current_bid',
+  'last_updated',
+];
+
+// One check per invocation, no sleeping — see header comment.
+const LABELS = [
+  { label: 'sp_curr', adType: 'SP' },
+  { label: 'sb_curr', adType: 'SB' },
+  { label: 'sp_prev', adType: 'SP' },
+  { label: 'sb_prev', adType: 'SB' },
+];
+
+// Same brand-matching list as sync-advertising-process.js, kept in sync
+// intentionally — if that list changes, update both places.
+const CAMPAIGN_BRANDS = [
+  { name: 'skinuva',        tabName: 'skinuva'        },
+  { name: 'the creme shop', tabName: 'creme-shop'     },
+  { name: 'cloud cafe',     tabName: 'cloud-cafe'     },
+  { name: 'just bjorn',     tabName: 'just-bjorn'     },
+  { name: 'pb & jay',       tabName: 'pbj'            },
+  { name: 'pb&jay',         tabName: 'pbj'            },
+  { name: 'miguard',        tabName: 'miguard'        },
+  { name: 'dearcloud',      tabName: 'dearcloud'      },
+  { name: 'eraclea',        tabName: 'eraclea'        },
+  { name: 'evolis',         tabName: 'evolis'         },
+  { name: 'amala',          tabName: 'amala'          },
+  { name: 'cimeosil',       tabName: 'cimeosil'       },
+  { name: 'collagelee',     tabName: 'collagelee'     },
+  { name: 'hillside',       tabName: 'hillside'       },
+  { name: 'prohibition',    tabName: 'prohibition'    },
+  { name: 'skinside seoul', tabName: 'skinside-seoul' },
+  { name: 'skinside-seoul', tabName: 'skinside-seoul' },
+].sort((a, b) => b.name.length - a.name.length);
+
+// Strips accents/diacritics so "évolis", "ÉVOLIS", and "evolis" all match
+// the same way. Lowercasing alone isn't enough — 'évolis'.includes('evolis')
+// is false, since é and e are different characters even after lowercasing.
+function stripAccents(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function identifyBrand(campaignName) {
+  const normalized = stripAccents((campaignName || '').toLowerCase());
+  const match = CAMPAIGN_BRANDS.find(b => normalized.includes(b.name));
+  return match ? match.tabName : null;
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -48,290 +115,245 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const ts  = now.toISOString();
-  const debugMode = req.query.debug === 'true';
+  const now = new Date().toISOString();
 
-  // ── Build the list of { month, reportId, start, end } to process ──────────
-  let jobs = [];
-  let backfillMode = false;
-
-  if (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) {
-    // ── Backfill mode (or debug mode) — request its own report for a single month ──
-    backfillMode = true;
-    const [y, m]  = req.query.month.split('-');
-    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-    const start   = `${req.query.month}-01T00:00:00Z`;
-    const end     = `${req.query.month}-${pad(lastDay)}T23:59:59Z`;
-
-    console.log(`[sync-business-report-process] backfill mode — requesting report for ${req.query.month}`);
-
-    try {
-      const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
-        reportType:     'GET_SALES_AND_TRAFFIC_REPORT',
-        marketplaceIds: [process.env.SP_MARKETPLACE_ID],
-        dataStartTime:  start,
-        dataEndTime:    end,
-        reportOptions: { dateGranularity: 'MONTH', asinGranularity: 'CHILD' },
-      });
-      if (!createResp || !createResp.reportId) {
-        console.error(`[sync-business-report-process] backfill ${req.query.month} — no reportId in response:`, JSON.stringify(createResp));
-        return res.status(500).json({ error: `Amazon returned no reportId for ${req.query.month}`, detail: createResp });
-      }
-      jobs = [{ month: req.query.month, reportId: createResp.reportId, start, end }];
-      console.log(`[sync-business-report-process] backfill report requested: ${createResp.reportId}`);
-    } catch (err) {
-      console.error('[sync-business-report-process] failed to request backfill report:', err.message);
-      return res.status(500).json({ error: 'Failed to request report', detail: err.message });
-    }
-
-  } else {
-    // ── Normal mode — read reportIds from _meta ───────────────────────────────
-    try {
-      const rawMeta = await readRows(sheets.businessReport, META_TAB);
-      const metaMap = {};
-      for (const r of (rawMeta || [])) {
-        if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
-      }
-
-      if (metaMap['report_status'] === 'PROCESSED') {
-        return res.status(200).json({ message: 'Already processed today', meta: metaMap });
-      }
-
-      const targetMonths = (metaMap['target_months'] || '').split(',').filter(Boolean);
-      if (!targetMonths.length) {
-        return res.status(400).json({ error: 'No target_months in _meta — did sync-business-report-request run?' });
-      }
-
-      for (const month of targetMonths) {
-        const reportId = metaMap[`report_id_${month}`];
-        if (!reportId) {
-          return res.status(400).json({ error: `No reportId for ${month} in _meta — did sync-business-report-request run?` });
-        }
-        jobs.push({ month, reportId });
-      }
-
-      console.log(`[sync-business-report-process] processing ${jobs.length} reports: ${jobs.map(j => j.month).join(', ')}`);
-    } catch (err) {
-      console.error('[sync-business-report-process] failed to read _meta:', err.message);
-      return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
-    }
+  let meta = {};
+  try {
+    const rawMeta = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
+    rawMeta.forEach(r => { if (r.KEY) meta[r.KEY] = r.VALUE; });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
-  // ── Process each month's report ────────────────────────────────────────────
-  // monthAsinRows: { "YYYY-MM": [ salesAndTrafficByAsin entries ] }
-  const monthAsinRows = {};
+  const profileId = meta['st_profile_id'];
+  const hasAnyReportId = LABELS.some(({ label }) => meta[`st_report_id_${label}`]);
+  if (!hasAnyReportId) {
+    return res.status(400).json({ error: 'No search term report IDs found in _meta — did sync-ad-search-terms-request run?' });
+  }
 
-  for (const job of jobs) {
-    // Poll until DONE
-    let documentId = null;
-    const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
+  if (meta['st_report_status'] === 'PROCESSED' && !req.query.force) {
+    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-check anyway.' });
+  }
 
-    while (Date.now() < deadline) {
-      await sleep(REPORT_POLL_INTERVAL_MS);
-      try {
-        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`);
-        const status     = statusResp.processingStatus;
-        console.log(`[sync-business-report-process] ${job.month} report ${job.reportId} status: ${status}`);
+  const token = await getAdToken();
+  const metaUpdates = {}; // KEY -> VALUE, applied once at the end
+  const results = [];
 
-        if (status === 'DONE') {
-          documentId = statusResp.reportDocumentId;
-          break;
-        }
-        if (status === 'FATAL' || status === 'CANCELLED') {
-          console.error(`[sync-business-report-process] ${job.month} report ${status}`);
-          break;
-        }
-      } catch (err) {
-        console.warn(`[sync-business-report-process] poll error (will retry): ${err.message}`);
-      }
-    }
+  for (const { label, adType } of LABELS) {
+    const reportId = meta[`st_report_id_${label}`];
+    if (!reportId) continue;
 
-    if (!documentId) {
-      console.warn(`[sync-business-report-process] ${job.month} report not ready — skipping`);
-      monthAsinRows[job.month] = [];
+    const alreadyProcessed = meta[`st_processed_${label}`] === 'true';
+    if (alreadyProcessed) {
+      results.push({ label, status: 'already_processed' });
       continue;
     }
 
-    // Download & decompress — this report is gzip JSON, not TSV
+    let statusResp;
     try {
-      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
-      const fileResp = await fetch(docResp.url);
-      if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
+      statusResp = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
+    } catch (err) {
+      console.error(`[sync-ad-search-terms-process] ${label} status check failed:`, err.message);
+      results.push({ label, status: 'check_failed', error: err.message });
+      continue;
+    }
 
-      const buffer = Buffer.from(await fileResp.arrayBuffer());
-      const rawJson = await new Promise((resolve) => {
-        zlib.gunzip(buffer, (err, result) => {
-          if (err) resolve(buffer.toString('utf8'));
-          else resolve(result.toString('utf8'));
-        });
-      });
+    const status = statusResp.status;
+    console.log(`[sync-ad-search-terms-process] ${label} (${reportId}): ${status}`);
+    metaUpdates[`st_status_${label}`] = status;
 
-      const parsed  = JSON.parse(rawJson);
-      const asinRows = parsed.salesAndTrafficByAsin || [];
-
-      if (debugMode) {
-        console.log(`[sync-business-report-process][DEBUG] ${job.month} top-level keys: ${Object.keys(parsed).join(', ')}`);
-        console.log(`[sync-business-report-process][DEBUG] ${job.month} salesAndTrafficByAsin count: ${asinRows.length}`);
-        console.log(`[sync-business-report-process][DEBUG] ${job.month} first entry: ${JSON.stringify(asinRows[0] || {}, null, 2)}`);
-        return res.status(200).json({
-          debug: true,
-          month: job.month,
-          topLevelKeys: Object.keys(parsed),
-          asinRowCount: asinRows.length,
-          firstEntry: asinRows[0] || null,
-        });
+    if (status === 'COMPLETED') {
+      let rows;
+      try {
+        rows = await downloadAdReport(statusResp.url);
+      } catch (err) {
+        console.error(`[sync-ad-search-terms-process] ${label} download failed:`, err.message);
+        results.push({ label, status: 'download_failed', error: err.message });
+        continue; // don't mark processed — retry download next invocation
       }
 
-      console.log(`[sync-business-report-process] ${job.month} salesAndTrafficByAsin rows: ${asinRows.length}`);
-      monthAsinRows[job.month] = asinRows;
-    } catch (err) {
-      console.error(`[sync-business-report-process] failed to download ${job.month}:`, err.message);
-      monthAsinRows[job.month] = [];
+      const writeResult = await writeRowsForLabel(rows, adType, now);
+      metaUpdates[`st_processed_${label}`] = 'true';
+      results.push({ label, status: 'ok', ...writeResult });
+
+    } else if (status === 'FAILED' || status === 'CANCELLED') {
+      // Terminal failure states — stop retrying this label, but don't let
+      // it block the other 3 labels from being marked PROCESSED.
+      console.warn(`[sync-ad-search-terms-process] ${label} terminal status: ${status}`);
+      metaUpdates[`st_processed_${label}`] = 'true';
+      results.push({ label, status: status.toLowerCase() });
+
+    } else {
+      // PENDING / IN_PROGRESS / etc — nothing to do, check again next invocation.
+      results.push({ label, status: 'pending' });
     }
   }
 
-  // ── Per-brand aggregation & sheet write ────────────────────────────────────
-  // No per-order date filtering needed here (unlike revenue) — each report
-  // already scopes to exactly one month, and salesAndTrafficByAsin gives
-  // per-SKU totals for that whole scoped range in one shot.
-  const targetMonths = jobs.map(j => j.month);
-  const results       = [];
+  // Persist per-label status/processed flags.
+  try {
+    const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
+    const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
+    const mm  = {};
+    ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+    Object.entries(metaUpdates).forEach(([k, v]) => { mm[k] = [k, v, now]; });
 
-  for (const brand of brands.filter(b => b.active)) {
-    try {
-      // Amazon's Sales and Traffic report has NO sku field — only
-      // parentAsin/childAsin (confirmed via ?debug=true). Brand matching by
-      // SKU prefix (as revenue.js does) doesn't work here for that reason.
-      // Instead: since Products Cache already has one tab per brand, an
-      // ASIN's presence in THIS brand's tab is itself the brand match — no
-      // prefix logic needed. getBrandAsinSet reads only the most recent
-      // sync date (this sheet is a daily-snapshot cron, so every ASIN
-      // repeats once per sync date).
-      const asinSet = await getBrandAsinSet(brand);
-      if (asinSet.size === 0) {
-        console.warn(`[sync-business-report-process] ${brand.id} — Products Cache tab returned 0 ASINs, check sheets.products / tab name`);
-      }
+    // Overall PROCESSED only once every requested label has been processed
+    // (successfully or terminally-failed) — mirrors mm's just-updated values.
+    const allProcessed = LABELS
+      .filter(({ label }) => meta[`st_report_id_${label}`]) // only ones actually requested
+      .every(({ label }) => (mm[`st_processed_${label}`]?.[1] ?? meta[`st_processed_${label}`]) === 'true');
 
-      const token       = await ensureTab(sheets.businessReport, brand.tabName, HEADERS);
-      const rawExisting = await readRows(sheets.businessReport, brand.tabName);
+    mm['st_report_status'] = ['st_report_status', allProcessed ? 'PROCESSED' : 'REQUESTED', now];
+    await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
 
-      const existingArrays = (rawExisting || []).map(r =>
-        Array.isArray(r)
-          ? r
-          : [
-              r['MONTH']                  ?? '',
-              r['YEAR']                   ?? '',
-              r['SESSIONS']                ?? '',
-              r['PAGE_VIEWS']               ?? '',
-              r['UNITS_ORDERED']            ?? '',
-              r['ORDERED_PRODUCT_SALES']    ?? '',
-              r['CONVERSION_RATE']          ?? '',
-            ]
-      );
-
-      let workingRows    = [...existingArrays];
-      const brandResults = [];
-
-      for (const targetMonth of targetMonths) {
-        const [tYear, tMonth] = targetMonth.split('-');
-        const tMonthNum = parseInt(tMonth, 10);
-        const tYearNum  = parseInt(tYear,  10);
-
-        const asinRows = monthAsinRows[targetMonth] || [];
-        const brandRows = asinRows.filter(row => {
-          const asin = (row.childAsin || row.parentAsin || '').toUpperCase();
-          return asinSet.has(asin);
-        });
-
-        console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — ${brandRows.length} matching SKU rows`);
-
-        let sessions = 0, pageViews = 0, unitsOrdered = 0, orderedProductSales = 0;
-        for (const row of brandRows) {
-          sessions            += parseInt(row.trafficByAsin?.sessions ?? 0, 10) || 0;
-          pageViews           += parseInt(row.trafficByAsin?.pageViews ?? 0, 10) || 0;
-          unitsOrdered        += parseInt(row.salesByAsin?.unitsOrdered ?? 0, 10) || 0;
-          orderedProductSales += parseFloat(row.salesByAsin?.orderedProductSales?.amount ?? 0) || 0;
-        }
-        orderedProductSales = round2(orderedProductSales);
-        const conversionRate = sessions > 0 ? round2((unitsOrdered / sessions) * 100) : 0;
-
-        console.log(`[sync-business-report-process] ${brand.id} ${targetMonth} — sessions=${sessions} units=${unitsOrdered} conv=${conversionRate}%`);
-
-        const newRow = [tMonthNum, tYearNum, sessions, pageViews, unitsOrdered, orderedProductSales, conversionRate];
-
-        const idx = workingRows.findIndex(r =>
-          parseInt(r[0], 10) === tMonthNum &&
-          parseInt(r[1], 10) === tYearNum
-        );
-
-        if (idx >= 0) {
-          workingRows[idx] = newRow;
-          console.log(`[sync-business-report-process] ${brand.id} — overwrote ${targetMonth}`);
-        } else {
-          workingRows.push(newRow);
-          console.log(`[sync-business-report-process] ${brand.id} — appended ${targetMonth}`);
-        }
-
-        brandResults.push({ month: targetMonth, sessions, unitsOrdered, conversionRate });
-      }
-
-      workingRows.sort((a, b) => {
-        const ay = parseInt(a[1], 10) || 0;
-        const by = parseInt(b[1], 10) || 0;
-        const am = parseInt(a[0], 10) || 0;
-        const bm = parseInt(b[0], 10) || 0;
-        return ay !== by ? ay - by : am - bm;
-      });
-
-      await replaceRows(sheets.businessReport, brand.tabName, HEADERS, workingRows, token);
-      results.push({ brand: brand.id, status: 'ok', months: brandResults });
-
-    } catch (err) {
-      console.error(`[sync-business-report-process] ${brand.id} failed:`, err.message);
-      results.push({ brand: brand.id, status: 'error', error: err.message });
-    }
+    res.status(200).json({ checked: results, overallStatus: allProcessed ? 'PROCESSED' : 'REQUESTED', timestamp: now });
+  } catch (err) {
+    console.error('[sync-ad-search-terms-process] failed to persist _meta:', err.message);
+    res.status(200).json({ checked: results, warning: 'meta persist failed: ' + err.message, timestamp: now });
   }
-
-  // ── Mark as processed in _meta ─────────────────────────────────────────────
-  if (!backfillMode) {
-    try {
-      const token   = await ensureTab(sheets.businessReport, META_TAB, META_HEADERS);
-      const rawMeta = await readRows(sheets.businessReport, META_TAB);
-      const metaMap = {};
-      for (const r of (rawMeta || [])) {
-        if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
-      }
-      metaMap['report_status']     = 'PROCESSED';
-      metaMap['last_processed_at'] = ts;
-      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
-      await replaceRows(sheets.businessReport, META_TAB, META_HEADERS, metaRows, token);
-    } catch (err) {
-      console.warn('[sync-business-report-process] failed to update _meta status:', err.message);
-    }
-  }
-
-  res.status(200).json({ synced: results });
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Sheet writing ────────────────────────────────────────────────────────
 
-const sleep  = ms => new Promise(r => setTimeout(r, ms));
-const round2 = n  => Math.round(n * 100) / 100;
+async function writeRowsForLabel(rawRows, adType, now) {
+  const rows = (rawRows || []).map(r => ({ ...r, adType }));
 
-// Products Cache is a daily-snapshot cron — every ASIN repeats once per
-// sync date, so only the most recent date's rows should count. Column C
-// is `asin` (confirmed via screenshot, 2026-07-14).
-async function getBrandAsinSet(brand) {
-  try {
-    const rows = await readRows(sheets.products, brand.tabName);
-    if (!rows || !rows.length) return new Set();
-    const latestDate = rows.reduce((max, r) => ((r['date'] || '') > max ? r['date'] : max), '');
-    const latestRows = latestDate ? rows.filter(r => r['date'] === latestDate) : rows;
-    return new Set(latestRows.map(r => (r['asin'] || '').trim().toUpperCase()).filter(Boolean));
-  } catch (err) {
-    console.warn(`[sync-business-report-process] ${brand.id} — failed to read Products Cache tab:`, err.message);
-    return new Set();
+  const byBrand = {};
+  let unmatched = 0;
+  rows.forEach(row => {
+    const tabName = identifyBrand(row.campaignName);
+    if (!tabName) { unmatched++; return; }
+    if (!byBrand[tabName]) byBrand[tabName] = [];
+    byBrand[tabName].push(row);
+  });
+  if (unmatched > 0) {
+    console.log(`[sync-ad-search-terms-process] ${unmatched} rows had unmatched campaign names`);
   }
+
+  const perBrand = [];
+  for (const [tabName, brandRows] of Object.entries(byBrand)) {
+    try {
+      const normalized = brandRows.map(row => normalizeRow(row, now)).filter(Boolean);
+
+      const token1     = await ensureTab(SHEET_AD_SEARCH_TERMS, tabName, HEADERS);
+      const existing    = await readRows(SHEET_AD_SEARCH_TERMS, tabName);
+      const existingObj = existing.map(normalizeExisting);
+
+      // Upsert keyed by (search_term, keyword, match_type, ad_type, date) —
+      // preserves every row for other dates untouched.
+      const merged = new Map();
+      existingObj.forEach(r => merged.set(rowKey(r), r));
+      normalized.forEach(r => merged.set(rowKey(r), r));
+
+      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
+      await replaceRows(SHEET_AD_SEARCH_TERMS, tabName, HEADERS, outRows, token1);
+
+      console.log(`[sync-ad-search-terms-process] ${tabName}: upserted ${normalized.length} rows`);
+      perBrand.push({ brand: tabName, rows: normalized.length });
+    } catch (err) {
+      console.error(`[sync-ad-search-terms-process] ${tabName} failed:`, err.message);
+      perBrand.push({ brand: tabName, error: err.message });
+    }
+  }
+
+  return { rawRows: rows.length, unmatched, perBrand };
+}
+
+function rowKey(r) {
+  return `${r.search_term}||${r.keyword}||${r.match_type}||${r.ad_type}||${r.date}`;
+}
+
+function normalizeExisting(r) {
+  // readRows returns header-keyed objects already — pass through as-is,
+  // values will be re-stringified by HEADERS.map(...) at write time.
+  return r;
+}
+
+function normalizeRow(row, now) {
+  const isSP = row.adType === 'SP';
+
+  const date = row.date || '';
+  if (!date) return null; // shouldn't happen with DAILY timeUnit, but skip rather than write a garbage key
+  const [yearStr, monthStr] = date.split('-');
+  const year  = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+
+  const impressions = parseInt(row.impressions || '0', 10);
+  const clicks       = parseInt(row.clicks || '0', 10);
+  const cost         = parseFloat(row.cost || '0');
+
+  const purchases = isSP ? parseInt(row.purchases14d || '0', 10) : parseInt(row.purchases || '0', 10);
+  const sales      = isSP ? parseFloat(row.sales14d || '0')       : parseFloat(row.sales || '0');
+
+  // Conversion rate: SP reports this directly (purchaseClickRate14d); SB
+  // has no equivalent column so it's calculated from purchases/clicks.
+  const cpc  = isSP && row.costPerClick != null ? parseFloat(row.costPerClick) : (clicks > 0 ? round2(cost / clicks) : 0);
+  const ctr  = isSP && row.clickThroughRate != null ? parseFloat(row.clickThroughRate) : (impressions > 0 ? round2((clicks / impressions) * 100) : 0);
+  const acos = isSP && row.acosClicks14d != null ? parseFloat(row.acosClicks14d) : (sales > 0 ? round2((cost / sales) * 100) : null);
+  const conversionRate = isSP && row.purchaseClickRate14d != null
+    ? parseFloat(row.purchaseClickRate14d)
+    : (clicks > 0 ? round2((purchases / clicks) * 100) : 0);
+  const cpm = impressions > 0 ? round2((cost / impressions) * 1000) : 0;
+
+  return {
+    search_term:      row.searchTerm || '',
+    keyword:           isSP ? (row.keyword || '') : (row.keywordText || ''),
+    match_type:        row.matchType || '',
+    ad_type:            row.adType,
+    campaign_name:      row.campaignName || '',
+    ad_group_name:      row.adGroupName || '',
+    date, year, month,
+    impressions, clicks, ctr,
+    cost: round2(cost), cpc, cpm,
+    purchases, sales: round2(sales), acos, conversion_rate: conversionRate,
+    current_bid: row.keywordBid != null ? parseFloat(row.keywordBid) : '',
+    last_updated: now,
+  };
+}
+
+function round2(n) { return Math.round((n || 0) * 100) / 100; }
+
+// ── Amazon API calls ────────────────────────────────────────────────────
+
+function downloadAdReport(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        zlib.gunzip(buf, (err, decoded) => {
+          if (err) {
+            try { resolve(JSON.parse(buf.toString())); } catch (e) { reject(e); }
+            return;
+          }
+          try { resolve(JSON.parse(decoded.toString())); } catch (e) { reject(e); }
+        });
+      });
+    }).on('error', reject);
+  });
+}
+
+function adRequest(method, path, token, profileId, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : '';
+    const headers = {
+      'Authorization':                   `Bearer ${token}`,
+      'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
+      'Content-Type':                    'application/json',
+    };
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`Ad API parse error (${res.statusCode}): ${d.slice(0, 300)}`)); }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
 }
