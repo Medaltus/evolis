@@ -151,26 +151,11 @@
     }
   ],
   "functions": {
-    "api/sales.js": {
-      "maxDuration": 30
-    },
-    "api/products.js": {
-      "maxDuration": 30
-    },
-    "api/advertising.js": {
-      "maxDuration": 30
-    },
-    "api/subscriptions.js": {
+    "api/*.js": {
       "maxDuration": 30
     },
     "api/run-analysis.js": {
       "maxDuration": 300
-    },
-    "api/write-insights.js": {
-      "maxDuration": 30
-    },
-    "api/write-uploads.js": {
-      "maxDuration": 30
     },
     "api/test-ad-connection.js": {
       "maxDuration": 300
@@ -178,131 +163,35 @@
     "api/test-ad-summary.js": {
       "maxDuration": 300
     },
-    "api/test-walmart.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-orders-request.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-orders-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/fees-estimate.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sale-promotions.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-walmart-orders.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-walmart-revenue.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-walmart-returns.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-orders-backfill.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-products.js": {
-      "maxDuration": 300
-    },
-    "api/cron/trim-products-log.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-advertising-request.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-advertising-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-ad-search-terms-request.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-ad-search-terms-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-sqp-request.js": {
-      "maxDuration": 60
-    },
-    "api/cron/sync-sqp-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-advertising-backfill.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-subscriptions.js": {
-      "maxDuration": 300
-    },
-    "api/cron/trim-orders.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-revenue-request.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-revenue-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-stewardship-summary.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-business-report-request.js": {
-      "maxDuration": 30
-    },
-    "api/cron/sync-business-report-process.js": {
+    "api/run-listing-audit.js": {
       "maxDuration": 300
     },
     "api/upload-keyword-tracker.js": {
       "maxDuration": 60
     },
-    "api/cron/sync-shopify-orders.js": {
+    "api/cron/*.js": {
       "maxDuration": 300
     },
-    "api/cron/sync-shopify-revenue.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-shopify-returns.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-shopify-subscriptions.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-google-ads.js": {
-      "maxDuration": 300
-    },
-    "api/run-listing-audit.js": {
-      "maxDuration": 300
-    },
-    "api/write-listing-audit.js": {
+    "api/cron/sync-orders-request.js": {
       "maxDuration": 30
     },
-    "api/cron/sync-listings.js": {
-      "maxDuration": 300
+    "api/cron/sync-ad-search-terms-request.js": {
+      "maxDuration": 30
     },
-    "api/cron/sync-cin7-consignment-inventory.js": {
-      "maxDuration": 300
+    "api/cron/sync-sqp-request.js": {
+      "maxDuration": 60
     },
-    "api/cron/sync-newderm-inventory-reconciliation.js": {
-      "maxDuration": 900
+    "api/cron/sync-revenue-request.js": {
+      "maxDuration": 30
     },
-    "api/cron/sync-consignment-inventory.js": {
-      "maxDuration": 300
+    "api/cron/sync-business-report-request.js": {
+      "maxDuration": 30
     },
     "api/cron/sync-returns-request.js": {
       "maxDuration": 30
     },
-    "api/cron/sync-returns-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-fulfillment-kpis.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-fulfillment-states.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-fulfillment-daily-shipments.js": {
-      "maxDuration": 300
+    "api/cron/sync-newderm-inventory-reconciliation.js": {
+      "maxDuration": 900
     }
   },
   "routes": [
