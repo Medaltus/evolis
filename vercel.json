@@ -34,6 +34,10 @@
       "schedule": "3 4 * * *"
     },
     {
+      "path": "/api/cron/sync-walmart-returns",
+      "schedule": "10 4 * * *"
+    },
+    {
       "path": "/api/cron/sync-orders-backfill",
       "schedule": "20 4 5 * *"
     },
@@ -84,6 +88,14 @@
     {
       "path": "/api/cron/sync-google-ads",
       "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-shopify-returns",
+      "schedule": "22 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-shopify-subscriptions",
+      "schedule": "30 7 * * *"
     },
     {
       "path": "/api/cron/sync-newderm-inventory-reconciliation",
@@ -187,6 +199,9 @@
     "api/cron/sync-walmart-revenue.js": {
       "maxDuration": 300
     },
+    "api/cron/sync-walmart-returns.js": {
+      "maxDuration": 300
+    },
     "api/cron/sync-orders-backfill.js": {
       "maxDuration": 300
     },
@@ -245,6 +260,12 @@
       "maxDuration": 300
     },
     "api/cron/sync-shopify-revenue.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-shopify-returns.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-shopify-subscriptions.js": {
       "maxDuration": 300
     },
     "api/cron/sync-google-ads.js": {
