@@ -2558,6 +2558,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <div class="channel-tabs">
       <button class="ch-tab active" onclick="showChannel('insights','ins-overview',this)">Overview</button>
       <button class="ch-tab" onclick="showChannel('insights','ins-products',this)">Products</button>
+      <button class="ch-tab" onclick="showChannel('insights','ins-sqp',this)">Search Query Performance</button>
       <button class="ch-tab" onclick="showChannel('insights','ins-reviews',this)">Reviews</button>
       <button class="ch-tab" onclick="showChannel('insights','ins-log',this)">Insights Log</button>
     </div>
@@ -3053,6 +3054,38 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div><!-- /pt-dryshampoo -->
 
     </div><!-- /ins-products -->
+
+    <!-- ── SEARCH QUERY PERFORMANCE ── moved here from Organic → Activators,
+         2026-07-31, per Jaclyn: SQP is brand-wide (Amazon's real SQP export
+         is not product-type-scoped), so it doesn't belong nested under one
+         product type in Organic. Table below is still the Cerebro fallback
+         snapshot (8 rows, Activator-heavy) until a real Seller Central SQP
+         export is uploaded — same caveat as before, just relabeled. -->
+    <div class="channel-page" id="ins-sqp">
+      <div class="org-sqp-alert">
+        <span>📊</span>
+        <span><strong>Search Query Performance data is not yet uploaded for évolis.</strong> The table below shows keyword tracking data from Cerebro as a placeholder. Upload SQP data from Seller Central (Brand Analytics &gt; Search Query Performance) to see brand click share and purchase share by query, which is more actionable than Cerebro vol alone — and is genuinely brand-wide rather than scoped to one product type.</span>
+      </div>
+      <div class="org-sqp-card">
+        <div class="org-sqp-title">Current Keyword Tracking — Brand-Wide <span class="org-sqp-badge">Cerebro · April 2026</span></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Search Query</th><th>Vol/mo</th><th>Brand Share (Clicks)</th><th>Brand Share (Purchases)</th><th>Organic Rank</th><th>Signal</th></tr></thead>
+            <tbody>
+              <tr><td>evolis</td><td>~200</td><td style="color:#1db88a;font-weight:600;">High</td><td style="color:#1db88a;font-weight:600;">High</td><td><span class="rank-pill rank-top">#4</span></td><td>Brand term — owned</td></tr>
+              <tr><td>hair growth</td><td>131,492</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>⚡ Long-term target — 40K competing</td></tr>
+              <tr><td>rosemary oil for hair growth</td><td>131,425</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ In formula — PPC priority</td></tr>
+              <tr><td>hair growth serum</td><td>71,798</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ Primary PPC target</td></tr>
+              <tr><td>hair growth accelerator</td><td>20,925</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 293 comps — fastest path</td></tr>
+              <tr><td>ordinary hair growth serum</td><td>29,521</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 82.3% ABA — competitor halo</td></tr>
+              <tr><td>scalp serum</td><td>14,567</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ PPC + title (Prevent)</td></tr>
+              <tr><td>postpartum hair loss</td><td>1,084</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 661 comps — quick win</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;">Upload Seller Central SQP export to replace "~0%" cells with actual brand click and purchase share data. <span style="color:var(--warn);">Note: this table's 8 rows are still Activator-heavy since that's what the Cerebro pull originally covered — flag if you want it broadened to cover all product types once real SQP data lands.</span></div>
+      </div>
+    </div><!-- /ins-sqp -->
 
     <div class="channel-page" id="ins-reviews">
 
@@ -4006,7 +4039,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
   <div class="page" id="page-organic">
 
     <div class="page-hd">
-      <div><div class="page-title">Organic</div><div class="page-sub">Keyword rank tracking · Fastest path to page 1 · Search Query Performance · Tier 1 / 2 / 3 strategy</div></div>
+      <div><div class="page-title">Organic</div><div class="page-sub">Keyword rank tracking · Fastest path to page 1</div></div>
     </div>
 
     <!-- Warning callout -->
@@ -4033,7 +4066,6 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       <div class="sub-tabs">
         <button class="sub-tab active" onclick="showSubTab('org-activators','oa-insights',this)">Insights</button>
         <button class="sub-tab" onclick="showSubTab('org-activators','oa-ranktracker',this); window.initRankTrackerActivators();">Rank Tracker</button>
-        <button class="sub-tab" onclick="showSubTab('org-activators','oa-sqp',this)">Search Query Performance</button>
       </div>
 
       <!-- INSIGHTS — read weekly. Cards below have static fallback content
@@ -4166,32 +4198,6 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
             <strong>Where in Listing</strong> reflects the live listing copy as of its last sync only — it can't show when a keyword was added, since the listings sheet doesn't keep dated history.<br>
             Product mapping: Reverse = EVO0001 (confirmed). Promote = EVO0005, Prevent = EVO0009 — pulled from the Insights → Products tab, not yet verified against the master SKU list.
           </div>
-        </div>
-      </div>
-
-      <div class="sub-page" id="oa-sqp">
-        <div class="org-sqp-alert">
-          <span>📊</span>
-          <span><strong>Search Query Performance data is not yet uploaded for évolis.</strong> The table below shows keyword tracking data from Cerebro. Upload SQP data from Seller Central (Brand Analytics &gt; Search Query Performance) to see brand click share and purchase share by query, which is more actionable than Cerebro vol alone.</span>
-        </div>
-        <div class="org-sqp-card">
-          <div class="org-sqp-title">Current Keyword Tracking — Activators <span class="org-sqp-badge">Cerebro · April 2026</span></div>
-          <div style="overflow-x:auto;">
-            <table class="data-table">
-              <thead><tr><th>Search Query</th><th>Vol/mo</th><th>Brand Share (Clicks)</th><th>Brand Share (Purchases)</th><th>Organic Rank</th><th>Signal</th></tr></thead>
-              <tbody>
-                <tr><td>evolis</td><td>~200</td><td style="color:#1db88a;font-weight:600;">High</td><td style="color:#1db88a;font-weight:600;">High</td><td><span class="rank-pill rank-top">#4</span></td><td>Brand term — owned</td></tr>
-                <tr><td>hair growth</td><td>131,492</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>⚡ Long-term target — 40K competing</td></tr>
-                <tr><td>rosemary oil for hair growth</td><td>131,425</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ In formula — PPC priority</td></tr>
-                <tr><td>hair growth serum</td><td>71,798</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ Primary PPC target</td></tr>
-                <tr><td>hair growth accelerator</td><td>20,925</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 293 comps — fastest path</td></tr>
-                <tr><td>ordinary hair growth serum</td><td>29,521</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 82.3% ABA — competitor halo</td></tr>
-                <tr><td>scalp serum</td><td>14,567</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ PPC + title (Prevent)</td></tr>
-                <tr><td>postpartum hair loss</td><td>1,084</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 661 comps — quick win</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;">Upload Seller Central SQP export to replace "~0%" cells with actual brand click and purchase share data.</div>
         </div>
       </div>
 
