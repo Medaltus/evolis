@@ -757,13 +757,65 @@ ${listingCtxTrimmed}`;
 
 // ── Write result directly to sheets.insights ────────────────────────────────
 
+// Google Sheets hard-rejects any single cell over 50,000 characters. Real
+// failure hit 2026-07-31: with item-count caps removed (per Jaclyn
+// 2026-07-27), organic.rank_changes/page1_opportunities/new_ppc_converters
+// now carry one full entry per TRACKED keyword with no cap — for a brand
+// tracking enough keywords, JSON.stringify(insights.organic) alone blew
+// past the limit and the whole write failed.
+//
+// Fix is scoped deliberately: the NARRATIVE fields (summary, wins,
+// actions, opportunities, keywords_to_watch, ranking_diagnostic) stay
+// fully uncapped — that was the actual point of removing the caps, and
+// none of those are large enough to be the real risk here anyway. Only
+// the raw BULK DATA ARRAYS get trimmed, and only for what gets PERSISTED
+// to the historical log — the live HTTP response (returned to whoever
+// clicked "Run Analysis") keeps everything untrimmed, since those arrays
+// get recomputed fresh from source data on every run regardless — losing
+// some rows from one historical log snapshot isn't losing real
+// information, it's just not re-deriving something that's already
+// available live.
+//
+// Trimming is dynamic (check actual size, cut the largest array, repeat)
+// rather than a fixed item-count guess — entries vary in string length
+// (a longer recommended_action sentence takes more room than a short
+// one), so a fixed count doesn't reliably guarantee staying under the
+// real character limit the way actually measuring it does.
+const MAX_CELL_CHARS = 45000; // Google's real limit is 50000 — leaving real margin, not cutting it close
+
+function trimArraysToFit(obj, arrayFieldNames) {
+  const clone = JSON.parse(JSON.stringify(obj)); // never mutate the original — the live HTTP response needs the full version
+  let trimmed = false;
+  while (JSON.stringify(clone).length > MAX_CELL_CHARS) {
+    let largestField = null, largestLen = 0;
+    arrayFieldNames.forEach(f => {
+      if (Array.isArray(clone[f]) && clone[f].length > largestLen) {
+        largestLen = clone[f].length;
+        largestField = f;
+      }
+    });
+    if (!largestField) break; // nothing left we're allowed to trim — stop rather than loop forever
+    clone[largestField] = clone[largestField].slice(0, Math.ceil(largestLen * 0.8)); // cut 20% at a time
+    trimmed = true;
+  }
+  if (trimmed) clone._truncated_for_sheet_storage = true; // visible marker, not a silent cut
+  return clone;
+}
+
 async function writeInsightsToSheet(brand, insights) {
   const token = await ensureTab(sheets.insights, brand.tabName, INSIGHTS_HEADERS);
+
+  const organicForSheet = trimArraysToFit(insights.organic || {}, ['rank_changes', 'new_ppc_converters', 'page1_opportunities']);
+  const listingForSheet = trimArraysToFit(insights.listing || {}, ['implementation_status']);
+  if (organicForSheet._truncated_for_sheet_storage || listingForSheet._truncated_for_sheet_storage) {
+    console.warn(`[run-analysis] ${brand.id} — organic/listing data trimmed to fit Google Sheets' 50k-char cell limit for the historical log. Full untrimmed data was still returned in this run's live response.`);
+  }
+
   const row = [
     insights.date,
-    JSON.stringify(insights.organic || {}),
+    JSON.stringify(organicForSheet),
     JSON.stringify(insights.ppc || {}),
-    JSON.stringify(insights.listing || {}),
+    JSON.stringify(listingForSheet),
     insights.log_summary || '',
     new Date().toISOString(),
   ];
