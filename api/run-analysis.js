@@ -95,11 +95,19 @@
  * volume in code; Claude only writes 2-4 prioritized recommendation
  * bullets and a suggested-exact-match-target list against those real
  * numbers. Written into the ppc_json column, which already existed — no
- * sheet schema change needed. Flagged, not assumed: BIZ_FIELD_CANDIDATES
- * (sessions/units/revenue/conversion column names) is an unconfirmed
- * best-guess list, same caveat as LISTING_FIELD_CANDIDATES above — if
- * every SKU's business numbers come back null, check the real Business
- * Report column headers before assuming the logic is broken.
+ * sheet schema change needed. BIZ_FIELD_CANDIDATES (sessions/units/
+ * revenue/conversion column names) was CONFIRMED 2026-07-31 per Jaclyn
+ * against the real Business Report sheet headers (MONTH, YEAR, ASIN, SKU,
+ * SESSIONS, PAGE_VIEWS, UNITS_ORDERED, ORDERED_PRODUCT_SALES,
+ * CONVERSION_RATE) — the candidate arrays are kept only as a defensive
+ * fallback against future casing drift, not because the names are in
+ * doubt. CONVERSION_RATE's actual stored format (decimal fraction like
+ * 0.2295 vs. an already-percent number like 22.95) is NOT confirmed —
+ * parseConversionPct() below guesses using the same "≤1 means it's a
+ * fraction" heuristic computeAbaPct() already uses elsewhere in this file
+ * for the same ambiguity. Worth a quick sanity check against a real row
+ * once this runs — if every SKU's conversion_pct looks off by 100x, this
+ * is the guess to fix.
  */
 
 const { readRows, ensureTab, appendRows } = require('./config/_sheets_client');
@@ -157,22 +165,20 @@ const LISTING_FIELD_CANDIDATES = {
 
 const ABA_FIELD_CANDIDATES = ['purchases_brand_share', 'purchase_brand_share', 'aba_conv_share', 'aba_purchase_share', 'conv_share'];
 
-// Added 2026-07-31 per Jaclyn, for the new ppc.strategy_by_sku block below
-// (replaces the hand-authored "Strategy by Product" cards on the dashboard).
-// UNCONFIRMED against the real Business Report sheet schema — same caveat
-// as LISTING_FIELD_CANDIDATES above: this is a best-guess candidate list,
-// not a verified column name. If sessions/units/revenue/conversion come
-// back null for every SKU, the field names are wrong, not the logic. Please
-// confirm the actual header row on sheets.businessReport's evolis tab
-// before relying on this in production.
+// CONFIRMED 2026-07-31 per Jaclyn — real headers on the Business Report
+// sheet are: MONTH, YEAR, ASIN, SKU, SESSIONS, PAGE_VIEWS, UNITS_ORDERED,
+// ORDERED_PRODUCT_SALES, CONVERSION_RATE. Candidate arrays kept (rather
+// than single string lookups) only as a defensive fallback in case
+// casing/spacing ever drifts between sheet syncs — the confirmed
+// ALL_CAPS name is listed first in each and is what should actually match.
 const BIZ_FIELD_CANDIDATES = {
-  sku:         ['sku', 'SKU', 'Sku'],
-  sessions:    ['sessions', 'Sessions'],
-  units:       ['units', 'Units', 'units_ordered', 'Units Ordered'],
-  revenue:     ['revenue', 'Revenue', 'ordered_revenue', 'sales'],
-  conversion:  ['conversion', 'Conversion', 'conv', 'conv_pct', 'unit_session_pct'],
-  year:        ['year', 'Year'],
-  month:       ['month', 'Month'],
+  sku:         ['SKU', 'sku', 'Sku'],
+  sessions:    ['SESSIONS', 'sessions', 'Sessions'],
+  units:       ['UNITS_ORDERED', 'units_ordered', 'Units Ordered', 'units', 'Units'],
+  revenue:     ['ORDERED_PRODUCT_SALES', 'ordered_product_sales', 'revenue', 'Revenue'],
+  conversion:  ['CONVERSION_RATE', 'conversion_rate', 'conversion', 'Conversion'],
+  year:        ['YEAR', 'year', 'Year'],
+  month:       ['MONTH', 'month', 'Month'],
   date:        ['date', 'Date'],
 };
 
@@ -584,6 +590,35 @@ function latestBizRowPerSku(bizRowsFull) {
   return map;
 }
 
+// CONVERSION_RATE's stored format isn't confirmed (could be a 0-1 fraction
+// or an already-percent number) — same ambiguity computeAbaPct() already
+// handles above for ABA%, so reusing the identical "≤1 means fraction"
+// heuristic here rather than inventing a different rule for a very
+// similar problem. Also strips a trailing "%" defensively in case the
+// sheet stores it as formatted text rather than a raw number.
+function parseConversionPct(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = parseFloat(String(raw).replace('%', '').trim());
+  if (!Number.isFinite(n)) return null;
+  return n <= 1 ? n * 100 : n;
+}
+
+// Guards against the same failure mode this codebase has already hit once
+// elsewhere (documented in the dashboard's PPC search-term code): Google
+// Sheets CSV export writes a cell's DISPLAYED text, so a currency- or
+// comma-formatted number like "$1,234.56" fails parseInt/parseFloat
+// outright (they stop at the first non-numeric character) and silently
+// becomes 0/null instead of throwing. Stripping everything but digits,
+// a single leading minus, and a decimal point before parsing avoids that
+// regardless of whether ORDERED_PRODUCT_SALES/UNITS_ORDERED ever end up
+// formatted that way.
+function parseNumericCell(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const cleaned = String(raw).replace(/[^0-9.\-]/g, '');
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
 function buildSkuStrategySnapshots(kwRows, bizRowsFull, sqpRows) {
   const bizBySku = latestBizRowPerSku(bizRowsFull);
 
@@ -620,10 +655,10 @@ function buildSkuStrategySnapshots(kwRows, bizRowsFull, sqpRows) {
 
     snapshots[sku] = {
       sku,
-      sessions:        bizRow ? (parseInt(findField(bizRow, BIZ_FIELD_CANDIDATES.sessions), 10) || null) : null,
-      units:           bizRow ? (parseInt(findField(bizRow, BIZ_FIELD_CANDIDATES.units), 10) || null) : null,
-      revenue:         bizRow ? (parseFloat(findField(bizRow, BIZ_FIELD_CANDIDATES.revenue)) || null) : null,
-      conversion_pct:  bizRow ? (parseFloat(findField(bizRow, BIZ_FIELD_CANDIDATES.conversion)) || null) : null,
+      sessions:        bizRow ? parseNumericCell(findField(bizRow, BIZ_FIELD_CANDIDATES.sessions)) : null,
+      units:           bizRow ? parseNumericCell(findField(bizRow, BIZ_FIELD_CANDIDATES.units)) : null,
+      revenue:         bizRow ? parseNumericCell(findField(bizRow, BIZ_FIELD_CANDIDATES.revenue)) : null,
+      conversion_pct:  bizRow ? parseConversionPct(findField(bizRow, BIZ_FIELD_CANDIDATES.conversion)) : null,
       top_keywords:    topKeywords,
     };
   });
