@@ -151,9 +151,6 @@
     }
   ],
   "functions": {
-    "api/*.js": {
-      "maxDuration": 30
-    },
     "api/run-analysis.js": {
       "maxDuration": 300
     },
@@ -169,8 +166,8 @@
     "api/upload-keyword-tracker.js": {
       "maxDuration": 60
     },
-    "api/cron/*.js": {
-      "maxDuration": 300
+    "api/*.js": {
+      "maxDuration": 30
     },
     "api/cron/sync-orders-request.js": {
       "maxDuration": 30
@@ -192,6 +189,9 @@
     },
     "api/cron/sync-newderm-inventory-reconciliation.js": {
       "maxDuration": 900
+    },
+    "api/cron/*.js": {
+      "maxDuration": 300
     }
   },
   "routes": [
