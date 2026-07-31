@@ -85,6 +85,21 @@
  *      would be pretending to know something this system can't actually
  *      confirm. See buildListingImplementationStatus() for the honesty
  *      caveat on what a "no match" here does and doesn't prove.
+ *
+ * ADDED 2026-07-31 per Jaclyn — ppc.strategy_by_sku replaces the
+ * hand-authored PPC "Strategy by Product" cards on the dashboard (the
+ * per-SKU sections like "PPC on 'hair growth serum' + 'scalp serum'...").
+ * Same deterministic-then-prose split as everything else in this file:
+ * buildSkuStrategySnapshots() computes each SKU's latest-month business
+ * numbers (sessions/units/revenue/conversion) and top tracked keywords by
+ * volume in code; Claude only writes 2-4 prioritized recommendation
+ * bullets and a suggested-exact-match-target list against those real
+ * numbers. Written into the ppc_json column, which already existed — no
+ * sheet schema change needed. Flagged, not assumed: BIZ_FIELD_CANDIDATES
+ * (sessions/units/revenue/conversion column names) is an unconfirmed
+ * best-guess list, same caveat as LISTING_FIELD_CANDIDATES above — if
+ * every SKU's business numbers come back null, check the real Business
+ * Report column headers before assuming the logic is broken.
  */
 
 const { readRows, ensureTab, appendRows } = require('./config/_sheets_client');
@@ -141,6 +156,34 @@ const LISTING_FIELD_CANDIDATES = {
 };
 
 const ABA_FIELD_CANDIDATES = ['purchases_brand_share', 'purchase_brand_share', 'aba_conv_share', 'aba_purchase_share', 'conv_share'];
+
+// Added 2026-07-31 per Jaclyn, for the new ppc.strategy_by_sku block below
+// (replaces the hand-authored "Strategy by Product" cards on the dashboard).
+// UNCONFIRMED against the real Business Report sheet schema — same caveat
+// as LISTING_FIELD_CANDIDATES above: this is a best-guess candidate list,
+// not a verified column name. If sessions/units/revenue/conversion come
+// back null for every SKU, the field names are wrong, not the logic. Please
+// confirm the actual header row on sheets.businessReport's evolis tab
+// before relying on this in production.
+const BIZ_FIELD_CANDIDATES = {
+  sku:         ['sku', 'SKU', 'Sku'],
+  sessions:    ['sessions', 'Sessions'],
+  units:       ['units', 'Units', 'units_ordered', 'Units Ordered'],
+  revenue:     ['revenue', 'Revenue', 'ordered_revenue', 'sales'],
+  conversion:  ['conversion', 'Conversion', 'conv', 'conv_pct', 'unit_session_pct'],
+  year:        ['year', 'Year'],
+  month:       ['month', 'Month'],
+  date:        ['date', 'Date'],
+};
+
+// Also unconfirmed — the keyword tracker sheet's real column names for
+// competing-ASIN-count and CPC aren't established anywhere else in this
+// file (buildRankingDiagnostic above explicitly notes no competing-ASIN
+// field was found and works around it — this list is included anyway in
+// case a real one exists under a name not yet checked). Falls back to
+// null cleanly via findField() if none of these match.
+const KEYWORD_COMPETING_CANDIDATES = ['competing_products', 'competing', 'competing_asins', 'comp_count'];
+const KEYWORD_CPC_CANDIDATES = ['cpc', 'suggested_cpc', 'estimated_cpc', 'sp_cpc'];
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -447,8 +490,12 @@ function repairTruncatedJson(text) {
 // placeholder narrative, rather than the whole run producing nothing.
 // Matches the same "never let one bad response destroy the whole result"
 // principle the cron reliability playbook already applies elsewhere.
-function buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, comparison }) {
+function buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, skuStrategySnapshots, comparison }) {
   const note = 'Claude\'s narrative response could not be parsed this run (likely truncated) — the numbers below are real and fully computed, but the written summary/wins/actions text is a placeholder until the next successful run.';
+  const fallbackStrategyBySku = {};
+  Object.keys(skuStrategySnapshots || {}).forEach(sku => {
+    fallbackStrategyBySku[sku] = { ...skuStrategySnapshots[sku], recommended_bullets: [], suggested_exact_match_targets: [] };
+  });
   return {
     date: new Date().toISOString().slice(0, 10),
     organic: {
@@ -458,7 +505,7 @@ function buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportuniti
       ranking_diagnostic_data: rankingDiagnostic,
       comparison_window: comparison.hasHistory ? { prev_date: comparison.prevDate, curr_date: comparison.currDate } : null,
     },
-    ppc: { summary: note, wins: [], actions: [], opportunities: [] },
+    ppc: { summary: note, wins: [], actions: [], opportunities: [], strategy_by_sku: fallbackStrategyBySku },
     listing: { summary: note, violations: [], keyword_gaps: [], rewrites_recommended: [], implementation_status: listingImplementationStatus },
     log_summary: note,
   };
@@ -503,7 +550,88 @@ function buildRankingDiagnostic(rankChanges) {
   };
 }
 
-// ── Per-brand analysis ──────────────────────────────────────────────────────
+// ── Per-SKU strategy snapshot (replaces the hand-authored "Strategy by
+// Product" cards) ────────────────────────────────────────────────────────
+// Added 2026-07-31 per Jaclyn. Same philosophy as everything above: the
+// real numbers (latest-month sessions/units/revenue/conversion per SKU,
+// plus that SKU's top tracked keywords by volume) are computed here in
+// code. Claude's only job (see ppc.strategy_by_sku in the prompt below) is
+// to turn those numbers into 2-4 prioritized recommendation bullets per
+// SKU, matching the tone of the old hand-written cards — not to invent or
+// restate the numbers itself.
+//
+// Deliberately keyed by SKU, not by product type (Activators/Shampoos/
+// etc.) — this file has no reliable source for that grouping (it's a
+// dashboard-side concept baked into index.html's tab structure), whereas
+// every sheet already keys rows by SKU. The dashboard slots each SKU's
+// strategy into the right product-type tab itself.
+
+function latestBizRowPerSku(bizRowsFull) {
+  const map = new Map();
+  bizRowsFull.forEach(r => {
+    const sku = findField(r, BIZ_FIELD_CANDIDATES.sku);
+    if (!sku) return;
+    const y = parseInt(findField(r, BIZ_FIELD_CANDIDATES.year), 10);
+    const m = parseInt(findField(r, BIZ_FIELD_CANDIDATES.month), 10);
+    // Prefer a real year/month sort key; fall back to a raw date string if
+    // year/month columns don't exist under any of the guessed names above.
+    const sortKey = (Number.isFinite(y) && Number.isFinite(m))
+      ? y * 100 + m
+      : (findField(r, BIZ_FIELD_CANDIDATES.date) || '');
+    const existing = map.get(sku);
+    if (!existing || sortKey > existing._sortKey) map.set(sku, { row: r, _sortKey: sortKey });
+  });
+  return map;
+}
+
+function buildSkuStrategySnapshots(kwRows, bizRowsFull, sqpRows) {
+  const bizBySku = latestBizRowPerSku(bizRowsFull);
+
+  const kwBySku = new Map();
+  kwRows.forEach(r => {
+    const sku = (r.sku || '').trim();
+    if (!sku) return;
+    if (!kwBySku.has(sku)) kwBySku.set(sku, []);
+    kwBySku.get(sku).push(r);
+  });
+
+  const allSkus = new Set([...bizBySku.keys(), ...kwBySku.keys()]);
+  const snapshots = {};
+
+  allSkus.forEach(sku => {
+    const bizEntry = bizBySku.get(sku);
+    const bizRow = bizEntry ? bizEntry.row : null;
+
+    // Top 10 tracked keywords for this SKU by volume — Claude picks which
+    // few are worth featuring in its recommendation bullets and suggested
+    // exact-match targets; it doesn't need the full long tail to do that.
+    const topKeywords = (kwBySku.get(sku) || [])
+      .filter(r => r.keyword)
+      .map(r => ({
+        keyword: r.keyword,
+        vol_mo: parseInt(r.search_volume, 10) || null,
+        organic_rank: parseRank(r.organic_rank).raw,
+        aba_pct: computeAbaPct(sqpRows, r.keyword),
+        competing: findField(r, KEYWORD_COMPETING_CANDIDATES),
+        cpc: findField(r, KEYWORD_CPC_CANDIDATES),
+      }))
+      .sort((a, b) => (b.vol_mo || 0) - (a.vol_mo || 0))
+      .slice(0, 10);
+
+    snapshots[sku] = {
+      sku,
+      sessions:        bizRow ? (parseInt(findField(bizRow, BIZ_FIELD_CANDIDATES.sessions), 10) || null) : null,
+      units:           bizRow ? (parseInt(findField(bizRow, BIZ_FIELD_CANDIDATES.units), 10) || null) : null,
+      revenue:         bizRow ? (parseFloat(findField(bizRow, BIZ_FIELD_CANDIDATES.revenue)) || null) : null,
+      conversion_pct:  bizRow ? (parseFloat(findField(bizRow, BIZ_FIELD_CANDIDATES.conversion)) || null) : null,
+      top_keywords:    topKeywords,
+    };
+  });
+
+  return snapshots;
+}
+
+
 
 async function runAnalysisForBrand(brand, apiKey) {
   const brandDesc = BRAND_DESCRIPTIONS[brand.id] || BRAND_DESCRIPTIONS.default;
@@ -557,6 +685,10 @@ async function runAnalysisForBrand(brand, apiKey) {
   const page1Opportunities = buildPage1Opportunities(rankChanges);
   const rankingDiagnostic = buildRankingDiagnostic(rankChanges);
   const listingImplementationStatus = buildListingImplementationStatus(latestBySku, latestInventoryBySku);
+  // Uses the FULL bizRows, not bizTrimmed (which is sliced to the last 15
+  // rows for the general PPC prompt context below) — this needs a real
+  // latest-month-per-SKU lookup across all history, not just a recent tail.
+  const skuStrategySnapshots = buildSkuStrategySnapshots(kwRows, bizRows, sqpRows);
 
   const systemPrompt = `You are an expert Amazon brand strategist and listing compliance auditor for Medaltus. Analyzing weekly performance data for ${brandDesc}.
 
@@ -608,9 +740,17 @@ CRITICAL: Respond with a single valid JSON object only. No markdown fences, no p
     ? `\n\nPAST LISTING RECOMMENDATIONS VS. CURRENT LIVE COPY (already computed by directly comparing text — not a guess): ${JSON.stringify(listingImplementationStatus)}. For any entry where current_matches_recommendation is false, note in listing.rewrites_recommended (or listing.summary if more than a couple) that the recommendation from that entry's audited_at date does not yet match current live copy — it may not have been implemented yet, or may have been addressed with different wording; do not assume which.`
     : '';
 
+  // Added 2026-07-31 per Jaclyn — replaces the hand-authored PPC "Strategy
+  // by Product" cards on the dashboard. Same merge-back pattern as rank
+  // changes/page1 opportunities above: numbers computed here, Claude only
+  // writes the prose (see ppc.strategy_by_sku in the schema below).
+  const skuStrategySection = Object.keys(skuStrategySnapshots).length
+    ? `\n\nPER-SKU BUSINESS + KEYWORD SNAPSHOT — replaces the old hand-authored "Strategy by Product" cards (already computed; write 2-4 prioritized recommendation bullets per SKU plus a short list of suggested exact-match keyword targets, same style as the old cards: "PPC on 'hair growth serum' + 'scalp serum' — Reverse converts at 22.95% but only sees 122 sessions. At current conversion, adding 300 incremental sessions = +68 units/month."):\n${JSON.stringify(skuStrategySnapshots)}`
+    : '';
+
   const userPrompt = `Analyze this week vs history. Return ONLY this JSON structure, nothing else:
 
-{"date":"YYYY-MM-DD","organic":{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"keywords_to_watch":["string"],"ranking_diagnostic":"string","recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"},"recommended_actions_page1_opportunities":{"<keyword>":"string"}},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"]},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
+{"date":"YYYY-MM-DD","organic":{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"keywords_to_watch":["string"],"ranking_diagnostic":"string","recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"},"recommended_actions_page1_opportunities":{"<keyword>":"string"}},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"strategy_by_sku":{"<SKU>":{"recommended_bullets":[{"priority":"HIGH|MED|LOW","text":"string"}],"suggested_exact_match_targets":["string"]}}},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
 
 Rules for the response:
 - date: today's date in YYYY-MM-DD format
@@ -620,6 +760,7 @@ Rules for the response:
 - organic.recommended_actions_page1_opportunities: same idea, one entry per keyword from PAGE 1 PUSH OPPORTUNITIES below, keyed EXACTLY as given
 - organic.opportunities: the page-1-push keywords framed as prose opportunities (not a duplicate of the keyed action map above — this is the human-readable version for the insights card)
 - organic.ranking_diagnostic: 2-4 sentences using ONLY the RANKING DIAGNOSTIC numbers below. If nothing notable, say organic ranking looks proportional to keyword difficulty this week rather than forcing a concern that isn't there.
+- ppc.strategy_by_sku: one entry per SKU from the PER-SKU BUSINESS + KEYWORD SNAPSHOT below, keyed EXACTLY by SKU (e.g. "EVO0001"). Do not add or omit SKUs from what's given. 2-4 recommended_bullets per SKU, ordered HIGH priority first, each one tactical sentence that references real numbers from that SKU's own snapshot (sessions, conversion_pct, revenue, or a keyword's vol_mo/aba_pct) — do not invent numbers not present in the snapshot, and do not compare one SKU's numbers against another SKU's. suggested_exact_match_targets: 3-7 keyword strings pulled from that SKU's own top_keywords list (do not invent keywords not in the list).
 - IMPORTANT — DO NOT LIMIT THE NUMBER OF ITEMS IN ANY LIST FIELD (wins, actions, opportunities, keywords_to_watch, violations, keyword_gaps, rewrites_recommended, etc). Report every genuine finding the data actually supports. Do not pad weak filler to reach a minimum, and do not cut real findings to fit an artificial maximum — some weeks may have 2 real wins, other weeks may have 10; both are fine, report what's actually there.
 - No apostrophes in string values — use "does not" not "doesn't", etc.
 - Keep all string values under 200 characters
@@ -628,7 +769,7 @@ BUSINESS REPORT (sessions/units/revenue):
 ${JSON.stringify(bizTrimmed)}
 
 PPC (search terms / ad performance):
-${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${rankChangesSection}${newConvertersSection}${page1OpportunitiesSection}${rankingDiagnosticSection}${listingImplementationSection}
+${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${rankChangesSection}${newConvertersSection}${page1OpportunitiesSection}${rankingDiagnosticSection}${listingImplementationSection}${skuStrategySection}
 
 HISTORY (last 4 weeks):
 ${historicalCtx}
@@ -712,7 +853,7 @@ ${listingCtxTrimmed}`;
   if (!insights) {
     console.error(`[run-analysis] ${brand.id} — all JSON repair attempts failed. Raw length: ${raw.length}. Last error: ${lastParseErr && lastParseErr.message}. Falling back to deterministic-only insights.`);
     console.error('[run-analysis] Raw (first 500):', clean0.slice(0, 500));
-    insights = buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, comparison });
+    insights = buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, skuStrategySnapshots, comparison });
     return insights; // already has rank_changes/etc. attached — skip the merge-back below, it's already in final shape
   }
 
@@ -750,6 +891,27 @@ ${listingCtxTrimmed}`;
   }
   if (insights.listing) {
     insights.listing.implementation_status = listingImplementationStatus; // real comparison data backing any "not yet implemented" notes above
+  }
+  if (insights.ppc) {
+    // Attach the deterministic snapshot (sessions/units/revenue/conversion/
+    // top_keywords) onto whatever Claude wrote for each SKU — the dashboard
+    // needs both the real numbers (for the card header) and the prose
+    // (recommended_bullets / suggested_exact_match_targets), same as
+    // organic.rank_changes above. Every SKU in the snapshot gets an entry
+    // even if Claude's response omitted it (empty bullets rather than a
+    // missing card), and any SKU Claude invented that isn't in the real
+    // snapshot is dropped rather than trusted.
+    const claudeBySku = insights.ppc.strategy_by_sku || {};
+    const merged = {};
+    Object.keys(skuStrategySnapshots).forEach(sku => {
+      const claudeEntry = claudeBySku[sku] || {};
+      merged[sku] = {
+        ...skuStrategySnapshots[sku],
+        recommended_bullets: Array.isArray(claudeEntry.recommended_bullets) ? claudeEntry.recommended_bullets : [],
+        suggested_exact_match_targets: Array.isArray(claudeEntry.suggested_exact_match_targets) ? claudeEntry.suggested_exact_match_targets : [],
+      };
+    });
+    insights.ppc.strategy_by_sku = merged;
   }
 
   return insights;
@@ -802,19 +964,70 @@ function trimArraysToFit(obj, arrayFieldNames) {
   return clone;
 }
 
+// ppc_json wasn't a size risk before (summary/wins/actions/opportunities
+// strings only), so it was never run through trimArraysToFit above. Added
+// 2026-07-31: ppc.strategy_by_sku now carries one entry per SKU, each with
+// its own top_keywords array — for a brand tracking many SKUs and many
+// keywords per SKU, this can realistically approach the same 50k-char
+// Google Sheets cell limit organic/listing already had to guard against.
+// trimArraysToFit above assumes the arrays needing trimming sit at the
+// object's top level (rank_changes, etc.) — strategy_by_sku's arrays are
+// one level down, nested per SKU, so it needs its own pass rather than
+// reusing that function as-is.
+function trimPpcToFit(ppcObj) {
+  const clone = JSON.parse(JSON.stringify(ppcObj)); // never mutate the original — the live HTTP response needs the full version
+  if (!clone.strategy_by_sku) return clone;
+  let trimmed = false;
+
+  // Pass 1: shrink every SKU's top_keywords list down toward a floor of 3
+  // before dropping whole SKU entries — losing a few long-tail keyword
+  // rows per SKU is a smaller loss than losing an entire product's card.
+  let floor = 10;
+  while (JSON.stringify(clone).length > MAX_CELL_CHARS && floor > 3) {
+    floor -= 2;
+    Object.values(clone.strategy_by_sku).forEach(entry => {
+      if (Array.isArray(entry.top_keywords) && entry.top_keywords.length > floor) {
+        entry.top_keywords = entry.top_keywords.slice(0, floor);
+        trimmed = true;
+      }
+    });
+  }
+
+  // Pass 2 (rare): still too big — drop the lowest-revenue SKU entries one
+  // at a time until it fits. Same "measure, don't guess a fixed count"
+  // approach as trimArraysToFit above; revenue (rather than alphabetical
+  // or insertion order) as the drop priority so whatever's cut is the
+  // least business-relevant entry, not an arbitrary one.
+  while (JSON.stringify(clone).length > MAX_CELL_CHARS) {
+    const skus = Object.keys(clone.strategy_by_sku);
+    if (!skus.length) break;
+    let lowestSku = skus[0], lowestRevenue = Infinity;
+    skus.forEach(sku => {
+      const rev = clone.strategy_by_sku[sku].revenue || 0;
+      if (rev < lowestRevenue) { lowestRevenue = rev; lowestSku = sku; }
+    });
+    delete clone.strategy_by_sku[lowestSku];
+    trimmed = true;
+  }
+
+  if (trimmed) clone._truncated_for_sheet_storage = true; // visible marker, not a silent cut
+  return clone;
+}
+
 async function writeInsightsToSheet(brand, insights) {
   const token = await ensureTab(sheets.insights, brand.tabName, INSIGHTS_HEADERS);
 
   const organicForSheet = trimArraysToFit(insights.organic || {}, ['rank_changes', 'new_ppc_converters', 'page1_opportunities']);
+  const ppcForSheet = trimPpcToFit(insights.ppc || {});
   const listingForSheet = trimArraysToFit(insights.listing || {}, ['implementation_status']);
-  if (organicForSheet._truncated_for_sheet_storage || listingForSheet._truncated_for_sheet_storage) {
-    console.warn(`[run-analysis] ${brand.id} — organic/listing data trimmed to fit Google Sheets' 50k-char cell limit for the historical log. Full untrimmed data was still returned in this run's live response.`);
+  if (organicForSheet._truncated_for_sheet_storage || ppcForSheet._truncated_for_sheet_storage || listingForSheet._truncated_for_sheet_storage) {
+    console.warn(`[run-analysis] ${brand.id} — organic/ppc/listing data trimmed to fit Google Sheets' 50k-char cell limit for the historical log. Full untrimmed data was still returned in this run's live response.`);
   }
 
   const row = [
     insights.date,
     JSON.stringify(organicForSheet),
-    JSON.stringify(insights.ppc || {}),
+    JSON.stringify(ppcForSheet),
     JSON.stringify(listingForSheet),
     insights.log_summary || '',
     new Date().toISOString(),
