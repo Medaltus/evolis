@@ -31,6 +31,15 @@
  * on a schedule that retries daily across days 8-20 (see vercel.json)
  * specifically because Brand Analytics data for the prior month isn't
  * finalized until partway through the current month.
+ *
+ * Debug mode — pure ASIN-matching inspection, calls Amazon for nothing at
+ * all, safe to run anytime without spending any request quota. Shows the
+ * exact ASINs in each batch, the current vs. last-stored batch count
+ * (a mismatch means the master SKU list grew since that brand was last
+ * requested — exactly what turned up for eraclea, found by hand before
+ * this existed), and any reportId already on file per batch:
+ *   GET /api/cron/sync-sqp-request?debug=true
+ *   GET /api/cron/sync-sqp-request?debug=true&brand=eraclea
  */
 
 const { spRequest }                        = require('../_spauth');
@@ -210,6 +219,20 @@ module.exports = async (req, res) => {
   const activeBrands = brands.filter(b => b.active);
   const results = [];
 
+  // Added 2026-07-31 — pure ASIN-matching inspection, no Amazon calls at
+  // all, so it's safe to run anytime without touching the request quota
+  // this file already has to carefully ration (see MAX_NEW_REQUESTS_PER_RUN
+  // below). Built specifically to answer "which exact ASINs would this
+  // brand's batch contain right now" without needing to dig through a
+  // past run's logs — which is exactly the information that was missing
+  // when diagnosing eraclea/just-bjorn's download failures on the process
+  // side, and had to be reconstructed by hand against the master SKU list
+  // instead of just being visible directly.
+  //   GET /api/cron/sync-sqp-request?debug=true
+  //   GET /api/cron/sync-sqp-request?debug=true&brand=eraclea — one brand only
+  const debugMode = req.query.debug === 'true';
+  const debugBrandFilter = (req.query.brand || '').trim();
+
   // Hard cap on NEW report-creation calls in this single invocation.
   // 2 brands succeeded, then 11 hit QuotaExceeded on their FIRST attempt —
   // that's a small burst limit already exhausted, not a stagger-timing
@@ -226,6 +249,8 @@ module.exports = async (req, res) => {
   const hardErrors = []; // genuine failures only — quota/cap-reached is expected, self-throttling behavior, not alerted on
 
   for (const brand of activeBrands) {
+    if (debugMode && debugBrandFilter && brand.id.toLowerCase() !== debugBrandFilter.toLowerCase()) continue;
+
     const brandAsins = asinsByBrand.get(brand.id) || [];
     if (!brandAsins.length) {
       console.warn(`[sync-sqp-request] ${brand.id} — no ASINs matched via SKU prefix, skipping`);
@@ -235,6 +260,31 @@ module.exports = async (req, res) => {
 
     const batches = chunkAsinsByCharLimit(brandAsins);
     const expectedBatchCount = batches.length;
+
+    if (debugMode) {
+      const storedBatchCount = parseInt(metaMap[`report_batch_count_${brand.id}_${targetMonth}`] || '0', 10);
+      results.push({
+        brand: brand.id,
+        skuPrefix: brand.skuPrefix || brand.id.toUpperCase(),
+        totalAsinsMatched: brandAsins.length,
+        currentBatchCount: expectedBatchCount,
+        storedBatchCount: storedBatchCount || null,
+        // Non-null and different means the master SKU list has changed
+        // since whatever request last ran for this brand — exactly the
+        // mismatch that turned up for eraclea (stored 1, current 2) once
+        // this got checked by hand. Now visible directly, every run.
+        batchCountMismatch: !!storedBatchCount && storedBatchCount !== expectedBatchCount,
+        existingReportStatus: metaMap[`report_status_${brand.id}`] || null,
+        batches: batches.map((b, i) => ({
+          batchIndex: i,
+          asinCount: b.length,
+          charLength: b.join(' ').length,
+          asins: b,
+          alreadyRequestedReportId: metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`] || null,
+        })),
+      });
+      continue; // debug mode NEVER calls Amazon, for any brand — pure inspection of the ASIN-matching step
+    }
 
     // report_batch_count now means TOTAL EXPECTED batches (set up front),
     // not "how many succeeded" — resuming correctly requires knowing how
@@ -330,5 +380,5 @@ module.exports = async (req, res) => {
     await sendCronFailureAlert('sync-sqp-request', hardErrors.join('\n'), { 'Brands with real errors': String(hardErrors.length) });
   }
 
-  res.status(200).json({ ok: true, targetMonth, results });
+  res.status(200).json({ ok: true, debug: debugMode, targetMonth, results });
 };
