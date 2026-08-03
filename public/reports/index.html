@@ -9318,29 +9318,57 @@ async function initSnsExternal() {
   window.loadStockLevelsExternal = async function () {
     const tbody = document.getElementById('ix-stock-tbody');
     try {
-      const [csv] = await Promise.all([
+      const [consignCsv, productsCsv] = await Promise.all([
         fetch(fileCsvUrl(CONSIGNMENT_SHEET_ID, CONSIGNMENT_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
-        Object.keys(_skuNameMap).length ? Promise.resolve() : loadSkuNameMap(),
+        // Added 2026-08-03 per Jaclyn — see comment block below for why.
+        fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
-      const rows = isCsv(csv) ? parseCsvRows(csv) : [];
-      // Consignment SKUs always carry a "C-" prefix over the base SKU —
-      // same convention as the internal Inventory page's Consignment
-      // column and the Home page KPI. Strip it so this displays the same
-      // SKU naming everywhere else on the dashboard uses. Product name
-      // comes from the master Product Short Name sheet (same lookup used
-      // elsewhere), falling back to the consignment sheet's own raw name
-      // if a SKU isn't in the master list yet.
-      _stockRows = rows.map(r => {
+      if (!Object.keys(_skuNameMap).length) await loadSkuNameMap();
+
+      // REWRITTEN 2026-08-03 per Jaclyn: this page's row list used to be
+      // built directly from the Consignment sheet's own rows — meaning any
+      // SKU with no Cin7-tracked consignment line item simply never
+      // appeared here at all, regardless of whether it's a real, live
+      // product. That silently dropped all 6 travel-size SKUs (EVO0014-
+      // EVO0019), which have no consignment entries. Same root-cause
+      // pattern as the Home page's Total SKUs KPI before its fix earlier
+      // today: Products Cache is now the source of truth for WHICH SKUs
+      // are real (latest daily snapshot, cross-referenced with Product
+      // Short Name's Status column for discontinued handling); Consignment
+      // is consulted only for the on-hand/available NUMBER per SKU, and
+      // simply shows 0 for any live SKU it has no data for — an honest
+      // "no consignment stock" rather than an invisible SKU.
+      const consignRows = isCsv(consignCsv) ? parseCsvRows(consignCsv) : [];
+      const consignMap = {};
+      consignRows.forEach(r => {
         const sku = (r.sku || '').trim().toUpperCase().replace(/^C-/, '');
-        return {
-          sku,
-          name: _skuNameMap[sku] || r.name || '',
+        if (!sku) return;
+        consignMap[sku] = {
           onHand: parseFloat(r.on_hand ?? r.onhand) || 0,
           available: parseFloat(r.available) || 0,
           lastUpdated: r.last_updated || r.lastupdated || '',
+        };
+      });
+
+      const productRows = isCsv(productsCsv) ? parseCsvRows(productsCsv) : [];
+      const latestDate = productRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+      const skuSet = new Set(
+        productRows.filter(r => r.date === latestDate)
+          .map(r => (r.sku || '').trim().toUpperCase().replace(/-SF$/i, ''))
+          .filter(Boolean)
+      );
+
+      _stockRows = [...skuSet].map(sku => {
+        const c = consignMap[sku] || { onHand: 0, available: 0, lastUpdated: '' };
+        return {
+          sku,
+          name: _skuNameMap[sku] || '',
+          onHand: c.onHand,
+          available: c.available,
+          lastUpdated: c.lastUpdated,
           discontinued: _skuStatusMap[sku] === 'DELETED',
         };
-      }).filter(r => r.sku)
+      })
         // Discontinued (Status = DELETED on the master sheet) products drop
         // off this page entirely once On Hand hits zero — nothing left to
         // track. Until then they still show (greyed, sorted to the bottom
