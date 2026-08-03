@@ -580,6 +580,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .inv-status-card.stable .kpi-value{color:#a8890a;}
 .inv-status-card.healthy{background:var(--green-dim);border-color:rgba(36,233,163,.25);}
 .inv-status-card.healthy .kpi-value{color:#1db88a;}
+.inv-status-card.unscored{background:var(--bg);border-color:var(--border);}
+.inv-status-card.unscored .kpi-value{color:var(--muted);}
 .inv-filter-pill{border:1px solid var(--border);background:var(--white);padding:6px 14px;border-radius:20px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font);}
 .inv-filter-pill.active{background:var(--navy);color:var(--white);border-color:var(--navy);}
 .inv-status-pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.03em;}
@@ -1275,12 +1277,19 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </div>
 
     <div class="ppc-card-title">SKUs by Status</div>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:20px;">
       <div class="inv-status-card oos"><div class="kpi-value" id="inv-count-oos">—</div><div class="kpi-label">OOS</div></div>
       <div class="inv-status-card critical"><div class="kpi-value" id="inv-count-critical">—</div><div class="kpi-label">Critical</div></div>
       <div class="inv-status-card low"><div class="kpi-value" id="inv-count-low">—</div><div class="kpi-label">Low</div></div>
       <div class="inv-status-card stable"><div class="kpi-value" id="inv-count-stable">—</div><div class="kpi-label">Stable</div></div>
       <div class="inv-status-card healthy"><div class="kpi-value" id="inv-count-healthy">—</div><div class="kpi-label">Healthy</div></div>
+      <!-- Added 2026-08-03 — this tile was MISSING even though invStatusFor()
+           has always been able to return 'unscored' (no computable days-of-
+           inventory, e.g. no 90-day sales history yet). Without it, any SKU
+           landing in that bucket — travel sizes being the most common case —
+           was fully present in the table below but invisible from this KPI
+           row entirely, making the row's total silently undercount. -->
+      <div class="inv-status-card unscored"><div class="kpi-value" id="inv-count-unscored">—</div><div class="kpi-label">Unscored</div></div>
     </div>
 
     <div class="ppc-card">
@@ -12350,18 +12359,27 @@ function renderInventoryKpis(rows) {
   set('inv-kpi-allocated', sum(r => r.allocated));
   set('inv-kpi-onhand', sum(r => r.onHand));
 
-  const counts = { oos: 0, critical: 0, low: 0, stable: 0, healthy: 0 };
+  const counts = { oos: 0, critical: 0, low: 0, stable: 0, healthy: 0, unscored: 0 };
   // Discontinued SKUs deliberately excluded here — per Jaclyn 2026-08-03.
   // They still appear in the table below (greyed, labeled "Discontinued")
   // for visibility as long as they have stock left to sell through, but
   // should never inflate an active-sounding status bucket like "Healthy"
   // just because their days-of-inventory math happens to land there.
+  //
+  // 'unscored' added to this object same day — it was a valid return value
+  // of invStatusFor() all along (no computable days-of-inventory, e.g. no
+  // 90-day sales history yet) but had no KPI tile to land in, so SKUs in
+  // that bucket — travel sizes being the most common real case — were
+  // fully present in the table below yet invisible from this KPI row,
+  // silently undercounting the row's total. See the new inv-count-unscored
+  // tile in the HTML.
   rows.forEach(r => { if (!r.discontinued && counts[r.status] !== undefined) counts[r.status]++; });
   set('inv-count-oos', counts.oos);
   set('inv-count-critical', counts.critical);
   set('inv-count-low', counts.low);
   set('inv-count-stable', counts.stable);
   set('inv-count-healthy', counts.healthy);
+  set('inv-count-unscored', counts.unscored);
 }
 
 let _invSortKey = null; // null = default status-rank order; 'sku' or 'name' once a header is clicked
