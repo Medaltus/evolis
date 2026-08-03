@@ -15914,17 +15914,70 @@ async function loadAuditResultsFromSheet() {
     if (titleEl) titleEl.textContent = `Revenue by Channel \u2014 ${monthNames[now.getMonth()]} ${now.getFullYear()} MTD`;
 
     try {
-      const [amzCsv, webCsv, wmtCsv, adOrdersCsv] = await Promise.all([
+      // Added 2026-08-03 per Jaclyn: net MTD revenue/units against actual
+      // returns rather than only gross order data. Returns sheets are
+      // fetched alongside the existing 4 — OV_RETURNS_SHEET_ID /
+      // OV_WMT_RETURNS_SHEET_ID / OV_WEB_ORDERS_SHEET_ID + their gids are
+      // already declared globally further down this file (used by the
+      // existing "Returns Processed" KPI on Marketing → Fulfillment & CS),
+      // reused here rather than redeclared.
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID, AD_ORDERS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const amzRows = isCsv(amzCsv) ? parseCsv(amzCsv).filter(isEvolisRow) : [];
       const webRows = isCsv(webCsv) ? parseCsv(webCsv) : [];
       const wmtRows = isCsv(wmtCsv) ? parseCsv(wmtCsv) : [];
       console.log('[Evolis][overview] row counts \u2014 amazon:', amzRows.length, 'web:', webRows.length, 'walmart:', wmtRows.length, '\u2014 MTD range:', mtdStartStr, 'to', mtdEndStr);
+
+      // ── Returns netting ──────────────────────────────────────────────
+      // Dated by when the RETURN happened (return_date/refund_date), not
+      // when the original order was placed — same convention already
+      // established by the existing "Returns Processed" KPI (Marketing →
+      // Fulfillment & CS / mfcLoadReturns()). Brand-filtered via the same
+      // accent-stripped isEvolisRow() check used everywhere else in this
+      // file, since these are shared, multi-brand sheets.
+      //
+      // FIELD NAMES: Walmart (quantity, refund_amount, return_date) and
+      // Website/Shopify (quantity, refund_amount, refund_date) are BOTH
+      // CONFIRMED — see the comments on OV_WMT_RETURNS_GID / OV_WEB_RETURNS_GID
+      // further down this file. Amazon's quantity/refund-amount column
+      // names are NOT confirmed anywhere in this codebase — only
+      // return_date and brand are (from that same existing KPI). The
+      // candidates below are a best guess; if Amazon's net figures below
+      // never actually shrink from gross, check the real column names on
+      // that sheet before assuming this logic is broken.
+      const AMZ_RETURN_QTY_CANDIDATES = ['quantity', 'units', 'qty', 'unit_count', 'return_quantity'];
+      const AMZ_RETURN_AMT_CANDIDATES = ['refund_amount', 'return_amount', 'amount', 'refund_total', 'return_total'];
+      function findReturnField(row, candidates) {
+        for (const c of candidates) { if (row[c] !== undefined && row[c] !== '') return row[c]; }
+        return '';
+      }
+      function aggregateReturnsRange(csv, startStr, endStr, dateField, qtyGetter, amtGetter) {
+        if (!isCsv(csv)) return { totalQty: 0, totalAmt: 0 };
+        const filtered = parseCsv(csv).filter(r => {
+          if (!isEvolisRow(r)) return false;
+          const d = normalizeDate(r[dateField]);
+          return d && d >= startStr && d <= endStr;
+        });
+        const totalQty = filtered.reduce((s, r) => s + (parseInt(qtyGetter(r), 10) || 0), 0);
+        const totalAmt = filtered.reduce((s, r) => s + parseAmt(amtGetter(r)), 0);
+        return { totalQty, totalAmt };
+      }
+
+      const amzReturnsMtd  = aggregateReturnsRange(amzReturnsCsv, mtdStartStr, mtdEndStr, 'return_date', r => findReturnField(r, AMZ_RETURN_QTY_CANDIDATES), r => findReturnField(r, AMZ_RETURN_AMT_CANDIDATES));
+      const amzReturnsPrev = aggregateReturnsRange(amzReturnsCsv, prevStartStr, prevEndStr, 'return_date', r => findReturnField(r, AMZ_RETURN_QTY_CANDIDATES), r => findReturnField(r, AMZ_RETURN_AMT_CANDIDATES));
+      const wmtReturnsMtd  = aggregateReturnsRange(wmtReturnsCsv, mtdStartStr, mtdEndStr, 'return_date', r => r.quantity, r => r.refund_amount);
+      const wmtReturnsPrev = aggregateReturnsRange(wmtReturnsCsv, prevStartStr, prevEndStr, 'return_date', r => r.quantity, r => r.refund_amount);
+      const webReturnsMtd  = aggregateReturnsRange(webReturnsCsv, mtdStartStr, mtdEndStr, 'refund_date', r => r.quantity, r => r.refund_amount);
+      const webReturnsPrev = aggregateReturnsRange(webReturnsCsv, prevStartStr, prevEndStr, 'refund_date', r => r.quantity, r => r.refund_amount);
+      console.log('[Evolis][overview] returns this MTD \u2014 amazon:', amzReturnsMtd, 'walmart:', wmtReturnsMtd, 'website:', webReturnsMtd);
 
       const amzMtd = aggregateRange(amzRows, mtdStartStr, mtdEndStr, isValidAmazonRow);
       const webMtd = aggregateRange(webRows, mtdStartStr, mtdEndStr, isValidWebRow);
@@ -15933,8 +15986,31 @@ async function loadAuditResultsFromSheet() {
       const webPrev = aggregateRange(webRows, prevStartStr, prevEndStr, isValidWebRow);
       const wmtPrev = aggregateRange(wmtRows, prevStartStr, prevEndStr, isValidWalmartRow);
 
-      const mtd  = { units: amzMtd.totalUnits + webMtd.totalUnits + wmtMtd.totalUnits, orders: amzMtd.totalOrders + webMtd.totalOrders + wmtMtd.totalOrders, revenue: amzMtd.totalRevenue + webMtd.totalRevenue + wmtMtd.totalRevenue };
-      const prev = { units: amzPrev.totalUnits + webPrev.totalUnits + wmtPrev.totalUnits, orders: amzPrev.totalOrders + webPrev.totalOrders + wmtPrev.totalOrders, revenue: amzPrev.totalRevenue + webPrev.totalRevenue + wmtPrev.totalRevenue };
+      // Net revenue/units against returns dated in the same window (see
+      // returns-netting block above). Deliberately NOT applied to order
+      // COUNT — these returns sheets are quantity/line-item-level, not a
+      // "this whole order was cancelled" flag, so there's no clean way to
+      // decrement an order count from them without assuming every return
+      // means a fully-cancelled order, which isn't true for partial
+      // returns. Order counts below stay gross. Also NOT applied to the
+      // per-ASIN Top Selling Products table further down (that would need
+      // each return row mapped SKU→ASIN too — a separate, larger change;
+      // flag if that\u2019s wanted next).
+      const amzMtdNetRevenue = amzMtd.totalRevenue - amzReturnsMtd.totalAmt;
+      const webMtdNetRevenue = webMtd.totalRevenue - webReturnsMtd.totalAmt;
+      const wmtMtdNetRevenue = wmtMtd.totalRevenue - wmtReturnsMtd.totalAmt;
+      const amzPrevNetRevenue = amzPrev.totalRevenue - amzReturnsPrev.totalAmt;
+      const webPrevNetRevenue = webPrev.totalRevenue - webReturnsPrev.totalAmt;
+      const wmtPrevNetRevenue = wmtPrev.totalRevenue - wmtReturnsPrev.totalAmt;
+      const amzMtdNetUnits = Math.max(0, amzMtd.totalUnits - amzReturnsMtd.totalQty);
+      const webMtdNetUnits = Math.max(0, webMtd.totalUnits - webReturnsMtd.totalQty);
+      const wmtMtdNetUnits = Math.max(0, wmtMtd.totalUnits - wmtReturnsMtd.totalQty);
+      const amzPrevNetUnits = Math.max(0, amzPrev.totalUnits - amzReturnsPrev.totalQty);
+      const webPrevNetUnits = Math.max(0, webPrev.totalUnits - webReturnsPrev.totalQty);
+      const wmtPrevNetUnits = Math.max(0, wmtPrev.totalUnits - wmtReturnsPrev.totalQty);
+
+      const mtd  = { units: amzMtdNetUnits + webMtdNetUnits + wmtMtdNetUnits, orders: amzMtd.totalOrders + webMtd.totalOrders + wmtMtd.totalOrders, revenue: amzMtdNetRevenue + webMtdNetRevenue + wmtMtdNetRevenue };
+      const prev = { units: amzPrevNetUnits + webPrevNetUnits + wmtPrevNetUnits, orders: amzPrev.totalOrders + webPrev.totalOrders + wmtPrev.totalOrders, revenue: amzPrevNetRevenue + webPrevNetRevenue + wmtPrevNetRevenue };
       const aov = mtd.orders ? mtd.revenue / mtd.orders : 0;
       const aovPrev = prev.orders ? prev.revenue / prev.orders : 0;
       const skuCount = new Set([...amzMtd.skuSet, ...webMtd.skuSet, ...wmtMtd.skuSet]).size;
@@ -16104,14 +16180,17 @@ async function loadAuditResultsFromSheet() {
         }
       }
 
-      // -- Donut: revenue share by channel (real MTD revenue) --
-      const donutTotal = amzMtd.totalRevenue + webMtd.totalRevenue + wmtMtd.totalRevenue;
+      // -- Donut: revenue share by channel (real MTD revenue, net of returns) --
+      // Switched to the net figures 2026-08-03 — using gross here while the
+      // hero KPI above uses net would make the donut's total silently not
+      // match the hero number, which is worse than either being wrong alone.
+      const donutTotal = amzMtdNetRevenue + webMtdNetRevenue + wmtMtdNetRevenue;
       if (donutTotal > 0) {
         window._ovDonutChart = new Chart(document.getElementById('chart-ov-donut'), {
           type: 'doughnut',
           data: {
             labels: ['Amazon', 'Website', 'Walmart'],
-            datasets: [{ data: [amzMtd.totalRevenue, webMtd.totalRevenue, wmtMtd.totalRevenue], backgroundColor: ['#001f60', '#24e9a3', '#6b7ba2'], borderWidth: 0 }]
+            datasets: [{ data: [amzMtdNetRevenue, webMtdNetRevenue, wmtMtdNetRevenue], backgroundColor: ['#001f60', '#24e9a3', '#6b7ba2'], borderWidth: 0 }]
           },
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } } } }
         });
