@@ -16372,29 +16372,52 @@ async function loadHomeConsignmentKpi() {
 }
 document.addEventListener('DOMContentLoaded', loadHomeConsignmentKpi);
 
-// Total SKUs KPI — per Jaclyn 2026-07-31, switched from counting
-// DISCOVERABLE listings in the daily products-cache snapshot to counting
-// rows with Status=LIVE (col H) on the master Product Short Name sheet —
-// the same sheet/status convention already established for the
-// Discontinued/OOS handling on the Inventory pages. This is a genuinely
-// different definition of "active" (catalog-registration status, not
-// "currently showing up in a daily crawl"), so the number here may not
-// match what the old snapshot-based version used to show.
+// Total SKUs KPI — REWRITTEN 2026-08-03 per Jaclyn: the previous version
+// (below, superseded) counted rows on the master Product Short Name
+// sheet directly, which includes bundle SKUs the brand does not consider
+// real SKUs. Now: the Products Cache sheet (evolis tab — same sheet the
+// internal Inventory page reads) is the source of truth for WHICH SKUs
+// count as real, sellable products; the Product Short Name sheet is
+// consulted ONLY for its Status column (LIVE/DISCONTINUED), exactly the
+// same two-sheet cross-reference pattern already established by the
+// internal Inventory page's statusMap lookup (see loadInventoryPage()).
+// This assumes bundle SKUs simply don't appear in the Products Cache
+// sheet at all — if they turn out to be in there too, this won't fully
+// fix the issue and Products Cache would need its own bundle filter.
 async function loadHomeTotalSkus() {
   const valEl = document.getElementById('home-kpi-skus');
   if (!valEl) return;
   try {
-    const csv = await fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
-    if (!rows.length) { valEl.textContent = '—'; return; }
-    // Accent-insensitive brand match — Évolis's accented É is a known
-    // recurring cause of silent brand-filter failures elsewhere in this
-    // codebase.
-    const stripAccents = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const activeCount = rows.filter(r =>
-      stripAccents(r.brand).toLowerCase().trim() === 'evolis' &&
-      (r.status || '').trim().toUpperCase() === 'LIVE'
-    ).length;
+    const [productsCsv, statusCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const productRows = parseCsvToRows(productsCsv);
+    if (!productRows.length) { valEl.textContent = '—'; return; }
+
+    // Products Cache is a daily cron snapshot (multiple dates present),
+    // not one row per SKU — only the most recent date represents today's
+    // real product list. Same convention as the internal Inventory page.
+    const latestDate = productRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const latestRows = productRows.filter(r => r.date === latestDate);
+
+    // Base SKU (strip "-SF" seller-fulfilled suffix) so the FBA and SF
+    // variants of the same product count once, not twice.
+    const productSkus = new Set(
+      latestRows.map(r => (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '')).filter(Boolean)
+    );
+
+    const statusMap = {};
+    parseCsvToRows(statusCsv).forEach(r => {
+      const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      const status = (r.status || '').trim().toUpperCase();
+      if (sku && status) statusMap[sku] = status;
+    });
+
+    let activeCount = 0;
+    productSkus.forEach(sku => { if (statusMap[sku] === 'LIVE') activeCount++; });
+
     valEl.textContent = activeCount.toLocaleString();
   } catch (err) {
     console.warn('[Home] total SKUs KPI load failed:', err);
