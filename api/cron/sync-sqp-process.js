@@ -11,10 +11,17 @@
  * own try/catch and reported independently in the results array, same
  * defensive pattern as sync-business-report-process.js's per-brand loop.
  *
- * Debug mode — logs real column headers/row counts per brand instead of
- * writing, so real Amazon field names can be confirmed before trusting the
- * parse (this is still a brand-new report type):
+ * Debug mode — never writes, for any brand. Originally just logged column
+ * headers/row counts after a full successful download; expanded 2026-07-31
+ * to also capture the FULL raw poll response and document-metadata
+ * response per batch, and to keep inspecting every remaining batch/brand
+ * instead of stopping at the first failure (FATAL/CANCELLED/not-ready/
+ * download-failed) the way a real run correctly does. Built specifically
+ * because diagnosing why 9 brands' downloads were failing required
+ * reconstructing this same information by hand from screenshots and the
+ * master SKU list — this makes it directly visible instead:
  *   GET /api/cron/sync-sqp-process?debug=true
+ *   GET /api/cron/sync-sqp-process?debug=true&brand=eraclea — one brand only
  * Force re-process a brand already marked PROCESSED:
  *   GET /api/cron/sync-sqp-process?force=true
  */
@@ -80,6 +87,11 @@ module.exports = async (req, res) => {
   const activeBrands = brands.filter(b => b.active);
   const results = [];
   const debugResults = [];
+  // All per-batch diagnostics below push to this — debugResults in debug
+  // mode (which is what the final debug response actually reads from),
+  // results otherwise. One target avoids the two arrays silently drifting
+  // out of sync with which one the response returns.
+  const targetArray = debugMode ? debugResults : results;
 
   // Time budget, not a brand-count cap — brands have varying batch counts
   // (evolis needed 2 batches, others need 1), so a fixed "N brands per run"
@@ -92,7 +104,10 @@ module.exports = async (req, res) => {
   const FUNCTION_TIME_BUDGET_MS = 4 * 60 * 1000; // leaves margin under a 5-min maxDuration
   const startTime = Date.now();
 
+  const debugBrandFilter = (req.query.brand || '').trim();
+
   for (const brand of activeBrands) {
+    if (debugMode && debugBrandFilter && brand.id.toLowerCase() !== debugBrandFilter.toLowerCase()) continue;
     if (Date.now() - startTime > FUNCTION_TIME_BUDGET_MS) {
       console.log(`[sync-sqp-process] time budget reached — ${brand.id} and any remaining brands will be picked up by the next scheduled run`);
       results.push({ brand: brand.id, status: 'deferred-to-next-run' });
@@ -127,25 +142,54 @@ module.exports = async (req, res) => {
         const reportId = batchReportIds[i];
         const result = await pollReportUntilDone(reportId, brand.id, targetMonth, i);
 
+        // Added 2026-07-31 — full raw poll response, debug mode only. The
+        // status STRING alone ("DONE") doesn't show whether the response
+        // carried anything beyond reportDocumentId that might explain why
+        // a DONE report ends up with no downloadable content.
+        if (debugMode) {
+          console.log(`[sync-sqp-process][DEBUG] ${brand.id} batch ${i} raw poll response:`, JSON.stringify(result.statusBody));
+        }
+
         if (result.status === 'FATAL' || result.status === 'CANCELLED') {
           const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId);
-          metaMap[`report_status_${brand.id}`] = result.status;
-          results.push({ brand: brand.id, status: result.status, batchIndex: i, reportId, errorDocumentContent });
-          brandStopped = true;
-          break;
+          targetArray.push({ brand: brand.id, status: result.status, batchIndex: i, reportId, errorDocumentContent, rawPollResponse: debugMode ? result.statusBody : undefined });
+          if (!debugMode) { metaMap[`report_status_${brand.id}`] = result.status; brandStopped = true; break; }
+          continue; // debug mode: keep inspecting the rest of this brand's batches rather than stopping at the first bad one
         }
         if (result.status !== 'DONE') {
           console.warn(`[sync-sqp-process] ${brand.id} ${targetMonth} batch ${i} not ready yet — will check again next scheduled run`);
-          results.push({ brand: brand.id, status: 'not-ready-yet', batchIndex: i, lastKnownStatus: result.status });
-          brandStopped = true;
-          break;
+          targetArray.push({ brand: brand.id, status: 'not-ready-yet', batchIndex: i, lastKnownStatus: result.status, rawPollResponse: debugMode ? result.statusBody : undefined });
+          if (!debugMode) { brandStopped = true; break; }
+          continue;
         }
 
-        const jsonText = await downloadReportJson(result.documentId);
+        // Added 2026-07-31 — debug-mode hook captures the FULL raw
+        // document-metadata response regardless of outcome (success or
+        // missing .url), not just when something's already gone wrong.
+        // This is the exact piece of information that had to be
+        // reconstructed by hand from screenshots before this existed.
+        let rawDocResp = null;
+        const jsonText = await downloadReportJson(result.documentId, debugMode ? (dr => { rawDocResp = dr; }) : null);
+
         if (jsonText === null) {
-          results.push({ brand: brand.id, status: 'error', batchIndex: i, reason: 'download failed' });
-          brandStopped = true;
-          break;
+          targetArray.push({ brand: brand.id, status: 'error', batchIndex: i, reason: 'download failed', rawDocumentResponse: debugMode ? rawDocResp : undefined });
+          if (!debugMode) { brandStopped = true; break; }
+          continue;
+        }
+        if (jsonText === '') {
+          // Confirmed-zero-data batch — see downloadReportJson's 2026-07-31
+          // note. Explicit no-op rather than relying on JSON.parse('')
+          // throwing and being silently caught below, which happened to
+          // produce the right outcome (0 entries) but for the wrong
+          // documented reason.
+          console.log(`[sync-sqp-process] ${brand.id} ${targetMonth} batch ${i} — confirmed zero rows, contributing nothing to this batch`);
+          if (debugMode) {
+            debugResults.push({ brand: brand.id, status: 'no-url-confirmed-empty', batchIndex: i, rawDocumentResponse: rawDocResp });
+          }
+          continue;
+        }
+        if (debugMode) {
+          debugResults.push({ brand: brand.id, status: 'downloaded-ok', batchIndex: i, rawDocumentResponse: rawDocResp, jsonLength: jsonText.length });
         }
         let parsed;
         try { parsed = JSON.parse(jsonText); } catch (e) { parsed = {}; }
@@ -241,10 +285,30 @@ async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex) {
   return { status: status || 'TIMEOUT', documentId: null, statusBody };
 }
 
-async function downloadReportJson(documentId) {
+async function downloadReportJson(documentId, onDocResp) {
   if (!documentId) return null;
   try {
-    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    if (onDocResp) onDocResp(docResp); // debug-mode hook only — never called in production runs
+    if (!docResp.url) {
+      // Added 2026-07-31 — real failure across 9 brands, all exactly 1
+      // batch, all lower-volume: pollReportUntilDone got status DONE with
+      // a real reportDocumentId, but this GET's response had no .url,
+      // and fetch(undefined) threw "Failed to parse URL from undefined"
+      // every time, with no way to tell "confirmed zero data" apart from
+      // an actual download failure. UPDATE 2026-07-31: this assumption is
+      // now in real doubt — Jaclyn found actual June Search Query
+      // Performance data in Seller Central's Brand View for at least two
+      // of the brands hitting this exact path (eraclea, just-bjorn),
+      // which contradicts "genuinely nothing to report." Kept as the
+      // current behavior (still better than crashing/alerting forever on
+      // every run) but no longer treated as a confirmed-correct
+      // conclusion — this is exactly why the debug hook above exists now,
+      // to see the real docResp shape for these specific brands rather
+      // than continue assuming.
+      console.log('[sync-sqp-process] document has no .url — treating as confirmed zero rows this period (see 2026-07-31 update above — no longer fully trusted), not a download failure. Full response for verification:', JSON.stringify(docResp));
+      return ''; // empty string, NOT null — the caller treats these two differently (see below)
+    }
     const fileResp = await fetch(docResp.url); // pre-signed S3 url — no SP-API auth headers here
     if (!fileResp.ok) return null;
     const buffer = Buffer.from(await fileResp.arrayBuffer());
