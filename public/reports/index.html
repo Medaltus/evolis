@@ -12285,6 +12285,14 @@ async function loadInventoryPage() {
     const latestDate = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
     const latestRows = rows.filter(r => r.date === latestDate);
 
+    // Added 2026-08-03 to diagnose travel-size SKUs (EVO0014-EVO0019)
+    // reportedly missing from this page despite showing LIVE status on
+    // Product Short Name and having real quantity data in Products Cache
+    // for the latest date, per Jaclyn. This log shows exactly what
+    // survives each stage, so the next load pinpoints where they're
+    // actually being lost rather than guessing further.
+    console.log('[Evolis][inventory] latestDate:', latestDate, '— rows at that date:', latestRows.length, '— all SKUs at that date:', latestRows.map(r => r.sku));
+
     _invAllRows = latestRows.map(r => {
       const qtyAtAmazon    = parseInt(r.fulfillable_quantity, 10) || 0;
       const qtyAtMedaltus  = parseInt(r.seller_fulfilled_quantity, 10) || 0;
@@ -12313,6 +12321,18 @@ async function loadInventoryPage() {
       };
     }).filter(r => !(r.discontinued && r.onHand === 0));
 
+    // Second half of the same diagnostic — shows what's left AFTER the
+    // discontinued+zero-stock filter, plus the raw computed fields for
+    // each expected travel SKU specifically (onHand/discontinued/status),
+    // so if one of those two things is unexpectedly true/zero for a
+    // travel SKU, it'll be visible here directly instead of guessed at.
+    console.log('[Evolis][inventory] SKUs after discontinued+onHand filter:', _invAllRows.length, '—', _invAllRows.map(r => r.sku));
+    ['EVO0014','EVO0015','EVO0016','EVO0017','EVO0018','EVO0019'].forEach(sku => {
+      const beforeFilter = latestRows.find(r => (r.sku || '').trim().toUpperCase() === sku);
+      const afterFilter = _invAllRows.find(r => r.sku === sku);
+      console.log('[Evolis][inventory] travel SKU check —', sku, ': in latestRows?', !!beforeFilter, '· survived filter?', !!afterFilter, afterFilter ? { onHand: afterFilter.onHand, discontinued: afterFilter.discontinued, status: afterFilter.status } : '(dropped)');
+    });
+
     renderInventoryKpis(_invAllRows);
     renderInventoryTable(_invAllRows);
     wireInventoryControls();
@@ -12331,7 +12351,12 @@ function renderInventoryKpis(rows) {
   set('inv-kpi-onhand', sum(r => r.onHand));
 
   const counts = { oos: 0, critical: 0, low: 0, stable: 0, healthy: 0 };
-  rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  // Discontinued SKUs deliberately excluded here — per Jaclyn 2026-08-03.
+  // They still appear in the table below (greyed, labeled "Discontinued")
+  // for visibility as long as they have stock left to sell through, but
+  // should never inflate an active-sounding status bucket like "Healthy"
+  // just because their days-of-inventory math happens to land there.
+  rows.forEach(r => { if (!r.discontinued && counts[r.status] !== undefined) counts[r.status]++; });
   set('inv-count-oos', counts.oos);
   set('inv-count-critical', counts.critical);
   set('inv-count-low', counts.low);
