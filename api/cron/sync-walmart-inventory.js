@@ -378,6 +378,15 @@ async function clearRowsForDate(dateStr) {
 // ── _meta helpers ─────────────────────────────────────────────────────────
 
 async function readMeta() {
+  // FIXED 2026-08-04: must ensureTab before reading, same as writeMeta
+  // already does below — on a genuinely brand-new sheet (no tabs at all
+  // yet), reading a tab that doesn't exist fails with a Sheets API 400
+  // ("Unable to parse range") rather than returning an empty result. This
+  // exact gap exists in sync-products.js's own readMeta() too — it just
+  // never surfaced there because that sheet already had a _meta tab left
+  // over from earlier use. ensureTab is safe to call every time: it's a
+  // no-op if the tab already exists.
+  await ensureTab(SHEET_ID, META_TAB, META_HEADERS);
   const rows = await readRows(SHEET_ID, META_TAB);
   const map  = {};
   (rows || []).forEach(r => { if (r.KEY) map[r.KEY] = r.VALUE; });
