@@ -162,12 +162,18 @@ module.exports = async (req, res) => {
         // output) instead of overwriting it with 0 every run.
         const websiteSubscriptions = existingWebSubsByMonth[ym] ?? 0;
 
-        // Sheet row for THIS output row — header is row 1, data starts at
-        // row 2, so row = idx + 2. Used for the total_subscriptions formula
-        // below so it references the correct row, not a fixed one.
-        const sheetRow = idx + 2;
-        // K=amazon_subscriptions, L=website_subscriptions (per HEADERS order)
-        const totalSubscriptionsFormula = `=K${sheetRow}+L${sheetRow}`;
+        // total_subscriptions — CHANGED 2026-08-04: was a live in-sheet
+        // formula (`=K{row}+L{row}`) referencing this sheet's OWN
+        // amazon_subscriptions column. Computing it directly in JS instead:
+        // (1) matches the actual intended source — activeSubscriptions is
+        // already read straight from SHEET_SUBSCRIPTIONS' active_subscriptions
+        // column above, so summing it with websiteSubscriptions here is the
+        // real computation, not a dependency on K reflecting that value
+        // correctly; (2) removes a formula-string write that was the likely
+        // cause of total_subscriptions AND last_updated (the very next
+        // column) both coming out blank — a failed/mishandled formula write
+        // taking the rest of that row's write down with it.
+        const totalSubscriptions = activeSubscriptions + parseIntSafe(websiteSubscriptions);
 
         return [
           y, m,
@@ -181,7 +187,7 @@ module.exports = async (req, res) => {
           revRow ? (parseIntSafe(revRow['UNITS SOLD']) || 0) : 0,
           activeSubscriptions,
           websiteSubscriptions,
-          totalSubscriptionsFormula,
+          totalSubscriptions,
           now,
         ];
       });
