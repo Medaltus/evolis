@@ -1,81 +1,44 @@
 /**
- * api/cron/sync-ad-search-terms-process.js
- * Step 2 of 2 — checks on the search term reports requested by
- * sync-ad-search-terms-request.js, downloads any that are ready, and
- * writes to SHEET_AD_SEARCH_TERMS — one tab per brand, one row per
- * (search term + matched keyword + match type + ad type + DAY).
+ * api/cron/sync-advertising-process.js
+ * Step 2 of 2 — polls for completed ad reports and writes data to sheets.
+ * Runs at 3:15 AM UTC daily (15 minutes after sync-advertising-request).
  *
- * CHANGED (2026-07-14) — two changes:
+ * Reads 6 report IDs from SHEET_ADVERTISING → _meta tab:
+ *   ad_report_id_asin_curr / ad_report_id_sp_curr / ad_report_id_sb_curr
+ *   ad_report_id_asin_prev / ad_report_id_sp_prev / ad_report_id_sb_prev
  *
- * 1. Daily grain. Reports are now requested with timeUnit: DAILY (see
- *    sync-ad-search-terms-request.js), so each row carries its own `date`
- *    field. Rows are bucketed/upserted by that per-row date, not by the
- *    report's overall curr/prev period. year/month are still stored
- *    alongside `date` for convenience, but derived from the row's date.
- *
- * 2. Non-blocking polling. The OLD version looped inside a single
- *    invocation, sleeping for up to POLL_TIMEOUT_MS (240s) waiting for
- *    COMPLETED. That's the wrong shape for a Vercel serverless function:
- *    reports can take 5–90 minutes (per Amazon_Ads_Search_Term_API_Guide.md),
- *    which is far longer than any Vercel execution-time ceiling. Blocking
- *    and sleeping just gets the function killed by the platform, which
- *    looks identical to "stuck in PENDING" from the outside — this was
- *    very likely the real cause of the reports that "never" completed.
- *
- *    Now each invocation makes ONE status check per not-yet-processed
- *    report, persists status/processed flags to _meta, and returns
- *    immediately. Progress happens across MULTIPLE invocations — schedule
- *    this endpoint to run every ~5 minutes in vercel.json (instead of the
- *    old single one-off run ~10-15 min after the request step) until
- *    st_report_status flips to PROCESSED. Each report is downloaded and
- *    written to the sheet at most once (tracked via st_processed_<label>).
- *
- * SP and SB report different native columns for the same concepts (see
- * sync-ad-search-terms-request.js for the full confirmed column lists).
- * This step normalizes both into the same output shape:
- *   search_term, keyword, match_type, ad_type, campaign_name,
- *   ad_group_name, date, year, month, impressions, clicks, ctr, cost, cpc,
- *   cpm, purchases, sales, acos, conversion_rate, current_bid, last_updated
- *
- * Conversion rate: SP reports it directly (purchaseClickRate14d, requested
- * as a column in sync-ad-search-terms-request.js) so it's used as-is. SB
- * has no equivalent column, so it's calculated here as
- * (purchases / clicks) * 100. Both paths already existed in the prior
- * version of this file — unchanged by the daily-grain rewrite.
- *
- * Upsert, not full replace: rows are keyed by
- * (search_term, keyword, match_type, ad_type, date), so re-running this
- * for a report that's already been processed, or for a different report,
- * never touches unrelated dates.
+ * Writes to:
+ *   SHEET_ADVERTISING  → one tab per brand, one row per month (upsert by year+month)
+ *                        SP + SB campaign data merged into single row
+ *   SHEET_AD_ORDERS    → one tab per brand, one row per ASIN per month (SP only)
  */
 
 const { getAdToken }                                   = require('../_spauth');
-const { ensureTab, readRows, replaceRows }             = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, appendRows }  = require('../config/_sheets_client');
+const brands                                           = require('../config/brands');
+const { sendCronFailureAlert }                         = require('../_alerts');
 const https                                            = require('https');
 const zlib                                             = require('zlib');
 
-const AD_API_HOST           = 'advertising-api.amazon.com';
-const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
-const META_TAB               = '_meta';
+const AD_API_HOST      = 'advertising-api.amazon.com';
+const SHEET_AD_SUMMARY = process.env.SHEET_ADVERTISING;
+const SHEET_AD_ORDERS  = process.env.SHEET_AD_ORDERS || '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI';
+const META_TAB         = '_meta';
+const META_HEADERS     = ['KEY', 'VALUE', 'UPDATED_AT'];
+const TRIM_YEARS       = 3;
 
-const HEADERS = [
-  'search_term', 'keyword', 'match_type', 'ad_type',
-  'campaign_name', 'ad_group_name', 'date', 'year', 'month',
-  'impressions', 'clicks', 'ctr', 'cost', 'cpc', 'cpm',
-  'purchases', 'sales', 'acos', 'conversion_rate', 'current_bid',
-  'last_updated',
+const SUMMARY_HEADERS = [
+  'year', 'month', 'impressions', 'clicks', 'spend', 'sales',
+  'acos', 'roas', 'ad_units', 'date', 'ctr', 'cpc', 'brand', 'last_updated',
+];
+const ASIN_HEADERS = [
+  'year', 'month', 'sku', 'ad_units', 'spend', 'sales',
+  'acos', 'brand', 'last_updated',
 ];
 
-// One check per invocation, no sleeping — see header comment.
-const LABELS = [
-  { label: 'sp_curr', adType: 'SP' },
-  { label: 'sb_curr', adType: 'SB' },
-  { label: 'sp_prev', adType: 'SP' },
-  { label: 'sb_prev', adType: 'SB' },
-];
+const POLL_TIMEOUT_MS  = 240_000;
+const POLL_INTERVAL_MS = 10_000;
 
-// Same brand-matching list as sync-advertising-process.js, kept in sync
-// intentionally — if that list changes, update both places.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
   { name: 'the creme shop', tabName: 'creme-shop'     },
@@ -99,6 +62,9 @@ const CAMPAIGN_BRANDS = [
 // Strips accents/diacritics so "évolis", "ÉVOLIS", and "evolis" all match
 // the same way. Lowercasing alone isn't enough — 'évolis'.includes('evolis')
 // is false, since é and e are different characters even after lowercasing.
+// FIXED 2026-07-09 — campaign names were confirmed to use a mix of
+// evolis/Evolis/évolis, which this was previously silently dropping into
+// "unmatched campaign" for the accented variants.
 function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -117,203 +83,342 @@ module.exports = async (req, res) => {
 
   const now = new Date().toISOString();
 
+  // ── 1. Read _meta ──────────────────────────────────────────────────────────
   let meta = {};
   try {
-    const rawMeta = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
+    const rawMeta = await readRows(SHEET_AD_SUMMARY, META_TAB);
     rawMeta.forEach(r => { if (r.KEY) meta[r.KEY] = r.VALUE; });
   } catch (err) {
+    await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'read _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
-  const profileId = meta['st_profile_id'];
-  const hasAnyReportId = LABELS.some(({ label }) => meta[`st_report_id_${label}`]);
-  if (!hasAnyReportId) {
-    return res.status(400).json({ error: 'No search term report IDs found in _meta — did sync-ad-search-terms-request run?' });
+  const asinCurrId = meta['ad_report_id_asin_curr'];
+  const spCurrId   = meta['ad_report_id_sp_curr'];
+  const sbCurrId   = meta['ad_report_id_sb_curr'];
+  const asinPrevId = meta['ad_report_id_asin_prev'];
+  const spPrevId   = meta['ad_report_id_sp_prev'];
+  const sbPrevId   = meta['ad_report_id_sb_prev'];
+  const profileId  = meta['ad_profile_id'];
+  const endDateCurr = meta['ad_end_date_curr'];
+  const endDatePrev = meta['ad_end_date_prev'];
+
+  // Support old-style single report IDs for backwards compatibility
+  const legacyAsinId    = meta['ad_report_id_asin'];
+  const legacySummaryId = meta['ad_report_id_summary'];
+  const legacyEndDate   = meta['ad_end_date'];
+
+  const hasNewIds = asinCurrId || spCurrId || sbCurrId;
+  const hasLegacyIds = legacyAsinId || legacySummaryId;
+
+  if (!hasNewIds && !hasLegacyIds) {
+    const msg = 'No ad report IDs found in _meta — did sync-advertising-request run?';
+    await sendCronFailureAlert('sync-advertising-process', msg);
+    return res.status(400).json({ error: msg });
   }
 
-  if (meta['st_report_status'] === 'PROCESSED' && !req.query.force) {
-    return res.status(200).json({ message: 'Already processed. Pass ?force=true to re-check anyway.' });
-  }
-
-  const token = await getAdToken();
-  const metaUpdates = {}; // KEY -> VALUE, applied once at the end
-  const results = [];
-
-  for (const { label, adType } of LABELS) {
-    const reportId = meta[`st_report_id_${label}`];
-    if (!reportId) continue;
-
-    const alreadyProcessed = meta[`st_processed_${label}`] === 'true';
-    if (alreadyProcessed) {
-      results.push({ label, status: 'already_processed' });
-      continue;
-    }
-
-    let statusResp;
-    try {
-      statusResp = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
-    } catch (err) {
-      console.error(`[sync-ad-search-terms-process] ${label} status check failed:`, err.message);
-      results.push({ label, status: 'check_failed', error: err.message });
-      continue;
-    }
-
-    const status = statusResp.status;
-    console.log(`[sync-ad-search-terms-process] ${label} (${reportId}): ${status}`);
-    metaUpdates[`st_status_${label}`] = status;
-
-    if (status === 'COMPLETED') {
-      let rows;
+  // ── PROCESSED early exit — check queue first ──────────────────────────────
+  if (meta['ad_report_status'] === 'PROCESSED') {
+    const queueStr = meta['ad_backfill_queue'] || '';
+    const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (queue.length > 0) {
+      const nextMonth = queue.shift();
+      console.log(`[sync-advertising-process] PROCESSED + queue ${queue.length + 1} months — advancing to ${nextMonth}`);
       try {
-        rows = await downloadAdReport(statusResp.url);
+        const tok = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+        const ex  = await readRows(SHEET_AD_SUMMARY, META_TAB);
+        const mm  = {};
+        ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+        mm['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
+        if (queue.length === 0) mm['ad_backfill_complete'] = ['ad_backfill_complete', 'true', now];
+        await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(mm), tok);
+        const backfillHandler = require('./sync-advertising-backfill');
+        await backfillHandler(
+          { method: 'GET', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` }, query: { month: nextMonth } },
+          { status: () => ({ json: (d) => console.log(`[sync-advertising-process] queued ${nextMonth}:`, JSON.stringify(d).slice(0,150)) }), end: () => {} }
+        );
+        return res.status(200).json({ message: `Queue advanced to ${nextMonth}`, remaining: queue.length });
       } catch (err) {
-        console.error(`[sync-ad-search-terms-process] ${label} download failed:`, err.message);
-        results.push({ label, status: 'download_failed', error: err.message });
-        continue; // don't mark processed — retry download next invocation
+        console.error(`[sync-advertising-process] queue advance failed:`, err.message);
+        await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'backfill queue advance', nextMonth });
+        return res.status(200).json({ message: 'Queue advance failed', error: err.message });
       }
+    }
+    return res.status(200).json({ message: 'Already processed, no queue remaining' });
+  }
 
-      const writeResult = await writeRowsForLabel(rows, adType, now);
-      metaUpdates[`st_processed_${label}`] = 'true';
-      results.push({ label, status: 'ok', ...writeResult });
+  let token;
+  try {
+    token = await getAdToken();
+  } catch (err) {
+    await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'getAdToken' });
+    return res.status(500).json({ error: 'Failed to get ad token', detail: err.message });
+  }
 
-    } else if (status === 'FAILED' || status === 'CANCELLED') {
-      // Terminal failure states — stop retrying this label, but don't let
-      // it block the other 3 labels from being marked PROCESSED.
-      console.warn(`[sync-ad-search-terms-process] ${label} terminal status: ${status}`);
-      metaUpdates[`st_processed_${label}`] = 'true';
-      results.push({ label, status: status.toLowerCase() });
+  // ── 2. Poll + download all reports ────────────────────────────────────────
+  // Handle both new multi-report format and legacy single-report format
+  let asinCurrRows = [], spCurrRows = [], sbCurrRows = [];
+  let asinPrevRows = [], spPrevRows = [], sbPrevRows = [];
+  let legacyAsinRows = [], legacySummaryRows = [];
 
-    } else {
-      // PENDING / IN_PROGRESS / etc — nothing to do, check again next invocation.
-      results.push({ label, status: 'pending' });
+  if (hasNewIds) {
+    console.log(`[sync-advertising-process] processing new-format reports`);
+    const results = await Promise.all([
+      asinCurrId ? pollAndDownload(asinCurrId, token, profileId) : Promise.resolve([]),
+      spCurrId   ? pollAndDownload(spCurrId,   token, profileId) : Promise.resolve([]),
+      sbCurrId   ? pollAndDownload(sbCurrId,   token, profileId) : Promise.resolve([]),
+      asinPrevId ? pollAndDownload(asinPrevId, token, profileId) : Promise.resolve([]),
+      spPrevId   ? pollAndDownload(spPrevId,   token, profileId) : Promise.resolve([]),
+      sbPrevId   ? pollAndDownload(sbPrevId,   token, profileId) : Promise.resolve([]),
+    ]);
+    [asinCurrRows, spCurrRows, sbCurrRows, asinPrevRows, spPrevRows, sbPrevRows] = results;
+
+    // If any curr or prev campaign report is still pending, retry later
+    if (spCurrRows === null || spPrevRows === null) {
+      return res.status(202).json({ message: 'Reports not ready yet — will retry next run' });
+    }
+    // Treat null as empty (non-critical reports e.g. SB may fail gracefully)
+    asinCurrRows = asinCurrRows || [];
+    sbCurrRows   = sbCurrRows   || [];
+    asinPrevRows = asinPrevRows || [];
+    sbPrevRows   = sbPrevRows   || [];
+
+  } else {
+    // Legacy path — single period
+    console.log(`[sync-advertising-process] processing legacy-format reports`);
+    const results = await Promise.all([
+      legacyAsinId    ? pollAndDownload(legacyAsinId,    token, profileId) : Promise.resolve([]),
+      legacySummaryId ? pollAndDownload(legacySummaryId, token, profileId) : Promise.resolve([]),
+    ]);
+    [legacyAsinRows, legacySummaryRows] = results;
+    if (legacyAsinRows === null || legacySummaryRows === null) {
+      return res.status(202).json({ message: 'Reports not ready yet — will retry next run' });
     }
   }
 
-  // Persist per-label status/processed flags.
-  try {
-    const tok = await ensureTab(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT']);
-    const ex  = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
-    const mm  = {};
-    ex.forEach(r => { if (r.KEY) mm[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
-    Object.entries(metaUpdates).forEach(([k, v]) => { mm[k] = [k, v, now]; });
-
-    // Overall PROCESSED only once every requested label has been processed
-    // (successfully or terminally-failed) — mirrors mm's just-updated values.
-    const allProcessed = LABELS
-      .filter(({ label }) => meta[`st_report_id_${label}`]) // only ones actually requested
-      .every(({ label }) => (mm[`st_processed_${label}`]?.[1] ?? meta[`st_processed_${label}`]) === 'true');
-
-    mm['st_report_status'] = ['st_report_status', allProcessed ? 'PROCESSED' : 'REQUESTED', now];
-    await replaceRows(SHEET_AD_SEARCH_TERMS, META_TAB, ['KEY', 'VALUE', 'UPDATED_AT'], Object.values(mm), tok);
-
-    res.status(200).json({ checked: results, overallStatus: allProcessed ? 'PROCESSED' : 'REQUESTED', timestamp: now });
-  } catch (err) {
-    console.error('[sync-ad-search-terms-process] failed to persist _meta:', err.message);
-    res.status(200).json({ checked: results, warning: 'meta persist failed: ' + err.message, timestamp: now });
+  // ── 3. Derive year/month for each period ──────────────────────────────────
+  function yearMonthFromEndDate(endDate) {
+    const [y, m] = (endDate || '').split('-');
+    return {
+      year:  parseInt(y, 10) || new Date().getFullYear(),
+      month: parseInt(m, 10) || new Date().getMonth() + 1,
+    };
   }
+
+  const periods = hasNewIds
+    ? [
+        { label: 'curr', asinRows: asinCurrRows, spRows: spCurrRows, sbRows: sbCurrRows, endDate: endDateCurr, ...yearMonthFromEndDate(endDateCurr) },
+        { label: 'prev', asinRows: asinPrevRows, spRows: spPrevRows, sbRows: sbPrevRows, endDate: endDatePrev, ...yearMonthFromEndDate(endDatePrev) },
+      ]
+    : [
+        { label: 'legacy', asinRows: legacyAsinRows, spRows: legacySummaryRows, sbRows: [], endDate: legacyEndDate, ...yearMonthFromEndDate(legacyEndDate) },
+      ];
+
+  // ── 4. Build ASIN → brand map ──────────────────────────────────────────────
+  const PRODUCT_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+  const PRODUCT_SHEET_GID = '164358627';
+  const asinBrandMap = {};
+  try {
+    const csvUrl  = `https://docs.google.com/spreadsheets/d/${PRODUCT_SHEET_ID}/export?format=csv&gid=${PRODUCT_SHEET_GID}`;
+    const csvResp = await fetch(csvUrl);
+    if (csvResp.ok) {
+      const csv = await csvResp.text();
+      csv.trim().split('\n').slice(1).forEach(line => {
+        const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+        const asin      = (cols[0] || '').toUpperCase();
+        const brandName = (cols[3] || '').toLowerCase().trim();
+        if (!asin || !brandName) return;
+        const matched = brands.find(b =>
+          b.active && (
+            brandName === b.id.toLowerCase() ||
+            brandName === b.displayName.toLowerCase() ||
+            brandName.includes(b.id.toLowerCase())
+          )
+        );
+        if (matched) asinBrandMap[asin] = matched.tabName;
+      });
+      console.log(`[sync-advertising-process] ASIN→brand map: ${Object.keys(asinBrandMap).length} entries`);
+    }
+  } catch (err) {
+    console.warn('[sync-advertising-process] ASIN→brand lookup failed:', err.message);
+  }
+
+  // ── 5. Process each period ────────────────────────────────────────────────
+  const allResults = [];
+  const cutoff = new Date().getFullYear() - TRIM_YEARS;
+
+  for (const period of periods) {
+    const { label, year, month, endDate, asinRows, spRows, sbRows } = period;
+    console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length}`);
+
+    // ── 5a. Write ASIN-level data (SP only) ──────────────────────────────────
+    if (asinRows.length > 0) {
+      const byBrand = { 'asin-data': [] };
+      asinRows.forEach(r => {
+        const asin    = (r.advertisedAsin || '').trim().toUpperCase();
+        if (!asin) return;
+        const tabName = asinBrandMap[asin] || 'asin-data';
+        if (!byBrand[tabName]) byBrand[tabName] = [];
+        byBrand[tabName].push(r);
+      });
+
+      for (const [tabName, tabRows] of Object.entries(byBrand)) {
+        if (tabRows.length === 0) continue;
+        const asinMap = {};
+        tabRows.forEach(r => {
+          const asin = (r.advertisedAsin || '').trim().toUpperCase();
+          if (!asin) return;
+          if (!asinMap[asin]) asinMap[asin] = { adUnits: 0, spend: 0, sales: 0 };
+          asinMap[asin].adUnits += r.unitsSoldClicks14d || 0;
+          asinMap[asin].spend   += r.spend              || 0;
+          asinMap[asin].sales   += r.sales14d            || 0;
+        });
+        const brandLabel = tabName === 'asin-data' ? 'unmatched' : tabName;
+        const newRows = Object.entries(asinMap).map(([asin, agg]) => {
+          const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
+          return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, brandLabel, now];
+        }).filter(r => parseInt(r[0], 10) >= cutoff);
+
+        try {
+          const tok      = await ensureTab(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
+          const existing = await readRows(SHEET_AD_ORDERS, tabName);
+          // Remove rows matching this year/month, then append new ones
+          const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
+          const allRows = [...kept.map(r => [r.year, r.month, r.sku, r.ad_units, r.spend, r.sales, r.acos, r.brand, r.last_updated]), ...newRows];
+          await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, allRows, tok);
+          console.log(`[sync-advertising-process] ${label} ${tabName}: upserted ${newRows.length} ASIN rows`);
+        } catch (err) {
+          console.error(`[sync-advertising-process] ${label} ${tabName} ASIN write failed:`, err.message);
+          allResults.push({ period: label, brand: tabName, stage: 'asin-write', status: 'error', error: err.message });
+        }
+      }
+    }
+
+    // ── 5b. Merge SP + SB campaign rows, aggregate per brand ─────────────────
+    // SB and SP use different column names for the same concepts — SB has no
+    // "14d attribution window" suffix the way SP does. Confirmed against
+    // Amazon's real sbCampaigns schema (2026-07-09):
+    //   SP: spend, sales14d, unitsSoldClicks14d
+    //   SB: cost,  sales,    purchases
+    // Remap all three SB fields to the SP-shaped keys the aggregation below
+    // reads — previously only `spend` was remapped and `purchases14d` (which
+    // was never actually SB's field name) was used instead of `purchases`,
+    // so SB sales and units were both silently counted as 0 in every total.
+    const allCampaignRows = [
+      ...spRows,
+      ...sbRows.map(r => ({
+        ...r,
+        spend:               r.cost      || r.spend      || 0,
+        sales14d:            r.sales     || r.sales14d    || 0,
+        unitsSoldClicks14d:  r.purchases || r.purchases14d || 0,
+      })),
+    ];
+
+    const brandTotals = {};
+    allCampaignRows.forEach(r => {
+      const tabName = identifyBrand(r.campaignName);
+      if (!tabName) {
+        console.log(`[sync-advertising-process] unmatched campaign: "${r.campaignName}"`);
+        return;
+      }
+      if (!brandTotals[tabName]) brandTotals[tabName] = { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
+      brandTotals[tabName].impressions += r.impressions        || 0;
+      brandTotals[tabName].clicks      += r.clicks             || 0;
+      brandTotals[tabName].spend       += r.spend              || 0;
+      brandTotals[tabName].sales       += r.sales14d           || 0;
+      brandTotals[tabName].adUnits     += r.unitsSoldClicks14d || 0;
+    });
+
+    for (const brand of brands.filter(b => b.active)) {
+      try {
+        const t    = brandTotals[brand.tabName] || { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
+        const acos = t.sales  > 0 ? round2((t.spend / t.sales) * 100)            : null;
+        const roas = t.spend  > 0 ? round2(t.sales / t.spend)                     : null;
+        const ctr  = t.impressions > 0 ? round2((t.clicks / t.impressions) * 100) : 0;
+        const cpc  = t.clicks > 0 ? round2(t.spend / t.clicks)                    : 0;
+        const newRow = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, endDate || '', ctr, cpc, brand.id, now];
+
+        const tok      = await ensureTab(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
+        const existing = await readRows(SHEET_AD_SUMMARY, brand.tabName);
+        // Upsert: remove matching year/month row, append new one
+        const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
+        await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS,
+          [...kept.map(r => [r.year, r.month, r.impressions, r.clicks, r.spend, r.sales, r.acos, r.roas, r.ad_units, r.date, r.ctr, r.cpc, r.brand, r.last_updated]), newRow],
+          tok
+        );
+        allResults.push({ period: label, brand: brand.id, status: 'ok', spend: round2(t.spend), adUnits: t.adUnits });
+        console.log(`[sync-advertising-process] ${label} ${brand.id}: spend=${round2(t.spend)} adUnits=${t.adUnits}`);
+      } catch (err) {
+        console.error(`[sync-advertising-process] ${label} ${brand.id} failed:`, err.message);
+        allResults.push({ period: label, brand: brand.id, status: 'error', error: err.message });
+      }
+    }
+  }
+
+  // ── Summary alert — one alert per run if any per-brand/per-item writes failed ──
+  const failedResults = allResults.filter(r => r.status === 'error');
+  if (failedResults.length > 0) {
+    const summary = failedResults
+      .map(r => `${r.period}/${r.brand}${r.stage ? ` (${r.stage})` : ''}: ${r.error}`)
+      .join('\n');
+    await sendCronFailureAlert('sync-advertising-process', summary, {
+      failedCount: failedResults.length,
+      totalCount:  allResults.length,
+    });
+  }
+
+  // ── 6. Mark _meta as PROCESSED ────────────────────────────────────────────
+  try {
+    const existing = await readRows(SHEET_AD_SUMMARY, META_TAB);
+    const metaMap  = {};
+    existing.forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
+    metaMap['ad_report_status'] = ['ad_report_status', 'PROCESSED', now];
+    metaMap['ad_backfill']      = ['ad_backfill', 'false', now];
+
+    // Queue auto-advance
+    const queueStr = metaMap['ad_backfill_queue']?.[1] || '';
+    const queue    = queueStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (queue.length > 0) {
+      const nextMonth = queue.shift();
+      metaMap['ad_backfill_queue'] = ['ad_backfill_queue', queue.join(','), now];
+      if (queue.length === 0) metaMap['ad_backfill_complete'] = ['ad_backfill_complete', 'true', now];
+      const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+      await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
+      try {
+        const backfillHandler = require('./sync-advertising-backfill');
+        await backfillHandler(
+          { method: 'GET', headers: { authorization: `Bearer ${process.env.CRON_SECRET}` }, query: { month: nextMonth } },
+          { status: () => ({ json: (d) => console.log(`[sync-advertising-process] backfill ${nextMonth}:`, JSON.stringify(d).slice(0,150)) }), end: () => {} }
+        );
+      } catch (err) {
+        console.error(`[sync-advertising-process] backfill fire failed:`, err.message);
+      }
+      return res.status(200).json({ results: allResults, queueAdvanced: nextMonth, remaining: queue.length, timestamp: now });
+    }
+
+    const token2 = await ensureTab(SHEET_AD_SUMMARY, META_TAB, META_HEADERS);
+    await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
+  } catch (err) {
+    console.warn('[sync-advertising-process] failed to update _meta status:', err.message);
+  }
+
+  return res.status(200).json({ results: allResults, timestamp: now });
 };
 
-// ── Sheet writing ────────────────────────────────────────────────────────
-
-async function writeRowsForLabel(rawRows, adType, now) {
-  const rows = (rawRows || []).map(r => ({ ...r, adType }));
-
-  const byBrand = {};
-  let unmatched = 0;
-  rows.forEach(row => {
-    const tabName = identifyBrand(row.campaignName);
-    if (!tabName) { unmatched++; return; }
-    if (!byBrand[tabName]) byBrand[tabName] = [];
-    byBrand[tabName].push(row);
-  });
-  if (unmatched > 0) {
-    console.log(`[sync-ad-search-terms-process] ${unmatched} rows had unmatched campaign names`);
+// ── Poll + download ───────────────────────────────────────────────────────────
+async function pollAndDownload(reportId, token, profileId) {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const resp   = await adRequest('GET', `/reporting/reports/${reportId}`, token, profileId, null);
+    const status = resp.status;
+    console.log(`[sync-advertising-process] poll ${reportId}: ${status}`);
+    if (status === 'COMPLETED') return downloadAdReport(resp.url);
+    if (status === 'FAILED')    return null;
+    await sleep(POLL_INTERVAL_MS);
   }
-
-  const perBrand = [];
-  for (const [tabName, brandRows] of Object.entries(byBrand)) {
-    try {
-      const normalized = brandRows.map(row => normalizeRow(row, now)).filter(Boolean);
-
-      const token1     = await ensureTab(SHEET_AD_SEARCH_TERMS, tabName, HEADERS);
-      const existing    = await readRows(SHEET_AD_SEARCH_TERMS, tabName);
-      const existingObj = existing.map(normalizeExisting);
-
-      // Upsert keyed by (search_term, keyword, match_type, ad_type, date) —
-      // preserves every row for other dates untouched.
-      const merged = new Map();
-      existingObj.forEach(r => merged.set(rowKey(r), r));
-      normalized.forEach(r => merged.set(rowKey(r), r));
-
-      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-      await replaceRows(SHEET_AD_SEARCH_TERMS, tabName, HEADERS, outRows, token1);
-
-      console.log(`[sync-ad-search-terms-process] ${tabName}: upserted ${normalized.length} rows`);
-      perBrand.push({ brand: tabName, rows: normalized.length });
-    } catch (err) {
-      console.error(`[sync-ad-search-terms-process] ${tabName} failed:`, err.message);
-      perBrand.push({ brand: tabName, error: err.message });
-    }
-  }
-
-  return { rawRows: rows.length, unmatched, perBrand };
+  console.warn(`[sync-advertising-process] ${reportId} not ready after ${POLL_TIMEOUT_MS}ms`);
+  return null;
 }
-
-function rowKey(r) {
-  return `${r.search_term}||${r.keyword}||${r.match_type}||${r.ad_type}||${r.date}`;
-}
-
-function normalizeExisting(r) {
-  // readRows returns header-keyed objects already — pass through as-is,
-  // values will be re-stringified by HEADERS.map(...) at write time.
-  return r;
-}
-
-function normalizeRow(row, now) {
-  const isSP = row.adType === 'SP';
-
-  const date = row.date || '';
-  if (!date) return null; // shouldn't happen with DAILY timeUnit, but skip rather than write a garbage key
-  const [yearStr, monthStr] = date.split('-');
-  const year  = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-
-  const impressions = parseInt(row.impressions || '0', 10);
-  const clicks       = parseInt(row.clicks || '0', 10);
-  const cost         = parseFloat(row.cost || '0');
-
-  const purchases = isSP ? parseInt(row.purchases14d || '0', 10) : parseInt(row.purchases || '0', 10);
-  const sales      = isSP ? parseFloat(row.sales14d || '0')       : parseFloat(row.sales || '0');
-
-  // Conversion rate: SP reports this directly (purchaseClickRate14d); SB
-  // has no equivalent column so it's calculated from purchases/clicks.
-  const cpc  = isSP && row.costPerClick != null ? parseFloat(row.costPerClick) : (clicks > 0 ? round2(cost / clicks) : 0);
-  const ctr  = isSP && row.clickThroughRate != null ? parseFloat(row.clickThroughRate) : (impressions > 0 ? round2((clicks / impressions) * 100) : 0);
-  const acos = isSP && row.acosClicks14d != null ? parseFloat(row.acosClicks14d) : (sales > 0 ? round2((cost / sales) * 100) : null);
-  const conversionRate = isSP && row.purchaseClickRate14d != null
-    ? parseFloat(row.purchaseClickRate14d)
-    : (clicks > 0 ? round2((purchases / clicks) * 100) : 0);
-  const cpm = impressions > 0 ? round2((cost / impressions) * 1000) : 0;
-
-  return {
-    search_term:      row.searchTerm || '',
-    keyword:           isSP ? (row.keyword || '') : (row.keywordText || ''),
-    match_type:        row.matchType || '',
-    ad_type:            row.adType,
-    campaign_name:      row.campaignName || '',
-    ad_group_name:      row.adGroupName || '',
-    date, year, month,
-    impressions, clicks, ctr,
-    cost: round2(cost), cpc, cpm,
-    purchases, sales: round2(sales), acos, conversion_rate: conversionRate,
-    current_bid: row.keywordBid != null ? parseFloat(row.keywordBid) : '',
-    last_updated: now,
-  };
-}
-
-function round2(n) { return Math.round((n || 0) * 100) / 100; }
-
-// ── Amazon API calls ────────────────────────────────────────────────────
 
 function downloadAdReport(url) {
   return new Promise((resolve, reject) => {
@@ -324,10 +429,10 @@ function downloadAdReport(url) {
         const buf = Buffer.concat(chunks);
         zlib.gunzip(buf, (err, decoded) => {
           if (err) {
-            try { resolve(JSON.parse(buf.toString())); } catch (e) { reject(e); }
+            try { resolve(JSON.parse(buf.toString())); } catch(e) { reject(e); }
             return;
           }
-          try { resolve(JSON.parse(decoded.toString())); } catch (e) { reject(e); }
+          try { resolve(JSON.parse(decoded.toString())); } catch(e) { reject(e); }
         });
       });
     }).on('error', reject);
@@ -340,7 +445,9 @@ function adRequest(method, path, token, profileId, body) {
     const headers = {
       'Authorization':                   `Bearer ${token}`,
       'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
-      'Content-Type':                    'application/json',
+      'Content-Type':                    method === 'POST' && path === '/reporting/reports'
+                                           ? 'application/vnd.createasyncreportrequest.v3+json'
+                                           : 'application/json',
     };
     if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
     if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
@@ -357,3 +464,6 @@ function adRequest(method, path, token, profileId, body) {
     req.end();
   });
 }
+
+const sleep  = ms => new Promise(r => setTimeout(r, ms));
+const round2 = n  => Math.round(n * 100) / 100;
