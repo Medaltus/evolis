@@ -107,6 +107,24 @@ module.exports = async (req, res) => {
   // "get by ID" style endpoint returns full detail — genuinely unverified,
   // same exploratory spirit as the inventory probes before this one
   // confirmed a working endpoint. Never writes to the sheet.
+  // ── Diagnostic-only test mode — ITEM ID RESOLUTION ───────────────────────
+  // Added 2026-08-04: verifies resolveWalmartSku() in isolation — does
+  // productIdType=ITEM_ID actually return the item, and does its sku
+  // field match what you'd expect for that product? Never writes to the
+  // sheet.
+  if (req.query.testItemId) {
+    const itemId = req.query.testItemId;
+    try {
+      const tokenData = await getWalmartToken();
+      const token = tokenData.access_token;
+      if (!token) return res.status(500).json({ testMode: true, error: 'No access_token in Walmart token response' });
+      const raw = await wmRequest('GET', `/v3/items/${encodeURIComponent(itemId)}?productIdType=ITEM_ID`, token).catch(err => ({ __error: err.message }));
+      return res.status(200).json({ testMode: true, itemId, rawResponse: raw, resolvedSku: raw?.ItemResponse?.[0]?.sku || null });
+    } catch (err) {
+      return res.status(500).json({ testMode: true, error: err.message });
+    }
+  }
+
   if (req.query.testListingSku) {
     const sku = req.query.testListingSku;
     const wpid = req.query.wpid || '';     // pass the wpid from a prior testSku-adjacent item_lookup, if you have one, for the by-ID probes below
@@ -118,8 +136,16 @@ module.exports = async (req, res) => {
 
       const probes = {
         'items_by_sku':          () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}`, token),
+        // Real Walmart docs list productIdType as GTIN/UPC/EAN/ISBN/SKU/ITEM_ID
+        // only — "WPID" isn't among them, so this one is expected to keep
+        // 404ing; kept only in case wpid happens to work undocumented.
         'items_by_wpid':         wpid   ? () => wmRequest('GET', `/v3/items/${encodeURIComponent(wpid)}`, token)   : null,
-        'items_by_itemId':       itemId ? () => wmRequest('GET', `/v3/items/${encodeURIComponent(itemId)}`, token) : null,
+        // FIXED 2026-08-04: per real Walmart docs (developer.walmart.com/us-marketplace/docs/get-item-details),
+        // GET /v3/items/{ID} defaults to interpreting {ID} as a SKU unless
+        // productIdType is explicitly set — the earlier 404 for itemId was
+        // almost certainly this, not a nonexistent endpoint.
+        'items_by_itemId':       itemId ? () => wmRequest('GET', `/v3/items/${encodeURIComponent(itemId)}?productIdType=ITEM_ID`, token) : null,
+        'items_by_gtin':         () => wmRequest('GET', `/v3/items/00850056891011?productIdType=GTIN`, token), // GTIN already known from items_by_sku's earlier response
         'items_by_sku_details':  () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}&includeDetails=true`, token),
         'item_spec_by_sku':      () => wmRequest('GET', `/v3/items/spec?sku=${encodeURIComponent(sku)}`, token),
         'content_by_sku':        () => wmRequest('GET', `/v3/content?sku=${encodeURIComponent(sku)}`, token),
@@ -214,9 +240,31 @@ module.exports = async (req, res) => {
         tabNextRow[item.brandTabName] = existingRows.length + 2;
       }
 
-      const wfs = await fetchWfsInventory(item.sku, token).catch(err => ({ __error: err.message }));
+      // Try the direct SKU first — cheap, and already confirmed working
+      // for SKUs where the master list's SKU matches Walmart's exactly.
+      // Only fall back to Item-ID-based resolution (one extra API call)
+      // when that comes back with no WFS ship node at all — i.e. exactly
+      // the mismatched-SKU cases (like "SVA0001" vs "SVA0001-stickerless")
+      // this fallback exists to fix, rather than doubling every call
+      // unconditionally.
+      let wfs = await fetchWfsInventory(item.sku, token).catch(err => ({ __error: err.message }));
+      let resolvedVia = 'sku';
+
+      if (!wfs?.__error && parseWfsShipNode(wfs).matchedNodes === 0 && item.walmartItemId) {
+        await sleep(INTER_SKU_DELAY_MS);
+        const resolvedSku = await resolveWalmartSku(item.walmartItemId, token).catch(() => null);
+        if (resolvedSku && resolvedSku !== item.sku) {
+          console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — no WFS data under master-list SKU, resolved via itemId ${item.walmartItemId} to Walmart SKU "${resolvedSku}", retrying`);
+          await sleep(INTER_SKU_DELAY_MS);
+          const retryWfs = await fetchWfsInventory(resolvedSku, token).catch(err => ({ __error: err.message }));
+          if (!retryWfs?.__error) { wfs = retryWfs; resolvedVia = 'itemId'; }
+        }
+      }
+
       if (wfs?.__error) {
         console.error(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — Walmart inventory call failed:`, wfs.__error);
+      } else if (resolvedVia === 'itemId') {
+        console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — used itemId-resolved SKU successfully`);
       }
 
       const row = buildInventoryRow(item, wfs, today, nowIso);
@@ -352,6 +400,20 @@ function fetchWfsInventory(sku, token) {
   return wmRequest('GET', path, token);
 }
 
+// Resolves a Walmart Item ID to that item's actual Walmart-side SKU
+// string. CONFIRMED endpoint per real Walmart docs (developer.walmart.com
+// /us-marketplace/docs/get-item-details): GET /v3/items/{ID} interprets
+// {ID} as a SKU by default, so productIdType=ITEM_ID is required to look
+// up by Item ID instead. Returns null (not throws) if the item isn't
+// found or the response shape doesn't match what's expected — callers
+// treat a null as "resolution didn't help, keep using the master-list SKU."
+async function resolveWalmartSku(itemId, token) {
+  const path = `/v3/items/${encodeURIComponent(itemId)}?productIdType=ITEM_ID`;
+  const resp = await wmRequest('GET', path, token);
+  const sku = resp?.ItemResponse?.[0]?.sku;
+  return sku || null;
+}
+
 // ── Master SKU list — same source/shape sync-products.js uses ───────────
 // Deliberately NOT excluding "C-SVA" or "high on love" here — those
 // exclusions in sync-products.js are Amazon-SP-API-specific (website-only
@@ -376,6 +438,13 @@ async function fetchMasterSkuList() {
     const sku       = cols[1] || '';
     const rawBrand  = (cols[3] || '').trim();
     const brandNorm = stripAccents(rawBrand.toLowerCase());
+    // Added 2026-08-04 per Jaclyn: column I, Walmart's own Item ID for
+    // this product. Used below to resolve the EXACT Walmart-side SKU
+    // string via a confirmed-working lookup (GET /v3/items/{itemId}
+    // ?productIdType=ITEM_ID) rather than assuming this master list's SKU
+    // matches Walmart's SKU string directly — it doesn't always (e.g.
+    // "SVA0001" here vs. "SVA0001-stickerless" on Walmart's side).
+    const walmartItemId = (cols[8] || '').trim();
 
     if (!sku) continue;
 
@@ -391,7 +460,7 @@ async function fetchMasterSkuList() {
       continue;
     }
 
-    out.push({ asin, sku, brandTabName: matched.tabName });
+    out.push({ asin, sku, walmartItemId, brandTabName: matched.tabName });
   }
   return out;
 }
