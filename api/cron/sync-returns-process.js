@@ -18,8 +18,26 @@
  * for some return types). A single order+SKU can legitimately have more
  * than one return event, so order_id+sku alone isn't unique enough.
  *
+ * ORDER_DATE (column P, added 2026-08-04 per Jaclyn) — Amazon's returns
+ * report has no order-date field at all (only return-date), so this is
+ * resolved separately: order_id from each return row is looked up against
+ * the sync-orders sheet (NOT Historical Cache) to find that order's
+ * original date. sync-orders alone is sufficient because it retains a
+ * 90-day window while Amazon caps how far back a return can be reported
+ * at 60 days — any order recent enough to have a matching return is
+ * guaranteed to still be in sync-orders' window. Resolved once per run;
+ * if an order_id can't be found (e.g. a data gap), order_date is left
+ * blank rather than guessed, and a PREVIOUSLY resolved value is never
+ * overwritten with a blank on a later run where the lookup happens to
+ * miss — see resolveOrderDate()/mergeOrderDate() below.
+ *
  * REQUIRES a `returns` entry in config/sheets.js pointing at
  * process.env.SHEET_RETURNS, the same shape as the existing `orders` entry.
+ * ALSO REQUIRES an `orders` entry in config/sheets.js pointing at the
+ * sync-orders workbook — UNCONFIRMED whether this property is actually
+ * named `sheets.orders` (config/sheets.js wasn't available while writing
+ * this); if the real property name differs, update the one reference to
+ * `sheets.orders` below accordingly.
  */
 
 const zlib = require('zlib');
@@ -37,10 +55,35 @@ const HEADERS = [
   'return_date', 'order_id', 'sku', 'asin', 'fnsku', 'product_name',
   'quantity', 'fulfillment_center_id', 'detailed_disposition', 'reason',
   'status', 'license_plate_number', 'customer_comments', 'brand', 'last_updated',
+  'order_date', // column P — see file header for how/why this is resolved
 ];
 
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
+
+// Builds an order_id → order_date lookup from this brand's tab on the
+// sync-orders sheet. Only sync-orders is read (NOT Historical Cache) — see
+// file header for why the 90-day/60-day window math makes that sufficient
+// on its own. A brand with no orders tab yet, or a fetch failure, resolves
+// to an empty map rather than throwing — every return row for that brand
+// just gets a blank order_date for this run, same as any other "we don't
+// know" case in this file, not a hard failure.
+async function buildOrderDateMap(brand) {
+  const map = {};
+  try {
+    const orderRows = await readRows(sheets.orders, brand.tabName);
+    (orderRows || []).forEach(r => {
+      const orderId = r['order_id'] || r['order-id'] || '';
+      const date    = r['date'] || '';
+      // First occurrence wins — a multi-line-item order has one row per
+      // SKU, all sharing the same order date, so any one of them is fine.
+      if (orderId && date && !map[orderId]) map[orderId] = date;
+    });
+  } catch (err) {
+    console.warn(`[sync-returns-process] ${brand.id} — failed to read sync-orders for order_date lookup (leaving order_date blank this run):`, err.message);
+  }
+  return map;
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -157,6 +200,7 @@ module.exports = async (req, res) => {
       const token            = await ensureTab(sheets.returns, tabName, HEADERS);
       const existingRowsRaw  = await readRows(sheets.returns, tabName);
       const existingRowsObj  = (existingRowsRaw || []).map(normalizeRow);
+      const orderDateMap     = await buildOrderDateMap(brand);
 
       const existingByKey = new Map();
       existingRowsObj.forEach((r, idx) => {
@@ -189,6 +233,14 @@ module.exports = async (req, res) => {
         if (!key) return; // no order_id+sku at all — skip, can't dedupe safely
 
         const existing = existingByKey.get(key);
+
+        // Resolve order_date fresh from this run's lookup; if that misses
+        // (order rolled outside sync-orders' window, or the fetch failed
+        // entirely for this brand), fall back to whatever was already
+        // stored rather than overwriting a known date with a blank —
+        // see file header.
+        candidate.order_date = orderDateMap[candidate.order_id] || (existing ? (existing.row.order_date || '') : '');
+
         if (!existing) {
           workingRows.push(HEADERS.map(h => h === 'last_updated' ? nowEst : (candidate[h] ?? '')));
           existingByKey.set(key, { row: candidate, idx: workingRows.length - 1 });
@@ -275,18 +327,22 @@ function returnKey(r) {
 }
 
 // True if any substantive field differs from what's stored — a return can
-// change status after the fact (e.g. disposition updates once QA'd).
+// change status after the fact (e.g. disposition updates once QA'd), and
+// order_date can go from blank to resolved if this run's sync-orders
+// lookup succeeds where an earlier run's didn't.
 function returnRowChanged(existingRowObj, candidate) {
-  const exQty    = parseInt(existingRowObj.quantity || '0', 10);
-  const exDispo  = (existingRowObj.detailed_disposition || '').trim();
-  const exReason = (existingRowObj.reason || '').trim();
-  const exStatus = (existingRowObj.status || '').trim();
+  const exQty       = parseInt(existingRowObj.quantity || '0', 10);
+  const exDispo     = (existingRowObj.detailed_disposition || '').trim();
+  const exReason    = (existingRowObj.reason || '').trim();
+  const exStatus    = (existingRowObj.status || '').trim();
+  const exOrderDate = (existingRowObj.order_date || '').trim();
 
   return (
-    exQty    !== candidate.quantity ||
-    exDispo  !== candidate.detailed_disposition ||
-    exReason !== candidate.reason ||
-    exStatus !== candidate.status
+    exQty       !== candidate.quantity ||
+    exDispo     !== candidate.detailed_disposition ||
+    exReason    !== candidate.reason ||
+    exStatus    !== candidate.status ||
+    exOrderDate !== (candidate.order_date || '').trim()
   );
 }
 
