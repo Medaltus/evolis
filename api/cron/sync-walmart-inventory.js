@@ -15,26 +15,22 @@
  * to capture the ONE number that isn't already tracked anywhere else:
  * stock sitting in Walmart's own fulfillment centers.
  *
- * ⚠ UNCONFIRMED — READ BEFORE DEPLOYING ⚠
- * fetchWfsInventory() below is a best-effort implementation, not a
- * verified one. I do not have confirmed Walmart WFS API documentation in
- * front of me. Two real open questions:
- *   1. Whether GET /v3/inventory (Walmart's general seller inventory
- *      endpoint, same API family sync-walmart-orders.js already
- *      authenticates against) actually returns WFS-specific quantity at
- *      all, separately from seller-fulfilled quantity — or whether WFS
- *      inventory requires an entirely different endpoint (Walmart's
- *      developer portal has historically documented WFS-specific supply
- *      chain APIs separately from the core Marketplace API).
- *   2. The exact response shape (field names) for whatever endpoint turns
- *      out to be correct.
- * DO NOT trust this cron's output until you've run it once with
- * ?testSku=<a real WFS-fulfilled évolis SKU> and confirmed the raw
- * response actually contains a WFS-specific quantity that matches what
- * Walmart Seller Center shows for that SKU. If the number returned looks
- * identical to total inventory regardless of fulfillment type, this is
- * the wrong endpoint and needs to be swapped for whatever Walmart's real
- * WFS inventory API turns out to be.
+ * ENDPOINT — CONFIRMED 2026-08-04 via live test against a known-WFS
+ * SVA SKU (8 real WFS units): GET /v3/fulfillment/inventory?sku={sku}
+ * returns payload.inventory[0].shipNodes, an array with one entry per
+ * fulfillment location/type. Filtered here to shipNodeType ===
+ * "WFSFulfilled" specifically (defensive — protects against a SKU that
+ * might return multiple shipNodes of different types in one response,
+ * even though the SKU tested only had one). onHandQty and availToSellQty
+ * on that matching entry both read 8, exactly matching known truth.
+ *
+ * A separate, richer endpoint (GET /v3/wfs/inventory?sku=) ALSO returned
+ * matching data (onhandUnits/availableUnits = 8) plus extra fields not
+ * used here — sell-through rate, days-of-supply, inventory-age buckets,
+ * restock forecasts. Not used for this cron (heavier response, more
+ * parsing surface than needed for a simple on-hand number), but flagged
+ * as a real option if restock-planning-style metrics are ever wanted on
+ * the dashboard later.
  *
  * Sheet: SHEET_WALMART_INVENTORY (env var — sheet does not exist yet,
  * needs to be created and its ID set before this can run for real).
@@ -89,38 +85,20 @@ module.exports = async (req, res) => {
   // Inventory API we already know responds, (b) the shipNode-based
   // WFS/SellerFulfilled split sync-walmart-orders.js already uses
   // successfully for /v3/orders, and (c) common Walmart API naming
-  // patterns elsewhere in their Marketplace API. Never writes to the sheet.
+  // ── Diagnostic-only test mode ──────────────────────────────────────────
+  // Same pattern as sync-products.js's ?testSku= — verifies the raw
+  // Walmart response before trusting a real run. Never writes to the sheet.
+  // (Simplified 2026-08-04 back down to a single call now that the
+  // endpoint itself is confirmed — see file header for the multi-endpoint
+  // exploration that got us here.)
   if (req.query.testSku) {
     const sku = req.query.testSku;
     try {
       const tokenData = await getWalmartToken();
       const token = tokenData.access_token;
       if (!token) return res.status(500).json({ testMode: true, error: 'No access_token in Walmart token response' });
-
-      const probes = {
-        'inventory_plain':            () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}`, token),
-        'inventory_shipNode_WFS':     () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}&shipNode=WFS`, token),
-        'inventory_fulfillmentType':  () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}&fulfillmentType=WFS`, token),
-        'fulfillment_inventory':      () => wmRequest('GET', `/v3/fulfillment/inventory?sku=${encodeURIComponent(sku)}`, token),
-        'wfs_inventory':              () => wmRequest('GET', `/v3/wfs/inventory?sku=${encodeURIComponent(sku)}`, token),
-        'inbound_inventory':          () => wmRequest('GET', `/v3/inventory/inbound?sku=${encodeURIComponent(sku)}`, token),
-        'item_lookup':                () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}`, token),
-        'inventory_bulk_no_sku':      () => wmRequest('GET', `/v3/inventory`, token),
-      };
-
-      const entries = await Promise.all(
-        Object.entries(probes).map(async ([name, fn]) => {
-          try {
-            const result = await fn();
-            return [name, result];
-          } catch (err) {
-            return [name, { __error: err.message }];
-          }
-        })
-      );
-
-      const results = Object.fromEntries(entries);
-      return res.status(200).json({ testMode: true, sku, note: 'All paths/params below are UNCONFIRMED guesses — look for whichever response actually contains a number matching known WFS stock, and check whether any response includes a field that explicitly labels fulfillment type.', results });
+      const raw = await fetchWfsInventory(sku, token).catch(err => ({ __error: err.message }));
+      return res.status(200).json({ testMode: true, sku, rawResponse: raw, parsed: parseWfsShipNode(raw) });
     } catch (err) {
       return res.status(500).json({ testMode: true, error: err.message });
     }
@@ -237,16 +215,30 @@ module.exports = async (req, res) => {
 
 // ── Row building ────────────────────────────────────────────────────────
 
+// Shared by both the real write path and ?testSku= diagnostic mode, so
+// the two can never silently drift apart (test mode showing one shape
+// while the real writer reads a different one). Filters the shipNodes
+// array to shipNodeType === "WFSFulfilled" specifically — defensive
+// against a SKU ever returning multiple ship nodes of different types in
+// one response, even though every SKU tested so far only had one entry.
+// If more than one WFSFulfilled node came back (e.g. multiple WFS
+// warehouses), sums across all of them rather than just taking the first.
+function parseWfsShipNode(raw) {
+  const shipNodes = raw?.payload?.inventory?.[0]?.shipNodes || [];
+  const wfsNodes = shipNodes.filter(n => n.shipNodeType === 'WFSFulfilled');
+  if (!wfsNodes.length) return { onHand: '', available: '', matchedNodes: 0 };
+  const onHand    = wfsNodes.reduce((s, n) => s + (parseInt(n.onHandQty, 10) || 0), 0);
+  const available = wfsNodes.reduce((s, n) => s + (parseInt(n.availToSellQty, 10) || 0), 0);
+  return { onHand, available, matchedNodes: wfsNodes.length };
+}
+
 function buildInventoryRow(item, wfs, dateStr, nowIso) {
-  // UNCONFIRMED field names — see file header. Guessing at a shape close
-  // to Walmart's documented general inventory response
-  // ({ sku, quantity: { unit, amount } }), with an "available" fallback
-  // to the same value if Walmart doesn't distinguish on-hand vs available
-  // for WFS stock specifically. Left blank (not zero) if the call failed
-  // or returned nothing usable — a blank is "we don't know," a zero would
-  // falsely read as "confirmed no stock."
-  const onHand   = wfs?.quantity?.amount ?? wfs?.availableToSellQty?.amount ?? '';
-  const available = wfs?.availableQuantity?.amount ?? onHand;
+  // Left blank (not zero) if the call failed or returned no WFSFulfilled
+  // ship node at all — a blank is "we don't know / not WFS-stocked," a
+  // zero would falsely read as "confirmed no WFS stock."
+  if (wfs?.__error) return [dateStr, item.sku, '', '', nowIso];
+  const { onHand, available, matchedNodes } = parseWfsShipNode(wfs);
+  if (matchedNodes === 0) return [dateStr, item.sku, '', '', nowIso];
   return [dateStr, item.sku, onHand, available, nowIso];
 }
 
@@ -314,13 +306,9 @@ function wmRequest(method, path, token) {
   });
 }
 
-// ── Walmart inventory API — SEE FILE HEADER, UNCONFIRMED ─────────────────
-// Best-effort guess: GET /v3/inventory?sku={sku} is Walmart's documented
-// general seller-inventory lookup. Whether it returns a WFS-specific
-// breakdown, or whether WFS inventory needs an entirely different
-// endpoint, is NOT confirmed. Verify with ?testSku= before trusting this.
+// ── Walmart inventory API — CONFIRMED 2026-08-04, see file header ────────
 function fetchWfsInventory(sku, token) {
-  const path = `/v3/inventory?sku=${encodeURIComponent(sku)}`;
+  const path = `/v3/fulfillment/inventory?sku=${encodeURIComponent(sku)}`;
   return wmRequest('GET', path, token);
 }
 
