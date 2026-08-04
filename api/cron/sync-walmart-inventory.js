@@ -76,16 +76,7 @@ module.exports = async (req, res) => {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // ── Diagnostic-only test mode ──────────────────────────────────────────
-  // EXPANDED 2026-08-04 per Jaclyn: instead of testing one guessed
-  // endpoint at a time, fire several plausible variations in parallel and
-  // return every raw response (success or error) side by side. Purely
-  // exploratory — none of these paths/params are confirmed against real
-  // Walmart docs, they're educated guesses based on (a) the general
-  // Inventory API we already know responds, (b) the shipNode-based
-  // WFS/SellerFulfilled split sync-walmart-orders.js already uses
-  // successfully for /v3/orders, and (c) common Walmart API naming
-  // ── Diagnostic-only test mode ──────────────────────────────────────────
+  // ── Diagnostic-only test mode — INVENTORY ───────────────────────────────
   // Same pattern as sync-products.js's ?testSku= — verifies the raw
   // Walmart response before trusting a real run. Never writes to the sheet.
   // (Simplified 2026-08-04 back down to a single call now that the
@@ -99,6 +90,55 @@ module.exports = async (req, res) => {
       if (!token) return res.status(500).json({ testMode: true, error: 'No access_token in Walmart token response' });
       const raw = await fetchWfsInventory(sku, token).catch(err => ({ __error: err.message }));
       return res.status(200).json({ testMode: true, sku, rawResponse: raw, parsed: parseWfsShipNode(raw) });
+    } catch (err) {
+      return res.status(500).json({ testMode: true, error: err.message });
+    }
+  }
+
+  // ── Diagnostic-only test mode — LISTING CONTENT (exploratory) ───────────
+  // Added 2026-08-04 per Jaclyn: does Walmart's API expose title/bullets/
+  // description the way it exposes inventory? The ONE listing-adjacent
+  // field seen so far — item_lookup's "productName" from the earlier
+  // multi-probe inventory exploration — is title-like but nothing else
+  // (no bullets, no description). These probes are a first pass at
+  // finding a richer content endpoint, using two IDs that same earlier
+  // probe surfaced for this SKU (wpid, itemID) as lookup keys, since a
+  // "list" style endpoint (?sku=) may return a summary while a
+  // "get by ID" style endpoint returns full detail — genuinely unverified,
+  // same exploratory spirit as the inventory probes before this one
+  // confirmed a working endpoint. Never writes to the sheet.
+  if (req.query.testListingSku) {
+    const sku = req.query.testListingSku;
+    const wpid = req.query.wpid || '';     // pass the wpid from a prior testSku-adjacent item_lookup, if you have one, for the by-ID probes below
+    const itemId = req.query.itemId || ''; // same idea, from wfs_inventory's itemInformation.itemID
+    try {
+      const tokenData = await getWalmartToken();
+      const token = tokenData.access_token;
+      if (!token) return res.status(500).json({ testMode: true, error: 'No access_token in Walmart token response' });
+
+      const probes = {
+        'items_by_sku':          () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}`, token),
+        'items_by_wpid':         wpid   ? () => wmRequest('GET', `/v3/items/${encodeURIComponent(wpid)}`, token)   : null,
+        'items_by_itemId':       itemId ? () => wmRequest('GET', `/v3/items/${encodeURIComponent(itemId)}`, token) : null,
+        'items_by_sku_details':  () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}&includeDetails=true`, token),
+        'item_spec_by_sku':      () => wmRequest('GET', `/v3/items/spec?sku=${encodeURIComponent(sku)}`, token),
+        'content_by_sku':        () => wmRequest('GET', `/v3/content?sku=${encodeURIComponent(sku)}`, token),
+      };
+
+      const entries = await Promise.all(
+        Object.entries(probes)
+          .filter(([, fn]) => fn !== null) // drop the by-wpid/by-itemId probes if those IDs weren't passed in
+          .map(async ([name, fn]) => {
+            try { return [name, await fn()]; }
+            catch (err) { return [name, { __error: err.message }]; }
+          })
+      );
+
+      return res.status(200).json({
+        testMode: true, sku, wpidUsed: wpid || '(not provided)', itemIdUsed: itemId || '(not provided)',
+        note: 'All paths below are UNCONFIRMED guesses. Look for bullets/key features/description fields specifically — a plain "productName" or "title" alone is not enough to replace Amazon-style listing content. Pass &wpid=... and &itemId=... (from an earlier testSku result\u2019s item_lookup / wfs_inventory probes) to also test the by-ID lookups.',
+        results: Object.fromEntries(entries),
+      });
     } catch (err) {
       return res.status(500).json({ testMode: true, error: err.message });
     }
