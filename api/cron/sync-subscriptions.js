@@ -143,7 +143,23 @@ module.exports = async (req, res) => {
         if (!y || !m) return;
         mergedByKey[`${y}-${m}`] = [r.year, r.month, r.active_subscriptions, r.retention_90_day, r.brand, r.last_updated];
       });
-      newRows.forEach(row => { mergedByKey[`${row[0]}-${row[1]}`] = row; });
+      // Merge newRows in WITHOUT letting a null retention wipe an existing
+      // historical value. activeSeries covers all MONTHS_OF_HISTORY months
+      // every run, but retentionByMonth only ever has ONE entry (the
+      // current/last-full-month key from currentRowKey() above) — so
+      // fetchSubscriptionRows() returns null retention for the other 12
+      // months on every single run. A naive `mergedByKey[key] = row`
+      // overwrite was clobbering those 12 months' real historical
+      // percentages back to null every night. active_subscriptions,
+      // brand, and last_updated SHOULD refresh from this run regardless —
+      // only retention_90_day needs the "don't overwrite with null" guard.
+      newRows.forEach(row => {
+        const key = `${row[0]}-${row[1]}`;
+        const existing = mergedByKey[key];
+        const incomingRetention = row[3]; // null unless this IS the target month
+        const preservedRetention = incomingRetention != null ? incomingRetention : (existing ? existing[3] : null);
+        mergedByKey[key] = [row[0], row[1], row[2], preservedRetention, row[4], row[5]];
+      });
 
       const mergedRows = Object.values(mergedByKey).sort((a, b) => {
         const ay = parseInt(a[0], 10), by = parseInt(b[0], 10);
