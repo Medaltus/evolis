@@ -1317,7 +1317,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <thead><tr>
             <th class="inv-sortable" data-sort="sku" style="cursor:pointer;">SKU <span class="inv-sort-arrow"></span></th>
             <th class="inv-sortable" data-sort="name" style="cursor:pointer;">Product Name <span class="inv-sort-arrow"></span></th>
-            <th>Qty at Amazon</th><th>Qty at Medaltus (FBM)</th><th>Allocated</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th>
+            <th>FBA</th><th>Qty at Medaltus (FBM)</th><th>WFS</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th>
           </tr></thead>
           <tbody id="inv-table-body"><tr><td colspan="9" style="color:var(--muted);">Loading…</td></tr></tbody>
         </table>
@@ -12311,6 +12311,17 @@ async function loadInventoryPage() {
       if (sku) consignmentMap[sku] = parseFloat(r.available) || 0;
     });
 
+    // WFS (Walmart Fulfillment Services) — added 2026-08-04 per Jaclyn.
+    // Intentionally left EMPTY: no cron exists yet to pull Walmart
+    // inventory (this table has only ever pulled Amazon inventory via
+    // Products Cache). Structured as its own map, same shape as
+    // consignmentMap above, so wiring in a real sheet later is a one-line
+    // change: fetch the sheet alongside consignmentCsv above, then fill
+    // this map the same way (keyed by base SKU, value = on-hand/available
+    // quantity). Until then every row shows "—" for WFS, which is the
+    // honest "not tracked yet" state — not a fabricated zero.
+    const wfsMap = {};
+
     const statusMap = {};
     parseCsvToRows(statusCsv).forEach(r => {
       const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
@@ -12334,16 +12345,31 @@ async function loadInventoryPage() {
       const qtyAtAmazon    = parseInt(r.fulfillable_quantity, 10) || 0;
       const qtyAtMedaltus  = parseInt(r.seller_fulfilled_quantity, 10) || 0;
       const allocated       = parseInt(r.reserved_quantity, 10) || 0;
-      // Available = Amazon qty + Medaltus qty, no subtraction — confirmed
-      // 2026-07-20 that Allocated shouldn't be subtracted again here,
-      // since it's already a separate category from fulfillable_quantity
-      // (not a subset of it), not a portion of it that needs removing.
-      const available        = qtyAtAmazon + qtyAtMedaltus;
+      // REVISED 2026-08-04 per Jaclyn: Available now DOES subtract Allocated
+      // (previous version, and the 2026-07-20 confirmation behind it,
+      // treated Allocated as a separate bucket that shouldn't be removed
+      // again — that's been superseded by this instruction). Floored at 0
+      // rather than allowed to go negative, since Allocated can in
+      // principle exceed current fulfillable+seller-fulfilled stock
+      // (e.g. reservations against incoming inventory) and a negative
+      // "Available" would read as a bug rather than a real state.
+      const available        = Math.max(0, qtyAtAmazon + qtyAtMedaltus - allocated);
       const onHand             = parseFloat(r.qty_on_hand) || 0; // kept only for the top KPI card sum — that definition is unchanged
       const daysRaw             = r.days_of_inventory;
       const days                 = (daysRaw === '' || daysRaw === null || daysRaw === undefined) ? '' : parseFloat(daysRaw);
       const skuUpper              = (r.sku || '').trim().toUpperCase();
       const consignment            = skuUpper in consignmentMap ? consignmentMap[skuUpper] : '';
+      // WFS (Walmart Fulfillment Services) — added 2026-08-04 per Jaclyn.
+      // Products Cache only ever pulled Amazon inventory (fulfillable/
+      // seller-fulfilled/reserved) and Amazon 90-day sales for the days-of-
+      // inventory calc — this whole table has been Amazon-only + a bolted-
+      // on Consignment column. No Walmart inventory sync exists yet to
+      // populate this. wfsMap (built above from a to-be-created sheet, same
+      // "empty string means not yet available" convention as Consignment)
+      // is intentionally left EMPTY until that cron exists — showing "—"
+      // for every row rather than fabricating a 0 that would look like
+      // "confirmed zero Walmart stock" instead of "not tracked yet."
+      const wfs                     = skuUpper in wfsMap ? wfsMap[skuUpper] : '';
       // OOS overrides the days-of-inventory status entirely — a SKU sitting
       // at zero Available units right now is a more urgent, direct signal
       // than a lagging days-of-inventory projection, and previously such
@@ -12352,7 +12378,7 @@ async function loadInventoryPage() {
       const status = available === 0 ? 'oos' : invStatusFor(days);
       return {
         sku: r.sku || '', name: r.name || r.sku || '',
-        qtyAtAmazon, qtyAtMedaltus, available, allocated, onHand, consignment,
+        qtyAtAmazon, qtyAtMedaltus, available, allocated, wfs, onHand, consignment,
         days, status,
         discontinued: statusMap[skuUpper] === 'DELETED',
       };
@@ -12439,7 +12465,7 @@ function renderInventoryTable(rows) {
       <td>${r.name}${r.discontinued ? ' <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 6px;">Discontinued</span>' : ''}</td>
       <td>${r.qtyAtAmazon.toLocaleString()}</td>
       <td>${r.qtyAtMedaltus.toLocaleString()}</td>
-      <td>${r.allocated.toLocaleString()}</td>
+      <td>${r.wfs === '' ? '—' : r.wfs.toLocaleString()}</td>
       <td>${r.available.toLocaleString()}</td>
       <td>${r.consignment === '' ? '—' : r.consignment.toLocaleString()}</td>
       <td>${r.days === '' ? '—' : Math.round(r.days).toLocaleString()}</td>
