@@ -77,6 +77,17 @@
  * brand's rows just get a blank purchased_units_90d/days_of_inventory for
  * this run rather than blocking the inventory/listing sync that already
  * works today.
+ *
+ * ADDED (2026-08-04): purchased_units_90d now combines Amazon + Walmart
+ * for SKUs sold on both channels, per master SKU list column G ("channel":
+ * Amazon / Walmart / Amazon / Walmart). Amazon side stays keyed by ASIN as
+ * before (fetchBrand90dUnits, sheets.orders). Walmart side is keyed by SKU
+ * — no ASIN concept on that marketplace — pulled from a separate per-brand
+ * rolling-90-day cache (SHEET_WALMART_ORDERS, fetchBrandWalmart90dUnits),
+ * same failsafe pattern: a failed lookup leaves that channel's
+ * contribution out rather than blocking the run. SKUs not flagged
+ * sellsOnWalmart are completely unaffected — Amazon-only behavior,
+ * unchanged.
  */
 
 const { spRequest }                                     = require('../_spauth');
@@ -86,7 +97,15 @@ const sheets                                            = require('../config/she
 const { sendCronFailureAlert }                          = require('../_alerts');
 
 const MASTER_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
-const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand
+const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand, G=channel (Amazon / Walmart / Amazon / Walmart)
+
+// Walmart 90-day orders cache — per-brand tabs, already maintained as a
+// rolling 90-day window by its own cron (same convention as sheets.orders
+// for Amazon). Headers: order_id, date, status, order_total,
+// promotion_ids, is_premium_order, promotion_discount, item_price,
+// quantity_ordered, quantity_shipped, unit_count, sku, brand, last_updated.
+// Keyed by SKU, not ASIN — Walmart has no ASIN concept.
+const SHEET_WALMART_ORDERS = process.env.SHEET_WALMART_ORDERS || '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -200,6 +219,7 @@ module.exports = async (req, res) => {
   const tabTokens = {};
   const tabNextRow = {};       // brandTabName -> next row number to write to
   const brand90dMaps = {};     // brandTabName -> { [asin]: unitsSoldLast90d } — see fetchBrand90dUnits
+  const walmart90dMaps = {};   // brandTabName -> { [sku]: unitsSoldLast90d }  — see fetchBrandWalmart90dUnits, only populated for sellsOnWalmart SKUs
   const failedSkus = [];
 
   for (; i < masterList.length; i++) {
@@ -227,8 +247,38 @@ module.exports = async (req, res) => {
         }
       }
 
+      // Walmart side — only fetched for brands that actually have a
+      // sellsOnWalmart SKU, and only once per brand (same lazy-cache
+      // pattern as the Amazon lookup above). Same failsafe: a failure here
+      // never blocks the run, it just leaves the Walmart contribution out
+      // of purchased_units_90d for this brand this run.
+      if (item.sellsOnWalmart && !(item.brandTabName in walmart90dMaps)) {
+        try {
+          walmart90dMaps[item.brandTabName] = await fetchBrandWalmart90dUnits(item.brandTabName);
+        } catch (err) {
+          console.warn(`[sync-products] ${item.brandTabName} — Walmart 90-day units lookup failed, leaving that channel's contribution blank this run:`, err.message);
+          walmart90dMaps[item.brandTabName] = {};
+        }
+      }
+
       const rowNumber = tabNextRow[item.brandTabName];
-      const units90d = brand90dMaps[item.brandTabName][item.asin.toUpperCase()] ?? '';
+
+      // purchased_units_90d — combined across channels. Amazon side keyed
+      // by ASIN (as before); Walmart side keyed by SKU (no ASIN concept on
+      // that marketplace). Only combined for SKUs actually flagged as
+      // selling on Walmart (master list column G) — everything else is
+      // unchanged Amazon-only behavior. Blank only if there's genuinely
+      // nothing from either applicable channel, so a real zero from one
+      // channel doesn't get masked by a blank from the other.
+      const amazonUnits = brand90dMaps[item.brandTabName][item.asin.toUpperCase()];
+      let units90d = amazonUnits ?? '';
+      if (item.sellsOnWalmart) {
+        const walmartUnits = walmart90dMaps[item.brandTabName]?.[item.sku.toUpperCase()];
+        if (amazonUnits != null || walmartUnits != null) {
+          units90d = (amazonUnits || 0) + (walmartUnits || 0);
+        }
+      }
+
       const row = await buildProductRow(item, today, nowIso, rowNumber, units90d);
 
       await appendRows(sheets.products, item.brandTabName, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
@@ -433,6 +483,12 @@ async function fetchMasterSkuList() {
     const name      = cols[2] || '';
     const rawBrand  = (cols[3] || '').trim();
     const brandNorm = stripAccents(rawBrand.toLowerCase());
+    // Column G — channel. Values seen: "Amazon", "Walmart", "Amazon / Walmart".
+    // Only SKUs whose channel mentions Walmart get a Walmart 90d units lookup;
+    // everyone else behaves exactly as before (Amazon-only).
+    const rawChannel     = (cols[6] || '').trim();
+    const channelNorm    = stripAccents(rawChannel.toLowerCase());
+    const sellsOnWalmart = channelNorm.includes('walmart');
 
     if (!asin || !sku) continue;
     if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
@@ -450,7 +506,7 @@ async function fetchMasterSkuList() {
       continue;
     }
 
-    out.push({ asin, sku, name, brandTabName: matched.tabName });
+    out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart });
   }
   return out;
 }
@@ -471,6 +527,25 @@ async function fetchBrand90dUnits(brandTabName) {
     if (!asin) return;
     const units = parseInt(r.unit_count, 10) || 0;
     map[asin] = (map[asin] || 0) + units;
+  });
+  return map;
+}
+
+// Walmart counterpart to fetchBrand90dUnits — same rolling-90-day-cache
+// assumption (no date filtering needed here), same cancelled-order
+// exclusion, but keyed by SKU since Walmart has no ASIN. Only called for
+// brands that have at least one sellsOnWalmart SKU, and only once per
+// brand per run (cached by the caller), same as the Amazon lookup.
+async function fetchBrandWalmart90dUnits(brandTabName) {
+  const rows = await readRows(SHEET_WALMART_ORDERS, brandTabName);
+  const map = {};
+  (rows || []).forEach(r => {
+    const status = (r.status || '').toLowerCase();
+    if (status === 'cancelled') return;
+    const sku = (r.sku || '').trim().toUpperCase();
+    if (!sku) return;
+    const units = parseInt(r.unit_count, 10) || 0;
+    map[sku] = (map[sku] || 0) + units;
   });
   return map;
 }
