@@ -81,14 +81,46 @@ module.exports = async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
 
   // ── Diagnostic-only test mode ──────────────────────────────────────────
-  // Same pattern as sync-products.js's ?testSku= — verifies the raw
-  // Walmart response BEFORE trusting this cron with a real run. Never
-  // writes to the sheet.
+  // EXPANDED 2026-08-04 per Jaclyn: instead of testing one guessed
+  // endpoint at a time, fire several plausible variations in parallel and
+  // return every raw response (success or error) side by side. Purely
+  // exploratory — none of these paths/params are confirmed against real
+  // Walmart docs, they're educated guesses based on (a) the general
+  // Inventory API we already know responds, (b) the shipNode-based
+  // WFS/SellerFulfilled split sync-walmart-orders.js already uses
+  // successfully for /v3/orders, and (c) common Walmart API naming
+  // patterns elsewhere in their Marketplace API. Never writes to the sheet.
   if (req.query.testSku) {
+    const sku = req.query.testSku;
     try {
       const tokenData = await getWalmartToken();
-      const raw = await fetchWfsInventory(req.query.testSku, tokenData.access_token).catch(err => ({ __error: err.message }));
-      return res.status(200).json({ testMode: true, sku: req.query.testSku, rawResponse: raw });
+      const token = tokenData.access_token;
+      if (!token) return res.status(500).json({ testMode: true, error: 'No access_token in Walmart token response' });
+
+      const probes = {
+        'inventory_plain':            () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}`, token),
+        'inventory_shipNode_WFS':     () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}&shipNode=WFS`, token),
+        'inventory_fulfillmentType':  () => wmRequest('GET', `/v3/inventory?sku=${encodeURIComponent(sku)}&fulfillmentType=WFS`, token),
+        'fulfillment_inventory':      () => wmRequest('GET', `/v3/fulfillment/inventory?sku=${encodeURIComponent(sku)}`, token),
+        'wfs_inventory':              () => wmRequest('GET', `/v3/wfs/inventory?sku=${encodeURIComponent(sku)}`, token),
+        'inbound_inventory':          () => wmRequest('GET', `/v3/inventory/inbound?sku=${encodeURIComponent(sku)}`, token),
+        'item_lookup':                () => wmRequest('GET', `/v3/items?sku=${encodeURIComponent(sku)}`, token),
+        'inventory_bulk_no_sku':      () => wmRequest('GET', `/v3/inventory`, token),
+      };
+
+      const entries = await Promise.all(
+        Object.entries(probes).map(async ([name, fn]) => {
+          try {
+            const result = await fn();
+            return [name, result];
+          } catch (err) {
+            return [name, { __error: err.message }];
+          }
+        })
+      );
+
+      const results = Object.fromEntries(entries);
+      return res.status(200).json({ testMode: true, sku, note: 'All paths/params below are UNCONFIRMED guesses — look for whichever response actually contains a number matching known WFS stock, and check whether any response includes a field that explicitly labels fulfillment type.', results });
     } catch (err) {
       return res.status(500).json({ testMode: true, error: err.message });
     }
