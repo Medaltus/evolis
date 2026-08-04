@@ -29,11 +29,11 @@ const TRIM_YEARS       = 3;
 
 const SUMMARY_HEADERS = [
   'year', 'month', 'impressions', 'clicks', 'spend', 'sales',
-  'acos', 'roas', 'ad_units', 'date', 'ctr', 'cpc', 'brand', 'last_updated',
+  'acos', 'roas', 'ad_units', 'ctr', 'cpc', 'brand', 'last_updated',
 ];
 const ASIN_HEADERS = [
-  'year', 'month', 'sku', 'ad_units', 'spend', 'sales',
-  'acos', 'brand', 'last_updated',
+  'year', 'month', 'asin', 'ad_units', 'spend', 'sales',
+  'acos', 'brand', 'last_updated', 'date',
 ];
 
 const POLL_TIMEOUT_MS  = 240_000;
@@ -276,7 +276,7 @@ module.exports = async (req, res) => {
         const brandLabel = tabName === 'asin-data' ? 'unmatched' : tabName;
         const newRows = Object.entries(asinMap).map(([asin, agg]) => {
           const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
-          return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, brandLabel, now];
+          return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, brandLabel, now, endDate || ''];
         }).filter(r => parseInt(r[0], 10) >= cutoff);
 
         try {
@@ -284,7 +284,7 @@ module.exports = async (req, res) => {
           const existing = await readRows(SHEET_AD_ORDERS, tabName);
           // Remove rows matching this year/month, then append new ones
           const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
-          const allRows = [...kept.map(r => [r.year, r.month, r.sku, r.ad_units, r.spend, r.sales, r.acos, r.brand, r.last_updated]), ...newRows];
+          const allRows = [...kept.map(r => [r.year, r.month, r.asin, r.ad_units, r.spend, r.sales, r.acos, r.brand, r.last_updated, r.date]), ...newRows];
           await replaceRows(SHEET_AD_ORDERS, tabName, ASIN_HEADERS, allRows, tok);
           console.log(`[sync-advertising-process] ${label} ${tabName}: upserted ${newRows.length} ASIN rows`);
         } catch (err) {
@@ -336,14 +336,14 @@ module.exports = async (req, res) => {
         const roas = t.spend  > 0 ? round2(t.sales / t.spend)                     : null;
         const ctr  = t.impressions > 0 ? round2((t.clicks / t.impressions) * 100) : 0;
         const cpc  = t.clicks > 0 ? round2(t.spend / t.clicks)                    : 0;
-        const newRow = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, endDate || '', ctr, cpc, brand.id, now];
+        const newRow = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, ctr, cpc, brand.id, now];
 
         const tok      = await ensureTab(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
         const existing = await readRows(SHEET_AD_SUMMARY, brand.tabName);
         // Upsert: remove matching year/month row, append new one
         const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
         await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS,
-          [...kept.map(r => [r.year, r.month, r.impressions, r.clicks, r.spend, r.sales, r.acos, r.roas, r.ad_units, r.date, r.ctr, r.cpc, r.brand, r.last_updated]), newRow],
+          [...kept.map(r => [r.year, r.month, r.impressions, r.clicks, r.spend, r.sales, r.acos, r.roas, r.ad_units, r.ctr, r.cpc, r.brand, r.last_updated]), newRow],
           tok
         );
         allResults.push({ period: label, brand: brand.id, status: 'ok', spend: round2(t.spend), adUnits: t.adUnits });
