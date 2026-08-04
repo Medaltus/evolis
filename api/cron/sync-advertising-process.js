@@ -39,6 +39,21 @@ const ASIN_HEADERS = [
 const POLL_TIMEOUT_MS  = 240_000;
 const POLL_INTERVAL_MS = 10_000;
 
+// Google Sheets throttling — this cron does an ensureTab + readRows +
+// replaceRows for every brand tab, twice (curr + prev), across BOTH the
+// ASIN-level write (5a) and summary write (5b) loops below. With 15 active
+// brands that's roughly 60+ per-tab Sheets operations fired back-to-back
+// with zero pacing, which tripped Google's "Read requests per minute per
+// user" quota (429 RESOURCE_EXHAUSTED) on 2026-08-04 for the last few
+// brands processed in the run. Same fix pattern as the stagger already in
+// sync-advertising-request.js for the Amazon Ads API: space the per-tab
+// work out instead of firing it in a tight loop. 1s per tab costs ~60s
+// total across a full run — comfortably inside this function's time
+// budget — and keeps us well under the per-minute ceiling. Starting
+// point, not independently confirmed against Google's actual quota for
+// this project — watch logs for further 429s and increase if needed.
+const SHEET_WRITE_STAGGER_MS = 1000;
+
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
   { name: 'the creme shop', tabName: 'creme-shop'     },
@@ -246,6 +261,7 @@ module.exports = async (req, res) => {
   // ── 5. Process each period ────────────────────────────────────────────────
   const allResults = [];
   const cutoff = new Date().getFullYear() - TRIM_YEARS;
+  let sheetOpIndex = 0; // shared across both periods and both write loops (5a + 5b) — see SHEET_WRITE_STAGGER_MS
 
   for (const period of periods) {
     const { label, year, month, endDate, asinRows, spRows, sbRows } = period;
@@ -278,6 +294,9 @@ module.exports = async (req, res) => {
           const acos = agg.sales > 0 ? round2((agg.spend / agg.sales) * 100) : null;
           return [year, month, asin, agg.adUnits, round2(agg.spend), round2(agg.sales), acos, brandLabel, now, endDate || ''];
         }).filter(r => parseInt(r[0], 10) >= cutoff);
+
+        if (sheetOpIndex > 0) await sleep(SHEET_WRITE_STAGGER_MS);
+        sheetOpIndex++;
 
         try {
           const tok      = await ensureTab(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
@@ -330,6 +349,9 @@ module.exports = async (req, res) => {
     });
 
     for (const brand of brands.filter(b => b.active)) {
+      if (sheetOpIndex > 0) await sleep(SHEET_WRITE_STAGGER_MS);
+      sheetOpIndex++;
+
       try {
         const t    = brandTotals[brand.tabName] || { impressions: 0, clicks: 0, spend: 0, sales: 0, adUnits: 0 };
         const acos = t.sales  > 0 ? round2((t.spend / t.sales) * 100)            : null;
