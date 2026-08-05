@@ -1076,8 +1076,20 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   <div class="topbar">
     <span class="topbar-title" id="topbar-title">Home — Évolis</span>
     <div class="topbar-right">
-      <div class="pdf-events-picker" id="pdf-events-picker" style="display:none;font-size:11px;color:var(--muted);align-items:center;gap:8px;">
+      <div class="pdf-events-picker" id="pdf-events-picker" style="display:none;font-size:11px;color:var(--muted);align-items:center;gap:8px;flex-wrap:wrap;max-width:640px;">
         <span>Include in PDF:</span>
+        <!-- Sales pages — added 2026-08-05 per Jaclyn. Default CHECKED so
+             anyone who doesn't touch these gets today's existing behavior
+             (all three Sales channels always included). -->
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-amazon" checked style="margin:0;"> Amazon</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-website" checked style="margin:0;"> Website</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-walmart" checked style="margin:0;"> Walmart</label>
+        <!-- Marketing pages — same default-checked reasoning as Sales above. -->
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-fulfillment" checked style="margin:0;"> Fulfillment &amp; CS</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-stewardship" checked style="margin:0;"> Stewardship</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-opportunities" checked style="margin:0;"> Opportunities</label>
+        <!-- Events pages — existing checkboxes, unchanged; default UNCHECKED
+             as before. -->
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-strategy" style="margin:0;"> Strategy</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-bss" style="margin:0;"> Big Spring Sale</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="pdf-include-pd" style="margin:0;"> Prime Day</label>
@@ -5159,11 +5171,18 @@ async function initSns() {
       const HIST_GID = '1249281379';
 
       console.log('[Evolis] Starting fetch...');
-      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, amzReturnsCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        // Amazon Returns — added 2026-08-05 per Jaclyn, to exclude returned
+        // units from Total Units / Units (Organic) / Top Selling Products
+        // on this (internal) Amazon Sales page. OV_RETURNS_SHEET_ID /
+        // OV_RETURNS_EVOLIS_GID are declared globally further down this
+        // file (same sheet/tab already confirmed via the Overview page's
+        // returns netting).
+        fetch(sheetCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
@@ -5174,14 +5193,45 @@ async function initSns() {
       // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
       const allRows = [...syncRows, ...histRows];
 
+      // Amazon returns — dated by return_date (when the return happened),
+      // not the original order date, same convention as the Overview
+      // page's returns netting. Returns rows carry their own `asin` column
+      // directly (confirmed 2026-08-05), so no SKU→ASIN crosswalk is
+      // needed here.
+      const amzReturnRows = isCsv(amzReturnsCsv) ? parseCsv(amzReturnsCsv).filter(isEvolisRow) : [];
+      function aggregateAmzReturnsMonth(rows, y, m) {
+        const prefix = `${y}-${String(m).padStart(2, '0')}`;
+        let totalQty = 0;
+        const byAsin = {};
+        rows.forEach(r => {
+          if (normalizeDate(r.return_date).substring(0, 7) !== prefix) return;
+          const qty = parseInt(r.quantity, 10) || 0;
+          totalQty += qty;
+          const asin = (r.asin || '').trim().toUpperCase();
+          if (asin) byAsin[asin] = (byAsin[asin] || 0) + qty;
+        });
+        return { totalQty, byAsin };
+      }
+      const currReturns = aggregateAmzReturnsMonth(amzReturnRows, year, month);
+      const prevReturns = aggregateAmzReturnsMonth(amzReturnRows, prevYear, prevMonth);
+      const yoyReturns  = aggregateAmzReturnsMonth(amzReturnRows, yoyYear, yoyMonth);
+
       const curr     = aggregateMonth(allRows, year, month);
       const prev     = aggregateMonth(allRows, prevYear, prevMonth);
       const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
+
+      // Net returns against Total Units — Units (Organic) derives from
+      // curr.totalUnits (see renderKPIs below), so netting here alone
+      // covers both KPIs.
+      if (curr) curr.totalUnits = Math.max(0, curr.totalUnits - currReturns.totalQty);
+      if (prev) prev.totalUnits = Math.max(0, prev.totalUnits - prevReturns.totalQty);
+      if (prevYoy) prevYoy.totalUnits = Math.max(0, prevYoy.totalUnits - yoyReturns.totalQty);
 
       if (!curr) {
         showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
         return;
       }
+
 
       // Parse ad summary — find current month row for KPI adUnits
       // Columns: year, month, impressions, clicks, spend, sales, acos, roas, ad_units, ctr, cpc, brand, last_updated
@@ -5208,7 +5258,7 @@ async function initSns() {
 
       renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
-      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows);
+      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows, currReturns.byAsin, prevReturns.byAsin);
 
       // Revenue chart — fetches from the separate revenue history sheet
       buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
@@ -5328,7 +5378,7 @@ async function initSns() {
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
   const PRODUCT_NAMES_GID      = '164358627';
 
-  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = []) {
+  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = [], returnsByAsin = {}, returnsByAsinPrev = {}) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
 
     // Filter to last full month (same rules as KPIs)
@@ -5361,6 +5411,17 @@ async function initSns() {
       asinUnits[asin] = (asinUnits[asin] || 0) + qty;
     }
 
+    // Net Amazon returns against gross per-ASIN units — added 2026-08-05
+    // per Jaclyn. Returns rows carry their own `asin` column directly (no
+    // SKU crosswalk needed). Floored at 0 per ASIN so a heavily-returned
+    // item can't go negative and drag down other rows; only nets against
+    // ASINs that actually had gross units this month (a return with no
+    // matching current-month sale for that ASIN has nothing to net
+    // against, same convention as the Overview page's netByAsin()).
+    Object.keys(asinUnits).forEach(asin => {
+      asinUnits[asin] = Math.max(0, asinUnits[asin] - (returnsByAsin[asin] || 0));
+    });
+
     // Build prev month ASIN units for MOM comparison
     const asinUnitsPrev = {};
     if (prevYear && prevMonth) {
@@ -5382,6 +5443,12 @@ async function initSns() {
         asinUnitsPrev[asin] = (asinUnitsPrev[asin] || 0) + qty;
       });
     }
+
+    // Net Amazon returns against prev-month gross per-ASIN units too, so
+    // the MOM comparison in the table is net-vs-net, not net-vs-gross.
+    Object.keys(asinUnitsPrev).forEach(asin => {
+      asinUnitsPrev[asin] = Math.max(0, asinUnitsPrev[asin] - (returnsByAsinPrev[asin] || 0));
+    });
 
     // Build prev month ASIN → ad_units map
     const prevAsinAdUnitsMap = {};
@@ -5454,7 +5521,7 @@ async function initSns() {
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}</div></td>
         <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
@@ -6931,11 +6998,17 @@ async function initSns() {
       const HIST_GID = '1249281379';
 
       console.log('[Evolis] Starting fetch...');
-      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv] = await Promise.all([
+      const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, amzReturnsCsv] = await Promise.all([
         fetch(sheetCsvUrl(SYNC_SHEET_ID, SYNC_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(HISTORICAL_SHEET_ID, HIST_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(AD_ORDERS_SHEET_ID,  AD_ORDERS_GID)  + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        // Amazon Returns — added 2026-08-05 per Jaclyn, mirroring the same
+        // fix already shipped on the internal Amazon Sales page: exclude
+        // returned units from Total Units / Units (Organic) / Top Selling
+        // Products here too. OV_RETURNS_SHEET_ID / OV_RETURNS_EVOLIS_GID
+        // are declared globally further down this file.
+        fetch(sheetCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       console.log('[Evolis] syncCsv length:', syncCsv.length, 'isCsv:', isCsv(syncCsv));
@@ -6946,9 +7019,38 @@ async function initSns() {
       // Combine all rows (sync is more up-to-date; for dedup we rely on order_id coverage being correct per sheet)
       const allRows = [...syncRows, ...histRows];
 
+      // Amazon returns — dated by return_date (when the return happened),
+      // not the original order date, same convention as Overview and the
+      // internal Amazon Sales page. Returns rows carry their own `asin`
+      // column directly, so no SKU→ASIN crosswalk is needed here.
+      const amzReturnRows = isCsv(amzReturnsCsv) ? parseCsv(amzReturnsCsv).filter(isEvolisRow) : [];
+      function aggregateAmzReturnsMonth(rows, y, m) {
+        const prefix = `${y}-${String(m).padStart(2, '0')}`;
+        let totalQty = 0;
+        const byAsin = {};
+        rows.forEach(r => {
+          if (normalizeDate(r.return_date).substring(0, 7) !== prefix) return;
+          const qty = parseInt(r.quantity, 10) || 0;
+          totalQty += qty;
+          const asin = (r.asin || '').trim().toUpperCase();
+          if (asin) byAsin[asin] = (byAsin[asin] || 0) + qty;
+        });
+        return { totalQty, byAsin };
+      }
+      const currReturns = aggregateAmzReturnsMonth(amzReturnRows, year, month);
+      const prevReturns = aggregateAmzReturnsMonth(amzReturnRows, prevYear, prevMonth);
+      const yoyReturns  = aggregateAmzReturnsMonth(amzReturnRows, yoyYear, yoyMonth);
+
       const curr     = aggregateMonth(allRows, year, month);
       const prev     = aggregateMonth(allRows, prevYear, prevMonth);
       const prevYoy  = aggregateMonth(histRows, yoyYear, yoyMonth); // historical for last year
+
+      // Net returns against Total Units — Units (Organic) derives from
+      // curr.totalUnits (see renderKPIs below), so netting here alone
+      // covers both KPIs.
+      if (curr) curr.totalUnits = Math.max(0, curr.totalUnits - currReturns.totalQty);
+      if (prev) prev.totalUnits = Math.max(0, prev.totalUnits - prevReturns.totalQty);
+      if (prevYoy) prevYoy.totalUnits = Math.max(0, prevYoy.totalUnits - yoyReturns.totalQty);
 
       if (!curr) {
         showError(`No Évolis data found for ${year}-${String(month).padStart(2,'0')}. syncRows:${syncRows.length} histRows:${histRows.length}`);
@@ -6980,7 +7082,7 @@ async function initSns() {
 
       renderKPIs(curr, prev, prevYoy, adUnitsKpi, prevAdUnitsKpi);
       setSourceLabel(year, month);
-      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows);
+      buildTopProductsTable(allRows, year, month, adOrderRows, prevYear, prevMonth, prevAdOrderRows, currReturns.byAsin, prevReturns.byAsin);
 
       // Revenue chart — fetches from the separate revenue history sheet
       buildRevenueChart(year).catch(e => console.warn('[AmazonChart] Revenue chart failed:', e.message));
@@ -7100,7 +7202,7 @@ async function initSns() {
   const PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
   const PRODUCT_NAMES_GID      = '164358627';
 
-  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = []) {
+  async function buildTopProductsTable(allRows, targetYear, targetMonth, adOrderRows = [], prevYear = null, prevMonth = null, prevAdOrderRows = [], returnsByAsin = {}, returnsByAsinPrev = {}) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
 
     // Filter to last full month (same rules as KPIs)
@@ -7133,6 +7235,14 @@ async function initSns() {
       asinUnits[asin] = (asinUnits[asin] || 0) + qty;
     }
 
+    // Net Amazon returns against gross per-ASIN units — added 2026-08-05
+    // per Jaclyn, mirroring the internal Amazon Sales page fix. Floored at
+    // 0 per ASIN; only nets against ASINs that actually had gross units
+    // this month.
+    Object.keys(asinUnits).forEach(asin => {
+      asinUnits[asin] = Math.max(0, asinUnits[asin] - (returnsByAsin[asin] || 0));
+    });
+
     // Build prev month ASIN units for MOM comparison
     const asinUnitsPrev = {};
     if (prevYear && prevMonth) {
@@ -7154,6 +7264,12 @@ async function initSns() {
         asinUnitsPrev[asin] = (asinUnitsPrev[asin] || 0) + qty;
       });
     }
+
+    // Net Amazon returns against prev-month gross per-ASIN units too, so
+    // the MOM comparison in the table is net-vs-net, not net-vs-gross.
+    Object.keys(asinUnitsPrev).forEach(asin => {
+      asinUnitsPrev[asin] = Math.max(0, asinUnitsPrev[asin] - (returnsByAsinPrev[asin] || 0));
+    });
 
     // Build prev month ASIN → ad_units map
     const prevAsinAdUnitsMap = {};
@@ -7226,7 +7342,7 @@ async function initSns() {
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell">${adUnits > 0 ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}` : '<span class="tp-dash">—</span>'}</div></td>
+        <td><div class="tp-cell"><span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, prevAdUnits)}</div></td>
         <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
@@ -15611,7 +15727,19 @@ async function loadAuditResultsFromSheet() {
       // definitions above), so calling them again here — regardless of
       // whether page load already started them — always resolves once the
       // chart is actually built.
-      const includeEvents = {
+      // Renamed includeEvents -> includeSections 2026-08-05 per Jaclyn: this
+      // now covers ALL exportable pages (Sales + Marketing + Events), not
+      // just the 5 event sub-reports. Sales/Marketing keys default to
+      // checked in the HTML (see pdf-events-picker above) so anyone who
+      // doesn't touch the picker gets today's existing "always included"
+      // behavior; Events keys still default unchecked, unchanged.
+      const includeSections = {
+        amazon:        !!document.getElementById('pdf-include-amazon')        && document.getElementById('pdf-include-amazon').checked,
+        website:       !!document.getElementById('pdf-include-website')       && document.getElementById('pdf-include-website').checked,
+        walmart:       !!document.getElementById('pdf-include-walmart')       && document.getElementById('pdf-include-walmart').checked,
+        fulfillment:   !!document.getElementById('pdf-include-fulfillment')   && document.getElementById('pdf-include-fulfillment').checked,
+        stewardship:   !!document.getElementById('pdf-include-stewardship')   && document.getElementById('pdf-include-stewardship').checked,
+        opportunities: !!document.getElementById('pdf-include-opportunities') && document.getElementById('pdf-include-opportunities').checked,
         strategy: !!document.getElementById('pdf-include-strategy') && document.getElementById('pdf-include-strategy').checked,
         bss:  !!document.getElementById('pdf-include-bss')  && document.getElementById('pdf-include-bss').checked,
         pd:   !!document.getElementById('pdf-include-pd')   && document.getElementById('pdf-include-pd').checked,
@@ -15620,19 +15748,22 @@ async function loadAuditResultsFromSheet() {
       };
 
       const initPromises = [
-        (typeof window.initAmazonLive === 'function')      ? window.initAmazonLive()      : null,
-        (typeof window.initWebLive === 'function')         ? window.initWebLive()         : null,
-        (typeof window.initWalmartLive === 'function')     ? window.initWalmartLive()     : null,
-        (typeof window.initStewardshipLive === 'function') ? window.initStewardshipLive() : null,
-        (typeof window.initMarketingFulfillmentCS === 'function') ? window.initMarketingFulfillmentCS() : null,
-        (!window._snsChart && typeof initSns === 'function') ? initSns() : null,
+        // Sales/Marketing inits now gated on their own checkbox — previously
+        // these ran unconditionally on every export regardless of what was
+        // actually going into the PDF.
+        (includeSections.amazon        && typeof window.initAmazonLive === 'function')            ? window.initAmazonLive()            : null,
+        (includeSections.website       && typeof window.initWebLive === 'function')                ? window.initWebLive()                : null,
+        (includeSections.walmart       && typeof window.initWalmartLive === 'function')            ? window.initWalmartLive()            : null,
+        (includeSections.stewardship   && typeof window.initStewardshipLive === 'function')        ? window.initStewardshipLive()        : null,
+        (includeSections.fulfillment   && typeof window.initMarketingFulfillmentCS === 'function')  ? window.initMarketingFulfillmentCS() : null,
+        (includeSections.opportunities && !window._snsChart && typeof initSns === 'function')       ? initSns()                           : null,
         // Prime Day's KPIs/chart are lazy-loaded on tab click — if it's
         // checked for inclusion but the tab was never opened this session,
         // this is what actually builds the chart before capture below.
-        (includeEvents.pd && typeof window.initPrimeDayReport === 'function') ? window.initPrimeDayReport() : null,
-        (includeEvents.bss  && typeof window.initBigSpringSaleReport === 'function') ? window.initBigSpringSaleReport() : null,
-        (includeEvents.pbdd && typeof window.initPBDDReport === 'function')          ? window.initPBDDReport()          : null,
-        (includeEvents.bfcm && typeof window.initBFCMReport === 'function')          ? window.initBFCMReport()          : null,
+        (includeSections.pd && typeof window.initPrimeDayReport === 'function') ? window.initPrimeDayReport() : null,
+        (includeSections.bss  && typeof window.initBigSpringSaleReport === 'function') ? window.initBigSpringSaleReport() : null,
+        (includeSections.pbdd && typeof window.initPBDDReport === 'function')          ? window.initPBDDReport()          : null,
+        (includeSections.bfcm && typeof window.initBFCMReport === 'function')          ? window.initBFCMReport()          : null,
       ].filter(Boolean);
       if (initPromises.length) {
         console.log('[pdf-export] awaiting', initPromises.length, 'chart data load(s) before building PDF');
@@ -15643,7 +15774,16 @@ async function loadAuditResultsFromSheet() {
       // caching above. Raised from 4s to 12s: 4s was tuned for "already
       // loaded, just re-verify," not "actually wait for a cold fetch,"
       // which is what this was silently doing every time before today.
-      const expectedCharts = ['_amazonChart', '_webChart', '_walmartChart', '_investChart', '_impressChart', '_snsChart'];
+      // Filtered to only the charts whose section is actually checked —
+      // otherwise this would poll the full 12s waiting on a chart that was
+      // never going to render because its page got excluded.
+      const chartsBySection = {
+        amazon: ['_amazonChart'], website: ['_webChart'], walmart: ['_walmartChart'],
+        stewardship: ['_investChart', '_impressChart'], opportunities: ['_snsChart'],
+      };
+      const expectedCharts = Object.keys(chartsBySection)
+        .filter(sec => includeSections[sec])
+        .reduce((arr, sec) => arr.concat(chartsBySection[sec]), []);
       const pollStart = Date.now();
       while (Date.now() - pollStart < 12000 && expectedCharts.some(v => !window[v])) {
         await new Promise(r => setTimeout(r, 150));
@@ -15668,18 +15808,27 @@ async function loadAuditResultsFromSheet() {
         document.body.appendChild(root);
       }
 
-      const eventPages = [
-        includeEvents.strategy ? buildStrategyPage(monthYear) : '',
-        includeEvents.bss  ? buildEventPage('bss',  'Big Spring Sale',             monthYear) : '',
-        includeEvents.pd   ? buildEventPage('pd',   'Prime Day',                   monthYear) : '',
-        includeEvents.pbdd ? buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear) : '',
-        includeEvents.bfcm ? buildEventPage('bfcm', 'Black Friday & Cyber Monday', monthYear) : '',
+      // Sales/Marketing pages — added 2026-08-05 per Jaclyn: previously
+      // hardcoded into every export unconditionally; now gated on the same
+      // checkbox pattern as the 5 event pages below.
+      const salesMarketingPages = [
+        includeSections.amazon        ? buildAmazonPage(monthYear)        : '',
+        includeSections.website       ? buildWebsitePage(monthYear)       : '',
+        includeSections.walmart       ? buildWalmartPage(monthYear)       : '',
+        includeSections.fulfillment   ? buildFulfillmentCsPage(monthYear) : '',
+        includeSections.stewardship   ? buildStewardshipPage(monthYear)   : '',
+        includeSections.opportunities ? buildOpportunitiesPage(monthYear) : '',
       ].join('');
 
-      root.innerHTML =
-        buildCoverPage(monthYear) + buildAmazonPage(monthYear) + buildWebsitePage(monthYear) +
-        buildWalmartPage(monthYear) + buildFulfillmentCsPage(monthYear) + buildStewardshipPage(monthYear) + buildOpportunitiesPage(monthYear) +
-        eventPages;
+      const eventPages = [
+        includeSections.strategy ? buildStrategyPage(monthYear) : '',
+        includeSections.bss  ? buildEventPage('bss',  'Big Spring Sale',             monthYear) : '',
+        includeSections.pd   ? buildEventPage('pd',   'Prime Day',                   monthYear) : '',
+        includeSections.pbdd ? buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear) : '',
+        includeSections.bfcm ? buildEventPage('bfcm', 'Black Friday & Cyber Monday', monthYear) : '',
+      ].join('');
+
+      root.innerHTML = buildCoverPage(monthYear) + salesMarketingPages + eventPages;
 
       // Positioned off-screen (not display:none, so it still has real layout
       // for html2canvas to measure/paint) rather than visible on top of
