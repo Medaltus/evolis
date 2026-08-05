@@ -1769,12 +1769,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div><div class="page-title">Marketing</div><div class="page-sub">Brand stewardship · Growth opportunities</div></div>
     </div>
     <div class="channel-tabs">
-      <button class="ch-tab" onclick="showChannel('marketing','m-fulfillment-cs',this)">Fulfillment & Customer Service</button>
-      <button class="ch-tab active" onclick="showChannel('marketing','m-stewardship',this)">Brand Stewardship</button>
+      <button class="ch-tab active" onclick="showChannel('marketing','m-fulfillment-cs',this)">Fulfillment & Customer Service</button>
+      <button class="ch-tab" onclick="showChannel('marketing','m-stewardship',this)">Brand Stewardship</button>
       <button class="ch-tab" onclick="showChannel('marketing','m-opportunities',this)">Opportunities</button>
     </div>
 
-    <div class="channel-page" id="m-fulfillment-cs">
+    <div class="channel-page active" id="m-fulfillment-cs">
 
       <div class="page-sub" id="mfc-page-sub" style="margin-bottom:14px;">Loading…</div>
 
@@ -1861,7 +1861,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     </div><!-- /m-fulfillment-cs -->
 
-    <div class="channel-page active" id="m-stewardship">
+    <div class="channel-page" id="m-stewardship">
 
       <div class="section-label">Key Performance Metrics</div>
       <div class="kpi-row">
@@ -1991,12 +1991,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div><div class="page-title">Marketing</div><div class="page-sub">Brand stewardship · Growth opportunities</div></div>
     </div>
     <div class="channel-tabs">
-      <button class="ch-tab" onclick="showChannel('marketing-external','mx-fulfillment-cs',this)">Fulfillment &amp; Customer Service</button>
-      <button class="ch-tab active" onclick="showChannel('marketing-external','mx-stewardship',this)">Brand Stewardship</button>
+      <button class="ch-tab active" onclick="showChannel('marketing-external','mx-fulfillment-cs',this)">Fulfillment &amp; Customer Service</button>
+      <button class="ch-tab" onclick="showChannel('marketing-external','mx-stewardship',this)">Brand Stewardship</button>
       <button class="ch-tab" onclick="showChannel('marketing-external','mx-opportunities',this)">Opportunities</button>
     </div>
 
-    <div class="channel-page" id="mx-fulfillment-cs">
+    <div class="channel-page active" id="mx-fulfillment-cs">
 
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
@@ -2081,7 +2081,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
     </div><!-- /mx-fulfillment-cs -->
 
-    <div class="channel-page active" id="mx-stewardship">
+    <div class="channel-page" id="mx-stewardship">
 
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;" id="mx-stewardship-date-note">Loading…</div>
 
@@ -7507,15 +7507,19 @@ async function initSns() {
     }
 
     try {
-      // Fetch orders, ads (campaign-level, still the KPI's source), and
-      // shopping (per-SKU, new 2026-07-28) data in parallel
-      const [csv, adsCsv, shoppingCsv] = await Promise.all([
+      // Fetch orders, ads (campaign-level, still the KPI's source),
+      // shopping (per-SKU, new 2026-07-28), and returns (added 2026-08-05
+      // per Jaclyn, mirroring the Amazon/Walmart returns-netting fix) data
+      // in parallel. Returns tab: order_id, refund_id, refund_date, sku,
+      // quantity, refund_amount, note, brand, last_updated.
+      const [csv, adsCsv, shoppingCsv, webReturnsCsv] = await Promise.all([
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHEET_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
         fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, SHOPIFY_SHOPPING_GID) + `&_cb=${Date.now()}`)
           .then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), '')),
+        fetch(sheetCsvUrl(SHOPIFY_SHEET_ID, '1033366681') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       if (!isCsv(csv)) {
@@ -7526,9 +7530,36 @@ async function initSns() {
       const allRows = parseCsv(csv);
       const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
       const shoppingRows = isCsv(shoppingCsv) ? parseCsv(shoppingCsv) : [];
+
+      // Website returns — dated by refund_date (when the return happened),
+      // not the original order date, same convention as Amazon/Walmart.
+      // This sheet has no ASIN, only `sku` — keyed the same way skuUnits
+      // is keyed in buildWebTopProducts below (plain uppercased SKU, no
+      // suffix-stripping needed on Website).
+      const webReturnRows = isCsv(webReturnsCsv) ? parseCsv(webReturnsCsv) : [];
+      function aggregateWebReturnsMonth(rows, y, m) {
+        const prefix = `${y}-${String(m).padStart(2, '0')}`;
+        let totalQty = 0;
+        const bySku = {};
+        rows.forEach(r => {
+          if (normalizeDate(r.refund_date).substring(0, 7) !== prefix) return;
+          const qty = parseInt(r.quantity, 10) || 0;
+          totalQty += qty;
+          const sku = (r.sku || '').trim().toUpperCase();
+          if (sku) bySku[sku] = (bySku[sku] || 0) + qty;
+        });
+        return { totalQty, bySku };
+      }
+      const currReturns = aggregateWebReturnsMonth(webReturnRows, year, month);
+      const prevReturns = aggregateWebReturnsMonth(webReturnRows, prevYear, prevMonth);
       const curr    = aggregateMonth(allRows, year, month);
       const prev    = aggregateMonth(allRows, prevYear, prevMonth);
       const ads     = aggregateAdMonth(adsRows, year, month);
+
+      // Net returns against Total Units — Units (Organic) below derives
+      // from curr.totalUnits, so netting here alone covers both KPIs.
+      if (curr) curr.totalUnits = Math.max(0, curr.totalUnits - currReturns.totalQty);
+      if (prev) prev.totalUnits = Math.max(0, prev.totalUnits - prevReturns.totalQty);
 
       const fmt  = n => (n ?? 0).toLocaleString();
       const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
@@ -7567,7 +7598,7 @@ async function initSns() {
       setBadgeWeb('x-web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
 
       buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-      buildWebTopProducts(allRows, adsRows, shoppingRows, year, month, prevYear, prevMonth);
+      buildWebTopProducts(allRows, adsRows, shoppingRows, year, month, prevYear, prevMonth, currReturns.bySku, prevReturns.bySku);
 
     } catch (err) {
       console.error('[WebLive]', err.message);
@@ -7684,7 +7715,7 @@ async function initSns() {
   }
 
   // ── Top products table ────────────────────────────────────────────────────
-  async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth) {
+  async function buildWebTopProducts(allRows, adsRows, shoppingRows, targetYear, targetMonth, prevYear, prevMonth, returnsBySku = {}, returnsBySkuPrev = {}) {
     const prefix = `${targetYear}-${String(targetMonth).padStart(2,'0')}`;
     const tbody  = document.getElementById('x-web-tp-tbody');
 
@@ -7707,6 +7738,14 @@ async function initSns() {
       if (!qty) continue;
       skuUnits[sku] = (skuUnits[sku] || 0) + qty;
     }
+
+    // Net Website returns against gross per-SKU units — added 2026-08-05
+    // per Jaclyn, mirroring the Amazon/Walmart returns-netting fix.
+    // Floored at 0 per SKU; only nets against SKUs that actually had gross
+    // units this month.
+    Object.keys(skuUnits).forEach(sku => {
+      skuUnits[sku] = Math.max(0, skuUnits[sku] - (returnsBySku[sku] || 0));
+    });
 
     // Real per-SKU ad conversions from the shopping tab (Shopping/PMax
     // campaigns only, sku resolved server-side by sync-google-ads.js as of
@@ -7738,6 +7777,12 @@ async function initSns() {
                skuUnitsPrev[sku] = (skuUnitsPrev[sku] || 0) + qty;
              });
     }
+
+    // Net Website returns against prev-month gross per-SKU units too, so
+    // the MOM comparison in the table is net-vs-net, not net-vs-gross.
+    Object.keys(skuUnitsPrev).forEach(sku => {
+      skuUnitsPrev[sku] = Math.max(0, skuUnitsPrev[sku] - (returnsBySkuPrev[sku] || 0));
+    });
     const skuAdConversionsPrev = {};
     if (prevYear && prevMonth) {
       const prevPrefixForAds = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
@@ -10757,12 +10802,24 @@ async function initSnsExternal() {
   // order_id first, not by counting/summing rows directly.
   function aggregateYear(rows, year) {
     const filtered = rows.filter(r => String(r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND);
-    const nonCancelled = filtered.filter(r => (r.status || '').trim().toLowerCase() !== 'cancelled');
-    const orderIds = new Set(nonCancelled.map(r => r.order_id).filter(Boolean));
+    // Excludes cancelled orders AND Vine promotional orders — fixed
+    // 2026-08-05 per Jaclyn, matching the same exclusion rule already used
+    // on the regular Sales pages (isValidOrder()). Previously ONLY
+    // cancelled orders were excluded, and only from Total Orders — Total
+    // Units and the rows feeding the Top Sellers chart included cancelled
+    // AND Vine units regardless.
+    const validRows = filtered.filter(r => {
+      const status = (r.status || '').trim().toLowerCase();
+      if (status === 'cancelled') return false;
+      const promos = (r.promotion_ids || '').toLowerCase();
+      if (promos.includes('vine')) return false;
+      return true;
+    });
+    const orderIds = new Set(validRows.map(r => r.order_id).filter(Boolean));
     const totalOrders = orderIds.size;
-    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const totalUnits = validRows.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
     const orderTotals = {};
-    nonCancelled.forEach(r => {
+    validRows.forEach(r => {
       if (!r.order_id) return;
       // item_price, not order_total — order_total is per-line-item on this
       // sheet (same order_id shows different order_total per SKU), matching
@@ -10772,7 +10829,7 @@ async function initSnsExternal() {
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    return { totalUnits, totalOrders, avgOrder, rows: filtered };
+    return { totalUnits, totalOrders, avgOrder, rows: validRows };
   }
 
   function sumAdUnits(rows, year) {
@@ -11193,18 +11250,31 @@ async function initSnsExternal() {
 
   function aggregateYear(rows, year) {
     const filtered = rows.filter(r => String(r.year).trim() === String(year) && (r.brand || '').trim().toLowerCase() === BRAND);
-    const nonCancelled = filtered.filter(r => (r.status || '').trim().toLowerCase() !== 'cancelled');
-    const orderIds = new Set(nonCancelled.map(r => r.order_id).filter(Boolean));
+    // Excludes cancelled orders AND Vine promotional orders — fixed
+    // 2026-08-05 per Jaclyn, matching the same exclusion rule already used
+    // on the regular Sales pages (isValidOrder()) and Prime Day's own copy
+    // of this function above. Previously ONLY cancelled orders were
+    // excluded, and only from Total Orders — Total Units and the rows
+    // feeding the Top Sellers chart included cancelled AND Vine units
+    // regardless.
+    const validRows = filtered.filter(r => {
+      const status = (r.status || '').trim().toLowerCase();
+      if (status === 'cancelled') return false;
+      const promos = (r.promotion_ids || '').toLowerCase();
+      if (promos.includes('vine')) return false;
+      return true;
+    });
+    const orderIds = new Set(validRows.map(r => r.order_id).filter(Boolean));
     const totalOrders = orderIds.size;
-    const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+    const totalUnits = validRows.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
     const orderTotals = {};
-    nonCancelled.forEach(r => {
+    validRows.forEach(r => {
       if (!r.order_id) return;
       orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    return { totalUnits, totalOrders, avgOrder, rows: filtered };
+    return { totalUnits, totalOrders, avgOrder, rows: validRows };
   }
 
   function sumAdUnits(rows, year) {
