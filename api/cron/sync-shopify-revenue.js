@@ -9,8 +9,27 @@
  *
  * Source sheet:  SHOPIFY_ORDERS_SHEET  (tab: orders, gid=0)
  * Revenue sheet: SHOPIFY_ORDERS_SHEET  (tab: revenue, gid=7000599)
+ * Returns sheet: SHOPIFY_ORDERS_SHEET  (tab: returns, gid=1033366681) — same
+ *   spreadsheet as orders/revenue, per Jaclyn 2026-08-05. UNCONFIRMED: the
+ *   actual tab NAME (code needs a name, not a gid) — assumed "returns" to
+ *   match this file's existing simple lowercase naming for the other 2
+ *   tabs ("orders", "revenue"). If the real tab name differs, update
+ *   RETURNS_TAB below.
  *
  * Revenue headers: MONTH | YEAR | REVENUE | UNITS ORDERED | LAST UPDATED
+ *
+ * RETURNS NETTING — added 2026-08-05 per Jaclyn. REVENUE and UNITS ORDERED
+ * are netted against the returns tab, matched by refund_date falling in
+ * the target month (current, previous, or the ?month= override below) —
+ * same "net this month's real activity" convention as the Amazon and
+ * Walmart revenue crons' own netting. Confirmed field names (same ones
+ * already used for this exact sheet/gid on the Overview page's own
+ * returns-netting): refund_date, quantity, refund_amount — a real dollar
+ * field, so this is a direct subtraction, not an estimate the way
+ * Amazon's returns needed to be.
+ *
+ * If the returns tab doesn't exist or fails to read, this fails soft
+ * (nets $0/0 units) rather than blocking the revenue sync.
  *
  * Schedule: daily at 7AM UTC ("0 7 * * *") — same run as sync-shopify-orders
  * so revenue is always updated after orders are written.
@@ -23,6 +42,7 @@ const SHEET_ID = process.env.SHOPIFY_ORDERS_SHEET;
 
 const ORDERS_TAB  = 'orders';
 const REVENUE_TAB = 'revenue';
+const RETURNS_TAB = 'returns'; // CONFIRMED 2026-08-05 per Jaclyn — headers: order_id, refund_id, refund_date, sku, quantity, refund_amount, note, brand, last_updated
 
 const REVENUE_HEADERS = ['MONTH', 'YEAR', 'REVENUE', 'UNITS ORDERED', 'LAST UPDATED'];
 
@@ -123,6 +143,46 @@ module.exports = async (req, res) => {
     if (!Object.keys(monthMap).length) {
       console.log('[sync-shopify-revenue] no data for target months');
       return res.status(200).json({ message: 'No data for target months', timestamp: nowEst });
+    }
+
+    // ── 2b. Net returns into the target month(s) ────────────────────────────
+    // Reuses targetKeys as-is, so this automatically respects the ?month=
+    // override above — no separate handling needed.
+    let returnRows = [];
+    try {
+      returnRows = await readRows(SHEET_ID, RETURNS_TAB);
+    } catch (err) {
+      console.warn('[sync-shopify-revenue] failed to read returns tab (revenue will NOT be netted against returns this run):', err.message);
+    }
+
+    for (const key of Object.keys(monthMap)) {
+      let returnedUnits = 0, returnedRevenue = 0;
+      returnRows.forEach(r => {
+        // Defensive brand filter — this sheet is évolis-only today, but
+        // every other returns/orders sheet in this repo filters by brand
+        // rather than assuming a sheet stays single-tenant forever, and
+        // this tab does have a real `brand` column (confirmed 2026-08-05)
+        // to check against. Costs nothing if it's always "evolis" anyway.
+        const brandVal = (r.brand || '').toString().trim().toLowerCase();
+        if (brandVal && brandVal !== 'evolis') return;
+        const date = normalizeDate(r.refund_date);
+        if (!date || date.substring(0, 7) !== key) return;
+        returnedUnits   += parseInt(r.quantity, 10) || 0;
+        returnedRevenue += parseFloat((r.refund_amount || '0').toString().replace(/[$,]/g, '')) || 0;
+      });
+      returnedRevenue = Math.round(returnedRevenue * 100) / 100;
+      if (returnedUnits === 0 && returnedRevenue === 0) continue;
+
+      const data = monthMap[key];
+      const grossRevenue = data.revenue;
+      const grossUnits   = data.units;
+      data.revenue = Math.max(0, Math.round((grossRevenue - returnedRevenue) * 100) / 100);
+      data.units   = Math.max(0, grossUnits - returnedUnits);
+
+      console.log(`[sync-shopify-revenue] ${key} — netted ${returnedUnits} returned units ($${returnedRevenue.toFixed(2)}) against gross revenue=${grossRevenue} units=${grossUnits}`);
+      if (grossRevenue - returnedRevenue < 0 || grossUnits - returnedUnits < 0) {
+        console.warn(`[sync-shopify-revenue] ${key} — returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
+      }
     }
 
     // ── 3. Read existing revenue rows ───────────────────────────────────────
