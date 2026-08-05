@@ -15,6 +15,30 @@
  * WALMART_ORDERS_SHEET  = rolling orders (source)
  * WALMART_REVENUE_SHEET = revenue history (destination)
  *
+ * RETURNS NETTING — added 2026-08-05 per Jaclyn. REVENUE and UNITS SOLD are
+ * netted against SHEET_WALMART_RETURNS (one tab per brand, same convention
+ * as every other multi-brand sheet in this repo), matched by return_date
+ * falling in the target month (current or previous), not the original
+ * order's month — same "net this month's real activity" convention used
+ * for the Overview page's and Amazon revenue cron's own returns-netting.
+ *
+ * Unlike Amazon's FBA Returns report, this sheet DOES have a real dollar
+ * field (refund_amount) — no price estimation needed here, revenue is
+ * netted by direct subtraction.
+ *
+ * WFS/FBM SPLIT — NOT adjusted for returns. Confirmed field names on
+ * SHEET_WALMART_RETURNS are return_date/quantity/refund_amount; there is
+ * no confirmed fulfillment-type field on the RETURNS sheet the way
+ * Amazon's report is confirmed FBA-only by its report name. Rather than
+ * guess which bucket a given return came from, WFS UNITS and FBM UNITS
+ * stay exactly as computed from gross orders — meaning after netting,
+ * WFS UNITS + FBM UNITS may no longer sum exactly to UNITS SOLD for a
+ * month with returns. Flagged here rather than silently assumed away.
+ *
+ * If SHEET_WALMART_RETURNS isn't set, or a brand's returns tab doesn't
+ * exist yet, this fails soft (nets $0/0 units for that brand/run) rather
+ * than blocking the whole revenue sync.
+ *
  * Schedule: daily at 4AM UTC ("0 4 * * *")
  */
 
@@ -24,6 +48,7 @@ const { sendCronFailureAlert } = require('../_alerts');
 
 const ORDERS_SHEET_ID  = process.env.WALMART_ORDERS_SHEET;
 const REVENUE_SHEET_ID = process.env.WALMART_REVENUE_SHEET;
+const RETURNS_SHEET_ID = process.env.SHEET_WALMART_RETURNS;
 
 const REVENUE_HEADERS = [
   'MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD',
@@ -43,6 +68,13 @@ module.exports = async (req, res) => {
   if (!REVENUE_SHEET_ID) {
     await sendCronFailureAlert('sync-walmart-revenue', 'WALMART_REVENUE_SHEET not set');
     return res.status(500).json({ error: 'WALMART_REVENUE_SHEET not set' });
+  }
+  // Soft check, deliberately not a hard failure — unlike the two sheets
+  // above, this cron can still do its core job (compute gross revenue)
+  // without returns netting; missing this just means netting is skipped
+  // for every brand this run rather than blocking revenue entirely.
+  if (!RETURNS_SHEET_ID) {
+    console.warn('[sync-walmart-revenue] SHEET_WALMART_RETURNS not set — revenue will NOT be netted against returns this run');
   }
 
   const nowEst = toEstIso(new Date());
@@ -119,6 +151,24 @@ module.exports = async (req, res) => {
       if (!Object.keys(monthMap).length) {
         console.log(`[sync-walmart-revenue] ${brand.id} — no data for target months`);
         continue;
+      }
+
+      // ── 2b. Net returns into current + previous month ──────────────────────
+      const brandReturnRows = await fetchWalmartReturnsForBrand(brand);
+      for (const key of Object.keys(monthMap)) {
+        const { returnedUnits, returnedRevenue } = sumWalmartReturnsForMonth(brandReturnRows, key);
+        if (returnedUnits === 0 && returnedRevenue === 0) continue;
+
+        const data = monthMap[key];
+        const grossRevenue = data.revenue;
+        const grossUnits   = data.units;
+        data.revenue = Math.max(0, Math.round((grossRevenue - returnedRevenue) * 100) / 100);
+        data.units   = Math.max(0, grossUnits - returnedUnits);
+
+        console.log(`[sync-walmart-revenue] ${brand.id} ${key} — netted ${returnedUnits} returned units ($${returnedRevenue.toFixed(2)}) against gross revenue=${grossRevenue} units=${grossUnits}`);
+        if (grossRevenue - returnedRevenue < 0 || grossUnits - returnedUnits < 0) {
+          console.warn(`[sync-walmart-revenue] ${brand.id} ${key} — returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
+        }
       }
 
       // ── 3. Read existing revenue rows ─────────────────────────────────────
@@ -198,6 +248,38 @@ module.exports = async (req, res) => {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Reads this brand's tab on SHEET_WALMART_RETURNS. Fails soft — no env var,
+// no tab yet for this brand, or a fetch error all just mean $0/0 units
+// netted for that brand this run, not a failed sync. Confirmed field
+// names: return_date, quantity, refund_amount (unlike Amazon's FBA
+// Returns report, this one has a real dollar field — no price estimation
+// needed).
+async function fetchWalmartReturnsForBrand(brand) {
+  if (!RETURNS_SHEET_ID) return [];
+  try {
+    const rows = await readRows(RETURNS_SHEET_ID, brand.tabName);
+    return rows || [];
+  } catch (err) {
+    console.warn(`[sync-walmart-revenue] ${brand.id} — failed to read returns sheet (revenue will NOT be netted against returns this run):`, err.message);
+    return [];
+  }
+}
+
+// Sums returned quantity + refund_amount for return rows dated (by
+// return_date) within the given "YYYY-MM" month — "returns actually
+// processed this month," not "returns tied to an order placed this
+// month," same convention as the Amazon revenue cron's own netting.
+function sumWalmartReturnsForMonth(returnRows, monthKey) {
+  let returnedUnits = 0, returnedRevenue = 0;
+  returnRows.forEach(r => {
+    const date = normalizeDate(r.return_date);
+    if (!date || date.substring(0, 7) !== monthKey) return;
+    returnedUnits   += parseInt(r.quantity, 10) || 0;
+    returnedRevenue += parseFloat((r.refund_amount || '0').toString().replace(/[$,]/g, '')) || 0;
+  });
+  return { returnedUnits, returnedRevenue: Math.round(returnedRevenue * 100) / 100 };
+}
 
 function normalizeDate(val) {
   if (!val) return '';
