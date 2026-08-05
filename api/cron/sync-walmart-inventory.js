@@ -15,6 +15,13 @@
  * to capture the ONE number that isn't already tracked anywhere else:
  * stock sitting in Walmart's own fulfillment centers.
  *
+ * SCOPE — also per Jaclyn 2026-08-04: only processes SKUs that have a
+ * Walmart Item ID filled in on column I of the master Product Short Name
+ * sheet. A blank column I means that product isn't sold on Walmart at
+ * all, so it's skipped entirely before any Walmart API call is made for
+ * it — not just excluded from the output, genuinely never queried. See
+ * fetchMasterSkuList() below.
+ *
  * ENDPOINT — CONFIRMED 2026-08-04 via live test against a known-WFS
  * SVA SKU (8 real WFS units): GET /v3/fulfillment/inventory?sku={sku}
  * returns payload.inventory[0].shipNodes, an array with one entry per
@@ -55,7 +62,7 @@ const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
-const HEADERS = ['date', 'sku', 'wfs_on_hand', 'wfs_available', 'last_synced'];
+const HEADERS = ['date', 'sku', 'product_name', 'wfs_on_hand', 'wfs_available', 'last_synced'];
 
 const TIME_BUDGET_MS = 250_000; // stay safely under Vercel's 300s cap — same default as sync-products.js
 // UNCONFIRMED against Walmart's actual per-operation rate limit for this
@@ -108,7 +115,7 @@ module.exports = async (req, res) => {
   // same exploratory spirit as the inventory probes before this one
   // confirmed a working endpoint. Never writes to the sheet.
   // ── Diagnostic-only test mode — ITEM ID RESOLUTION ───────────────────────
-  // Added 2026-08-04: verifies resolveWalmartSku() in isolation — does
+  // Added 2026-08-04: verifies fetchItemByItemId() in isolation — does
   // productIdType=ITEM_ID actually return the item, and does its sku
   // field match what you'd expect for that product? Never writes to the
   // sheet.
@@ -242,22 +249,41 @@ module.exports = async (req, res) => {
 
       // Try the direct SKU first — cheap, and already confirmed working
       // for SKUs where the master list's SKU matches Walmart's exactly.
-      // Only fall back to Item-ID-based resolution (one extra API call)
-      // when that comes back with no WFS ship node at all — i.e. exactly
-      // the mismatched-SKU cases (like "SVA0001" vs "SVA0001-stickerless")
-      // this fallback exists to fix, rather than doubling every call
-      // unconditionally.
       let wfs = await fetchWfsInventory(item.sku, token).catch(err => ({ __error: err.message }));
       let resolvedVia = 'sku';
+      let productName = '';
 
-      if (!wfs?.__error && parseWfsShipNode(wfs).matchedNodes === 0 && item.walmartItemId) {
+      // Only SKUs with a Walmart Item ID on the master list get a
+      // /v3/items call at all — per Jaclyn 2026-08-04, deliberately
+      // scoped this way rather than calling it for every SKU, since most
+      // of the master list isn't sold on Walmart in the first place. One
+      // call serves two purposes: productName for the sheet, AND (only
+      // if the direct SKU attempt above found no WFS data) the resolved
+      // Walmart-side SKU to retry with — e.g. "SVA0001" vs
+      // "SVA0001-stickerless". Confirmed keyFeatures/shortDescription/
+      // longDescription are NOT present anywhere in this response via
+      // live testing — productName is the only usable content field.
+      // This check is now ALWAYS true for every item reaching this point —
+      // fetchMasterSkuList() filters out any SKU with no Walmart Item ID
+      // before it ever gets here (see 2026-08-04 change above). Left in
+      // place as a defensive guard rather than removed, in case that
+      // filter ever changes; not dead logic, just currently unconditional.
+      if (item.walmartItemId) {
         await sleep(INTER_SKU_DELAY_MS);
-        const resolvedSku = await resolveWalmartSku(item.walmartItemId, token).catch(() => null);
-        if (resolvedSku && resolvedSku !== item.sku) {
-          console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — no WFS data under master-list SKU, resolved via itemId ${item.walmartItemId} to Walmart SKU "${resolvedSku}", retrying`);
-          await sleep(INTER_SKU_DELAY_MS);
-          const retryWfs = await fetchWfsInventory(resolvedSku, token).catch(err => ({ __error: err.message }));
-          if (!retryWfs?.__error) { wfs = retryWfs; resolvedVia = 'itemId'; }
+        const itemRecord = await fetchItemByItemId(item.walmartItemId, token).catch(err => ({ __error: err.message }));
+
+        if (itemRecord?.__error) {
+          console.warn(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — productName lookup via itemId ${item.walmartItemId} failed:`, itemRecord.__error);
+        } else if (itemRecord) {
+          productName = itemRecord.productName || '';
+
+          const resolvedSku = itemRecord.sku || null;
+          if (!wfs?.__error && parseWfsShipNode(wfs).matchedNodes === 0 && resolvedSku && resolvedSku !== item.sku) {
+            console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — no WFS data under master-list SKU, resolved via itemId ${item.walmartItemId} to Walmart SKU "${resolvedSku}", retrying`);
+            await sleep(INTER_SKU_DELAY_MS);
+            const retryWfs = await fetchWfsInventory(resolvedSku, token).catch(err => ({ __error: err.message }));
+            if (!retryWfs?.__error) { wfs = retryWfs; resolvedVia = 'itemId'; }
+          }
         }
       }
 
@@ -267,7 +293,7 @@ module.exports = async (req, res) => {
         console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — used itemId-resolved SKU successfully`);
       }
 
-      const row = buildInventoryRow(item, wfs, today, nowIso);
+      const row = buildInventoryRow(item, wfs, productName, today, nowIso);
       await appendRows(SHEET_ID, item.brandTabName, [row], tabTokens[item.brandTabName]);
       tabNextRow[item.brandTabName]++;
       processed++;
@@ -320,14 +346,27 @@ function parseWfsShipNode(raw) {
   return { onHand, available, matchedNodes: wfsNodes.length };
 }
 
-function buildInventoryRow(item, wfs, dateStr, nowIso) {
-  // Left blank (not zero) if the call failed or returned no WFSFulfilled
-  // ship node at all — a blank is "we don't know / not WFS-stocked," a
-  // zero would falsely read as "confirmed no WFS stock."
-  if (wfs?.__error) return [dateStr, item.sku, '', '', nowIso];
+function buildInventoryRow(item, wfs, productName, dateStr, nowIso) {
+  // REVISED 2026-08-04 per Jaclyn: now that fetchMasterSkuList() only
+  // ever hands this function a SKU confirmed to be sold on Walmart (has
+  // a Walmart Item ID on the master list), the old ambiguity between
+  // "not sold on Walmart" and "sold but zero WFS stock" is already
+  // resolved upstream — every row reaching here IS a real Walmart
+  // product. So a successful API call that finds no WFSFulfilled ship
+  // node now genuinely means 0 stock, not "unknown," and gets written as
+  // 0/0 rather than blank.
+  //
+  // The ONE case that still stays blank: an actual API/network failure
+  // (wfs.__error) — that's a different kind of "we don't know" than
+  // "confirmed zero," and writing 0 there would misrepresent a transient
+  // technical failure as verified stock data. productName is separately
+  // blank whenever item.walmartItemId wasn't set — shouldn't happen post
+  // 2026-08-04 scoping, but left as a safety fallback rather than assumed
+  // impossible.
+  if (wfs?.__error) return [dateStr, item.sku, productName, '', '', nowIso];
   const { onHand, available, matchedNodes } = parseWfsShipNode(wfs);
-  if (matchedNodes === 0) return [dateStr, item.sku, '', '', nowIso];
-  return [dateStr, item.sku, onHand, available, nowIso];
+  if (matchedNodes === 0) return [dateStr, item.sku, productName, 0, 0, nowIso];
+  return [dateStr, item.sku, productName, onHand, available, nowIso];
 }
 
 // ── Walmart auth — copied verbatim from sync-walmart-orders.js (proven working) ──
@@ -400,18 +439,23 @@ function fetchWfsInventory(sku, token) {
   return wmRequest('GET', path, token);
 }
 
-// Resolves a Walmart Item ID to that item's actual Walmart-side SKU
-// string. CONFIRMED endpoint per real Walmart docs (developer.walmart.com
+// Looks up a Walmart Item ID and returns the full item record (not just
+// the SKU) — reused for two purposes: (1) resolving the ACTUAL Walmart
+// SKU when the master-list SKU doesn't match Walmart's directly, and
+// (2) reading productName, confirmed-real per live testing 2026-08-04
+// (see: every /v3/items response for this account contains productName;
+// none contain keyFeatures/shortDescription/longDescription — tested and
+// ruled out, not assumed). One call serves both needs rather than two.
+// CONFIRMED endpoint per real Walmart docs (developer.walmart.com
 // /us-marketplace/docs/get-item-details): GET /v3/items/{ID} interprets
 // {ID} as a SKU by default, so productIdType=ITEM_ID is required to look
 // up by Item ID instead. Returns null (not throws) if the item isn't
-// found or the response shape doesn't match what's expected — callers
-// treat a null as "resolution didn't help, keep using the master-list SKU."
-async function resolveWalmartSku(itemId, token) {
+// found — callers treat a null as "lookup didn't help, fall back to
+// what's already known."
+async function fetchItemByItemId(itemId, token) {
   const path = `/v3/items/${encodeURIComponent(itemId)}?productIdType=ITEM_ID`;
   const resp = await wmRequest('GET', path, token);
-  const sku = resp?.ItemResponse?.[0]?.sku;
-  return sku || null;
+  return resp?.ItemResponse?.[0] || null;
 }
 
 // ── Master SKU list — same source/shape sync-products.js uses ───────────
@@ -424,16 +468,55 @@ function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// FIXED 2026-08-04 — real bug found while debugging product_name coming
+// back empty: a naive line.split(',') breaks whenever any field BEFORE
+// the one you actually want contains a comma inside quotes (e.g. a
+// product description or short name like "...with Niacinamide, Peptides
+// + ..."), which shifts every later column's index — including column I
+// (Walmart Item ID) — out of alignment for that row. Since this master
+// sheet is shared across many brands' product names/descriptions, this
+// wasn't a hypothetical edge case; it was actively corrupting
+// walmartItemId for at least some rows, which meant item.walmartItemId
+// came back falsy, which meant the productName lookup never even fired.
+// This proper parser tracks quote state character-by-character so a
+// comma inside a quoted field is never treated as a column separator.
+function parseCsvLine(line) {
+  const cols = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } // escaped "" inside a quoted field
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      cols.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  cols.push(current);
+  return cols.map(c => c.trim());
+}
+
 async function fetchMasterSkuList() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
   const resp   = await fetch(csvUrl);
   if (!resp.ok) throw new Error(`Failed to fetch master SKU list: ${resp.status}`);
   const csv   = await resp.text();
+  // Known remaining limitation: this still splits into lines by '\n'
+  // BEFORE per-line CSV parsing, so a field containing an actual embedded
+  // newline (a multi-line description wrapped in quotes) would still
+  // break row alignment, same as before this fix. Embedded commas are
+  // confirmed fixed; embedded newlines are a separate, rarer edge case
+  // not addressed here — flagging rather than silently assuming it's
+  // covered too.
   const lines = csv.trim().split('\n').slice(1);
 
   const out = [];
   for (const line of lines) {
-    const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+    const cols      = parseCsvLine(line);
     const asin      = cols[0] || '';
     const sku       = cols[1] || '';
     const rawBrand  = (cols[3] || '').trim();
@@ -447,6 +530,19 @@ async function fetchMasterSkuList() {
     const walmartItemId = (cols[8] || '').trim();
 
     if (!sku) continue;
+
+    // Added 2026-08-04 per Jaclyn: skip this SKU ENTIRELY if it has no
+    // Walmart Item ID — a blank column I means this product isn't sold on
+    // Walmart at all, so there's no WFS inventory to look up for it in
+    // the first place. This scopes the whole cron down to only
+    // Walmart-relevant SKUs, not just the productName lookup — the WFS
+    // inventory API call itself is now skipped too for everything else,
+    // cutting the total number of Walmart API calls this cron makes on
+    // every run, not just trimming what gets written to the sheet.
+    if (!walmartItemId) {
+      console.log(`[sync-walmart-inventory] ${sku} — no Walmart Item ID in column I, skipped (not sold on Walmart)`);
+      continue;
+    }
 
     const matched = brands.find(b =>
       b.active && (
