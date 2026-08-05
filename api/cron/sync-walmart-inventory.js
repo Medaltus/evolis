@@ -212,6 +212,22 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
   }
 
+  // FIXED 2026-08-05 — real incident: a cursor saved from BEFORE the
+  // 2026-08-04 column-I scoping change (against the old, unfiltered
+  // ~233-row list) was still on file when that filter shrank the real
+  // list to 73 Walmart-only SKUs. Since the main loop is a plain
+  // `for (; i < masterList.length; i++)`, a cursor already past the end
+  // of a since-shrunk list meant the loop never ran even once —
+  // processedThisRun came back 0 and the run was incorrectly marked
+  // complete. Any time the stored cursor is >= the CURRENT list length,
+  // that cursor is stale relative to today's list and gets reset to 0
+  // rather than trusted — this can legitimately happen any time the
+  // list gets scoped differently between runs, not just this one time.
+  if (cursor >= masterList.length && masterList.length > 0) {
+    console.warn(`[sync-walmart-inventory] stored cursor (${cursor}) is >= current list length (${masterList.length}) — list likely shrank since the cursor was saved (e.g. a scoping change). Resetting cursor to 0 instead of trusting it.`);
+    cursor = 0;
+  }
+
   let tokenData;
   try {
     tokenData = await getWalmartToken();
