@@ -2618,14 +2618,14 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div class="ms-sub">Loading…</div>
         </div>
         <div class="metric-strip-card" id="ms-active-skus">
-          <div class="ms-label">Active SKUs</div>
+          <div class="ms-label">Active SKUs (with sales)</div>
           <div class="ms-value">—</div>
           <div class="ms-sub">Loading…</div>
         </div>
-        <div class="metric-strip-card">
+        <div class="metric-strip-card" id="ms-top50-organic">
           <div class="ms-label">Top 50 Organic</div>
-          <div class="ms-value">18</div>
-          <div class="ms-sub">keywords ranked</div>
+          <div class="ms-value">—</div>
+          <div class="ms-sub">Loading…</div>
         </div>
         <div class="metric-strip-card" id="ms-peak-month">
           <div class="ms-label">Peak Month</div>
@@ -2655,25 +2655,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
         <div class="card">
           <div class="card-title">This Month's Priority Actions</div>
-          <div class="priority-item">
-            <div class="priority-num">1</div>
-            <div class="priority-text">Refresh title + bullet 1 on Reverse Shampoo Travel Size to capture "travel shampoo" keyword opportunity <span class="priority-tag urgent">Urgent</span></div>
-          </div>
-          <div class="priority-item">
-            <div class="priority-num">2</div>
-            <div class="priority-text">Plan Prime Day deal submission — recommend 20% off full-sized Reverse line <span class="priority-tag urgent">Urgent</span></div>
-          </div>
-          <div class="priority-item">
-            <div class="priority-num">3</div>
-            <div class="priority-text">Build Promote Treatment Mask listing — currently missing A+ content <span class="priority-tag monitor">Monitor</span></div>
-          </div>
-          <div class="priority-item">
-            <div class="priority-num">4</div>
-            <div class="priority-text">Subscription conversion on Website is below target — test bundle offer <span class="priority-tag monitor">Monitor</span></div>
-          </div>
-          <div class="priority-item">
-            <div class="priority-num">5</div>
-            <div class="priority-text">Listing health check across Walmart catalog — 3 ASINs flagged for image quality <span class="priority-tag good">In Progress</span></div>
+          <div id="ins-priority-list">
+            <div class="priority-item">
+              <div class="priority-num">1</div>
+              <div class="priority-text">Loading…</div>
+            </div>
           </div>
         </div>
       </div>
@@ -11907,25 +11893,43 @@ async function ovLoadUnitsAndPeakMonth() {
   }
 }
 
-// ── Total SKUs — DISCOVERABLE listings as of the most recent daily snapshot ──
-// (Assumption: "in active catalog" = currently live on Amazon. This sheet is
-// a daily cron snapshot, so every SKU repeats once per sync date — filtering
-// to only the latest date avoids inflating the count by however many days of
-// history are in the sheet. Flag if you'd rather count every catalog row
-// regardless of status.)
+// ── Total SKUs — REWRITTEN 2026-08-05 per Jaclyn: now uses the exact same
+// logic as the Home page's Total SKUs KPI (loadHomeTotalSkus), instead of
+// the old DISCOVERABLE-status check on Products Cache alone. Products
+// Cache (latest daily snapshot) is the source of truth for WHICH SKUs
+// count as real, sellable products (base SKU, -SF suffix stripped so FBA/
+// seller-fulfilled variants count once); the Product Short Name sheet is
+// consulted ONLY for its Status column, counting SKUs marked LIVE.
 async function ovLoadTotalSkus() {
   const totalEl = document.getElementById('ms-total-skus');
   try {
-    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
-    if (!rows.length) { if (totalEl) totalEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+    const [productsCsv, statusCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
 
-    const latestDate = rows.reduce((max, r) => (r.date && r.date > max ? r.date : max), '');
-    const latestRows = rows.filter(r => r.date === latestDate);
-    const discoverable = latestRows.filter(r => (r.status || '').toUpperCase().includes('DISCOVERABLE'));
+    const productRows = parseCsvToRows(productsCsv);
+    if (!productRows.length) { if (totalEl) totalEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+
+    const latestDate = productRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const latestRows = productRows.filter(r => r.date === latestDate);
+
+    const productSkus = new Set(
+      latestRows.map(r => (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '')).filter(Boolean)
+    );
+
+    const statusMap = {};
+    parseCsvToRows(statusCsv).forEach(r => {
+      const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      const status = (r.status || '').trim().toUpperCase();
+      if (sku && status) statusMap[sku] = status;
+    });
+
+    let activeCount = 0;
+    productSkus.forEach(sku => { if (statusMap[sku] === 'LIVE') activeCount++; });
 
     if (totalEl) {
-      totalEl.querySelector('.ms-value').textContent = String(discoverable.length);
+      totalEl.querySelector('.ms-value').textContent = activeCount.toLocaleString();
       totalEl.querySelector('.ms-sub').textContent = 'in active catalog';
     }
   } catch (err) {
@@ -11934,22 +11938,65 @@ async function ovLoadTotalSkus() {
   }
 }
 
-// ── Active SKUs — distinct ASINs with units > 0 in the target month ──
-// Same filtering rules (exclude cancelled/pending, exclude Vine) as the
-// Sales tab's top-products table, so the two numbers stay consistent.
+// ── Active SKUs (with sales) — distinct ASINs with NET units > 0 in the
+// target month, across ALL THREE channels (Amazon + Walmart + Website).
+// Expanded 2026-08-05 per Jaclyn — previously Amazon-only. Now factors in:
+//   - Amazon orders (excludes cancelled/pending + Vine) net of Amazon returns
+//   - Walmart orders (excludes cancelled) net of Walmart returns
+//   - Website orders (excludes refunded/cancelled) net of Website returns
+// Returns are dated by when the return happened (return_date/refund_date),
+// not the original order date, and netted per-ASIN (floored at 0) — same
+// convention as the Overview page's own returns netting. Walmart/Website
+// rows only ever carry a SKU, never an ASIN, so they're resolved through
+// the same SKU→ASIN crosswalk (Product Short Name sheet) used everywhere
+// else on this dashboard.
 async function ovLoadActiveSkus(year, month) {
   const activeEl = document.getElementById('ms-active-skus');
   if (!year || !month) { if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'No data'; return; }
   try {
-    const csv = await fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
-    if (!rows.length) { if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'No data'; return; }
+    let prevY = year, prevM = month - 1; if (prevM === 0) { prevM = 12; prevY--; }
 
-    function unitsByAsin(yy, mm) {
-      const prefix = `${yy}-${String(mm).padStart(2, '0')}`;
+    const [amzCsv, wmtCsv, webCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv] = await Promise.all([
+      fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const amzRows = parseCsvToRows(amzCsv);
+    const wmtRows = parseCsvToRows(wmtCsv);
+    const webRows = parseCsvToRows(webCsv);
+    if (!amzRows.length && !wmtRows.length && !webRows.length) {
+      if (activeEl) activeEl.querySelector('.ms-sub').textContent = 'No data';
+      return;
+    }
+
+    function isEvolisRowLocal(r) {
+      const brand = (r.brand || '').trim().toLowerCase();
+      return brand === 'evolis' || brand.endsWith('volis');
+    }
+    const amzReturnRows = parseCsvToRows(amzReturnsCsv).filter(isEvolisRowLocal);
+    const wmtReturnRows = parseCsvToRows(wmtReturnsCsv).filter(isEvolisRowLocal);
+    // Website returns sheet is évolis-specific (own workbook) — no brand
+    // column filter needed, matching how it's used elsewhere on this page.
+    const webReturnRows = parseCsvToRows(webReturnsCsv);
+
+    // SKU→ASIN crosswalk — col A=ASIN, col B=SKU (base, no -SF), col C=Name.
+    const skuToAsinMap = {};
+    const nameRows = parseCsvFull(namesCsv);
+    for (let i = 1; i < nameRows.length; i++) {
+      const asin = (nameRows[i][0] || '').trim().toUpperCase();
+      const sku  = (nameRows[i][1] || '').trim().toUpperCase().replace(/-SF$/i, '');
+      if (sku && asin) skuToAsinMap[sku] = asin;
+    }
+
+    function amzUnitsByAsin(targetPrefix) {
       const out = {};
-      rows.forEach(r => {
-        if (ovNormalizeDate(r.date).substring(0, 7) !== prefix) return;
+      amzRows.forEach(r => {
+        if (ovNormalizeDate(r.date).substring(0, 7) !== targetPrefix) return;
         const status = (r.status || '').toLowerCase();
         if (status === 'cancelled' || status === 'pending') return;
         if ((r.promotion_ids || '').toLowerCase().includes('vine')) return;
@@ -11961,12 +12008,76 @@ async function ovLoadActiveSkus(year, month) {
       });
       return out;
     }
+    function wmtUnitsByAsin(targetPrefix) {
+      const out = {};
+      wmtRows.forEach(r => {
+        if (ovNormalizeDate(r.date).substring(0, 7) !== targetPrefix) return;
+        const status = (r.status || '').trim().toLowerCase();
+        if (status === 'cancelled' || status === 'canceled') return;
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return;
+        const qty = parseInt(r.unit_count, 10) || 0;
+        if (!qty) return;
+        const asin = skuToAsinMap[sku] || sku;
+        out[asin] = (out[asin] || 0) + qty;
+      });
+      return out;
+    }
+    function webUnitsByAsin(targetPrefix) {
+      const out = {};
+      webRows.forEach(r => {
+        if (ovNormalizeDate(r.date).substring(0, 7) !== targetPrefix) return;
+        const status = (r.financial_status || r.status || '').toLowerCase();
+        if (status === 'refunded' || status === 'cancelled' || status === 'canceled') return;
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return;
+        const qty = parseInt(r.unit_count, 10) || 0;
+        if (!qty) return;
+        const asin = skuToAsinMap[sku] || sku;
+        out[asin] = (out[asin] || 0) + qty;
+      });
+      return out;
+    }
+    function amzReturnsByAsin(targetPrefix) {
+      const out = {};
+      amzReturnRows.forEach(r => {
+        if (ovNormalizeDate(r.return_date).substring(0, 7) !== targetPrefix) return;
+        const asin = (r.asin || '').trim().toUpperCase();
+        if (!asin) return;
+        out[asin] = (out[asin] || 0) + (parseInt(r.quantity, 10) || 0);
+      });
+      return out;
+    }
+    function skuReturnsByAsin(rows, targetPrefix, dateField) {
+      const out = {};
+      rows.forEach(r => {
+        if (ovNormalizeDate(r[dateField]).substring(0, 7) !== targetPrefix) return;
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return;
+        const asin = skuToAsinMap[sku] || sku;
+        out[asin] = (out[asin] || 0) + (parseInt(r.quantity, 10) || 0);
+      });
+      return out;
+    }
+    function netByAsin(gross, returns) {
+      const out = {};
+      Object.keys(gross).forEach(asin => { out[asin] = Math.max(0, gross[asin] - (returns[asin] || 0)); });
+      return out;
+    }
+    function activeCountFor(targetPrefix) {
+      const amzNet = netByAsin(amzUnitsByAsin(targetPrefix), amzReturnsByAsin(targetPrefix));
+      const wmtNet = netByAsin(wmtUnitsByAsin(targetPrefix), skuReturnsByAsin(wmtReturnRows, targetPrefix, 'return_date'));
+      const webNet = netByAsin(webUnitsByAsin(targetPrefix), skuReturnsByAsin(webReturnRows, targetPrefix, 'refund_date'));
+      const allAsins = new Set([...Object.keys(amzNet), ...Object.keys(wmtNet), ...Object.keys(webNet)]);
+      let count = 0;
+      allAsins.forEach(asin => { if ((amzNet[asin] || 0) + (wmtNet[asin] || 0) + (webNet[asin] || 0) > 0) count++; });
+      return count;
+    }
 
-    const curr = unitsByAsin(year, month);
-    let prevY = year, prevM = month - 1; if (prevM === 0) { prevM = 12; prevY--; }
-    const prev = unitsByAsin(prevY, prevM);
-    const currCount = Object.keys(curr).length;
-    const prevCount = Object.keys(prev).length;
+    const currPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    const prevPrefix = `${prevY}-${String(prevM).padStart(2, '0')}`;
+    const currCount = activeCountFor(currPrefix);
+    const prevCount = activeCountFor(prevPrefix);
 
     if (activeEl) {
       activeEl.querySelector('.ms-value').textContent = String(currCount);
@@ -12100,12 +12211,128 @@ async function ovLoadSessionsAndConversion(year, month) {
   }
 }
 
+// ── Top 50 Organic — count of distinct keywords ranking 1–50 organically,
+// as of the most recent Keyword Tracker sync within the target month.
+// Added 2026-08-05 per Jaclyn. Source: Helium 10 Keyword Tracker sheet,
+// évolis tab (date, asin, sku, keyword, organic_rank, sponsored_rank,
+// search_volume, keyword_sales, boosted, last_synced). organic_rank is
+// sometimes a plain number and sometimes an out-of-range marker like
+// ">306" or ">96" — those never count as ranking. The same keyword is
+// tracked per-ASIN (a keyword can appear once per product variant), so
+// this counts DISTINCT keyword text with at least one ASIN ranking 1–50,
+// not row count, to avoid inflating the number for keywords tracked
+// across many ASINs (e.g. the brand-name keyword "evolis" appears once
+// per product in the raw data).
+const OV_KEYWORD_TRACKER_SHEET_ID = '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4';
+const OV_KEYWORD_TRACKER_GID      = '898118227'; // évolis tab
+async function ovLoadTop50Organic(year, month) {
+  const el = document.getElementById('ms-top50-organic');
+  if (!year || !month) { if (el) el.querySelector('.ms-sub').textContent = 'No data'; return; }
+  try {
+    const csv = await fetch(ovCsvUrl(OV_KEYWORD_TRACKER_SHEET_ID, OV_KEYWORD_TRACKER_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { if (el) el.querySelector('.ms-sub').textContent = 'No data'; return; }
+
+    function countTop50(yy, mm) {
+      const prefix = `${yy}-${String(mm).padStart(2, '0')}`;
+      const monthRows = rows.filter(r => ovNormalizeDate(r.date).substring(0, 7) === prefix);
+      if (!monthRows.length) return null;
+      // Use only the most recent sync date within the target month — the
+      // tracker syncs periodically, not once, so earlier dates in the same
+      // month would double-count keywords against later, more current ranks.
+      const latestDate = monthRows.reduce((max, r) => (r.date > max ? r.date : max), '');
+      const latestRows = monthRows.filter(r => r.date === latestDate);
+      const rankedKeywords = new Set();
+      latestRows.forEach(r => {
+        const rank = parseInt(String(r.organic_rank || '').replace(/[^\d]/g, ''), 10);
+        // A raw ">306"/">96" marker still parses to a number (306/96) after
+        // stripping the ">" — guard explicitly against the ">" prefix so
+        // those don't get miscounted as a real rank.
+        if (String(r.organic_rank || '').trim().startsWith('>')) return;
+        if (!isNaN(rank) && rank >= 1 && rank <= 50 && r.keyword) {
+          rankedKeywords.add(r.keyword.trim().toLowerCase());
+        }
+      });
+      return rankedKeywords.size;
+    }
+
+    const currCount = countTop50(year, month);
+    let prevY = year, prevM = month - 1; if (prevM === 0) { prevM = 12; prevY--; }
+    const prevCount = countTop50(prevY, prevM);
+
+    if (el) {
+      el.querySelector('.ms-value').textContent = currCount != null ? String(currCount) : '—';
+      let sub = 'keywords ranked';
+      if (currCount != null && prevCount != null) {
+        const diff = currCount - prevCount;
+        sub = diff === 0 ? 'flat vs last month' : (diff > 0 ? `↑ ${diff} vs last month` : `↓ ${Math.abs(diff)} vs last month`);
+      } else if (currCount == null) {
+        sub = 'No sync this month';
+      }
+      el.querySelector('.ms-sub').textContent = sub;
+    }
+  } catch (err) {
+    console.warn('[InsightsOverview] Top 50 Organic failed:', err.message);
+    if (el) el.querySelector('.ms-sub').textContent = 'Error loading';
+  }
+}
+
+// ── This Month's Priority Actions — pulled from the AI Brand Insights log
+// (organic_json.actions + ppc_json.actions + listing_json.actions), added
+// 2026-08-05 per Jaclyn. Same sheet/tab already used by ovLoadBrandGlance
+// and loadInsightsFromSheet elsewhere on this dashboard (INSIGHTS_SHEET_ID
+// / INSIGHTS_EVOLIS_GID). No severity tagging (Urgent/Monitor/etc.) is
+// applied — that classification doesn't exist in the actual data model
+// yet (see the file-level comment above this section), so this shows the
+// real action items as plain numbered text rather than fabricating a
+// severity badge. Prefers the most recent row dated within the target
+// month; falls back to the single most-recent row overall (rows are
+// stored most-recent-first) if nothing matches that month, same fallback
+// behavior as ovLoadBrandGlance.
+async function ovLoadPriorityActions(year, month) {
+  const listEl = document.getElementById('ins-priority-list');
+  if (!listEl) return;
+  try {
+    const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, INSIGHTS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) { listEl.innerHTML = '<div class="priority-item"><div class="priority-text">No insights log data yet.</div></div>'; return; }
+
+    let sourceRow = rows[0];
+    if (year && month) {
+      const prefix = `${year}-${String(month).padStart(2, '0')}`;
+      const monthRow = rows.find(r => (r.date || '').substring(0, 7) === prefix);
+      if (monthRow) sourceRow = monthRow;
+    }
+
+    const organic = safeJson(sourceRow.organic_json) || {};
+    const ppc     = safeJson(sourceRow.ppc_json) || {};
+    const listing = safeJson(sourceRow.listing_json) || {};
+    const actions = [...(organic.actions || []), ...(ppc.actions || []), ...(listing.actions || [])];
+
+    if (!actions.length) {
+      listEl.innerHTML = '<div class="priority-item"><div class="priority-text">No priority actions logged for this period.</div></div>';
+      return;
+    }
+
+    listEl.innerHTML = actions.map((text, idx) => `
+      <div class="priority-item">
+        <div class="priority-num">${idx + 1}</div>
+        <div class="priority-text">${escapeHtmlOrg(text)}</div>
+      </div>`).join('');
+  } catch (err) {
+    console.warn('[InsightsOverview] Priority Actions failed:', err.message);
+    listEl.innerHTML = '<div class="priority-item"><div class="priority-text">Error loading priority actions.</div></div>';
+  }
+}
+
 window.initInsightsOverview = async function() {
   const result = await ovLoadUnitsAndPeakMonth();
   await ovLoadTotalSkus();
   await ovLoadActiveSkus(result && result.year, result && result.month);
+  await ovLoadTop50Organic(result && result.year, result && result.month);
   await ovLoadSessionsAndConversion(result && result.year, result && result.month);
   await ovLoadBrandGlance();
+  await ovLoadPriorityActions(result && result.year, result && result.month);
 };
 
 // ═══════════════════════════════════════════════════════════════════
