@@ -8836,12 +8836,19 @@ async function initSns() {
       if (pctUnitsAdsCurr != null) setKpiVal('mx-kpi-pct-units-ads', pctUnitsAdsCurr + '%');
       setKpiMom('mx-kpi-pct-units-ads', pct(pctUnitsAdsCurr, pctUnitsAdsPrev));
 
-      // % Revenue Invested — (Ads + Vine/Promos this month) ÷ TOTAL revenue
-      // across ALL channels (Amazon + Website + Walmart), not just Amazon's
-      // summary-sheet revenue. Per Jaclyn 2026-07-14. Website/Walmart use
-      // the same UPPERCASE MONTH/YEAR/REVENUE positional-header convention
-      // already confirmed working for the Overview trend chart.
-      const currInvestTotal = rowCurr
+      // % Revenue Invested — (Ads + Vine/Promos + Website Google Ads spend
+      // this month) ÷ TOTAL revenue across ALL channels (Amazon + Website +
+      // Walmart). Per Jaclyn 2026-07-14, extended 2026-08-05 to add Website
+      // Google Ads spend into the numerator — previously the numerator was
+      // Amazon-only (ads + Vine + promos) even though the denominator
+      // already included Website/Walmart revenue, understating the true
+      // invested %. Website/Walmart revenue use the same UPPERCASE
+      // MONTH/YEAR/REVENUE positional-header convention already confirmed
+      // working for the Overview trend chart. Google Ads spend comes from
+      // the same workbook's "ads" tab (gid=219707263): date, campaign_name,
+      // impressions, clicks, spend, conversions, revenue, acos,
+      // last_updated — summed for the target month by `date`.
+      let currInvestTotal = rowCurr
         ? (parseAmt(rowCurr.ads_spend) + parseAmt(rowCurr.vine_total) + parseAmt(rowCurr.promos_total))
         : 0;
       const amzRevenueThisMonth = rowCurr ? parseAmt(rowCurr.revenue) : 0;
@@ -8872,15 +8879,37 @@ async function initSns() {
         return rows;
       }
 
+      // Generic header-based CSV parser for the Google Ads "ads" tab — kept
+      // local (not reused from an outer scope) same as parseRevenueHistoryLocal
+      // above, since this function may be called from a context where the
+      // outer parseCsv isn't guaranteed to be in scope.
+      function parseGenericCsvLocal(csvText) {
+        if (!isCsv(csvText)) return [];
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) return [];
+        const splitLine = typeof parseCsvLine === 'function' ? parseCsvLine : (l => l.split(','));
+        const headers = splitLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = splitLine(lines[i]);
+          const row = {};
+          headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
+          rows.push(row);
+        }
+        return rows;
+      }
+
       let allChannelRevenue = amzRevenueThisMonth;
       try {
         const WEB_SHEET_ID_LOCAL = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
         const WEB_REVENUE_GID_LOCAL = '7000599';
+        const WEB_ADS_GID_LOCAL = '219707263';
         const WMT_REVENUE_SHEET_ID_LOCAL = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE';
         const WMT_REVENUE_GID_LOCAL = '812984298';
-        const [webRevCsv, wmtRevCsv] = await Promise.all([
+        const [webRevCsv, wmtRevCsv, webAdsCsv] = await Promise.all([
           fetch(sheetCsvUrl(WEB_SHEET_ID_LOCAL, WEB_REVENUE_GID_LOCAL) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
           fetch(sheetCsvUrl(WMT_REVENUE_SHEET_ID_LOCAL, WMT_REVENUE_GID_LOCAL) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(sheetCsvUrl(WEB_SHEET_ID_LOCAL, WEB_ADS_GID_LOCAL) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         ]);
         const webRevRows = parseRevenueHistoryLocal(webRevCsv);
         const wmtRevRows = parseRevenueHistoryLocal(wmtRevCsv);
@@ -8888,9 +8917,16 @@ async function initSns() {
         const webRevThisMonth = (webRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
         const wmtRevThisMonth = (wmtRevRows.find(r => r.year === year && r.month === month) || {}).revenue || 0;
         allChannelRevenue = amzRevenueThisMonth + webRevThisMonth + wmtRevThisMonth;
-        console.log('[Evolis] % Revenue Invested — revenue by channel:', 'amazon=', amzRevenueThisMonth, 'website=', webRevThisMonth, 'walmart=', wmtRevThisMonth, 'total=', allChannelRevenue);
+
+        const targetPrefix = `${year}-${String(month).padStart(2, '0')}`;
+        const webAdsRows = parseGenericCsvLocal(webAdsCsv);
+        const webAdsSpendThisMonth = webAdsRows
+          .filter(r => (r.date || '').substring(0, 7) === targetPrefix)
+          .reduce((s, r) => s + parseAmt(r.spend), 0);
+        currInvestTotal += webAdsSpendThisMonth;
+        console.log('[Evolis] % Revenue Invested — revenue by channel:', 'amazon=', amzRevenueThisMonth, 'website=', webRevThisMonth, 'walmart=', wmtRevThisMonth, 'total=', allChannelRevenue, '— website Google Ads spend added to numerator:', webAdsSpendThisMonth);
       } catch (e) {
-        console.warn('[Evolis] could not fetch Website/Walmart revenue for % Revenue Invested — falling back to Amazon-only revenue:', e.message);
+        console.warn('[Evolis] could not fetch Website/Walmart revenue or Website Google Ads spend for % Revenue Invested — falling back to Amazon-only numerator/revenue:', e.message);
       }
 
       if (allChannelRevenue) {
