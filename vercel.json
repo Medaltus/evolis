@@ -70,6 +70,10 @@
       "schedule": "12 6 * * *"
     },
     {
+      "path": "/api/cron/sync-walmart-inventory",
+      "schedule": "25 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-returns-request",
       "schedule": "20 6 * * *"
     },
