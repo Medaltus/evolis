@@ -69,7 +69,7 @@ const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
 
-const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA UNITS', 'FBM UNITS'];
+const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA UNITS', 'FBM UNITS', 'Last Updated'];
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
@@ -282,13 +282,14 @@ module.exports = async (req, res) => {
         Array.isArray(r)
           ? r
           : [
-              r['MONTH']      ?? '',
-              r['YEAR']       ?? '',
-              r['REVENUE']    ?? '',
-              r['ORDERS']     ?? '',
-              r['UNITS SOLD'] ?? '',
-              r['FBA UNITS']  ?? '',
-              r['FBM UNITS']  ?? '',
+              r['MONTH']         ?? '',
+              r['YEAR']          ?? '',
+              r['REVENUE']       ?? '',
+              r['ORDERS']        ?? '',
+              r['UNITS SOLD']    ?? '',
+              r['FBA UNITS']     ?? '',
+              r['FBM UNITS']     ?? '',
+              r['Last Updated']  ?? '',
             ]
       );
 
@@ -322,7 +323,7 @@ module.exports = async (req, res) => {
           console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — netted ${returnedUnits} returned units (\u2248$${returnedRevenue.toFixed(2)} estimated) against gross revenue=${grossRevenue} units=${grossUnits}`);
         }
         if (unmatchedPriceCount > 0) {
-          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — ${unmatchedPriceCount} returned line item(s) had no price data anywhere in this run's flat file; their dollar impact was NOT estimated (left at $0), only their unit count was netted`);
+          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — ${unmatchedPriceCount} returned line item(s) had no price data on the Amazon orders sheet; their dollar impact was NOT estimated (left at $0), only their unit count was netted`);
         }
         if (grossRevenue - returnedRevenue < 0 || grossUnits - returnedUnits < 0) {
           console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
@@ -330,7 +331,16 @@ module.exports = async (req, res) => {
 
         console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
 
-        const newRow = [tMonthNum, tYearNum, revenue, orders, unitsSold, fbaUnits, fbmUnits];
+        // Column H (Last Updated) — added 2026-08-05 per Jaclyn, matching a
+        // column that already existed on the real sheet but wasn't in this
+        // cron's own HEADERS (that mismatch is what caused the "[sheets]
+        // HEADER MISMATCH" warning). Uses `ts` (plain ISO-8601 UTC), the
+        // same timestamp format every other "last_updated"-style column in
+        // this codebase's crons uses. Not verified against whatever format
+        // any pre-existing values in this column might already be in — if
+        // older rows show a different date format than new ones going
+        // forward, that's why.
+        const newRow = [tMonthNum, tYearNum, revenue, orders, unitsSold, fbaUnits, fbmUnits, ts];
 
         const idx = workingRows.findIndex(r =>
           parseInt(r[0], 10) === tMonthNum &&
