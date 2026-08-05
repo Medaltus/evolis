@@ -9,6 +9,57 @@
  * Backfill a single month:
  *   GET /api/cron/sync-revenue-process?month=YYYY-MM
  *   Authorization: Bearer <CRON_SECRET>
+ *
+ * RETURNS NETTING — added 2026-08-05 per Jaclyn. REVENUE and UNITS SOLD
+ * (and FBA UNITS specifically) are now netted against SHEET_RETURNS
+ * (config/sheets.js `returns`), matched by RETURN month (return_date),
+ * not the original order's month — same "net this month's real activity"
+ * convention already used for the Overview page's own returns-netting.
+ *
+ * TWO REAL CONSTRAINTS ON THIS, NOT WORKAROUNDS FOR A BUG:
+ *   1. Amazon's FBA Customer Returns report (what feeds SHEET_RETURNS)
+ *      has NO dollar amount field at all — only quantity. There is no
+ *      "refund amount" to simply subtract. Revenue impact is therefore
+ *      an ESTIMATE: each returned line item's dollar value is priced
+ *      using that exact order_id+sku's item_price from the Amazon orders
+ *      sheet (config/sheets.js `orders`, same SHEET_ID this dashboard's
+ *      Sales page reads — a rolling ~90-day window, deliberately used
+ *      over this cron's own 2-month flat-file fetch because a return can
+ *      lag its original sale by more than 2 months). Falls back to an
+ *      average item_price for that SKU on the SAME orders sheet if the
+ *      exact original order isn't found there (e.g. aged out of the
+ *      rolling window). If a returned SKU has no price data on that
+ *      sheet at all, that return's dollar impact is left at $0 (not
+ *      guessed further) and logged — see buildPriceLookup()/
+ *      estimateReturnImpact() below. UNCONFIRMED: config/sheets.js
+ *      exporting this sheet as `sheets.orders` — wasn't available while
+ *      writing this; matches the naming convention `sheets.returns`/
+ *      `sheets.revenue` already use in this same file, but not
+ *      independently verified.
+ *   2. The FBA Customer Returns report is, by its own name
+ *      (GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA), FBA-ONLY. Returned
+ *      units are subtracted from FBA UNITS specifically, never FBM
+ *      UNITS — this feed has no visibility into seller-fulfilled returns
+ *      at all, so FBM UNITS stays exactly as computed from gross orders.
+ *
+ * Everything about how GROSS revenue/units/orders get computed from the
+ * SP-API flat file — poll, download, decompress, parse, aggregate — is
+ * UNCHANGED from the original version of this file. Returns netting is a
+ * layer added on top of that existing output, not a rework of it.
+ *
+ * ORDERS is deliberately NOT netted against returns — same reasoning as
+ * the Overview page: this returns feed is quantity/line-item level, not
+ * a "this whole order was cancelled" flag, so there's no safe way to
+ * decrement an order count from it.
+ *
+ * Returns are matched to a target month by return_date falling in that
+ * month — "returns actually processed in this month," not "returns tied
+ * to an order originally placed in this month."
+ *
+ * All 3 of revenue/unitsSold/fbaUnits are floored at 0 after netting — if
+ * returns dated in a month exceed that month's own gross figures (plausible
+ * since returns can be dated well after the original sale), a warning is
+ * logged rather than allowing a negative number onto the sheet.
  */
 
 const zlib                                 = require('zlib');
@@ -177,6 +228,14 @@ module.exports = async (req, res) => {
 
   for (const brand of brands.filter(b => b.active)) {
     try {
+      const brandReturnRows = await fetchReturnsForBrand(brand);
+      // Per-brand (not global) — the orders sheet is one tab per brand,
+      // unlike the flat-file rows which are shared across all brands
+      // pre-filtering. Rebuilt fresh per brand rather than once for the
+      // whole run.
+      const brandOrderRows = await fetchOrdersForBrand(brand);
+      const priceLookup    = buildPriceLookup(brandOrderRows);
+
       // Aggregate across all months for this brand
       const monthMap = {};
 
@@ -242,11 +301,32 @@ module.exports = async (req, res) => {
         const tYearNum  = parseInt(tYear,  10);
 
         const orderData = monthMap[targetMonth] || {};
-        const orders    = Object.keys(orderData).length;
-        const revenue   = round2(Object.values(orderData).reduce((s, o) => s + o.revenue, 0));
-        const unitsSold = Object.values(orderData).reduce((s, o) => s + o.units, 0);
-        const fbaUnits  = Object.values(orderData).reduce((s, o) => s + o.fbaUnits, 0);
-        const fbmUnits  = Object.values(orderData).reduce((s, o) => s + o.fbmUnits, 0);
+        const orders        = Object.keys(orderData).length;
+        const grossRevenue  = round2(Object.values(orderData).reduce((s, o) => s + o.revenue, 0));
+        const grossUnits    = Object.values(orderData).reduce((s, o) => s + o.units, 0);
+        const grossFbaUnits = Object.values(orderData).reduce((s, o) => s + o.fbaUnits, 0);
+        const fbmUnits      = Object.values(orderData).reduce((s, o) => s + o.fbmUnits, 0); // never netted — see file header, this returns feed is FBA-only
+
+        // Returns dated (by return_date) in THIS target month, for THIS
+        // brand — same "net this month's real activity" convention as
+        // the Overview page, not "returns tied to an order placed this
+        // month" (a return can be dated well after its original sale).
+        const monthReturns = brandReturnRows.filter(r => (r.return_date || '').slice(0, 7) === targetMonth);
+        const { returnedUnits, returnedRevenue, unmatchedPriceCount } = estimateReturnImpact(monthReturns, priceLookup);
+
+        const revenue   = Math.max(0, round2(grossRevenue - returnedRevenue));
+        const unitsSold = Math.max(0, grossUnits - returnedUnits);
+        const fbaUnits  = Math.max(0, grossFbaUnits - returnedUnits); // FBA-only feed — all returned units come off FBA, never FBM
+
+        if (returnedUnits > 0) {
+          console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — netted ${returnedUnits} returned units (\u2248$${returnedRevenue.toFixed(2)} estimated) against gross revenue=${grossRevenue} units=${grossUnits}`);
+        }
+        if (unmatchedPriceCount > 0) {
+          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — ${unmatchedPriceCount} returned line item(s) had no price data anywhere in this run's flat file; their dollar impact was NOT estimated (left at $0), only their unit count was netted`);
+        }
+        if (grossRevenue - returnedRevenue < 0 || grossUnits - returnedUnits < 0) {
+          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
+        }
 
         console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
 
@@ -317,6 +397,111 @@ module.exports = async (req, res) => {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Reads this brand's tab on the Amazon orders sheet (config/sheets.js
+// `orders` — SHEET_ID 1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok per
+// Jaclyn 2026-08-05, same sheet the dashboard's Sales page reads).
+// Rolling ~90-day window — used here specifically because it reaches
+// further back than this cron's own 2-month flat-file fetch, so it can
+// price a return whose original sale happened outside that 2-month
+// window. Fails soft, same pattern as fetchReturnsForBrand — a missing
+// tab or fetch error just means fewer exact-price matches this run, not
+// a failed sync.
+async function fetchOrdersForBrand(brand) {
+  try {
+    const rows = await readRows(sheets.orders, brand.tabName);
+    return rows || [];
+  } catch (err) {
+    console.warn(`[sync-revenue-process] ${brand.id} — failed to read orders sheet for return-price lookup (falling back to this run's own flat-file prices only):`, err.message);
+    return [];
+  }
+}
+
+// Builds a price lookup, preferring the wider-window orders sheet over
+// this run's own narrower flat-file rows. Four tiers, tried in order:
+//   1. Exact order_id+sku match — orders sheet (widest window, most likely
+//      to actually contain a return's original order).
+//   2. Exact order_id+sku match — this run's flat-file rows (narrower
+//      window, but still worth trying if tier 1 misses for some reason).
+//   3. Average item_price per SKU — orders sheet.
+//   4. Average item_price per SKU — flat-file rows.
+// A return whose SKU/order matches none of these is left unpriced
+// (caller records it as unmatched and leaves that line item's dollar
+// impact at $0 rather than guessing further).
+// Simplified 2026-08-05 per Jaclyn — refers to the Amazon orders sheet
+// ONLY for return pricing (dropped the flat-file-based fallback tiers
+// this originally had). Two tiers, tried in order:
+//   1. Exact order_id+sku match — that specific return's real price.
+//   2. Average item_price for that SKU across the orders sheet — used
+//      when the exact original order isn't on that sheet (e.g. it's
+//      aged out of the rolling window).
+// A return whose SKU/order matches neither is left unpriced — caller
+// records it as unmatched and leaves that line item's dollar impact at
+// $0 rather than guessing further.
+function buildPriceLookup(orderSheetRows) {
+  const exactByOrderSku = new Map();
+  const pricesBySku     = new Map();
+
+  (orderSheetRows || []).forEach(row => {
+    const sku     = (row['sku'] || '').toUpperCase();
+    const orderId = row['order_id'] || '';
+    const price   = parseFloat(row['item_price'] || '0');
+    if (!sku || !price) return;
+    if (orderId && !exactByOrderSku.has(`${orderId}||${sku}`)) exactByOrderSku.set(`${orderId}||${sku}`, price);
+    if (!pricesBySku.has(sku)) pricesBySku.set(sku, []);
+    pricesBySku.get(sku).push(price);
+  });
+
+  const avgBySku = new Map();
+  pricesBySku.forEach((prices, sku) => avgBySku.set(sku, prices.reduce((s, v) => s + v, 0) / prices.length));
+
+  return {
+    lookup(orderId, sku) {
+      const key = `${orderId}||${sku}`;
+      if (exactByOrderSku.has(key)) return exactByOrderSku.get(key);
+      if (avgBySku.has(sku)) return avgBySku.get(sku);
+      return null;
+    },
+  };
+}
+
+// Reads this brand's tab on the Amazon Returns sheet (config/sheets.js
+// `returns`, same entry sync-returns-request.js/sync-returns-process.js
+// already require). Fails soft — a brand with no returns tab yet, or a
+// fetch error, nets $0/0 units for that brand this run rather than
+// failing the whole revenue sync over a missing/broken returns sheet.
+async function fetchReturnsForBrand(brand) {
+  try {
+    const rows = await readRows(sheets.returns, brand.tabName);
+    return rows || [];
+  } catch (err) {
+    console.warn(`[sync-revenue-process] ${brand.id} — failed to read returns sheet (revenue will NOT be netted against returns this run):`, err.message);
+    return [];
+  }
+}
+
+// Sums returned quantity and ESTIMATES the returned dollar value for a
+// set of return rows, using the price lookup above. Amazon's FBA Returns
+// report has no price field of its own — see file header for why this is
+// necessarily an estimate rather than an exact figure.
+function estimateReturnImpact(returnRows, priceLookup) {
+  let returnedUnits = 0, returnedRevenue = 0, unmatchedPriceCount = 0;
+
+  returnRows.forEach(r => {
+    const qty = parseInt(r.quantity, 10) || 0;
+    if (!qty) return;
+    returnedUnits += qty;
+
+    const sku     = (r.sku || '').toUpperCase();
+    const orderId = r.order_id || '';
+    const price = priceLookup.lookup(orderId, sku);
+    if (price == null) { unmatchedPriceCount++; return; } // no price data anywhere — dollar impact left at $0 for this line item, not guessed further
+
+    returnedRevenue = round2(returnedRevenue + price * qty);
+  });
+
+  return { returnedUnits, returnedRevenue, unmatchedPriceCount };
+}
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
