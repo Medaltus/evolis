@@ -1218,7 +1218,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </div>
 
     <div class="kpi-row">
-      <div class="kpi-card" id="ov-kpi-organic-orders"><div class="kpi-label">MTD Organic Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <div class="kpi-card" id="ov-kpi-organic-orders"><div class="kpi-label">MTD Organic Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-ad-orders"><div class="kpi-label">MTD Ad-Driven Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-pending"><div class="kpi-label">Pending Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
     </div>
@@ -16018,7 +16018,7 @@ async function loadAuditResultsFromSheet() {
       // already declared globally further down this file (used by the
       // existing "Returns Processed" KPI on Marketing → Fulfillment & CS),
       // reused here rather than redeclared.
-      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv] = await Promise.all([
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -16026,12 +16026,64 @@ async function loadAuditResultsFromSheet() {
         fetch(ovCsvUrl(OV_RETURNS_SHEET_ID, OV_RETURNS_EVOLIS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(ovCsvUrl(OV_WMT_RETURNS_SHEET_ID, OV_WMT_RETURNS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_RETURNS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        // Product names + SKU→ASIN crosswalk — col A = ASIN, col B = SKU (base,
+        // no -SF), col C = Name. Moved into this parallel batch 2026-08-05 (was
+        // previously fetched later, after returns netting had already run) so
+        // skuToAsinMap exists in time to resolve Website/Walmart RETURN rows
+        // (which only ever carry a SKU, never an ASIN) to the same ASIN key
+        // used everywhere else on this page.
+        fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const amzRows = isCsv(amzCsv) ? parseCsv(amzCsv).filter(isEvolisRow) : [];
       const webRows = isCsv(webCsv) ? parseCsv(webCsv) : [];
       const wmtRows = isCsv(wmtCsv) ? parseCsv(wmtCsv) : [];
       console.log('[Evolis][overview] row counts \u2014 amazon:', amzRows.length, 'web:', webRows.length, 'walmart:', wmtRows.length, '\u2014 MTD range:', mtdStartStr, 'to', mtdEndStr);
+
+      // Product names + SKU→ASIN crosswalk (see fetch comment above).
+      let asinNameMap = {};
+      let skuToAsinMap = {};
+      try {
+        if (isCsv(namesCsv)) {
+          const lines = namesCsv.trim().split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCsvLine(lines[i]);
+            const asin = (cols[0] || '').replace(/^"|"$/g, '').trim().toUpperCase();
+            const sku = (cols[1] || '').replace(/^"|"$/g, '').trim().toUpperCase().replace(/-SF$/i, '');
+            const name = (cols[2] || '').replace(/^"|"$/g, '').trim();
+            if (asin && name) asinNameMap[asin] = name;
+            if (sku && asin) skuToAsinMap[sku] = asin;
+          }
+          console.log('[Evolis][overview] product name lookup: ', Object.keys(asinNameMap).length, 'ASINs,', Object.keys(skuToAsinMap).length, 'SKU→ASIN mappings');
+        }
+      } catch (e) { console.warn('[Evolis][overview] product name lookup failed:', e.message); }
+
+      // Average Amazon item_price per ASIN, built from the Amazon Orders sheet
+      // rows already fetched above. Added 2026-08-05 per Jaclyn: Amazon's
+      // Returns report (OV_RETURNS_SHEET_ID) has NO dollar field at all —
+      // confirmed columns are return_date, order_id, sku, asin, fnsku,
+      // product_name, quantity, fulfillment_center_id, detailed_disposition,
+      // reason, status, license_plate_number, customer_comments, brand,
+      // last_updated, order_date — quantity only, never a refund amount. Per
+      // Jaclyn: estimate the dollar impact of each Amazon return as
+      // (returned quantity × that ASIN's item_price from the Orders sheet).
+      // Averaged across all fetched order rows for that ASIN rather than
+      // "most recent" to smooth out promo/coupon price swings on any single
+      // order.
+      function buildAsinPriceMap(rows) {
+        const sums = {}, counts = {};
+        rows.forEach(r => {
+          const asin = (r.asin || '').trim().toUpperCase();
+          const price = parseAmt(r.item_price);
+          if (!asin || !price) return;
+          sums[asin] = (sums[asin] || 0) + price;
+          counts[asin] = (counts[asin] || 0) + 1;
+        });
+        const avg = {};
+        Object.keys(sums).forEach(k => { avg[k] = sums[k] / counts[k]; });
+        return avg;
+      }
+      const amzPriceByAsin = buildAsinPriceMap(amzRows);
 
       // ── Returns netting ──────────────────────────────────────────────
       // Dated by when the RETURN happened (return_date/refund_date), not
@@ -16044,36 +16096,55 @@ async function loadAuditResultsFromSheet() {
       // FIELD NAMES: Walmart (quantity, refund_amount, return_date) and
       // Website/Shopify (quantity, refund_amount, refund_date) are BOTH
       // CONFIRMED — see the comments on OV_WMT_RETURNS_GID / OV_WEB_RETURNS_GID
-      // further down this file. Amazon's quantity/refund-amount column
-      // names are NOT confirmed anywhere in this codebase — only
-      // return_date and brand are (from that same existing KPI). The
-      // candidates below are a best guess; if Amazon's net figures below
-      // never actually shrink from gross, check the real column names on
-      // that sheet before assuming this logic is broken.
-      const AMZ_RETURN_QTY_CANDIDATES = ['quantity', 'units', 'qty', 'unit_count', 'return_quantity'];
-      const AMZ_RETURN_AMT_CANDIDATES = ['refund_amount', 'return_amount', 'amount', 'refund_total', 'return_total'];
-      function findReturnField(row, candidates) {
-        for (const c of candidates) { if (row[c] !== undefined && row[c] !== '') return row[c]; }
-        return '';
-      }
-      function aggregateReturnsRange(csv, startStr, endStr, dateField, qtyGetter, amtGetter) {
-        if (!isCsv(csv)) return { totalQty: 0, totalAmt: 0 };
+      // further down this file. Amazon's Returns sheet is ALSO confirmed as
+      // of 2026-08-05 (fetched and inspected directly): return_date,
+      // order_id, sku, asin, fnsku, product_name, quantity,
+      // fulfillment_center_id, detailed_disposition, reason, status,
+      // license_plate_number, customer_comments, brand, last_updated,
+      // order_date — there is NO dollar/refund-amount column on the Amazon
+      // side at all (Amazon's FBA returns report only ever tracks units,
+      // never $). Per Jaclyn (2026-08-05): estimate each Amazon return's
+      // dollar impact as (returned quantity × that ASIN's average
+      // item_price, pulled from the Amazon Orders sheet — see
+      // amzPriceByAsin above) rather than trying to read a $ field that
+      // doesn't exist.
+      //
+      // byAsin: also builds a per-ASIN returned-quantity map, used further
+      // down to net Active SKUs and the Top Selling Products table. Amazon
+      // rows carry their own `asin` column directly; Walmart/Website rows
+      // only ever carry a `sku`, so those are resolved through
+      // skuToAsinMap (falling back to the raw SKU if no crosswalk entry
+      // exists) — same convention as unitsByAsin() elsewhere on this page.
+      function aggregateReturnsRange(csv, startStr, endStr, dateField, opts) {
+        opts = opts || {};
+        if (!isCsv(csv)) return { totalQty: 0, totalAmt: 0, byAsin: {} };
         const filtered = parseCsv(csv).filter(r => {
           if (!isEvolisRow(r)) return false;
           const d = normalizeDate(r[dateField]);
           return d && d >= startStr && d <= endStr;
         });
-        const totalQty = filtered.reduce((s, r) => s + (parseInt(qtyGetter(r), 10) || 0), 0);
-        const totalAmt = filtered.reduce((s, r) => s + parseAmt(amtGetter(r)), 0);
-        return { totalQty, totalAmt };
+        let totalQty = 0, totalAmt = 0;
+        const byAsin = {};
+        filtered.forEach(r => {
+          const qty = parseInt(r.quantity, 10) || 0;
+          totalQty += qty;
+          let key = (r.asin || '').trim().toUpperCase();
+          if (!key) {
+            const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+            key = (skuToAsinMap && skuToAsinMap[sku]) || sku;
+          }
+          if (key) byAsin[key] = (byAsin[key] || 0) + qty;
+          totalAmt += opts.useAsinPrice ? qty * (amzPriceByAsin[key] || 0) : parseAmt(r.refund_amount);
+        });
+        return { totalQty, totalAmt, byAsin };
       }
 
-      const amzReturnsMtd  = aggregateReturnsRange(amzReturnsCsv, mtdStartStr, mtdEndStr, 'return_date', r => findReturnField(r, AMZ_RETURN_QTY_CANDIDATES), r => findReturnField(r, AMZ_RETURN_AMT_CANDIDATES));
-      const amzReturnsPrev = aggregateReturnsRange(amzReturnsCsv, prevStartStr, prevEndStr, 'return_date', r => findReturnField(r, AMZ_RETURN_QTY_CANDIDATES), r => findReturnField(r, AMZ_RETURN_AMT_CANDIDATES));
-      const wmtReturnsMtd  = aggregateReturnsRange(wmtReturnsCsv, mtdStartStr, mtdEndStr, 'return_date', r => r.quantity, r => r.refund_amount);
-      const wmtReturnsPrev = aggregateReturnsRange(wmtReturnsCsv, prevStartStr, prevEndStr, 'return_date', r => r.quantity, r => r.refund_amount);
-      const webReturnsMtd  = aggregateReturnsRange(webReturnsCsv, mtdStartStr, mtdEndStr, 'refund_date', r => r.quantity, r => r.refund_amount);
-      const webReturnsPrev = aggregateReturnsRange(webReturnsCsv, prevStartStr, prevEndStr, 'refund_date', r => r.quantity, r => r.refund_amount);
+      const amzReturnsMtd  = aggregateReturnsRange(amzReturnsCsv, mtdStartStr, mtdEndStr, 'return_date', { useAsinPrice: true });
+      const amzReturnsPrev = aggregateReturnsRange(amzReturnsCsv, prevStartStr, prevEndStr, 'return_date', { useAsinPrice: true });
+      const wmtReturnsMtd  = aggregateReturnsRange(wmtReturnsCsv, mtdStartStr, mtdEndStr, 'return_date');
+      const wmtReturnsPrev = aggregateReturnsRange(wmtReturnsCsv, prevStartStr, prevEndStr, 'return_date');
+      const webReturnsMtd  = aggregateReturnsRange(webReturnsCsv, mtdStartStr, mtdEndStr, 'refund_date');
+      const webReturnsPrev = aggregateReturnsRange(webReturnsCsv, prevStartStr, prevEndStr, 'refund_date');
       console.log('[Evolis][overview] returns this MTD \u2014 amazon:', amzReturnsMtd, 'walmart:', wmtReturnsMtd, 'website:', webReturnsMtd);
 
       const amzMtd = aggregateRange(amzRows, mtdStartStr, mtdEndStr, isValidAmazonRow);
@@ -16110,7 +16181,6 @@ async function loadAuditResultsFromSheet() {
       const prev = { units: amzPrevNetUnits + webPrevNetUnits + wmtPrevNetUnits, orders: amzPrev.totalOrders + webPrev.totalOrders + wmtPrev.totalOrders, revenue: amzPrevNetRevenue + webPrevNetRevenue + wmtPrevNetRevenue };
       const aov = mtd.orders ? mtd.revenue / mtd.orders : 0;
       const aovPrev = prev.orders ? prev.revenue / prev.orders : 0;
-      const skuCount = new Set([...amzMtd.skuSet, ...webMtd.skuSet, ...wmtMtd.skuSet]).size;
 
       setKpi('ov-kpi-units',  mtd.units.toLocaleString(),  pctChange(mtd.units, prev.units));
       setKpi('ov-kpi-orders', mtd.orders.toLocaleString(), pctChange(mtd.orders, prev.orders));
@@ -16147,25 +16217,15 @@ async function loadAuditResultsFromSheet() {
           (r.brand || '').trim().toLowerCase() === 'evolis'
         ).length;
       }
-      // Subtracted from the blended (Amazon + Website + Walmart) MTD order
-      // count, not Amazon-only — Website/Walmart orders have no paid-ads
-      // program tracked in this data at all, so they're organic by
-      // definition and should simply add on top of whatever's left after
-      // removing Amazon's ad-attributed subset.
-      const organicOrders = Math.max(0, mtd.orders - adDrivenOrders);
-      // Organic Orders MOM: prev.orders is already a true day-aligned
-      // prior-month-to-date blended order count. Ad-driven orders for
-      // last month has no such day-level cutoff available (same monthly-
-      // only limitation as above), so it's prorated by the same day-
-      // fraction technique already established for Ad Spend/ACOS on this
-      // page — an estimate, labeled as such, rather than no comparison
-      // at all. Per Jaclyn (2026-07-24): bring MOM back for Organic
-      // Orders specifically.
-      const daysInLastMonthForOrders = new Date(lastMonthYear, lastMonthNum, 0).getDate();
-      const adDrivenOrdersPrevProrated = daysInLastMonthForOrders ? adDrivenOrdersLastMonthFull * (daysElapsed / daysInLastMonthForOrders) : 0;
-      const organicOrdersPrev = Math.max(0, prev.orders - adDrivenOrdersPrevProrated);
-      setKpi('ov-kpi-organic-orders', organicOrders.toLocaleString(), pctChange(organicOrders, organicOrdersPrev), ' vs MTD last month (Est.)');
       setKpiPlain('ov-kpi-ad-orders', adDrivenOrders.toLocaleString(), 'This month (Amazon Ads)');
+      // NOTE: this card's own MOM/"Organic Orders" companion logic moved
+      // further down — see "MTD Organic Units" below, after per-ASIN net
+      // units and ad-attributed units are available. Per Jaclyn
+      // (2026-08-05): that KPI switched from an order count to a UNITS
+      // figure so returned units can actually be subtracted from it (the
+      // returns sheets are line-item/qty level, not a "whole order
+      // cancelled" flag, so there was no clean way to net an order COUNT
+      // against them).
 
       // Pending Orders — a live snapshot, intentionally NOT date-scoped
       // (an order still sitting in Pending from any date is still open and
@@ -16179,43 +16239,42 @@ async function loadAuditResultsFromSheet() {
 
       const heroRevEl = document.getElementById('ov-hero-revenue');
       if (heroRevEl) heroRevEl.textContent = mtd.revenue >= 1000 ? '$' + (mtd.revenue / 1000).toFixed(1) + 'K' : '$' + mtd.revenue.toFixed(0);
-      const heroSkuEl = document.getElementById('ov-hero-skus');
-      if (heroSkuEl && skuCount > 0) heroSkuEl.textContent = String(skuCount);
-
-      // Product names + SKU→ASIN crosswalk — col A = ASIN, col B = SKU
-      // (base, no -SF), col C = Name. Same lookup sheet/tab used by the
-      // Amazon channel page's own top-sellers table. Fetched BEFORE
-      // grouping units below, because Website/Walmart order rows only
-      // carry a SKU (no ASIN) — without resolving SKU→ASIN first, those
-      // rows group under a different key than Amazon's ASIN-keyed rows
-      // for the exact same product, splitting it into two table rows and
-      // showing the raw SKU instead of a name. Per Jaclyn 2026-07-14.
-      let asinNameMap = {};
-      let skuToAsinMap = {};
-      try {
-        const namesCsv = await fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
-        if (isCsv(namesCsv)) {
-          const lines = namesCsv.trim().split('\n');
-          for (let i = 1; i < lines.length; i++) {
-            const cols = parseCsvLine(lines[i]);
-            const asin = (cols[0] || '').replace(/^"|"$/g, '').trim().toUpperCase();
-            const sku = (cols[1] || '').replace(/^"|"$/g, '').trim().toUpperCase().replace(/-SF$/i, '');
-            const name = (cols[2] || '').replace(/^"|"$/g, '').trim();
-            if (asin && name) asinNameMap[asin] = name;
-            if (sku && asin) skuToAsinMap[sku] = asin;
-          }
-          console.log('[Evolis][overview] product name lookup: ', Object.keys(asinNameMap).length, 'ASINs,', Object.keys(skuToAsinMap).length, 'SKU→ASIN mappings');
-        }
-      } catch (e) { console.warn('[Evolis][overview] product name lookup failed:', e.message); }
 
       // -- Combined product table: units per ASIN per channel, MTD, with MOM + Amazon ads/organic split --
-      const amzUnitsByAsin = unitsByAsin(amzMtd.filteredRows, skuToAsinMap);
-      const webUnitsByAsin = unitsByAsin(webMtd.filteredRows, skuToAsinMap);
-      const wmtUnitsByAsin = unitsByAsin(wmtMtd.filteredRows, skuToAsinMap);
-      const amzPrevUnitsByAsin = unitsByAsin(amzPrev.filteredRows, skuToAsinMap);
-      const webPrevUnitsByAsin = unitsByAsin(webPrev.filteredRows, skuToAsinMap);
-      const wmtPrevUnitsByAsin = unitsByAsin(wmtPrev.filteredRows, skuToAsinMap);
+      // asinNameMap / skuToAsinMap were already built earlier (up front,
+      // before returns netting needed them too).
+      //
+      // Added 2026-08-05 per Jaclyn: net each channel's per-ASIN units
+      // against that same channel's returns (amzReturnsMtd.byAsin /
+      // wmtReturnsMtd.byAsin / webReturnsMtd.byAsin, built above), floored
+      // at 0 per ASIN so a heavily-returned item can't go negative and drag
+      // down the rest of the total. This feeds both the Top Selling
+      // Products table AND the Active SKUs hero stat below (an ASIN with
+      // net units of 0 no longer counts as "active with sales").
+      function netByAsin(gross, returns) {
+        const out = {};
+        Object.keys(gross).forEach(asin => {
+          out[asin] = Math.max(0, gross[asin] - (returns[asin] || 0));
+        });
+        return out;
+      }
+      const amzUnitsByAsin = netByAsin(unitsByAsin(amzMtd.filteredRows, skuToAsinMap), amzReturnsMtd.byAsin);
+      const webUnitsByAsin = netByAsin(unitsByAsin(webMtd.filteredRows, skuToAsinMap), webReturnsMtd.byAsin);
+      const wmtUnitsByAsin = netByAsin(unitsByAsin(wmtMtd.filteredRows, skuToAsinMap), wmtReturnsMtd.byAsin);
+      const amzPrevUnitsByAsin = netByAsin(unitsByAsin(amzPrev.filteredRows, skuToAsinMap), amzReturnsPrev.byAsin);
+      const webPrevUnitsByAsin = netByAsin(unitsByAsin(webPrev.filteredRows, skuToAsinMap), webReturnsPrev.byAsin);
+      const wmtPrevUnitsByAsin = netByAsin(unitsByAsin(wmtPrev.filteredRows, skuToAsinMap), wmtReturnsPrev.byAsin);
       const allAsins = new Set([...Object.keys(amzUnitsByAsin), ...Object.keys(webUnitsByAsin), ...Object.keys(wmtUnitsByAsin)]);
+
+      // Active SKUs (hero stat) — count of ASINs with net units > 0 across
+      // all three channels combined, MTD. Replaces the old gross-SKU-set
+      // count (which counted any ASIN with an order line at all, even if
+      // every unit sold was later returned).
+      const activeSkuCount = Array.from(allAsins).filter(asin =>
+        (amzUnitsByAsin[asin] || 0) + (webUnitsByAsin[asin] || 0) + (wmtUnitsByAsin[asin] || 0) > 0
+      ).length;
+      const heroSkuEl = document.getElementById('ov-hero-skus');
+      if (heroSkuEl && activeSkuCount > 0) heroSkuEl.textContent = String(activeSkuCount);
 
       // Ads vs Organic — Amazon only. The ad_orders sheet is pre-aggregated
       // by whole month, not by day, so this reflects the CURRENT month's ad
@@ -16225,17 +16284,45 @@ async function loadAuditResultsFromSheet() {
       // merged in here — their units all fall under "Organic" below rather
       // than being misrepresented as attributed either way.
       let adUnitsByAsin = {};
+      let adUnitsByAsinPrev = {};
       try {
         const adOrdersCsv2 = await fetch(sheetCsvUrl('1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI', '158578426') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
         if (isCsv(adOrdersCsv2)) {
-          const adRows2 = parseCsv(adOrdersCsv2).filter(r => parseInt(r.year, 10) === now.getFullYear() && parseInt(r.month, 10) === now.getMonth() + 1);
-          adRows2.forEach(r => {
-            const asin = (r.asin || '').trim().toUpperCase();
-            if (!asin) return;
-            adUnitsByAsin[asin] = (adUnitsByAsin[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
-          });
+          const adRows2All = parseCsv(adOrdersCsv2);
+          adRows2All.filter(r => parseInt(r.year, 10) === now.getFullYear() && parseInt(r.month, 10) === now.getMonth() + 1)
+            .forEach(r => {
+              const asin = (r.asin || '').trim().toUpperCase();
+              if (!asin) return;
+              adUnitsByAsin[asin] = (adUnitsByAsin[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+            });
+          // Same month used for the Organic Units MOM comparison below.
+          adRows2All.filter(r => parseInt(r.year, 10) === lastMonthYear && parseInt(r.month, 10) === lastMonthNum)
+            .forEach(r => {
+              const asin = (r.asin || '').trim().toUpperCase();
+              if (!asin) return;
+              adUnitsByAsinPrev[asin] = (adUnitsByAsinPrev[asin] || 0) + (parseInt(r.ad_units, 10) || 0);
+            });
         }
       } catch (e) { console.warn('[Evolis][overview] ad units lookup failed:', e.message); }
+
+      // -- MTD Organic Units (net of returns) --
+      // Changed 2026-08-05 per Jaclyn: this card used to be "MTD Organic
+      // ORDERS" (a count), which couldn't cleanly subtract returns (those
+      // sheets are line-item/qty level, not a "whole order cancelled"
+      // flag). Switched to UNITS instead, which the returns data nets
+      // against cleanly: Organic Units = total net blended units (mtd.units,
+      // already netted above) minus Amazon ad-attributed units, capped per
+      // ASIN at that ASIN's own net Amazon units so an ASIN's ad units can
+      // never exceed what actually sold net of returns (same guard already
+      // used per-row in the Top Selling Products table below).
+      const totalAdUnitsCurr = Array.from(allAsins).reduce((s, asin) =>
+        s + Math.min(adUnitsByAsin[asin] || 0, amzUnitsByAsin[asin] || 0), 0);
+      const allAsinsPrev = new Set([...Object.keys(amzPrevUnitsByAsin), ...Object.keys(webPrevUnitsByAsin), ...Object.keys(wmtPrevUnitsByAsin)]);
+      const totalAdUnitsPrev = Array.from(allAsinsPrev).reduce((s, asin) =>
+        s + Math.min(adUnitsByAsinPrev[asin] || 0, amzPrevUnitsByAsin[asin] || 0), 0);
+      const organicUnits = Math.max(0, mtd.units - totalAdUnitsCurr);
+      const organicUnitsPrev = Math.max(0, prev.units - totalAdUnitsPrev);
+      setKpi('ov-kpi-organic-orders', organicUnits.toLocaleString(), pctChange(organicUnits, organicUnitsPrev), ' vs MTD last month (Est.)');
 
       function momBadge(curr, prevVal) {
         if (!prevVal) return '';
