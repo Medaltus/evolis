@@ -1,0 +1,182 @@
+/**
+ * api/upload-amazon-reviews.js
+ * POST /api/upload-amazon-reviews
+ *
+ * DIFFERENT from upload-h10-reviews.js — that endpoint only updates ONE
+ * aggregate field (reviews_requested per brand/month). This endpoint
+ * ingests full PER-REVIEW detail: one row per individual Amazon review,
+ * with reviewer name, star rating, title, full text, purchase type, and
+ * the two source columns confirmed 2026-08-05 from a real Cowork export
+ * (AmazonReviews_evolis_2026-07-31.xlsx, "Reviews" tab, 368 rows):
+ *   SKU | ASIN | Product Name | Reviewer Name | Star Rating |
+ *   Review Title | Date | Review Text | Purchase Type | Date Logged
+ *
+ * PRODUCT CATEGORY — per Jaclyn 2026-08-05: Cowork's NEXT export will add
+ * a "Product Category" column that doesn't exist in the file confirmed
+ * above. Added to this sheet's HEADERS now, proactively, rather than
+ * waiting for that column to show up and hitting the exact kind of
+ * "[sheets] HEADER MISMATCH" issue already found and fixed on the Amazon
+ * Revenue History sheet (see sync-revenue-process.js, 2026-08-05) — this
+ * sheet is ready for that column from day one; it'll just read as blank
+ * on every upload until Cowork actually starts sending it.
+ *
+ * No brand column in the source file — brand is inferred from each row's
+ * SKU prefix against config/brands.js, same convention already used by
+ * sync-returns-process.js / sync-revenue-process.js. Unmatched SKU
+ * prefixes are reported back in the response, never silently dropped.
+ *
+ * UPSERT KEY — there is no review ID or reviewer ID anywhere in the
+ * source data, so this uses a composite of sku + date + reviewer_name +
+ * review_title. Not bulletproof (two genuinely different reviews from
+ * the same reviewer, same day, with an identical title, would collide
+ * and the second would overwrite the first) but is the most specific key
+ * the available columns support. Flagging this rather than presenting it
+ * as a guaranteed-unique ID. Each Cowork export appears to be a FULL
+ * current snapshot (all 368 évolis rows carry the same "Date Logged" of
+ * 2026-07-31, not just new reviews since last run), so this endpoint
+ * upserts/merges rather than blindly appending — an unchanged review
+ * re-uploaded on a later date just refreshes its date_logged and any
+ * other field, never creates a duplicate row.
+ *
+ * Sheet: SHEET_AMAZON_REVIEWS (env var — sheet does not exist yet, needs
+ * to be created and its ID set before this can run for real). One tab
+ * per brand, auto-created on first run — same convention as every other
+ * multi-brand sheet in this repo.
+ *
+ * Body: { filename, contentBase64 }
+ *   No sheetId in the body (unlike upload-keyword-tracker.js) — there's
+ *   only one legitimate destination for this specific upload, same
+ *   reasoning upload-h10-reviews.js already documents for itself.
+ *
+ * Auth: Bearer CRON_SECRET required (upload-keyword-tracker.js's
+ * convention — NOT upload-h10-reviews.js's, which has no auth check at
+ * all; that looked like an oversight rather than a deliberate choice, so
+ * defaulting to the safer precedent here rather than repeating it).
+ *
+ * Example curl:
+ *   python3 -c "
+ *   import base64, json
+ *   with open('AmazonReviews_evolis_2026-07-31.xlsx','rb') as f:
+ *       b64 = base64.b64encode(f.read()).decode()
+ *   open('/tmp/reviews_payload.json','w').write(json.dumps({
+ *       'filename': 'AmazonReviews_evolis_2026-07-31.xlsx',
+ *       'contentBase64': b64
+ *   }))
+ *   "
+ *   curl -X POST https://evolis.medaltus.com/api/upload-amazon-reviews \
+ *     -H 'Authorization: Bearer <CRON_SECRET>' \
+ *     -H 'Content-Type: application/json' \
+ *     --data-binary @/tmp/reviews_payload.json
+ */
+
+const XLSX = require('xlsx');
+const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
+const brands = require('./config/brands');
+
+const SHEET_ID = process.env.SHEET_AMAZON_REVIEWS;
+
+const HEADERS = [
+  'sku', 'asin', 'product_name', 'product_category', 'reviewer_name',
+  'star_rating', 'review_title', 'date', 'review_text', 'purchase_type',
+  'date_logged', 'last_synced',
+];
+
+module.exports = async (req, res) => {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (!SHEET_ID) {
+    return res.status(500).json({ error: 'SHEET_AMAZON_REVIEWS env var not set — create the sheet and set this before uploading real data' });
+  }
+
+  const { filename, contentBase64 } = req.body || {};
+  if (!contentBase64) return res.status(400).json({ error: 'Missing contentBase64' });
+
+  let rows;
+  try {
+    const buffer = Buffer.from(contentBase64, 'base64');
+    const workbook  = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames.includes('Reviews') ? 'Reviews' : workbook.SheetNames[0];
+    rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    console.log(`[upload-amazon-reviews] ${filename || '(no filename)'} — sheet "${sheetName}", ${rows.length} rows`);
+  } catch (err) {
+    console.error('[upload-amazon-reviews] failed to parse workbook:', err.message);
+    return res.status(400).json({ error: 'Could not parse file as xlsx', detail: err.message });
+  }
+
+  if (!rows.length) return res.status(400).json({ error: 'No rows found in uploaded file' });
+
+  const nowIso = new Date().toISOString();
+  const unmatchedSkus = new Set();
+  const rowsByBrandTab = {};
+
+  rows.forEach(r => {
+    const sku = String(r['SKU'] || '').trim().toUpperCase();
+    if (!sku) return;
+    const matched = brands.find(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
+    if (!matched) { unmatchedSkus.add(sku); return; }
+    (rowsByBrandTab[matched.tabName] = rowsByBrandTab[matched.tabName] || []).push(r);
+  });
+
+  const results = [];
+
+  for (const [tabName, brandRows] of Object.entries(rowsByBrandTab)) {
+    try {
+      const token    = await ensureTab(SHEET_ID, tabName, HEADERS);
+      const existing = await readRows(SHEET_ID, tabName);
+
+      // Merge by composite key — see file header for why this key shape
+      // was chosen and its one known collision risk. Map naturally
+      // gives incoming rows priority over existing ones on a key match
+      // (existing populated first, incoming processed after), which is
+      // exactly the desired "refresh on re-upload" behavior.
+      const reviewKey = r => [
+        String(r['SKU'] ?? r.sku ?? '').trim().toUpperCase(),
+        String(r['Date'] ?? r.date ?? '').trim(),
+        String(r['Reviewer Name'] ?? r.reviewer_name ?? '').trim().toLowerCase(),
+        String(r['Review Title'] ?? r.review_title ?? '').trim().toLowerCase(),
+      ].join('||');
+
+      const merged = new Map();
+      (existing || []).forEach(r => merged.set(reviewKey(r), r));
+
+      brandRows.forEach(r => {
+        merged.set(reviewKey(r), {
+          sku:              String(r['SKU'] || '').trim().toUpperCase(),
+          asin:             r['ASIN'] || '',
+          product_name:     r['Product Name'] || '',
+          // Blank until Cowork's next export actually sends this column
+          // — see file header. Not an error, not guessed at.
+          product_category: r['Product Category'] ?? '',
+          reviewer_name:    r['Reviewer Name'] || '',
+          star_rating:      r['Star Rating'] ?? '',
+          review_title:     r['Review Title'] || '',
+          date:             r['Date'] || '',
+          review_text:      r['Review Text'] || '',
+          purchase_type:    r['Purchase Type'] || '',
+          date_logged:      r['Date Logged'] || '',
+          last_synced:      nowIso,
+        });
+      });
+
+      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
+      await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token);
+
+      console.log(`[upload-amazon-reviews] ${tabName} — ${brandRows.length} incoming rows, ${outRows.length} total rows after merge`);
+      results.push({ brand: tabName, status: 'ok', incomingRows: brandRows.length, totalRows: outRows.length });
+    } catch (err) {
+      console.error(`[upload-amazon-reviews] ${tabName} failed:`, err.message);
+      results.push({ brand: tabName, status: 'error', error: err.message });
+    }
+  }
+
+  res.status(200).json({
+    ok: true,
+    filename: filename || null,
+    results,
+    ...(unmatchedSkus.size ? { unmatchedSkus: Array.from(unmatchedSkus) } : {}),
+  });
+};
