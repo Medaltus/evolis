@@ -15835,16 +15835,17 @@ async function loadAuditResultsFromSheet() {
      compared against the same number of elapsed days in the
      previous month. Per Jaclyn 2026-07-14.
 
-     Honesty note on Ad Spend / Blended ACOS: the ad-data sheets
+     Honesty note on Ad Spend / Blended ACOS: the Amazon ad-data sheets
      (AD_SUMMARY / ad_orders) are pre-aggregated by year+month, not
-     by day, so there's no real day-level ad spend to sum for a
-     true MTD figure. Rather than fabricate a precise-looking
+     by day, so there's no real day-level Amazon ad spend to sum for
+     a true MTD figure. Rather than fabricate a precise-looking
      number, this prorates last full month's REAL Amazon ad spend
      by (days elapsed \u00f7 days in that month) and labels it "(Est.)"
      in the KPI's MOM line so it's never mistaken for a hard number.
-     Website/Walmart ad spend isn't included \u2014 I don't have a
-     confirmed day-level or even reliably-attributed source for
-     either yet.
+     Website (Google Ads) added 2026-08-05 per Jaclyn — that data IS
+     real day-level, so it's summed directly with no proration and
+     added on top of Amazon's estimate. Walmart ad spend still isn't
+     included — Walmart's advertising API isn't hooked up yet.
      ══════════════════════════════════════════════════════════════ -->
 <script>
 (function () {
@@ -15998,6 +15999,11 @@ async function loadAuditResultsFromSheet() {
     const AMZ_REVENUE_SHEET_ID = '1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank'; const AMZ_REVENUE_GID = '1237377804';
     const WEB_REVENUE_GID = '7000599';
     const WMT_REVENUE_SHEET_ID = '1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE'; const WMT_REVENUE_GID = '812984298';
+    // Website (Google) ads data — same workbook as Website orders/returns.
+    // "ads" tab (campaign-level daily) and "shopping" tab (SKU-level, PMAX
+    // campaigns only). Added 2026-08-05 per Jaclyn.
+    const WEB_ADS_GID = '219707263';
+    const WEB_SHOPPING_GID = '1841786277';
 
     const now = new Date();
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -16018,7 +16024,7 @@ async function loadAuditResultsFromSheet() {
       // already declared globally further down this file (used by the
       // existing "Returns Processed" KPI on Marketing → Fulfillment & CS),
       // reused here rather than redeclared.
-      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv] = await Promise.all([
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv, webAdsCsv, webShoppingCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -16033,6 +16039,20 @@ async function loadAuditResultsFromSheet() {
         // (which only ever carry a SKU, never an ASIN) to the same ASIN key
         // used everywhere else on this page.
         fetch(sheetCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        // Website (Google Ads) spend/orders — added 2026-08-05 per Jaclyn.
+        // Same workbook as Website orders/returns (OV_WEB_ORDERS_SHEET_ID),
+        // "ads" tab: date, campaign_name, impressions, clicks, spend,
+        // conversions, revenue, acos, last_updated. Real day-level data
+        // (unlike Amazon's month-bucketed ad_orders sheet), so this needs no
+        // proration — a true MTD sum is possible directly.
+        fetch(sheetCsvUrl(OV_WEB_ORDERS_SHEET_ID, WEB_ADS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        // Website (Google Shopping/PMAX) orders by SKU — "shopping" tab: date,
+        // item_id, product_title, impressions, clicks, spend, conversions,
+        // conversions_value, acos, last_updated, SKU. Per Jaclyn: PMAX is the
+        // only Google campaign type with SKU-level data, so it's the best
+        // available source for per-ASIN Website ad units (not a full picture
+        // of every Google campaign type).
+        fetch(sheetCsvUrl(OV_WEB_ORDERS_SHEET_ID, WEB_SHOPPING_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
 
       const amzRows = isCsv(amzCsv) ? parseCsv(amzCsv).filter(isEvolisRow) : [];
@@ -16083,7 +16103,63 @@ async function loadAuditResultsFromSheet() {
         Object.keys(sums).forEach(k => { avg[k] = sums[k] / counts[k]; });
         return avg;
       }
+      // Website (Google Ads) MTD and prior-MTD totals — computed once, up
+      // front, since both the Ad-Driven Orders KPI and the Ad Spend/Blended
+      // ACOS KPI need them. Both are true day-level sums (no proration
+      // needed on the Website side, unlike Amazon's monthly-bucketed data).
       const amzPriceByAsin = buildAsinPriceMap(amzRows);
+
+      // Website (Google) ads data — see fetch comments above for tab/column
+      // details. Both tabs are real day-level data (unlike Amazon's
+      // month-bucketed ad_orders sheet), so true MTD sums are possible
+      // directly — no proration needed on the Website side.
+      const webAdsRows = isCsv(webAdsCsv) ? parseCsv(webAdsCsv) : [];
+      const webShoppingRows = isCsv(webShoppingCsv) ? parseCsv(webShoppingCsv) : [];
+
+      // Sums spend/revenue/conversions from the "ads" tab within a date
+      // range. `conversions` can be fractional (Google's attribution model
+      // spreads partial credit across campaigns) so it's kept as a float
+      // here and only rounded once, at the point it's displayed as a whole
+      // "orders" count.
+      function sumWebAdsRange(rows, startStr, endStr) {
+        let spend = 0, revenue = 0, conversions = 0;
+        rows.forEach(r => {
+          const d = normalizeDate(r.date);
+          if (!d || d < startStr || d > endStr) return;
+          spend += parseAmt(r.spend);
+          revenue += parseAmt(r.revenue);
+          conversions += parseFloat(r.conversions) || 0;
+        });
+        return { spend, revenue, conversions };
+      }
+
+      // Per-ASIN Website ad units from the "shopping" tab (PMAX only — the
+      // only Google campaign type with SKU-level data, per Jaclyn). Column
+      // is literally "SKU" (uppercase) on this tab, unlike everywhere else
+      // on this page — checked defensively (r.SKU || r.sku) since a header
+      // casing mismatch is exactly the kind of thing that silently breaks
+      // this page (see Amazon returns $ field, fixed 2026-08-05).
+      function webShoppingUnitsByAsin(rows, startStr, endStr, skuMap) {
+        const map = {};
+        rows.forEach(r => {
+          const d = normalizeDate(r.date);
+          if (!d || d < startStr || d > endStr) return;
+          const sku = (r.SKU || r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+          if (!sku) return;
+          const key = (skuMap && skuMap[sku]) || sku;
+          map[key] = (map[key] || 0) + (parseFloat(r.conversions) || 0);
+        });
+        Object.keys(map).forEach(k => { map[k] = Math.round(map[k]); });
+        return map;
+      }
+
+      // Website (Google Ads) MTD and prior-MTD totals — computed once, up
+      // front, since both the Ad-Driven Orders KPI and the Ad Spend/Blended
+      // ACOS KPI need them below. Both are true day-level sums (no
+      // proration needed on the Website side, unlike Amazon's
+      // monthly-bucketed ad_orders data).
+      const webAdsMtd = sumWebAdsRange(webAdsRows, mtdStartStr, mtdEndStr);
+      const webAdsPrevMtd = sumWebAdsRange(webAdsRows, prevStartStr, prevEndStr);
 
       // ── Returns netting ──────────────────────────────────────────────
       // Dated by when the RETURN happened (return_date/refund_date), not
@@ -16186,17 +16262,21 @@ async function loadAuditResultsFromSheet() {
       setKpi('ov-kpi-orders', mtd.orders.toLocaleString(), pctChange(mtd.orders, prev.orders));
       setKpi('ov-kpi-aov',    '$' + aov.toFixed(2),        pctChange(Math.round(aov * 100), Math.round(aovPrev * 100)));
 
-      // -- MTD Organic Orders / MTD Ad-Driven Orders / Pending Orders --
-      // Per Jaclyn (2026-07-24): the ad orders cron runs daily and captures
-      // every order, but only buckets by month — no day-of-purchase field —
-      // so a true day-level MTD-vs-MTD comparison isn't possible for
-      // Ad-Driven Orders itself. No MOM badge there solves that: the
-      // current month's row count IS already "so far this month" by
-      // construction (the cron only ever adds today's orders as they
-      // happen), no proration needed. Each row on the ad orders sheet is
-      // one order-level event (confirmed by Jaclyn), not a pre-aggregated
-      // units total, so counting rows for the current month = the actual
+      // -- MTD Ad-Driven Orders / Pending Orders --
+      // Amazon: per Jaclyn (2026-07-24), the ad orders cron runs daily and
+      // captures every order, but only buckets by month — no day-of-purchase
+      // field — so a true day-level MTD-vs-MTD comparison isn't possible.
+      // No MOM badge there solves that: the current month's row count IS
+      // already "so far this month" by construction (the cron only ever
+      // adds today's orders as they happen), no proration needed. Each row
+      // is one order-level event (confirmed by Jaclyn), not a
+      // pre-aggregated units total, so counting rows = the actual
       // ad-driven order count directly.
+      // Website: added 2026-08-05 per Jaclyn — Google Ads' "ads" tab is
+      // real day-level data, so its `conversions` column is simply summed
+      // over the MTD window (see webAdsMtd above) and added to Amazon's
+      // count for one blended figure. No MOM here either, to avoid mixing
+      // an exact Website sum with Amazon's monthly-bucketed estimate.
       let adDrivenOrders = 0;
       let adDrivenOrdersLastMonthFull = 0;
       // now.getMonth() is 0-indexed, so it already equals "last month" in
@@ -16217,7 +16297,7 @@ async function loadAuditResultsFromSheet() {
           (r.brand || '').trim().toLowerCase() === 'evolis'
         ).length;
       }
-      setKpiPlain('ov-kpi-ad-orders', adDrivenOrders.toLocaleString(), 'This month (Amazon Ads)');
+      setKpiPlain('ov-kpi-ad-orders', (adDrivenOrders + Math.round(webAdsMtd.conversions)).toLocaleString(), 'This month (Amazon + Google Ads)');
       // NOTE: this card's own MOM/"Organic Orders" companion logic moved
       // further down — see "MTD Organic Units" below, after per-ASIN net
       // units and ad-attributed units are available. Per Jaclyn
@@ -16305,21 +16385,29 @@ async function loadAuditResultsFromSheet() {
         }
       } catch (e) { console.warn('[Evolis][overview] ad units lookup failed:', e.message); }
 
-      // -- MTD Organic Units (net of returns) --
+      // -- MTD Organic Units (net of returns, net of BOTH Amazon + Website ads) --
       // Changed 2026-08-05 per Jaclyn: this card used to be "MTD Organic
       // ORDERS" (a count), which couldn't cleanly subtract returns (those
       // sheets are line-item/qty level, not a "whole order cancelled"
       // flag). Switched to UNITS instead, which the returns data nets
       // against cleanly: Organic Units = total net blended units (mtd.units,
-      // already netted above) minus Amazon ad-attributed units, capped per
-      // ASIN at that ASIN's own net Amazon units so an ASIN's ad units can
-      // never exceed what actually sold net of returns (same guard already
-      // used per-row in the Top Selling Products table below).
+      // already netted above) minus Amazon ad-attributed units minus
+      // Website ad-attributed units, each capped per ASIN at that channel's
+      // own net units so an ASIN's ad units can never exceed what actually
+      // sold net of returns (same guard used per-row in the Top Selling
+      // Products table below). Website ad units come from the "shopping"
+      // tab (Google PMAX campaigns only — the one Google campaign type with
+      // SKU-level data — so this under-counts Website ad units from any
+      // other Google campaign type; best available source per Jaclyn).
+      const webShopUnitsByAsin = webShoppingUnitsByAsin(webShoppingRows, mtdStartStr, mtdEndStr, skuToAsinMap);
+      const webShopUnitsByAsinPrev = webShoppingUnitsByAsin(webShoppingRows, prevStartStr, prevEndStr, skuToAsinMap);
       const totalAdUnitsCurr = Array.from(allAsins).reduce((s, asin) =>
-        s + Math.min(adUnitsByAsin[asin] || 0, amzUnitsByAsin[asin] || 0), 0);
+        s + Math.min(adUnitsByAsin[asin] || 0, amzUnitsByAsin[asin] || 0)
+          + Math.min(webShopUnitsByAsin[asin] || 0, webUnitsByAsin[asin] || 0), 0);
       const allAsinsPrev = new Set([...Object.keys(amzPrevUnitsByAsin), ...Object.keys(webPrevUnitsByAsin), ...Object.keys(wmtPrevUnitsByAsin)]);
       const totalAdUnitsPrev = Array.from(allAsinsPrev).reduce((s, asin) =>
-        s + Math.min(adUnitsByAsinPrev[asin] || 0, amzPrevUnitsByAsin[asin] || 0), 0);
+        s + Math.min(adUnitsByAsinPrev[asin] || 0, amzPrevUnitsByAsin[asin] || 0)
+          + Math.min(webShopUnitsByAsinPrev[asin] || 0, webPrevUnitsByAsin[asin] || 0), 0);
       const organicUnits = Math.max(0, mtd.units - totalAdUnitsCurr);
       const organicUnitsPrev = Math.max(0, prev.units - totalAdUnitsPrev);
       setKpi('ov-kpi-organic-orders', organicUnits.toLocaleString(), pctChange(organicUnits, organicUnitsPrev), ' vs MTD last month (Est.)');
@@ -16340,7 +16428,10 @@ async function loadAuditResultsFromSheet() {
         const a = amzUnitsByAsin[asin] || 0, w = webUnitsByAsin[asin] || 0, m = wmtUnitsByAsin[asin] || 0;
         const aPrev = amzPrevUnitsByAsin[asin] || 0, wPrev = webPrevUnitsByAsin[asin] || 0, mPrev = wmtPrevUnitsByAsin[asin] || 0;
         const total = a + w + m, totalPrev = aPrev + wPrev + mPrev;
-        const adUnits = Math.min(adUnitsByAsin[asin] || 0, a); // never exceed Amazon's own MTD units
+        // Ad units = Amazon Ads (capped at Amazon's own net units) + Google
+        // Ads via the "shopping" tab (capped at Website's own net units).
+        // Added 2026-08-05 per Jaclyn.
+        const adUnits = Math.min(adUnitsByAsin[asin] || 0, a) + Math.min(webShopUnitsByAsin[asin] || 0, w);
         const orgUnits = total - adUnits;
         return { asin, name: asinNameMap[asin] || asin, amazon: a, amazonPrev: aPrev, website: w, websitePrev: wPrev, walmart: m, walmartPrev: mPrev, total, totalPrev, adUnits, orgUnits };
       }).sort((x, y) => y.total - x.total).slice(0, 15);
@@ -16380,14 +16471,20 @@ async function loadAuditResultsFromSheet() {
         });
       }
 
-      // -- Ad Spend / Blended ACOS -- prorated estimate, Amazon only --
-      // See file-level comment above this IIFE for why this isn't a true
-      // day-level MTD figure. MOM here compares this month's prorated
+      // -- Ad Spend / Blended ACOS -- Amazon (prorated monthly estimate) + Website (real MTD) --
+      // Amazon: see file-level comment above this IIFE for why this isn't a
+      // true day-level MTD figure. MOM here compares this month's prorated
       // estimate against LAST month's actual total prorated by the exact
       // same day-fraction (days elapsed / days in that month) -- i.e. an
       // apples-to-apples "estimated MTD vs estimated MTD one month back"
-      // comparison, same logic as the other MTD KPIs, just built from
-      // monthly-only ad data instead of day-level order rows.
+      // comparison, built from monthly-only ad data instead of day-level
+      // order rows.
+      // Website: added 2026-08-05 per Jaclyn — Google Ads' "ads" tab is
+      // real day-level data, so no proration is needed on this side at
+      // all: webAdsMtd/webAdsPrevMtd (computed above) are already true,
+      // day-aligned MTD and prior-MTD sums. They're added directly to
+      // Amazon's prorated figures for one blended Ad Spend / ACOS number.
+      let proratedSpend = 0, proratedSales = 0, proratedSpendPrev = 0, proratedSalesPrev = 0;
       if (isCsv(adOrdersCsv)) {
         const adRows = parseCsv(adOrdersCsv);
         let lm = now.getMonth(), ly = now.getFullYear();
@@ -16406,19 +16503,23 @@ async function loadAuditResultsFromSheet() {
         const daysInLastMonth = new Date(ly, lm, 0).getDate();
         const daysInTwoMonthsAgo = new Date(ly2, lm2, 0).getDate();
 
-        const proratedSpend = lastMonthSpend * (daysElapsed / daysInLastMonth);
-        const proratedSales = lastMonthSales * (daysElapsed / daysInLastMonth);
-        const proratedSpendPrev = twoMonthsAgoSpend * (daysElapsed / daysInTwoMonthsAgo);
-        const proratedSalesPrev = twoMonthsAgoSales * (daysElapsed / daysInTwoMonthsAgo);
-
-        const acos = proratedSales > 0 ? (proratedSpend / proratedSales) * 100 : 0;
-        const acosPrev = proratedSalesPrev > 0 ? (proratedSpendPrev / proratedSalesPrev) * 100 : 0;
-
-        setKpi('ov-kpi-adspend', '$' + proratedSpend.toLocaleString(undefined, { maximumFractionDigits: 0 }), pctChange(proratedSpend, proratedSpendPrev), ' vs MTD last month (Amazon, Est.)');
-        setKpi('ov-kpi-acos', acos.toFixed(1) + '%', pctChange(Math.round(acos * 10), Math.round(acosPrev * 10)), ' vs MTD last month (Amazon, Est.)');
+        proratedSpend = lastMonthSpend * (daysElapsed / daysInLastMonth);
+        proratedSales = lastMonthSales * (daysElapsed / daysInLastMonth);
+        proratedSpendPrev = twoMonthsAgoSpend * (daysElapsed / daysInTwoMonthsAgo);
+        proratedSalesPrev = twoMonthsAgoSales * (daysElapsed / daysInTwoMonthsAgo);
       } else {
-        console.warn('[Evolis][overview] ad orders sheet did not return CSV — Ad Spend/ACOS left blank.');
+        console.warn('[Evolis][overview] ad orders sheet did not return CSV — Ad Spend/ACOS will reflect Website only.');
       }
+
+      const blendedSpend = proratedSpend + webAdsMtd.spend;
+      const blendedSpendPrev = proratedSpendPrev + webAdsPrevMtd.spend;
+      const blendedSales = proratedSales + webAdsMtd.revenue;
+      const blendedSalesPrev = proratedSalesPrev + webAdsPrevMtd.revenue;
+      const acos = blendedSales > 0 ? (blendedSpend / blendedSales) * 100 : 0;
+      const acosPrev = blendedSalesPrev > 0 ? (blendedSpendPrev / blendedSalesPrev) * 100 : 0;
+
+      setKpi('ov-kpi-adspend', '$' + blendedSpend.toLocaleString(undefined, { maximumFractionDigits: 0 }), pctChange(blendedSpend, blendedSpendPrev), ' vs MTD last month (Amazon Est. + Google Ads)');
+      setKpi('ov-kpi-acos', acos.toFixed(1) + '%', pctChange(Math.round(acos * 10), Math.round(acosPrev * 10)), ' vs MTD last month (Amazon Est. + Google Ads)');
 
       // -- Trend: trailing 6 COMPLETED months, blended revenue across channels --
       // ROOT CAUSE of the blank chart: these revenue-history sheets use
