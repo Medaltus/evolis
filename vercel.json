@@ -23,7 +23,7 @@
     },
     {
       "path": "/api/cron/sync-sqp-request",
-      "schedule": "7 0,12,18 * * *"
+      "schedule": "7 0 8 * *"
     },
     {
       "path": "/api/cron/sync-sqp-process",
