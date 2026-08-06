@@ -12508,7 +12508,7 @@ function getProductMaster() {
         asin, sku,
         name: r['product short name'] || r.name || '',
         brand: r.brand || '',
-        price: parseFloat(r.price) || 0,
+        price: parseAmt(r.price),
         skuType: (r['sku type'] || r.sku_type || '').trim(),
         category: stripCategoryBrandPrefix(r['product category'] || r.product_category || ''),
       };
@@ -13032,7 +13032,33 @@ window.initCompetitorLandscape = function() {
 // ASIN (column B) is still what each row is matched against — read by
 // position now, not by header name — since that's what actually locates
 // the right row per product.
-const VAR_COL = { asin: 1, ingredients: 5, size: 7, use: 8, benefits: 9, freeFrom: 10, keyIngredients: 21 }; // 0-indexed: A=0,B=1,...,K=10,...,V=21
+// Variations section (rows 31+, per-ASIN) — only Ingredients (full INCI,
+// col F) and Key Ingredients (pills, col V) actually live here. Confirmed
+// 2026-08-06: Size/Use/Benefits/Clean Statements do NOT vary per-ASIN —
+// they're ONE shared row for the whole category (see CATEGORY_SUMMARY_*
+// below), which is what Jaclyn's original "H3/I3/J3/K3" reference meant
+// all along (literal row 3) — an earlier version of this wrongly
+// reinterpreted that as row 33 in this section, which was the actual bug.
+const VAR_COL = { asin: 1, ingredients: 5, keyIngredients: 21 }; // 0-indexed: A=0,B=1,F=5,V=21
+
+// Category-wide summary — row 3 (0-indexed row 2), ONE shared row per
+// category tab (not per-ASIN): H=Size, I=Use, J=Benefits, K=Clean
+// Statements (the green free-from pills). Confirmed via Jaclyn's
+// screenshot of the live sheet: row 1 is a category title banner, row 2
+// is the header row, row 3 is the single data row.
+const CATEGORY_SUMMARY_ROW = 2; // 0-indexed → sheet row 3
+const CATEGORY_SUMMARY_COL = { size: 7, use: 8, benefits: 9, freeFrom: 10 }; // H=7,I=8,J=9,K=10
+function varParseCategorySummary(rows) {
+  const r = rows[CATEGORY_SUMMARY_ROW] || [];
+  const summary = {
+    size: (r[CATEGORY_SUMMARY_COL.size] || '').trim(),
+    use: (r[CATEGORY_SUMMARY_COL.use] || '').trim(),
+    benefits: (r[CATEGORY_SUMMARY_COL.benefits] || '').trim(),
+    freeFrom: (r[CATEGORY_SUMMARY_COL.freeFrom] || '').trim(),
+  };
+  console.log('[Variations][qa] category summary row (row 3, shared across all products on this tab):', JSON.stringify(summary));
+  return summary;
+}
 
 // Top 5 competitors for Competitive Price Context — added 2026-08-06 per
 // Jaclyn: fixed rows 6–10 (1-indexed) on the same Competitor Research
@@ -13089,10 +13115,6 @@ function varParseSection(rows) {
     if (!asin) continue; // blank row — skip, don't treat as end-of-section
     byAsin[asin] = {
       ingredients: (r[VAR_COL.ingredients] || '').trim(),
-      size: (r[VAR_COL.size] || '').trim(),
-      use: (r[VAR_COL.use] || '').trim(),
-      benefits: (r[VAR_COL.benefits] || '').trim(),
-      freeFrom: (r[VAR_COL.freeFrom] || '').trim(),
       keyIngredients: (r[VAR_COL.keyIngredients] || '').trim(),
     };
   }
@@ -13129,6 +13151,7 @@ async function renderProductPortfolioCards(productTypeKey, productIds) {
     ]);
     const rows = parseCsvFull(csv);
     const varByAsin = varParseSection(rows);
+    const categorySummary = varParseCategorySummary(rows);
     const topCompetitors = varParseTopCompetitors(rows);
     console.log(`[Variations][qa][${productTypeKey}] top competitors (rows 6-10, cols E/G):`, JSON.stringify(topCompetitors));
 
@@ -13145,30 +13168,27 @@ async function renderProductPortfolioCards(productTypeKey, productIds) {
       const priceContextEl = document.getElementById(`pcard-pricecontext-${suffix}`);
       if (priceContextEl) priceContextEl.innerHTML = varRenderPriceContext(entry.name || sku, entry.price || 0, topCompetitors);
 
+      // Size / Use / Benefits / Clean Statements — shared category-wide
+      // row (row 3), same for every product on this tab, not per-ASIN.
+      const freeFromEl = document.getElementById(`pcard-freefrom-${suffix}`);
+      setPerfCellText(`pcard-size-${suffix}`, categorySummary.size || '—');
+      setPerfCellText(`pcard-use-${suffix}`, categorySummary.use || '—');
+      setPerfCellText(`pcard-benefits-${suffix}`, categorySummary.benefits || '—');
+      if (freeFromEl) freeFromEl.innerHTML = categorySummary.freeFrom ? varRenderFreeFromPills(categorySummary.freeFrom) : '';
+
+      // Ingredients (full INCI) / Key Ingredients (pills) — per-ASIN, from
+      // the Variations section further down the same tab.
       const v = entry.asin ? varByAsin[entry.asin] : null;
       const keyIngEl = document.getElementById(`pcard-keying-${suffix}`);
       const inciEl = document.getElementById(`pcard-inci-${suffix}`);
-      const freeFromEl = document.getElementById(`pcard-freefrom-${suffix}`);
       if (!v) {
-        // No matching Variations row at all — blank every field this
-        // section is responsible for, rather than silently leaving the
-        // old hardcoded content showing (which would look like real,
-        // current data even though it's actually a stale placeholder).
-        console.warn(`[Variations] no Variations-section row matched ASIN ${entry.asin} (SKU ${sku}) — blanking Size/Ingredients/Key Ingredients/Free From/Use/Benefits.`);
-        setPerfCellText(`pcard-size-${suffix}`, '—');
+        console.warn(`[Variations] no Variations-section row matched ASIN ${entry.asin} (SKU ${sku}) — blanking Ingredients/Key Ingredients.`);
         if (inciEl) inciEl.textContent = '';
         if (keyIngEl) keyIngEl.innerHTML = '';
-        if (freeFromEl) freeFromEl.innerHTML = '';
-        setPerfCellText(`pcard-use-${suffix}`, '—');
-        setPerfCellText(`pcard-benefits-${suffix}`, '—');
         return;
       }
-      setPerfCellText(`pcard-size-${suffix}`, v.size || '—');
       if (inciEl) inciEl.textContent = v.ingredients || '';
       if (keyIngEl) keyIngEl.innerHTML = v.keyIngredients ? varRenderKeyIngredientPills(v.keyIngredients) : '';
-      if (freeFromEl) freeFromEl.innerHTML = v.freeFrom ? varRenderFreeFromPills(v.freeFrom) : '';
-      setPerfCellText(`pcard-use-${suffix}`, v.use || '—');
-      setPerfCellText(`pcard-benefits-${suffix}`, v.benefits || '—');
     });
   } catch (err) {
     console.warn('[Variations] renderProductPortfolioCards failed for', productTypeKey, ':', err.message);
