@@ -2786,7 +2786,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── SHAMPOOS ── -->
       <div class="sub-page" id="pt-shampoos">
-        <div id="perf-shampoo-container"></div>
+        <div id="perf-shampoo-container" style="margin-bottom:14px;"></div>
 
         <div class="card">
           <div class="card-title">Product Portfolio</div>
@@ -2940,7 +2940,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── CONDITIONERS ── -->
       <div class="sub-page" id="pt-conditioners">
-        <div id="perf-conditioner-container"></div>
+        <div id="perf-conditioner-container" style="margin-bottom:14px;"></div>
 
         <div class="card">
           <div class="card-title">Product Portfolio</div>
@@ -3071,7 +3071,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── HAIR MASKS ── -->
       <div class="sub-page" id="pt-masks">
-        <div id="perf-hairmask-container"></div>
+        <div id="perf-hairmask-container" style="margin-bottom:14px;"></div>
 
         <div class="card">
           <div class="card-title">Product Portfolio</div>
@@ -3185,7 +3185,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── DRY SHAMPOO ── -->
       <div class="sub-page" id="pt-dryshampoo">
-        <div id="perf-dryshampoo-container"></div>
+        <div id="perf-dryshampoo-container" style="margin-bottom:14px;"></div>
 
         <div class="card">
           <div class="card-title">Product Portfolio</div>
@@ -3291,9 +3291,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
 
       <div class="sub-page active" id="revcat-activators">
-        <div class="card" style="margin-top:0;margin-bottom:20px;">
-          <div class="card-title">Star Rating Distribution — Activators</div>
-          <div id="revdist-activators"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">Star Rating Distribution — Activators</div>
+            <div id="revdist-activators"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">VOC Themes — Activators</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.6;">📋 Not automated yet — planned to pull from the Insights Log sheet (organic/PPC "wins" and "risks" from the weekly Run Analysis cron) so themes stay current without manual tagging. Coming later.</div>
+          </div>
         </div>
 
         <div class="sub-tabs" style="margin-bottom:16px;">
@@ -3315,9 +3321,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </div>
       </div><!-- /revcat-activators -->
       <div class="sub-page" id="revcat-shampoos">
-        <div class="card" style="margin-top:0;margin-bottom:20px;">
-          <div class="card-title">Star Rating Distribution — Shampoos</div>
-          <div id="revdist-shampoos"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">Star Rating Distribution — Shampoos</div>
+            <div id="revdist-shampoos"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">VOC Themes — Shampoos</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.6;">📋 Not automated yet — planned to pull from the Insights Log sheet (organic/PPC "wins" and "risks" from the weekly Run Analysis cron) so themes stay current without manual tagging. Coming later.</div>
+          </div>
         </div>
 
         <div class="sub-tabs" style="margin-bottom:16px;">
@@ -3349,9 +3361,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </div>
       </div><!-- /revcat-shampoos -->
       <div class="sub-page" id="revcat-conditioners">
-        <div class="card" style="margin-top:0;margin-bottom:20px;">
-          <div class="card-title">Star Rating Distribution — Conditioners</div>
-          <div id="revdist-conditioners"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">Star Rating Distribution — Conditioners</div>
+            <div id="revdist-conditioners"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">VOC Themes — Conditioners</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.6;">📋 Not automated yet — planned to pull from the Insights Log sheet (organic/PPC "wins" and "risks" from the weekly Run Analysis cron) so themes stay current without manual tagging. Coming later.</div>
+          </div>
         </div>
 
         <div class="sub-tabs" style="margin-bottom:16px;">
@@ -3383,9 +3401,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </div>
       </div><!-- /revcat-conditioners -->
       <div class="sub-page" id="revcat-masks">
-        <div class="card" style="margin-top:0;margin-bottom:20px;">
-          <div class="card-title">Star Rating Distribution — Hair Masks</div>
-          <div id="revdist-masks"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">Star Rating Distribution — Hair Masks</div>
+            <div id="revdist-masks"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">VOC Themes — Hair Masks</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.6;">📋 Not automated yet — planned to pull from the Insights Log sheet (organic/PPC "wins" and "risks" from the weekly Run Analysis cron) so themes stay current without manual tagging. Coming later.</div>
+          </div>
         </div>
 
         <div class="sub-tabs" style="margin-bottom:16px;">
@@ -3412,9 +3436,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </div>
       </div><!-- /revcat-masks -->
       <div class="sub-page" id="revcat-dryshampoo">
-        <div class="card" style="margin-top:0;margin-bottom:20px;">
-          <div class="card-title">Star Rating Distribution — Dry Shampoo</div>
-          <div id="revdist-dryshampoo"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        <div class="two-col" style="margin-bottom:20px;">
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">Star Rating Distribution — Dry Shampoo</div>
+            <div id="revdist-dryshampoo"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">VOC Themes — Dry Shampoo</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.6;">📋 Not automated yet — planned to pull from the Insights Log sheet (organic/PPC "wins" and "risks" from the weekly Run Analysis cron) so themes stay current without manual tagging. Coming later.</div>
+          </div>
         </div>
 
         <div class="sub-tabs" style="margin-bottom:16px;">
