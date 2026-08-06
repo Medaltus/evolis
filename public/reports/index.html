@@ -478,6 +478,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .rev-stars-5{color:#24e9a3;font-size:12px;}
 .rev-stars-4{color:#24e9a3;font-size:12px;}
 .rev-stars-3{color:var(--warn);font-size:12px;}
+.rev-stars-2{color:var(--danger);font-size:12px;}
 .rev-stars-1{color:var(--danger);font-size:12px;}
 .rev-title{font-weight:600;font-size:12.5px;color:var(--navy);margin-bottom:4px;}
 .rev-body{font-size:12px;color:var(--muted);line-height:1.65;}
@@ -546,6 +547,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .char-pill.error{background:rgba(219,55,45,.1);color:var(--danger);}
 
 .sub-page{display:none;}.sub-page.active{display:block;}
+.sub-page-inner{display:none;}.sub-page-inner.active{display:block;}
 /* 2026-07-16: product-card-block is deliberately NOT part of the .sub-page
    show/hide system — these should always render together, stacked, never
    gated behind a tab click (that's exactly the bug this replaces: three
@@ -3274,109 +3276,155 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
          snapshot (8 rows, Activator-heavy) until a real Seller Central SQP
          export is uploaded — same caveat as before, just relabeled. -->
     <div class="channel-page" id="ins-sqp">
-      <div class="org-sqp-alert">
-        <span>📊</span>
-        <span><strong>Search Query Performance data is not yet uploaded for évolis.</strong> The table below shows keyword tracking data from Cerebro as a placeholder. Upload SQP data from Seller Central (Brand Analytics &gt; Search Query Performance) to see brand click share and purchase share by query, which is more actionable than Cerebro vol alone — and is genuinely brand-wide rather than scoped to one product type.</span>
-      </div>
-      <div class="org-sqp-card">
-        <div class="org-sqp-title">Current Keyword Tracking — Brand-Wide <span class="org-sqp-badge">Cerebro · April 2026</span></div>
-        <div style="overflow-x:auto;">
-          <table class="data-table">
-            <thead><tr><th>Search Query</th><th>Vol/mo</th><th>Brand Share (Clicks)</th><th>Brand Share (Purchases)</th><th>Organic Rank</th><th>Signal</th></tr></thead>
-            <tbody>
-              <tr><td>evolis</td><td>~200</td><td style="color:#1db88a;font-weight:600;">High</td><td style="color:#1db88a;font-weight:600;">High</td><td><span class="rank-pill rank-top">#4</span></td><td>Brand term — owned</td></tr>
-              <tr><td>hair growth</td><td>131,492</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>⚡ Long-term target — 40K competing</td></tr>
-              <tr><td>rosemary oil for hair growth</td><td>131,425</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ In formula — PPC priority</td></tr>
-              <tr><td>hair growth serum</td><td>71,798</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ Primary PPC target</td></tr>
-              <tr><td>hair growth accelerator</td><td>20,925</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 293 comps — fastest path</td></tr>
-              <tr><td>ordinary hair growth serum</td><td>29,521</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 82.3% ABA — competitor halo</td></tr>
-              <tr><td>scalp serum</td><td>14,567</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">&gt;306</span></td><td>✅ PPC + title (Prevent)</td></tr>
-              <tr><td>postpartum hair loss</td><td>1,084</td><td style="color:var(--danger);">~0%</td><td style="color:var(--danger);">~0%</td><td><span class="rank-pill rank-none">—</span></td><td>⚡ 661 comps — quick win</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;">Upload Seller Central SQP export to replace "~0%" cells with actual brand click and purchase share data. <span style="color:var(--warn);">Note: this table's 8 rows are still Activator-heavy since that's what the Cerebro pull originally covered — flag if you want it broadened to cover all product types once real SQP data lands.</span></div>
+      <div id="ins-sqp-container">
+        <div class="org-sqp-card"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
       </div>
     </div><!-- /ins-sqp -->
 
     <div class="channel-page" id="ins-reviews">
+      <div class="sub-tabs" style="margin-bottom:18px;">
+          <button class="sub-tab active" onclick="showSubTab('ins-reviews','revcat-activators',this)">Activators</button>
+          <button class="sub-tab" onclick="showSubTab('ins-reviews','revcat-shampoos',this)">Shampoos</button>
+          <button class="sub-tab" onclick="showSubTab('ins-reviews','revcat-conditioners',this)">Conditioners</button>
+          <button class="sub-tab" onclick="showSubTab('ins-reviews','revcat-masks',this)">Hair Masks</button>
+          <button class="sub-tab" onclick="showSubTab('ins-reviews','revcat-dryshampoo',this)">Dry Shampoo</button>
+      </div>
 
-      <div class="two-col" style="margin-bottom:20px;">
-        <!-- Star distribution -->
-        <div class="card" style="margin-top:0;">
+      <div class="sub-page active" id="revcat-activators">
+        <div class="card" style="margin-top:0;margin-bottom:20px;">
           <div class="card-title">Star Rating Distribution — Activators</div>
-          <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">4.1 <span style="font-size:16px;color:var(--muted);font-weight:400;">/ 5</span></div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">63 total reviews · Reverse, Promote &amp; Prevent Activator</div>
-          <div class="star-bar-row"><div class="star-bar-lbl">5 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:57%;"></div></div><div class="star-bar-count">36</div></div>
-          <div class="star-bar-row"><div class="star-bar-lbl">4 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:24%;background:#a8d9c8;"></div></div><div class="star-bar-count">15</div></div>
-          <div class="star-bar-row"><div class="star-bar-lbl">3 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:11%;background:var(--warn);"></div></div><div class="star-bar-count">7</div></div>
-          <div class="star-bar-row"><div class="star-bar-lbl">2 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:3%;background:#e8a080;"></div></div><div class="star-bar-count">2</div></div>
-          <div class="star-bar-row"><div class="star-bar-lbl">1 ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:5%;background:var(--danger);"></div></div><div class="star-bar-count">3</div></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--border2);">⚠ 1-star reviews dominated by bottle/pipette opening difficulty — a fixable copywriting issue, not product failure.</div>
+          <div id="revdist-activators"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
         </div>
 
-        <!-- VOC Themes -->
-        <div class="card" style="margin-top:0;">
-          <div class="card-title">VOC Themes — Activators (63 reviews)</div>
-          <div class="sec-lbl" style="margin-top:0;">Positive</div>
-          <div class="voc-chips">
-            <span class="voc-chip pos">Noticeable new baby hairs</span>
-            <span class="voc-chip pos">Less hair in shower drain</span>
-            <span class="voc-chip pos">Hair feels thicker over time</span>
-            <span class="voc-chip pos">Light &amp; non-greasy formula</span>
-            <span class="voc-chip pos">Precise pipette applicator</span>
-            <span class="voc-chip pos">Pleasant light scent</span>
-            <span class="voc-chip pos">Hair softer and shinier</span>
-            <span class="voc-chip pos">Works for postpartum shedding</span>
-            <span class="voc-chip pos">Scalp condition improved</span>
-          </div>
-          <div class="sec-lbl">Objections + Gaps</div>
-          <div class="voc-chips">
-            <span class="voc-chip neg">Price too high for size</span>
-            <span class="voc-chip neg">Bottle hard to open (multiple reviews)</span>
-            <span class="voc-chip neg">Results slower than expected</span>
-            <span class="voc-chip gap">Wants larger size option</span>
-            <span class="voc-chip gap">No money-back guarantee mentioned</span>
-            <span class="voc-chip gap">Wants comparison vs Minoxidil</span>
-          </div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.7;border-top:1px solid var(--border2);padding-top:10px;">
-            <strong style="color:var(--navy);">Mirror language for bullets:</strong> "baby hairs popping up within weeks" · "less hair on my brush" · "worth it if it gets my hair back" · "finally seeing fill-in along my hairline" · "lightest serum I've ever used — dries instantly"
-          </div>
+        <div class="sub-tabs" style="margin-bottom:16px;">
+            <button class="sub-tab active" onclick="showRevProductTab('revcat-activators','revp-0001',this)">Reverse Activator</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-activators','revp-0005',this)">Promote Activator</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-activators','revp-0009',this)">Prevent Activator</button>
         </div>
-      </div>
+          <div class="sub-page-inner active" id="revp-0001">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Activator (B08BJBM77V)</div>
+            <div id="revlist-0001"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0005">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Activator (B07SG6S4VV)</div>
+            <div id="revlist-0005"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0009">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Prevent Activator (B07SJ8K9HS)</div>
+            <div id="revlist-0009"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+      </div><!-- /revcat-activators -->
+      <div class="sub-page" id="revcat-shampoos">
+        <div class="card" style="margin-top:0;margin-bottom:20px;">
+          <div class="card-title">Star Rating Distribution — Shampoos</div>
+          <div id="revdist-shampoos"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        </div>
 
-      <!-- Reviewer filter tabs -->
-      <div class="sub-tabs" style="margin-bottom:16px;">
-        <button class="sub-tab active" onclick="showSubTab('ins-reviews','rev-reverse',this)">Reverse Activator</button>
-        <button class="sub-tab" onclick="showSubTab('ins-reviews','rev-promote',this)">Promote Activator</button>
-        <button class="sub-tab" onclick="showSubTab('ins-reviews','rev-prevent',this)">Prevent Activator</button>
-      </div>
+        <div class="sub-tabs" style="margin-bottom:16px;">
+            <button class="sub-tab active" onclick="showRevProductTab('revcat-shampoos','revp-0002',this)">Reverse Shampoo</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-shampoos','revp-0006',this)">Promote Shampoo</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-shampoos','revp-0010',this)">Prevent Shampoo</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-shampoos','revp-0014',this)">Reverse Shampoo — Travel Size</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-shampoos','revp-0016',this)">Promote Shampoo — Travel Size</button>
+        </div>
+          <div class="sub-page-inner active" id="revp-0002">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Shampoo (B07S8QJSNP)</div>
+            <div id="revlist-0002"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0006">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Shampoo (B07S9SZ56F)</div>
+            <div id="revlist-0006"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0010">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Prevent Shampoo (B07S7RLWVK)</div>
+            <div id="revlist-0010"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0014">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Shampoo — Travel Size (B0C634RF2M)</div>
+            <div id="revlist-0014"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0016">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Shampoo — Travel Size (B0C62SD751)</div>
+            <div id="revlist-0016"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+      </div><!-- /revcat-shampoos -->
+      <div class="sub-page" id="revcat-conditioners">
+        <div class="card" style="margin-top:0;margin-bottom:20px;">
+          <div class="card-title">Star Rating Distribution — Conditioners</div>
+          <div id="revdist-conditioners"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        </div>
 
-      <div class="sub-page active" id="rev-reverse">
-        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Activator (B08BJBM77V)</div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">E. Blackburn</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"It Does What It Says"</div><div class="rev-body">I have "aging and thinning" hair. I am 65. I have only been using this product for about 6 weeks and I am really seeing fine hairs starting to come in along my hair line. I'm less than thrilled with the price but it is worth it if I get my hair back.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Mariah</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Patience is a virtue"</div><div class="rev-body">I wish it worked overnight but it does work. My hair has filled in in spots that it didn't have hair before and that's a good thing!</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Robyn F.</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"It works!"</div><div class="rev-body">This product does help grow hair! My husband mainly used it for thinning hair and it helped within 1–2 weeks. Well worth the money!</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">karen arondoski</span><span class="rev-stars-1">★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Bad product — no directions to open bottle"</div><div class="rev-body">How do you open this? No directions came with it. For $65 I don't want to damage it since it's not returnable. This is a recurring objection across multiple reviews — fixable by adding opening instructions to Bullet 5 or the product description.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">cbddallas</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Yes it's hard to open the first time!"</div><div class="rev-body">Turn the top counter-clockwise slightly until the center button pops up. Then keep turning counter-clockwise — it WILL open. Will update on results after I've used it for a while!</div></div>
-        <div class="insight-bar" style="margin-top:8px;"><strong>Action:</strong><span class="insight-text"> Add one line to Bullet 5 across all three activators: "Note: the precision pipette requires a firm first press to activate the valve — this ensures exact dosing every application." This single change would prevent a significant share of 1-star reviews.</span></div>
-      </div>
+        <div class="sub-tabs" style="margin-bottom:16px;">
+            <button class="sub-tab active" onclick="showRevProductTab('revcat-conditioners','revp-0003',this)">Reverse Conditioner</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-conditioners','revp-0007',this)">Promote Conditioner</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-conditioners','revp-0011',this)">Prevent Conditioner</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-conditioners','revp-0015',this)">Reverse Conditioner — Travel Size</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-conditioners','revp-0017',this)">Promote Conditioner — Travel Size</button>
+        </div>
+          <div class="sub-page-inner active" id="revp-0003">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Conditioner (B07S7RLBVV)</div>
+            <div id="revlist-0003"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0007">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Conditioner (B07SBWSJXP)</div>
+            <div id="revlist-0007"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0011">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Prevent Conditioner (B07SBWS4BS)</div>
+            <div id="revlist-0011"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0015">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Conditioner — Travel Size (B0C633C5MS)</div>
+            <div id="revlist-0015"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0017">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Conditioner — Travel Size (B0C63177RS)</div>
+            <div id="revlist-0017"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+      </div><!-- /revcat-conditioners -->
+      <div class="sub-page" id="revcat-masks">
+        <div class="card" style="margin-top:0;margin-bottom:20px;">
+          <div class="card-title">Star Rating Distribution — Hair Masks</div>
+          <div id="revdist-masks"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        </div>
 
-      <div class="sub-page" id="rev-promote">
-        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Activator (B07SG6S4VV)</div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">hellionwheels</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"My hair is much thicker after regular use!"</div><div class="rev-body">My sister and I have been using this product for almost a year. From our experience, you'll start to notice small hairs growing at the hairline within a few weeks. At this point, both of our hair is significantly thicker! We have had several bottles with the tops stuck (unable to open) — another reviewer suggested holding the button on the top down while screwing off the cap.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">JTHB</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"This actually might work!!"</div><div class="rev-body">I am 15 months postpartum and my hair continues to fall out like crazy!! The baby hairs I have growing all over my head is NUTS! I currently look so silly with my hair in a pony because I have baby hairs popping up like a mad scientist! Its only been a few weeks but I can definitely see an increase in baby hairs.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Adela gallagher</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Verified Purchase</span></div><div class="rev-title">"Amazing product! Highly recommend buying!"</div><div class="rev-body">This product was great, has a nice light scent, and is light on hair — not gooey or sticky. Would highly recommend, 5 out of 5 stars!</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Twinpossible</span><span class="rev-stars-1">★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Didn't do a darned thing for my hair loss!"</div><div class="rev-body">I haven't seen any results at all. The bottle is almost empty, and I would not order the product again at this point. Maybe it takes more time? I'd do most anything to get my hair back. I hope my review is helpful to others. Maybe other types of hair loss would be helped by this.</div></div>
-      </div>
+        <div class="sub-tabs" style="margin-bottom:16px;">
+            <button class="sub-tab active" onclick="showRevProductTab('revcat-masks','revp-0004',this)">Reverse Hair Mask</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-masks','revp-0008',this)">Promote Hair Mask</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-masks','revp-0018',this)">Promote Hair Mask — Travel Size</button>
+            <button class="sub-tab" onclick="showRevProductTab('revcat-masks','revp-0019',this)">Reverse Hair Mask — Travel Size</button>
+        </div>
+          <div class="sub-page-inner active" id="revp-0004">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Hair Mask (B07S7RLM1R)</div>
+            <div id="revlist-0004"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0008">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Hair Mask (B07S7RKMZC)</div>
+            <div id="revlist-0008"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0018">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Promote Hair Mask — Travel Size (B0C62QRGVX)</div>
+            <div id="revlist-0018"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="sub-page-inner" id="revp-0019">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Reverse Hair Mask — Travel Size (B0C63BJKBF)</div>
+            <div id="revlist-0019"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+      </div><!-- /revcat-masks -->
+      <div class="sub-page" id="revcat-dryshampoo">
+        <div class="card" style="margin-top:0;margin-bottom:20px;">
+          <div class="card-title">Star Rating Distribution — Dry Shampoo</div>
+          <div id="revdist-dryshampoo"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+        </div>
 
-      <div class="sub-page" id="rev-prevent">
-        <div class="sec-lbl" style="margin-top:0;">Select Reviews — Prevent Activator (B07SJ8K9HS)</div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">AD</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Very effective and high quality"</div><div class="rev-body">This activator hair treatment is for sure one of the most effective hair treatments that I have ever tried. It comes in a very cute packaging and contains 1.7 oz of product which is enough for 6–8 weeks of use. It's very effective and high quality — super lightweight and doesn't make your scalp or hair greasy or oily.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Jamie</span><span class="rev-stars-4">★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Seemed to work on my hairline"</div><div class="rev-body">After using a bottle of évolis PREVENT Activator on my hair I noticed my hairline in the front was a little fuller. Overall it was easy to apply and didn't feel greasy or oily.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Amazon_Consumer</span><span class="rev-stars-5">★★★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"Helps"</div><div class="rev-body">I use a few of these droplets and rub it into my scalp really well. I think the stimulation to the blood flow helps. It's too early to see a main difference in thickness — hair grows in cycles. I hope this helps make your decision easier.</div></div>
-        <div class="rev-card"><div class="rev-hdr"><span class="rev-name">Lashello</span><span class="rev-stars-3">★★★</span><span class="rev-date">Amazon Vine</span></div><div class="rev-title">"So Expensive Not So Much Product!"</div><div class="rev-body">For $65 I thought after a month of use I would see a major difference, but I didn't notice any difference at all. I did make my scalp feel clean and my hair feel silky but I did not see any new growth. The dispenser was very hard to open and I would not repurchase.</div></div>
-      </div>
+        <div class="sub-tabs" style="margin-bottom:16px;">
+            <button class="sub-tab active" onclick="showRevProductTab('revcat-dryshampoo','revp-0012',this)">Style + Treat Dry Shampoo</button>
+        </div>
+          <div class="sub-page-inner active" id="revp-0012">
+            <div class="sec-lbl" style="margin-top:0;">Select Reviews — Style + Treat Dry Shampoo (B08BGCRKTV)</div>
+            <div id="revlist-0012"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+          </div>
+      </div><!-- /revcat-dryshampoo -->
 
     </div><!-- /ins-reviews -->
 
@@ -4650,6 +4698,26 @@ function showChannel(page, channelId, btn) {
     const parent = document.getElementById(parentId);
     if (!parent) return;
     parent.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
+    parent.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+    const target = document.getElementById(tabId);
+    if (target) target.classList.add('active');
+    if (btn) btn.classList.add('active');
+  }
+
+  // Added 2026-08-06 per Jaclyn — Reviews tab nests product-level tabs
+  // INSIDE category-level tabs (Activators/Shampoos/etc, each with its
+  // own Reverse/Promote/Prevent sub-tabs). Deliberately a separate
+  // function + separate CSS class (.sub-page-inner, not .sub-page) for
+  // the inner level: showSubTab's querySelectorAll('.sub-page') on the
+  // OUTER container would otherwise match every nested product page too
+  // (querySelectorAll searches all descendants, not just direct
+  // children), wiping which product tab was active inside every category
+  // every time you switch categories — leaving each one blank until you
+  // manually re-click a product tab inside it.
+  function showRevProductTab(parentId, tabId, btn) {
+    const parent = document.getElementById(parentId);
+    if (!parent) return;
+    parent.querySelectorAll('.sub-page-inner').forEach(p => p.classList.remove('active'));
     parent.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
     const target = document.getElementById(tabId);
     if (target) target.classList.add('active');
@@ -10791,6 +10859,10 @@ async function initSnsExternal() {
     if (typeof window.renderSimpleKeywordStrategy === 'function') {
       window.renderSimpleKeywordStrategy('act-keywords-container', COMPETITOR_GID_BY_PRODUCT_TYPE.activators);
     }
+    if (typeof window.renderSearchQueryPerformance === 'function') {
+      window.renderSearchQueryPerformance('ins-sqp-container');
+    }
+    if (typeof window.renderReviewsTab === 'function') window.renderReviewsTab();
     if (typeof window.loadActivatorsPerformanceTable === 'function') window.loadActivatorsPerformanceTable();
     if (typeof window.loadSingleProductScorecards === 'function') window.loadSingleProductScorecards();
     if (typeof window.renderCategoryPerformanceTable === 'function') {
@@ -13493,6 +13565,236 @@ async function renderSimpleKeywordStrategy(containerId, competitorGid) {
   }
 }
 window.renderSimpleKeywordStrategy = renderSimpleKeywordStrategy;
+
+// ═══════════════════════════════════════════════════════════════════
+// SEARCH QUERY PERFORMANCE (Insights → Products → Search Query
+// Performance) — added 2026-08-06 per Jaclyn. Replaces the old
+// hardcoded "not yet uploaded" placeholder with a live pull from
+// SHEET_SEARCH_QUERY_PERFORMANCE, évolis tab. Confirmed columns (via
+// screenshot): month, asin, start_date, end_date, then the standard
+// Amazon Brand Analytics SQP schema (search_query, search_query_score,
+// search_query_volume, total_query_impression_count,
+// asin_impression_count, asin_impression_share, total_click_count,
+// total_click_rate, asin_click_count, asin_click_share,
+// total_median_click_price, asin_median_click_price, + same/one/two-day
+// shipping variants, cart-add and purchase equivalents further right,
+// off the edge of the screenshot I was shown — NOT independently
+// confirmed for the purchase-related fields specifically, so this reads
+// those by the standard Amazon-documented header names and logs the
+// full header list to the console for verification.
+// Per Jaclyn: shows only the MOST RECENT month present in the sheet.
+const SHEET_SQP_ID = '1nAEu4kADM0PBjM-lntqUU8lbI7s5EnhRmc72Q7_pVrc';
+const SHEET_SQP_EVOLIS_GID = '283797149';
+async function renderSearchQueryPerformance(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  try {
+    const csv = await fetch(ovCsvUrl(SHEET_SQP_ID, SHEET_SQP_EVOLIS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) {
+      container.innerHTML = '<div class="org-sqp-card"><div style="color:var(--muted);font-size:12px;">No Search Query Performance data found.</div></div>';
+      return;
+    }
+    console.log('[SQP][qa] header keys:', Object.keys(rows[0]).join(' | '));
+
+    const latestMonth = rows.reduce((max, r) => ((r.month || '') > max ? (r.month || '') : max), '');
+    const latestRows = rows.filter(r => r.month === latestMonth);
+    console.log('[SQP][qa] latest month:', latestMonth, '— rows for that month:', latestRows.length);
+
+    const parsed = latestRows.map(r => ({
+      query: r.search_query || '',
+      asin: r.asin || '',
+      volume: parseInt(r.search_query_volume, 10) || 0,
+      impressionShare: r.asin_impression_share || '',
+      clicks: parseInt(r.asin_click_count, 10) || 0,
+      clickShare: r.asin_click_share || '',
+      purchases: parseInt(r.asin_purchase_count, 10) || 0,
+      purchaseShare: r.asin_purchase_share || '',
+    })).filter(r => r.query).sort((a, b) => b.volume - a.volume).slice(0, 50);
+
+    const pct = v => (v === '' || v == null) ? '—' : `${v}%`;
+    const rowsHtml = parsed.map(r => `<tr>
+      <td>${escapeHtmlOrg(r.query)}</td>
+      <td style="font-family:var(--mono);font-size:10px;">${escapeHtmlOrg(r.asin)}</td>
+      <td>${r.volume.toLocaleString()}</td>
+      <td>${pct(r.impressionShare)}</td>
+      <td>${r.clicks.toLocaleString()}</td>
+      <td>${pct(r.clickShare)}</td>
+      <td>${r.purchases.toLocaleString()}</td>
+      <td>${pct(r.purchaseShare)}</td>
+    </tr>`).join('');
+
+    container.innerHTML = `<div class="org-sqp-card">
+      <div class="org-sqp-title">Search Query Performance — Brand-Wide <span class="org-sqp-badge">${escapeHtmlOrg(latestMonth)}</span></div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Search Query</th><th>ASIN</th><th>Query Volume</th><th>ASIN Impr. Share</th><th>ASIN Clicks</th><th>ASIN Click Share</th><th>ASIN Purchases</th><th>ASIN Purchase Share</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="8" style="color:var(--muted);">No rows for this month.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+  } catch (err) {
+    console.warn('[SQP] load failed:', err.message);
+    container.innerHTML = '<div class="org-sqp-card"><div style="color:var(--danger);font-size:12px;">Error loading — see console.</div></div>';
+  }
+}
+window.renderSearchQueryPerformance = renderSearchQueryPerformance;
+
+// ═══════════════════════════════════════════════════════════════════
+// REVIEWS TAB (Insights → Products → Reviews) — rebuilt 2026-08-06 per
+// Jaclyn. Previously fully hardcoded (Activators only). Now pulls from
+// SHEET_AMAZON_REVIEWS, évolis tab, and is organized the same way as the
+// Products tab: one sub-tab per product category (Activators/Shampoos/
+// Conditioners/Hair Masks/Dry Shampoo), each with its own Star Rating
+// Distribution (aggregated across every product in that category) and,
+// nested inside, one sub-tab per individual product showing that
+// product's 5 most recent reviews — the exact "select reviews split by
+// product" pattern Jaclyn asked to keep.
+//
+// Confirmed columns (via screenshot): sku, asin, product_name,
+// product_categ[ory], reviewer_name, star_rating, review_title, date,
+// review_text, purchase_type, date_logged, last_synced. Category
+// grouping uses SKU against the same known product lists already used
+// for Product Portfolio (REVIEW_CATEGORY_PRODUCTS below), rather than
+// trusting the sheet's own product_category text, since the SKU-based
+// lists are already confirmed accurate elsewhere on this page.
+//
+// VOC Themes (from the old hardcoded card) is deliberately NOT rebuilt
+// here — categorizing review text into positive/negative/gap themes is
+// a real analysis step, not a mechanical data pull, so faking it across
+// 5 categories would be worse than just leaving it out for now.
+const SHEET_AMAZON_REVIEWS_ID = '1COergq71E4nqjdupLQx6kRDg-MrjY5TEuppCj7TfgQo';
+const SHEET_AMAZON_REVIEWS_GID = '2039993638';
+
+const REVIEW_CATEGORY_PRODUCTS = {
+  activators: [
+    { sku: 'EVO0001', asin: 'B08BJBM77V', label: 'Reverse Activator' },
+    { sku: 'EVO0005', asin: 'B07SG6S4VV', label: 'Promote Activator' },
+    { sku: 'EVO0009', asin: 'B07SJ8K9HS', label: 'Prevent Activator' },
+  ],
+  shampoos: [
+    { sku: 'EVO0002', asin: 'B07S8QJSNP', label: 'Reverse Shampoo' },
+    { sku: 'EVO0006', asin: 'B07S9SZ56F', label: 'Promote Shampoo' },
+    { sku: 'EVO0010', asin: 'B07S7RLWVK', label: 'Prevent Shampoo' },
+    { sku: 'EVO0014', asin: 'B0C634RF2M', label: 'Reverse Shampoo — Travel Size' },
+    { sku: 'EVO0016', asin: 'B0C62SD751', label: 'Promote Shampoo — Travel Size' },
+  ],
+  conditioners: [
+    { sku: 'EVO0003', asin: 'B07S7RLBVV', label: 'Reverse Conditioner' },
+    { sku: 'EVO0007', asin: 'B07SBWSJXP', label: 'Promote Conditioner' },
+    { sku: 'EVO0011', asin: 'B07SBWS4BS', label: 'Prevent Conditioner' },
+    { sku: 'EVO0015', asin: 'B0C633C5MS', label: 'Reverse Conditioner — Travel Size' },
+    { sku: 'EVO0017', asin: 'B0C63177RS', label: 'Promote Conditioner — Travel Size' },
+  ],
+  masks: [
+    { sku: 'EVO0004', asin: 'B07S7RLM1R', label: 'Reverse Hair Mask' },
+    { sku: 'EVO0008', asin: 'B07S7RKMZC', label: 'Promote Hair Mask' },
+    { sku: 'EVO0018', asin: 'B0C62QRGVX', label: 'Promote Hair Mask — Travel Size' },
+    { sku: 'EVO0019', asin: 'B0C63BJKBF', label: 'Reverse Hair Mask — Travel Size' },
+  ],
+  dryshampoo: [
+    { sku: 'EVO0012', asin: 'B08BGCRKTV', label: 'Style + Treat Dry Shampoo' },
+  ],
+};
+
+function revRenderStars(rating) {
+  const n = Math.max(0, Math.min(5, Math.round(parseFloat(rating) || 0)));
+  return `<span class="rev-stars-${n}">${'★'.repeat(n)}</span>`;
+}
+
+function revRenderCard(r) {
+  const purchaseType = /vine/i.test(r.purchase_type || '') ? 'Amazon Vine' : 'Verified Purchase';
+  return `<div class="rev-card">
+    <div class="rev-hdr"><span class="rev-name">${escapeHtmlOrg(r.reviewer_name)}</span>${revRenderStars(r.star_rating)}<span class="rev-date">${escapeHtmlOrg(purchaseType)}</span></div>
+    <div class="rev-title">"${escapeHtmlOrg(r.review_title)}"</div>
+    <div class="rev-body">${escapeHtmlOrg(r.review_text)}</div>
+  </div>`;
+}
+
+function revRenderStarDistribution(reviews) {
+  if (!reviews.length) return '<div style="color:var(--muted);font-size:12px;">No reviews found for this category.</div>';
+  const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  let sum = 0;
+  reviews.forEach(r => {
+    const n = Math.max(1, Math.min(5, Math.round(parseFloat(r.star_rating) || 0)));
+    counts[n]++;
+    sum += parseFloat(r.star_rating) || 0;
+  });
+  const total = reviews.length;
+  const avg = (sum / total).toFixed(1);
+  const barColors = { 5: null, 4: '#a8d9c8', 3: 'var(--warn)', 2: '#e8a080', 1: 'var(--danger)' };
+  const rows = [5, 4, 3, 2, 1].map(n => {
+    const pct = total ? Math.round((counts[n] / total) * 100) : 0;
+    const colorStyle = barColors[n] ? `background:${barColors[n]};` : '';
+    return `<div class="star-bar-row"><div class="star-bar-lbl">${n} ★</div><div class="star-bar-track"><div class="star-bar-fill" style="width:${pct}%;${colorStyle}"></div></div><div class="star-bar-count">${counts[n]}</div></div>`;
+  }).join('');
+  return `<div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${avg} <span style="font-size:16px;color:var(--muted);font-weight:400;">/ 5</span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">${total.toLocaleString()} total reviews</div>
+    ${rows}`;
+}
+
+let _amazonReviewsPromise = null;
+function fetchAmazonReviews() {
+  if (_amazonReviewsPromise) return _amazonReviewsPromise;
+  _amazonReviewsPromise = (async () => {
+    const csv = await fetch(ovCsvUrl(SHEET_AMAZON_REVIEWS_ID, SHEET_AMAZON_REVIEWS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    console.log('[Reviews][qa] total review rows loaded:', rows.length, '— header keys:', rows.length ? Object.keys(rows[0]).join(' | ') : '(none)');
+    return rows;
+  })();
+  return _amazonReviewsPromise;
+}
+
+async function renderReviewsTab() {
+  try {
+    const allReviews = await fetchAmazonReviews();
+    if (!allReviews.length) {
+      console.warn('[Reviews] no rows loaded — check SHEET_AMAZON_REVIEWS_ID/GID or sheet permissions.');
+      return;
+    }
+    const bySku = {};
+    allReviews.forEach(r => {
+      const sku = (r.sku || '').trim().toUpperCase();
+      if (!sku) return;
+      (bySku[sku] = bySku[sku] || []).push(r);
+    });
+
+    Object.keys(REVIEW_CATEGORY_PRODUCTS).forEach(catKey => {
+      const products = REVIEW_CATEGORY_PRODUCTS[catKey];
+      const catReviews = [];
+
+      products.forEach(p => {
+        const suffix = p.sku.replace('EVO', '');
+        const productReviews = (bySku[p.sku] || []).slice();
+        catReviews.push(...productReviews);
+
+        // Most recent 5 — sorted by date descending. Dates on this sheet
+        // are human-readable ("January 5, 2026"), which the native Date
+        // constructor parses directly; anything unparseable sorts last
+        // rather than throwing off the order.
+        const sorted = productReviews.slice().sort((a, b) => {
+          const da = Date.parse(a.date) || 0;
+          const db = Date.parse(b.date) || 0;
+          return db - da;
+        });
+        const top5 = sorted.slice(0, 5);
+
+        const listEl = document.getElementById(`revlist-${suffix}`);
+        if (listEl) {
+          listEl.innerHTML = top5.length
+            ? top5.map(revRenderCard).join('')
+            : '<div style="color:var(--muted);font-size:12px;">No reviews found for this SKU.</div>';
+        }
+      });
+
+      const distEl = document.getElementById(`revdist-${catKey}`);
+      if (distEl) distEl.innerHTML = revRenderStarDistribution(catReviews);
+    });
+  } catch (err) {
+    console.warn('[Reviews] renderReviewsTab failed:', err.message);
+  }
+}
+window.renderReviewsTab = renderReviewsTab;
 
 // ═══════════════════════════════════════════════════════════════════
 // PPC PAGE — Search Terms panels (Opportunities tab) + Product
