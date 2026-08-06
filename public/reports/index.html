@@ -1329,7 +1329,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <thead><tr>
             <th class="inv-sortable" data-sort="sku" style="cursor:pointer;">SKU <span class="inv-sort-arrow"></span></th>
             <th class="inv-sortable" data-sort="name" style="cursor:pointer;">Product Name <span class="inv-sort-arrow"></span></th>
-            <th>FBA</th><th>Qty at Medaltus (FBM)</th><th>WFS</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th>
+            <th title="Fulfillable + Inbound Receiving">FBA</th><th>Qty at Medaltus (FBM)</th><th>WFS</th><th>Available</th><th>Consignment</th><th>Days of Inventory</th><th>Status</th>
           </tr></thead>
           <tbody id="inv-table-body"><tr><td colspan="9" style="color:var(--muted);">Loading…</td></tr></tbody>
         </table>
@@ -12948,7 +12948,14 @@ async function loadInventoryPage() {
     console.log('[Evolis][inventory] latestDate:', latestDate, '— rows at that date:', latestRows.length, '— all SKUs at that date:', latestRows.map(r => r.sku));
 
     _invAllRows = latestRows.map(r => {
-      const qtyAtAmazon    = parseInt(r.fulfillable_quantity, 10) || 0;
+      // FBA now includes Inbound_receiving (col H on Products Cache) —
+      // added 2026-08-06 per Jaclyn: units in transit to/being received at
+      // an Amazon FC are real inbound FBA stock, not yet fulfillable but
+      // real nonetheless, so they now count toward FBA here — which also
+      // flows through into Available and the Total Units Available KPI
+      // below, since both derive from qtyAtAmazon.
+      const inboundReceiving = parseInt(r.inbound_receiving, 10) || 0;
+      const qtyAtAmazon    = (parseInt(r.fulfillable_quantity, 10) || 0) + inboundReceiving;
       const qtyAtMedaltus  = parseInt(r.seller_fulfilled_quantity, 10) || 0;
       const allocated       = parseInt(r.reserved_quantity, 10) || 0;
       // REVISED 2026-08-04 per Jaclyn: Available now DOES subtract Allocated
