@@ -2683,8 +2683,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
         <!-- Performance -->
         <div class="card">
-          <div class="card-title" style="margin-bottom:2px;">Performance — April 2026</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Amazon</div>
+          <div class="card-title" style="margin-bottom:2px;" id="perf-act-title">Performance</div>
           <div style="overflow-x:auto;">
             <table class="perf-compare">
               <thead><tr><th></th><th class="prodcol"><div class="prodcol-name">Reverse</div><div class="prodcol-sku">EVO0001</div></th><th class="prodcol"><div class="prodcol-name">Promote</div><div class="prodcol-sku">EVO0005</div></th><th class="prodcol"><div class="prodcol-name">Prevent</div><div class="prodcol-sku">EVO0009</div></th></tr></thead>
@@ -2698,7 +2697,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
               </tbody>
             </table>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--border2);">Walmart: not tracked / data pending across all three SKUs — same 4.1★ rating carried over, everything else unavailable.</div>
         </div>
 
         <!-- Products -->
@@ -12581,6 +12579,9 @@ window.loadActivatorsPerformanceTable = async function() {
     const amzRows = parseCsvToRows(amzCsv);
     const wmtRows = parseCsvToRows(wmtCsv);
     const webRows = parseCsvToRows(webCsv);
+
+    const titleEl = document.getElementById('perf-act-title');
+    if (titleEl) titleEl.textContent = `Performance — ${OV_MONTH_ABBR[month - 1]} ${year}`;
 
     const unitsLabelEl = document.getElementById('perf-act-units-label');
     if (unitsLabelEl) unitsLabelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
