@@ -12552,28 +12552,30 @@ window.loadActivatorsPerformanceTable = async function() {
     const wmtRows = parseCsvToRows(wmtCsv);
     const webRows = parseCsvToRows(webCsv);
 
-    // Diagnostic — added 2026-08-06 to pin down why BSR/Rating showed "—"
-    // for every product while Sessions/Units/Revenue were fine. Both BSR
-    // and Rating come from this same kwRows lookup, so if it's empty or
-    // the ASIN match fails, both go blank together — exactly what was
-    // reported. Remove once confirmed working.
-    console.log('[ActivatorsPerf][qa] kwCsv length:', kwCsv.length, '— isCsv-ish:', kwCsv.length > 0, '— kwRows parsed:', kwRows.length);
-    if (kwRows.length) {
-      console.log('[ActivatorsPerf][qa] kwRows[0] keys:', Object.keys(kwRows[0]), '— kwRows[0]:', kwRows[0]);
-      const asinsSeen = new Set(kwRows.map(r => (r.asin || '').trim().toUpperCase()).filter(Boolean));
-      console.log('[ActivatorsPerf][qa] distinct ASINs in kwRows:', asinsSeen.size, '— looking for:', ACTIVATOR_PRODUCTS.map(p => p.asin), '— any match?', ACTIVATOR_PRODUCTS.map(p => asinsSeen.has(p.asin)));
-    } else {
-      console.log('[ActivatorsPerf][qa] kwRows came back EMPTY — either the fetch failed/redirected (check Network tab for this URL) or the sheet has no data rows.');
-    }
-
     const unitsLabelEl = document.getElementById('perf-act-units-label');
     if (unitsLabelEl) unitsLabelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
+
+    // BUG FOUND 2026-08-06: this sheet is a periodic snapshot (has its own
+    // `date` column, confirmed via console — date, brand, asin, sku,
+    // total_tracked_keywords, top50_organic_count, avg_organic_rank,
+    // boosted_count, last_synced, bsr, subcategory_bsr, review_count,
+    // rating), so there can be MULTIPLE rows per ASIN (one per sync date).
+    // .find() was grabbing whichever row happened to come first in the
+    // sheet — if that's an early snapshot from before bsr/rating were
+    // being populated yet, it reads as blank even though later rows for
+    // the same ASIN have real values. Fixed: pick the row with the latest
+    // `date` for that ASIN instead of just the first match.
+    function latestKwRowForAsin(asin) {
+      const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin);
+      if (!matches.length) return null;
+      return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
+    }
 
     ACTIVATOR_PRODUCTS.forEach(p => {
       const suffix = p.sku.replace('EVO', '');
 
       // BSR + subcategory BSR + Rating/Reviews — Keyword Tracker summary tab.
-      const kwRow = kwRows.find(r => (r.asin || '').trim().toUpperCase() === p.asin);
+      const kwRow = latestKwRowForAsin(p.asin);
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
@@ -12663,6 +12665,16 @@ window.loadSingleProductScorecards = async function() {
     const wmtRows = parseCsvToRows(wmtCsv);
     const webRows = parseCsvToRows(webCsv);
 
+    // Same fix as loadActivatorsPerformanceTable above: this sheet is a
+    // periodic snapshot (has its own `date` column) with potentially
+    // multiple rows per ASIN, so pick the most-recent-dated row instead
+    // of whichever comes first in the sheet.
+    function latestKwRowForAsin(asin) {
+      const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin);
+      if (!matches.length) return null;
+      return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
+    }
+
     SCORECARD_PRODUCTS.forEach(p => {
       const id = p.sku.replace('EVO', '');
 
@@ -12670,7 +12682,7 @@ window.loadSingleProductScorecards = async function() {
       if (labelEl) labelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
 
       // BSR + Rating/Reviews — Keyword Tracker summary tab, matched by ASIN.
-      const kwRow = kwRows.find(r => (r.asin || '').trim().toUpperCase() === p.asin);
+      const kwRow = latestKwRowForAsin(p.asin);
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
