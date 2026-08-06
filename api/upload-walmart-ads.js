@@ -361,7 +361,23 @@ module.exports = async (req, res) => {
         const merged = new Map();
         (existing || []).forEach(r => merged.set(keyOf(r), r));
         rows.forEach(r => merged.set(keyOf(r), r));
-        const outRows = Array.from(merged.values()).map(r => headers.map(h => r[h] ?? ''));
+
+        // Added 2026-08-06 per Jaclyn: sort by year ascending, then month
+        // ascending, so the most recent month always sits at the bottom
+        // — matches the same convention sync-walmart-revenue.js/
+        // sync-shopify-revenue.js already use for their own sheets.
+        // Applied here in the shared writeSheet function rather than per
+        // sheet, since all 3 of Ad Orders/Advertising Cache/Search Terms
+        // carry year+month columns. Numeric sort (not string) so e.g.
+        // month "10" doesn't sort before month "2".
+        const sortedRows = Array.from(merged.values()).sort((a, b) => {
+          const ay = parseInt(a.year, 10) || 0, by = parseInt(b.year, 10) || 0;
+          if (ay !== by) return ay - by;
+          const am = parseInt(a.month, 10) || 0, bm = parseInt(b.month, 10) || 0;
+          return am - bm;
+        });
+
+        const outRows = sortedRows.map(r => headers.map(h => r[h] ?? ''));
         await replaceRows(sheetId, tabName, headers, outRows, token);
         results.push({ brand: tabName, status: 'ok', incomingRows: rows.length, totalRows: outRows.length });
       } catch (err) {
