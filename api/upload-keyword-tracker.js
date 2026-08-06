@@ -39,8 +39,24 @@
  */
 const XLSX = require('xlsx');
 const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
-const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced'];
-const KEYWORD_HEADERS = ['date', 'asin', 'sku', 'keyword', 'organic_rank', 'sponsored_rank', 'search_volume', 'keyword_sales', 'boosted', 'last_synced'];
+// FIXED 2026-08-06 — real incident: both header lists below were stale
+// relative to what Cowork's export actually contains, confirmed by
+// reading Helium10_KeywordTracker_AllBrands_2026-08-03.xlsx directly:
+//   summary tab: real columns are date, brand, asin, sku,
+//     total_tracked_keywords, top50_organic_count, avg_organic_rank,
+//     boosted_count, last_synced, bsr, subcategory_bsr, review_count,
+//     rating — the old SUMMARY_HEADERS only had the first 9, so bsr/
+//     subcategory_bsr/review_count/rating were silently dropped on every
+//     write even though they were genuinely present in the parsed data
+//     (the write step maps over SUMMARY_HEADERS, not over whatever keys
+//     a row actually has — anything not in that list never gets written).
+//   <brand> tabs: real columns are date, asin, sku, keyword,
+//     organic_rank, sponsored_rank, search_volume, boosted, last_synced
+//     — NO keyword_sales field exists in the real export at all. The old
+//     KEYWORD_HEADERS included it anyway, which didn't drop anything but
+//     wrote a permanently-blank column every run.
+const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced', 'bsr', 'subcategory_bsr', 'review_count', 'rating'];
+const KEYWORD_HEADERS = ['date', 'asin', 'sku', 'keyword', 'organic_rank', 'sponsored_rank', 'search_volume', 'boosted', 'last_synced'];
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
