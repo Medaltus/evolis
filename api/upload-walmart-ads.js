@@ -123,6 +123,44 @@ function stripAccents(str) {
   return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// FIXED 2026-08-06 — real incident: the schema I confirmed live listed
+// "year"/"month_of_year" as available dimension fields, but Cowork's
+// ACTUAL execute_ads_query export (WalmartAdsItems_2026-08-06.xlsx /
+// WalmartAdsSearchTerms_2026-08-06.xlsx) contains neither — only a single
+// "date" field per row (e.g. "2026-08-01T00:00:00", the first day of the
+// requested month bucket), confirmed by reading the real files directly.
+// Every row's derived year/month came back blank, which collapsed BOTH
+// July and August into one "undefined-undefined" bucket in the
+// Advertising Cache derivation. This parses year/month from that real
+// date field instead of assuming fields that don't actually appear.
+function extractYearMonth(dateVal) {
+  if (!dateVal) return { year: '', month: '' };
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return { year: '', month: '' };
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+}
+
+// FIXED 2026-08-06 — real incident: item_id was confirmed BLANK on every
+// one of 107 real search_term rows in the same export (not intermittent —
+// zero exceptions). Walmart keyword-targeted campaigns often don't map to
+// a single item, so item-level brand resolution genuinely doesn't work
+// for this level despite being theoretically available per the schema.
+// Falls back to parsing the brand out of campaign_name instead — all 3
+// real campaign names in this account's export cleanly start with
+// "Skinuva - ...", confirming this actually works in practice, not just
+// in theory.
+function resolveBrandFromCampaignName(campaignName) {
+  const firstToken = String(campaignName || '').split(/[\s-]+/)[0];
+  if (!firstToken) return null;
+  const norm = stripAccents(firstToken.toLowerCase());
+  return brands.find(b =>
+    b.active && (
+      norm === stripAccents(b.id.toLowerCase()) ||
+      norm === stripAccents((b.displayName || '').toLowerCase())
+    )
+  ) || null;
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -173,9 +211,11 @@ module.exports = async (req, res) => {
     const brandInfo = itemIdToBrand[itemId];
     if (!brandInfo) { if (itemId) unmatchedItemIds.add(itemId); return; }
 
+    const { year, month } = extractYearMonth(r.date);
+    if (!year) return; // no parseable date — confirmed 2026-08-06 these are zero-activity items, not worth a stray blank-month row
     const row = {
-      year: r.year ?? r['year'] ?? '',
-      month: r.month_of_year ?? r.month ?? '',
+      year,
+      month,
       item_id: itemId,
       item_name: r.item_name || '',
       ad_units: r.sale_units ?? r.ad_units ?? 0,
@@ -210,7 +250,8 @@ module.exports = async (req, res) => {
       const itemId = String(r.item_id || '').trim();
       const brandInfo = itemIdToBrand[itemId];
       if (!brandInfo || brandInfo.brandTabName !== tabName) return;
-      const key = `${r.year ?? r['year']}-${r.month_of_year ?? r.month}`;
+      const { year, month } = extractYearMonth(r.date);
+      const key = `${year}-${month}`;
       if (!monthMap[key]) return;
       monthMap[key].impressions += parseInt(r.impressions, 10) || 0;
       monthMap[key].clicks += parseInt(r.clicks, 10) || 0;
@@ -234,23 +275,42 @@ module.exports = async (req, res) => {
   });
 
   // ── 3. Search Terms — one row per term per month, brand-resolved ────────
+  // Brand resolution here tries item_id FIRST (kept in case a future
+  // export ever does carry it — costs nothing), then falls back to
+  // parsing the brand out of campaign_name. Confirmed 2026-08-06 that
+  // item_id is blank on 100% of real search_term rows for this account,
+  // so the campaign-name fallback is what actually resolves brand in
+  // practice today, not item_id.
   const searchTermsByBrand = {};
+  let searchTermsResolvedViaCampaignName = 0;
   searchTermRows.forEach(r => {
     const itemId = String(r.item_id || '').trim();
-    const brandInfo = itemIdToBrand[itemId];
-    if (!brandInfo) { if (itemId) unmatchedItemIds.add(itemId); return; }
+    let brandInfo = itemId ? itemIdToBrand[itemId] : null;
+
+    const campaignName = r['campaign.campaign_name'] || r.campaign_name || '';
+    if (!brandInfo) {
+      const matched = resolveBrandFromCampaignName(campaignName);
+      if (matched) { brandInfo = { brandTabName: matched.tabName, brandId: matched.id }; searchTermsResolvedViaCampaignName++; }
+    }
+    if (!brandInfo) {
+      if (itemId) unmatchedItemIds.add(itemId);
+      else console.warn(`[upload-walmart-ads] search term row skipped — no item_id AND no brand match from campaign_name "${campaignName}"`);
+      return;
+    }
 
     const impressions = parseInt(r.impressions, 10) || 0;
     const spend = parseFloat(r.spend) || 0;
+    const { year, month } = extractYearMonth(r.date);
+    if (!year) return; // no parseable date — same defensive guard as Ad Orders, though current real data always has one here
     const row = {
       search_term: r.query || '',
       keyword: r.keyword_text || '',
       match_type: r.match_type || '',
-      campaign_name: r['campaign.campaign_name'] || r.campaign_name || '',
-      ad_group_name: r['adgroup.adgroup_name'] || r.ad_group_name || '',
+      campaign_name: campaignName,
+      ad_group_name: r['adgroup.adgroup_name'] || r.ad_group_name || r.adgroup_name || '',
       date: nowIso.slice(0, 10),
-      year: r.year ?? '',
-      month: r.month_of_year ?? r.month ?? '',
+      year,
+      month,
       impressions,
       clicks: r.clicks ?? 0,
       ctr: r.ctr ?? '',
@@ -301,6 +361,7 @@ module.exports = async (req, res) => {
     adOrders: adOrdersResults,
     advertising: advertisingResults,
     searchTerms: searchTermsResults,
+    searchTermsResolvedViaCampaignName,
     ...(unmatchedItemIds.size ? { unmatchedItemIds: Array.from(unmatchedItemIds) } : {}),
   });
 };
