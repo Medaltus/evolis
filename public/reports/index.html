@@ -12552,6 +12552,20 @@ window.loadActivatorsPerformanceTable = async function() {
     const wmtRows = parseCsvToRows(wmtCsv);
     const webRows = parseCsvToRows(webCsv);
 
+    // Diagnostic — added 2026-08-06 to pin down why BSR/Rating showed "—"
+    // for every product while Sessions/Units/Revenue were fine. Both BSR
+    // and Rating come from this same kwRows lookup, so if it's empty or
+    // the ASIN match fails, both go blank together — exactly what was
+    // reported. Remove once confirmed working.
+    console.log('[ActivatorsPerf][qa] kwCsv length:', kwCsv.length, '— isCsv-ish:', kwCsv.length > 0, '— kwRows parsed:', kwRows.length);
+    if (kwRows.length) {
+      console.log('[ActivatorsPerf][qa] kwRows[0] keys:', Object.keys(kwRows[0]), '— kwRows[0]:', kwRows[0]);
+      const asinsSeen = new Set(kwRows.map(r => (r.asin || '').trim().toUpperCase()).filter(Boolean));
+      console.log('[ActivatorsPerf][qa] distinct ASINs in kwRows:', asinsSeen.size, '— looking for:', ACTIVATOR_PRODUCTS.map(p => p.asin), '— any match?', ACTIVATOR_PRODUCTS.map(p => asinsSeen.has(p.asin)));
+    } else {
+      console.log('[ActivatorsPerf][qa] kwRows came back EMPTY — either the fetch failed/redirected (check Network tab for this URL) or the sheet has no data rows.');
+    }
+
     const unitsLabelEl = document.getElementById('perf-act-units-label');
     if (unitsLabelEl) unitsLabelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
 
