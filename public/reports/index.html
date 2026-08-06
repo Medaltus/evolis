@@ -6353,6 +6353,9 @@ async function initSns() {
   const WALMART_REVENUE_GID      = '812984298';                                      // Évolis tab
   const PRODUCT_NAMES_SHEET_ID   = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
   const PRODUCT_NAMES_GID        = '164358627';
+  // Added 2026-08-06 per Jaclyn — Walmart's ad data.
+  const WALMART_AD_ORDERS_SHEET_ID = '1PYUPePnhnBJp77n3HVSKeM824ZorAMkiJC8WFbyORCU';
+  const WALMART_AD_ORDERS_GID      = '664808652'; // evolis tab
 
   function getLastFullMonth() {
     const now = new Date();
@@ -6498,7 +6501,10 @@ async function initSns() {
         setBadge('wkpi-total-orders', '.kpi-mom', null, 'MOM');
         setKpiValue('wkpi-avg-order',     '$0.00');
         setBadge('wkpi-avg-order',    '.kpi-mom', null, 'MOM');
-        setKpiValue('wkpi-units-ads',     '—');
+        // Changed 2026-08-06 per Jaclyn: shows a real "0" now instead of a
+        // dash — no sales at all this period is a confirmed zero, not
+        // unknown data.
+        setKpiValue('wkpi-units-ads',     '0');
         setBadge('wkpi-units-ads',    '.kpi-mom', null, 'MOM');
         setKpiValue('wkpi-units-organic', '0');
         setBadge('wkpi-units-organic','.kpi-mom', null, 'MOM');
@@ -6522,16 +6528,22 @@ async function initSns() {
       setKpiValue('wkpi-avg-order', '$' + fmt2(curr.avgOrder));
       setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
 
-      // Units (Ads) — Walmart has no ads data
-      setKpiValue('wkpi-units-ads', '—');
-      setBadge('wkpi-units-ads', '.kpi-mom', null, 'MOM');
-
-      // Units (Organic) = all units (no ads to subtract)
-      setKpiValue('wkpi-units-organic', fmt(curr.totalUnits));
-      setBadge('wkpi-units-organic', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
-
       buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
-      buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
+
+      // Units (Ads) / Units (Organic) — added 2026-08-06 per Jaclyn,
+      // matching the same fix already live on the External Sales →
+      // Walmart page. buildWalmartTopProducts() below computes the real
+      // per-SKU ad/organic split (capped per-SKU at that product's own
+      // units, joined via Walmart Item ID -> SKU) and returns the totals
+      // here so the KPI row and the table underneath it are always
+      // mathematically consistent with each other.
+      const wmtTotals = await buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
+
+      setKpiValue('wkpi-units-ads', fmt(wmtTotals.totalAdUnits));
+      setBadge('wkpi-units-ads', '.kpi-mom', wmtTotals.totalAdUnitsPrev ? pct(wmtTotals.totalAdUnits, wmtTotals.totalAdUnitsPrev) : null, 'MOM');
+
+      setKpiValue('wkpi-units-organic', fmt(wmtTotals.totalOrgUnits));
+      setBadge('wkpi-units-organic', '.kpi-mom', wmtTotals.totalOrgUnitsPrev ? pct(wmtTotals.totalOrgUnits, wmtTotals.totalOrgUnitsPrev) : null, 'MOM');
 
     } catch (err) {
       console.error('[WalmartLive]', err.message);
@@ -6647,7 +6659,7 @@ async function initSns() {
     const tbody = document.getElementById('wtp-tbody');
     if (!monthRows.length) {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
-      return;
+      return { totalAdUnits: 0, totalOrgUnits: 0, totalAdUnitsPrev: 0, totalOrgUnitsPrev: 0 };
     }
 
     // Aggregate units per SKU (strip -sticker/-stickerless suffixes)
@@ -6684,8 +6696,11 @@ async function initSns() {
       return `<span class="tp-mom-flat">—</span>`;
     }
 
-    // Fetch product names
+    // Fetch product names + Walmart Item ID -> SKU mapping (column I) —
+    // added 2026-08-06 per Jaclyn, same Product Short Name sheet already
+    // fetched here for names, just also capturing column I now.
     let skuNameMap = {};
+    let itemIdToSku = {};
     try {
       const resp = await fetch(`https://docs.google.com/spreadsheets/d/${PRODUCT_NAMES_SHEET_ID}/export?format=csv&gid=${PRODUCT_NAMES_GID}&_cb=${Date.now()}`);
       if (resp.ok) {
@@ -6696,33 +6711,73 @@ async function initSns() {
             const cols = parseCsvLine(lines[i]);
             const sku  = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i,'');
             const name = (cols[2] || '').replace(/^"|"$/g,'').trim();
+            const walmartItemId = (cols[8] || '').replace(/^"|"$/g,'').trim();
             if (sku && name) skuNameMap[sku] = name;
+            if (walmartItemId && sku) itemIdToSku[walmartItemId] = sku;
           }
         }
       }
     } catch (e) { console.warn('[WalmartTopProducts] Name lookup failed:', e.message); }
 
+    // Walmart ad units by SKU — added 2026-08-06 per Jaclyn. Joined via
+    // item_id -> sku (itemIdToSku above), same month-scoping as units.
+    // Walmart's item-level ad sheet only ever contains rows with real
+    // spend (zero-spend rows filtered out server-side by
+    // upload-walmart-ads.js), so every row here is genuine ad activity.
+    const skuAdUnits = {};
+    const skuAdUnitsPrev = {};
+    try {
+      const wmtAdCsv = await fetch(sheetCsvUrl(WALMART_AD_ORDERS_SHEET_ID, WALMART_AD_ORDERS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+      if (isCsv(wmtAdCsv)) {
+        const wmtAdRows = parseCsv(wmtAdCsv);
+        wmtAdRows.filter(r => parseInt(r.year, 10) === targetYear && parseInt(r.month, 10) === targetMonth).forEach(r => {
+          const sku = itemIdToSku[(r.item_id || '').trim()];
+          if (!sku) return; // no Walmart Item ID -> SKU mapping for this row — skipped, not guessed
+          skuAdUnits[sku] = (skuAdUnits[sku] || 0) + (parseInt(r.ad_units, 10) || 0);
+        });
+        if (prevYear && prevMonth) {
+          wmtAdRows.filter(r => parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth).forEach(r => {
+            const sku = itemIdToSku[(r.item_id || '').trim()];
+            if (!sku) return;
+            skuAdUnitsPrev[sku] = (skuAdUnitsPrev[sku] || 0) + (parseInt(r.ad_units, 10) || 0);
+          });
+        }
+      }
+    } catch (e) { console.warn('[WalmartTopProducts] Walmart ad units lookup failed:', e.message); }
+
     const sorted = Object.entries(skuUnits).filter(([,u]) => u > 0).sort((a,b) => b[1]-a[1]);
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+    let totalAdUnits = 0, totalOrgUnits = 0, totalAdUnitsPrev = 0, totalOrgUnitsPrev = 0;
     tbody.innerHTML = '';
     sorted.forEach(([sku, units], idx) => {
       const name      = skuNameMap[sku] || sku;
       const prevUnits = skuUnitsPrev[sku] || 0;
-      const orgUnits  = units; // no ads data for Walmart
-      const prevOrgUnits = prevUnits;
+      // Ad units capped at that SKU's own total units this month — never
+      // allowed to exceed what actually sold, same convention already
+      // used for Amazon's ads/organic split elsewhere on this dashboard.
+      const adUnits     = Math.min(skuAdUnits[sku] || 0, units);
+      const adUnitsPrev = Math.min(skuAdUnitsPrev[sku] || 0, prevUnits);
+      const orgUnits     = units - adUnits;
+      const prevOrgUnits = prevUnits - adUnitsPrev;
+      totalAdUnits += adUnits;
+      totalOrgUnits += orgUnits;
+      totalAdUnitsPrev += adUnitsPrev;
+      totalOrgUnitsPrev += prevOrgUnits;
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}.</td>
         <td>${name}</td>
         <td><div class="tp-cell"><span class="tp-units">${units.toLocaleString()}</span>${momSpan(units, prevUnits)}</div></td>
-        <td><div class="tp-cell"><span class="tp-dash">—</span></div></td>
+        <td><div class="tp-cell">${adUnits ? `<span class="tp-units">${adUnits.toLocaleString()}</span>${momSpan(adUnits, adUnitsPrev)}` : '<span class="tp-units">0</span>'}</div></td>
         <td><div class="tp-cell"><span class="tp-units">${orgUnits.toLocaleString()}</span>${momSpan(orgUnits, prevOrgUnits)}</div></td>`;
       tbody.appendChild(tr);
     });
 
     const srcEl = document.getElementById('walmart-products-source');
     if (srcEl) srcEl.textContent = `Google Sheets cache · Évolis · ${monthNames[targetMonth-1]} ${targetYear}`;
+
+    return { totalAdUnits, totalOrgUnits, totalAdUnitsPrev, totalOrgUnitsPrev };
   }
 
 // ══════════════════════════════════════════════════════════════════════════════
