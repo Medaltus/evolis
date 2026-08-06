@@ -334,7 +334,7 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 /* Product scorecard rows (Amazon + Walmart) */
 .scorecard-header{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:16px 0 8px;display:flex;align-items:center;gap:8px;}
 .scorecard-header::after{content:'';flex:1;height:1px;background:var(--border);}
-.scorecard-row{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;}
+.scorecard-row{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;}
 .sc-card{background:var(--white);padding:12px 14px;}
 .sc-label{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:5px;}
 .sc-value{font-size:18px;font-weight:700;color:var(--navy);line-height:1;}
@@ -2695,7 +2695,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
                 <tr><td>Revenue</td><td id="perf-act-revenue-0001">—</td><td id="perf-act-revenue-0005">—</td><td id="perf-act-revenue-0009">—</td></tr>
                 <tr><td>Conversion</td><td id="perf-act-conv-0001">—</td><td id="perf-act-conv-0005">—</td><td id="perf-act-conv-0009">—</td></tr>
                 <tr><td>Rating</td><td id="perf-act-rating-0001">4.1 ★ (63)</td><td id="perf-act-rating-0005">4.1 ★ (63)</td><td id="perf-act-rating-0009">4.1 ★ (63)</td></tr>
-                <tr><td>Buy Box</td><td>89–100%</td><td>89–100%</td><td>89–100%</td></tr>
               </tbody>
             </table>
           </div>
@@ -2828,6 +2827,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── SHAMPOOS ── -->
       <div class="sub-page" id="pt-shampoos">
+        <div id="perf-shampoo-container"></div>
         <div class="sub-tabs" style="margin-bottom:18px;">
           <button class="sub-tab active" onclick="showSubTab('pt-shampoos','sh-reverse',this)">Reverse (EVO0002)</button>
           <button class="sub-tab" onclick="showSubTab('pt-shampoos','sh-promote',this)">Promote (EVO0006)</button>
@@ -2839,7 +2839,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <div class="sec-lbl" style="margin-top:0;">Scorecards</div>
           
           <div class="scorecard-header">Amazon</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value" id="sc-0002-bsr">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value" id="sc-0002-sessions">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label" id="sc-0002-units-label">Units</div><div class="sc-value" id="sc-0002-units">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value" id="sc-0002-conv">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value" id="sc-0002-rating">4.4 ★</div><div class="sc-sub" id="sc-0002-reviews">63 reviews</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">—</div></div></div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value" id="sc-0002-bsr">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value" id="sc-0002-sessions">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label" id="sc-0002-units-label">Units</div><div class="sc-value" id="sc-0002-units">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value" id="sc-0002-conv">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value" id="sc-0002-rating">4.4 ★</div><div class="sc-sub" id="sc-0002-reviews">63 reviews</div></div></div>
           <div class="formula-grid">
             <div class="card">
               <div class="card-title">Product &amp; Formula — Reverse Thickening Shampoo</div>
@@ -2901,6 +2901,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── CONDITIONERS ── -->
       <div class="sub-page" id="pt-conditioners">
+        <div id="perf-conditioner-container"></div>
         <div class="sub-tabs" style="margin-bottom:18px;">
           <button class="sub-tab active" onclick="showSubTab('pt-conditioners','cond-reverse',this)">Reverse (EVO0003)</button>
           <button class="sub-tab" onclick="showSubTab('pt-conditioners','cond-promote',this)">Promote (EVO0007)</button>
@@ -2951,6 +2952,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── HAIR MASKS ── -->
       <div class="sub-page" id="pt-masks">
+        <div id="perf-hairmask-container"></div>
         <div class="sub-tabs" style="margin-bottom:18px;">
           <button class="sub-tab active" onclick="showSubTab('pt-masks','mask-reverse',this)">Reverse (EVO0004)</button>
           <button class="sub-tab" onclick="showSubTab('pt-masks','mask-promote',this)">Promote (EVO0008)</button>
@@ -2999,10 +3001,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <!-- ── DRY SHAMPOO ── -->
       <div class="sub-page" id="pt-dryshampoo">
+        <div id="perf-dryshampoo-container"></div>
         <div class="sec-lbl" style="margin-top:0;">Scorecard</div>
         
           <div class="scorecard-header">Amazon</div>
-          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value" id="sc-0012-bsr">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value" id="sc-0012-sessions">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label" id="sc-0012-units-label">Units</div><div class="sc-value" id="sc-0012-units">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value" id="sc-0012-conv">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value" id="sc-0012-rating">—</div><div class="sc-sub" id="sc-0012-reviews">—</div></div><div class="sc-card"><div class="sc-label">Buy Box</div><div class="sc-value">—</div></div></div>
+          <div class="scorecard-row"><div class="sc-card"><div class="sc-label">BSR</div><div class="sc-value" id="sc-0012-bsr">—</div><div class="sc-sub">Not tracked</div></div><div class="sc-card"><div class="sc-label">Sessions</div><div class="sc-value" id="sc-0012-sessions">—</div><div class="sc-sub">Data pending</div></div><div class="sc-card"><div class="sc-label" id="sc-0012-units-label">Units</div><div class="sc-value" id="sc-0012-units">—</div></div><div class="sc-card"><div class="sc-label">Conversion</div><div class="sc-value" id="sc-0012-conv">—</div></div><div class="sc-card"><div class="sc-label">Rating</div><div class="sc-value" id="sc-0012-rating">—</div><div class="sc-sub" id="sc-0012-reviews">—</div></div></div>
         <div class="formula-grid">
           <div class="card">
             <div class="card-title">Product &amp; Formula — Style + Treat Dry Shampoo</div>
@@ -10578,6 +10581,12 @@ async function initSnsExternal() {
     if (typeof window.initCompetitorLandscape === 'function') window.initCompetitorLandscape();
     if (typeof window.loadActivatorsPerformanceTable === 'function') window.loadActivatorsPerformanceTable();
     if (typeof window.loadSingleProductScorecards === 'function') window.loadSingleProductScorecards();
+    if (typeof window.renderCategoryPerformanceTable === 'function') {
+      window.renderCategoryPerformanceTable('perf-shampoo-container', 'Shampoo');
+      window.renderCategoryPerformanceTable('perf-conditioner-container', 'Conditioner');
+      window.renderCategoryPerformanceTable('perf-hairmask-container', 'Hair Mask');
+      window.renderCategoryPerformanceTable('perf-dryshampoo-container', 'Dry Shampoo');
+    }
     if (typeof window.initPpcPage === 'function') window.initPpcPage();
     if (typeof window.initInventoryPage === 'function') window.initInventoryPage();
     if (typeof window.initFulfillmentPage === 'function') window.initFulfillmentPage();
@@ -12525,6 +12534,39 @@ function getProductMaster() {
 
 const KEYWORD_TRACKER_SUMMARY_SHEET_ID = '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4';
 const KEYWORD_TRACKER_SUMMARY_GID      = '579593778';
+
+// Returns today's (or the current) most recent Monday as YYYY-MM-DD.
+// Added 2026-08-06 per Jaclyn: the Keyword Tracker syncs weekly on
+// Mondays, so BSR/Rating should be anchored to that specific date rather
+// than just "whatever the latest row happens to be" (which worked for the
+// initial bug fix, but doesn't guarantee it lands on the intended weekly
+// cadence if an ad-hoc sync ever runs off-schedule).
+function ovMostRecentMonday() {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = day === 0 ? 6 : day - 1; // days since the most recent Monday
+  d.setDate(d.getDate() - diff);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Picks the Keyword Tracker row for a given ASIN, preferring an exact
+// match on the most recent Monday's date; falling back to the latest
+// available date at or before that Monday (in case that week's sync
+// hasn't landed yet); falling back to the latest row overall as a last
+// resort (in case there's somehow nothing at or before that Monday).
+function pickKwRowForAsin(kwRows, asin) {
+  const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin);
+  if (!matches.length) return null;
+  const monday = ovMostRecentMonday();
+  const mondayMatch = matches.find(r => (r.date || '').substring(0, 10) === monday);
+  if (mondayMatch) return mondayMatch;
+  const priorOrEqual = matches.filter(r => (r.date || '') <= monday);
+  if (priorOrEqual.length) {
+    return priorOrEqual.reduce((best, r) => (!best || r.date > best.date) ? r : best, null);
+  }
+  return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
+}
+
 const ACTIVATOR_PRODUCTS = [
   { sku: 'EVO0001', asin: 'B08BJBM77V' }, // Reverse
   { sku: 'EVO0005', asin: 'B07SG6S4VV' }, // Promote
@@ -12555,27 +12597,16 @@ window.loadActivatorsPerformanceTable = async function() {
     const unitsLabelEl = document.getElementById('perf-act-units-label');
     if (unitsLabelEl) unitsLabelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
 
-    // BUG FOUND 2026-08-06: this sheet is a periodic snapshot (has its own
-    // `date` column, confirmed via console — date, brand, asin, sku,
-    // total_tracked_keywords, top50_organic_count, avg_organic_rank,
-    // boosted_count, last_synced, bsr, subcategory_bsr, review_count,
-    // rating), so there can be MULTIPLE rows per ASIN (one per sync date).
-    // .find() was grabbing whichever row happened to come first in the
-    // sheet — if that's an early snapshot from before bsr/rating were
-    // being populated yet, it reads as blank even though later rows for
-    // the same ASIN have real values. Fixed: pick the row with the latest
-    // `date` for that ASIN instead of just the first match.
-    function latestKwRowForAsin(asin) {
-      const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin);
-      if (!matches.length) return null;
-      return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
-    }
+    // Row selection updated 2026-08-06 per Jaclyn: now anchored to the most
+    // recent Monday specifically (weekly sync cadence), via the shared
+    // pickKwRowForAsin() helper — see its definition above for the
+    // fallback logic if that week's sync hasn't landed yet.
 
     ACTIVATOR_PRODUCTS.forEach(p => {
       const suffix = p.sku.replace('EVO', '');
 
       // BSR + subcategory BSR + Rating/Reviews — Keyword Tracker summary tab.
-      const kwRow = latestKwRowForAsin(p.asin);
+      const kwRow = pickKwRowForAsin(kwRows, p.asin);
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
@@ -12665,15 +12696,9 @@ window.loadSingleProductScorecards = async function() {
     const wmtRows = parseCsvToRows(wmtCsv);
     const webRows = parseCsvToRows(webCsv);
 
-    // Same fix as loadActivatorsPerformanceTable above: this sheet is a
-    // periodic snapshot (has its own `date` column) with potentially
-    // multiple rows per ASIN, so pick the most-recent-dated row instead
-    // of whichever comes first in the sheet.
-    function latestKwRowForAsin(asin) {
-      const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin);
-      if (!matches.length) return null;
-      return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
-    }
+    // Same shared helper as loadActivatorsPerformanceTable — anchored to
+    // the most recent Monday (weekly sync cadence), see its definition
+    // above for the fallback logic.
 
     SCORECARD_PRODUCTS.forEach(p => {
       const id = p.sku.replace('EVO', '');
@@ -12682,7 +12707,7 @@ window.loadSingleProductScorecards = async function() {
       if (labelEl) labelEl.textContent = `Units — ${OV_MONTH_ABBR[month - 1]}`;
 
       // BSR + Rating/Reviews — Keyword Tracker summary tab, matched by ASIN.
-      const kwRow = latestKwRowForAsin(p.asin);
+      const kwRow = pickKwRowForAsin(kwRows, p.asin);
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
@@ -12721,6 +12746,133 @@ window.loadSingleProductScorecards = async function() {
     console.warn('[SingleProductScorecards] load failed:', err.message);
   }
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// CATEGORY-DRIVEN PERFORMANCE TABLE (Insights → Products → Shampoos,
+// Conditioners, Hair Masks, Dry Shampoo) — added 2026-08-06 per Jaclyn.
+// Same live sources/logic as loadActivatorsPerformanceTable, but the
+// PRODUCT LIST itself is now determined live from the Product Short Name
+// sheet's "Product Category" column (col K, e.g. "EVO • Shampoo" — the
+// "EVO • " brand prefix is stripped, per Jaclyn), via the getProductMaster()
+// lookup built earlier — not a hardcoded SKU list. "SKU Type" (col J) is
+// used to exclude bundle/kit SKUs from these per-category tables, since a
+// bundle just re-merchandises core SKUs already counted on their own.
+//
+// No Buy Box row (dropped from all these tables per Jaclyn, 2026-08-06).
+//
+// IMPORTANT — category label matching is a best-effort guess: Jaclyn
+// confirmed the literal text "EVO • Activator" as one example, but I do
+// NOT have confirmed literal text for "Shampoo" / "Conditioner" /
+// "Hair Mask" / "Dry Shampoo" — these are assumed to match this tab's own
+// name. Every call logs the full list of unique category values actually
+// found on the sheet, so a mismatch is easy to spot and fix from the
+// console rather than silently rendering "no products found."
+async function renderCategoryPerformanceTable(containerId, categoryLabel) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const norm = s => (s || '').trim().toLowerCase();
+  try {
+    const { year, month } = ovGetLastFullMonth();
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+
+    const [master, kwCsv, bizCsv, amzCsv, wmtCsv, webCsv] = await Promise.all([
+      getProductMaster(),
+      fetch(ovCsvUrl(KEYWORD_TRACKER_SUMMARY_SHEET_ID, KEYWORD_TRACKER_SUMMARY_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const kwRows  = parseCsvToRows(kwCsv);
+    const bizRows = parseCsvToRows(bizCsv);
+    const amzRows = parseCsvToRows(amzCsv);
+    const wmtRows = parseCsvToRows(wmtCsv);
+    const webRows = parseCsvToRows(webCsv);
+
+    const allEntries = Object.values(master.bySku);
+    const isBundleOrKit = e => norm(e.skuType).includes('bundle') || norm(e.skuType).includes('kit');
+
+    let products = allEntries.filter(e => norm(e.category) === norm(categoryLabel) && !isBundleOrKit(e));
+    let fuzzy = false;
+    if (!products.length) {
+      products = allEntries.filter(e => norm(e.category).includes(norm(categoryLabel)) && !isBundleOrKit(e));
+      fuzzy = products.length > 0;
+    }
+    products = products.filter(e => e.sku && e.asin);
+
+    const uniqueCategories = [...new Set(allEntries.map(e => e.category).filter(Boolean))];
+    console.log(`[CategoryPerf][${categoryLabel}] matched ${products.length} product(s)${fuzzy ? ' (FUZZY substring match — no exact match found)' : ''}. All unique categories on the sheet:`, JSON.stringify(uniqueCategories));
+
+    if (!products.length) {
+      container.innerHTML = `<div class="card"><div style="color:var(--muted);font-size:12px;">No live products found for category "${escapeHtmlOrg(categoryLabel)}" — check the Product Category column on the Product Short Name sheet against the console log for this page (unique categories found are listed there).</div></div>`;
+      return;
+    }
+
+    const rowsData = { bsr: [], sessions: [], units: [], revenue: [], conv: [], rating: [] };
+
+    products.forEach(p => {
+      const kwRow = pickKwRowForAsin(kwRows, p.asin);
+      let bsrText = '—';
+      if (kwRow && kwRow.bsr) {
+        bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
+        if (kwRow.subcategory_bsr) bsrText += ` (Sub #${(Number(kwRow.subcategory_bsr) || 0).toLocaleString()})`;
+      }
+      rowsData.bsr.push(bsrText);
+
+      const rating = kwRow ? parseFloat(kwRow.rating) : NaN;
+      const reviews = kwRow ? parseInt(kwRow.review_count, 10) : NaN;
+      rowsData.rating.push((!isNaN(rating) && !isNaN(reviews)) ? `${rating.toFixed(1)} ★ (${reviews})` : '—');
+
+      const bizRow = bizRows.find(r => (r.asin || '').trim().toUpperCase() === p.asin
+        && parseInt(r.year, 10) === year && parseInt(r.month, 10) === month);
+      const sessions = bizRow ? (parseInt(bizRow.sessions, 10) || 0) : 0;
+      rowsData.sessions.push(bizRow ? sessions.toLocaleString() : '—');
+
+      const amzOrderRows = amzRows.filter(r => (r.asin || '').trim().toUpperCase() === p.asin
+        && ovNormalizeDate(r.date).substring(0, 7) === monthPrefix);
+      const wmtOrderRows = wmtRows.filter(r => (r.sku || '').trim().toUpperCase() === p.sku
+        && ovNormalizeDate(r.date).substring(0, 7) === monthPrefix);
+      const webOrderRows = webRows.filter(r => (r.sku || '').trim().toUpperCase() === p.sku
+        && ovNormalizeDate(r.date).substring(0, 7) === monthPrefix);
+      const amzUnits = amzOrderRows.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+      const wmtUnits = wmtOrderRows.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+      const webUnits = webOrderRows.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
+      const totalUnits = amzUnits + wmtUnits + webUnits;
+      rowsData.units.push(totalUnits.toLocaleString());
+
+      const amzRevenue = bizRow ? parseAmt(bizRow.ordered_product_sales) : 0;
+      const wmtRevenue = wmtOrderRows.reduce((s, r) => s + parseAmt(r.item_price) * (parseInt(r.unit_count, 10) || 0), 0);
+      const webRevenue = webOrderRows.reduce((s, r) => s + parseAmt(r.item_price) * (parseInt(r.unit_count, 10) || 0), 0);
+      rowsData.revenue.push('$' + (amzRevenue + wmtRevenue + webRevenue).toFixed(2));
+
+      const conv = sessions > 0 ? (totalUnits / sessions * 100) : null;
+      rowsData.conv.push(conv != null ? conv.toFixed(2) + '%' : '—');
+    });
+
+    const theadHtml = '<tr><th></th>' + products.map(p =>
+      `<th class="prodcol"><div class="prodcol-name">${escapeHtmlOrg(p.name || p.sku)}</div><div class="prodcol-sku">${escapeHtmlOrg(p.sku)}</div></th>`
+    ).join('') + '</tr>';
+
+    const rowDefs = [
+      ['BSR', 'bsr'], ['Sessions', 'sessions'],
+      [`Units — ${OV_MONTH_ABBR[month - 1]}`, 'units'],
+      ['Revenue', 'revenue'], ['Conversion', 'conv'], ['Rating', 'rating'],
+    ];
+    const tbodyHtml = rowDefs.map(([label, key]) =>
+      `<tr><td>${label}</td>${rowsData[key].map(v => `<td>${v}</td>`).join('')}</tr>`
+    ).join('');
+
+    container.innerHTML = `<div class="card">
+      <div class="card-title" style="margin-bottom:2px;">Performance — ${OV_MONTH_ABBR[month - 1]} ${year}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Amazon</div>
+      <div style="overflow-x:auto;"><table class="perf-compare"><thead>${theadHtml}</thead><tbody>${tbodyHtml}</tbody></table></div>
+    </div>`;
+  } catch (err) {
+    console.warn(`[CategoryPerf][${categoryLabel}] load failed:`, err.message);
+  }
+}
+window.renderCategoryPerformanceTable = renderCategoryPerformanceTable;
 
 window.initInsightsOverview = async function() {
   const result = await ovLoadUnitsAndPeakMonth();
