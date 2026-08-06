@@ -211,6 +211,14 @@ module.exports = async (req, res) => {
     const brandInfo = itemIdToBrand[itemId];
     if (!brandInfo) { if (itemId) unmatchedItemIds.add(itemId); return; }
 
+    // Added 2026-08-06 per Jaclyn: skip items with NO ad spend at all —
+    // if no ads were served, none of the other measures (impressions,
+    // clicks, sales, acos) mean anything for reporting either. Keeps this
+    // sheet limited to products that actually had ad activity, rather
+    // than every item in the catalog regardless of whether it ran ads.
+    const spend = parseFloat(r.spend) || 0;
+    if (spend <= 0) return;
+
     const { year, month } = extractYearMonth(r.date);
     if (!year) return; // no parseable date — confirmed 2026-08-06 these are zero-activity items, not worth a stray blank-month row
     const row = {
@@ -219,7 +227,7 @@ module.exports = async (req, res) => {
       item_id: itemId,
       item_name: r.item_name || '',
       ad_units: r.sale_units ?? r.ad_units ?? 0,
-      spend: r.spend ?? 0,
+      spend,
       sales: r.sales ?? 0,
       acos: r.acos ?? '',
       brand: brandInfo.brandId,
@@ -245,11 +253,15 @@ module.exports = async (req, res) => {
     // from the raw rows rather than the already-narrowed `rows` above,
     // since impressions/clicks weren't carried into the Ad Orders sheet
     // shape itself (that sheet mirrors Amazon's Ad Orders columns, which
-    // don't include them either).
+    // don't include them either). Same spend>0 filter applied here as
+    // above — without it, a zero-spend item sharing a month with a real
+    // spend>0 item would still leak its impressions/clicks into that
+    // month's total, even though it was excluded from the Ad Orders sheet.
     adOrderRows.forEach(r => {
       const itemId = String(r.item_id || '').trim();
       const brandInfo = itemIdToBrand[itemId];
       if (!brandInfo || brandInfo.brandTabName !== tabName) return;
+      if ((parseFloat(r.spend) || 0) <= 0) return;
       const { year, month } = extractYearMonth(r.date);
       const key = `${year}-${month}`;
       if (!monthMap[key]) return;
@@ -300,6 +312,14 @@ module.exports = async (req, res) => {
 
     const impressions = parseInt(r.impressions, 10) || 0;
     const spend = parseFloat(r.spend) || 0;
+    // Extended 2026-08-06 from the same request for Ad Orders — same
+    // reasoning applies here: a search term with $0 spend means no ad
+    // was actually served on it, so nothing else on the row (clicks,
+    // sales, acos) is meaningful for reporting either. If this should
+    // behave differently from Ad Orders (e.g. keeping $0-spend terms
+    // that still show organic-adjacent impressions), this is the one
+    // line to remove.
+    if (spend <= 0) return;
     const { year, month } = extractYearMonth(r.date);
     if (!year) return; // no parseable date — same defensive guard as Ad Orders, though current real data always has one here
     const row = {
