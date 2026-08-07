@@ -53,16 +53,33 @@
  *
  *   1b. NEW 2026-08-07 per Jaclyn: PPC should never be recommended on an
  *      out-of-stock product. Added an inventory check against
- *      SHEET_NEWDERM_INVENTORY (évolis tab gid=2074324776) — same
- *      column-name caveat as everything else in this file: I do not
- *      have that sheet's real header row, so FBA_QTY_CANDIDATES /
- *      WAREHOUSE_SF_QTY_CANDIDATES below are guessed field names
- *      ("Amazon FBA" and "Medaltus Warehouse - SF" per Jaclyn's
- *      description, normalized a few plausible ways). See
- *      buildOosBySku()'s console warning if neither matches — that
- *      means is_oos will silently read false for every SKU (nothing
- *      gets wrongly blocked, but nothing gets correctly blocked either)
- *      until the real column names are confirmed and fixed there.
+ *      SHEET_NEWDERM_INVENTORY (évolis tab gid=2074324776).
+ *
+ *      PARTIALLY RESOLVED — Jaclyn provided the real config/sheets.js
+ *      (2026-08-07): confirmed the config key really is `newdermInventory`
+ *      (one of the candidates guessed below happened to be right — kept
+ *      the candidate list anyway as a defensive fallback rather than
+ *      hardcoding a bare `sheets.newdermInventory` reference, in case
+ *      that ever gets renamed).
+ *
+ *      STILL A REAL GAP, AND A BIGGER ONE THAN THE COLUMN NAMES: that
+ *      same sheets.js comment describes this sheet as having "pre-built
+ *      2-row merged headers (data starts row 3)". Every other sheet in
+ *      this whole codebase assumes row 1 is a plain single-row header —
+ *      if readRows() does the same here (no special-casing for this
+ *      sheet), it will treat the FIRST of the two merged header rows as
+ *      column names and the SECOND header row as if it were a real data
+ *      row, and my FBA_QTY_CANDIDATES/WAREHOUSE_SF_QTY_CANDIDATES field
+ *      names below will very likely not match anything real. I do not
+ *      have visibility into readRows()'s implementation to know whether
+ *      it already special-cases this sheet's row offset — if it
+ *      doesn't, this needs a real fix (either readRows() gains a
+ *      header-row-offset parameter, or this file fetches the raw range
+ *      starting at row 3 itself). Added a diagnostic log
+ *      (buildOosMaps() logs the actual first-row keys it receives every
+ *      run) specifically so this is fast to confirm or rule out the
+ *      first time this runs against real data, rather than silently
+ *      reading is_oos=false for every SKU with no visible clue why.
  *
  *   2. replaceRows()'s EXACT SIGNATURE IS UNCONFIRMED. Every other file
  *      I've seen in this project uses ensureTab+appendRows (pure
@@ -113,12 +130,16 @@ const PPC_STRATEGY_HEADERS = [
   'wasted_spend_terms_json', 'uploaded_at',
 ];
 
-// ═══ GAP #1b — SEE HEADER COMMENT — CONFIRM AGAINST THE REAL SHEET ═══
-// Évolis tab, gid=2074324776, per Jaclyn 2026-08-07. The actual
-// config/sheets.js key for this is guessed below (tried in order) since
-// I don't have that file to confirm against — matches the naming of the
-// existing sync-newderm-inventory-reconciliation.js cron, which almost
-// certainly already reads/writes this same sheet.
+// Évolis tab, gid=2074324776, per Jaclyn 2026-08-07.
+// CONFIRMED 2026-08-07 against the real config/sheets.js: the key is
+// `newdermInventory` (kept as first candidate in the list below, with
+// the other two kept only as a defensive fallback in case it's ever
+// renamed — not because the real name is still in doubt).
+// STILL UNCONFIRMED: the column names below, AND — more importantly —
+// whether readRows() correctly skips this sheet's documented "2-row
+// merged header, data starts row 3" structure. See GAP #1b in the file
+// header comment; buildOosMaps() below logs real header keys + sample
+// rows every run specifically so this is fast to check.
 const NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES = ['newdermInventory', 'newdermInventoryReconciliation', 'newderm_inventory'];
 const FBA_QTY_CANDIDATES = ['amazon_fba', 'Amazon FBA', 'fba_available', 'fba_quantity', 'FBA'];
 const WAREHOUSE_SF_QTY_CANDIDATES = ['medaltus_warehouse_sf', 'Medaltus Warehouse - SF', 'warehouse_sf', 'sf_quantity'];
@@ -145,11 +166,23 @@ function buildOosMaps(inventoryRows) {
     console.warn('[run-ppc-strategy-analysis] SHEET_NEWDERM_INVENTORY returned no rows — is_oos will be false for every SKU.');
     return { bySku, byAsin };
   }
+
+  // Diagnostic — see GAP #1b in the file header comment. This sheet has
+  // "pre-built 2-row merged headers, data starts row 3" per Jaclyn's own
+  // config/sheets.js comment; if readRows() doesn't already account for
+  // that offset, row[0] here will actually be the SECOND header row
+  // (not real data), and none of the candidate field names below will
+  // match anything. Logging the real keys + first 2 rows every run so
+  // this is a 5-second check instead of a silent guess.
+  console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[0] keys:', Object.keys(inventoryRows[0]).join(' | '));
+  console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[0] sample:', JSON.stringify(inventoryRows[0]));
+  if (inventoryRows[1]) console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[1] sample:', JSON.stringify(inventoryRows[1]));
+
   const sample = inventoryRows[0];
   const hasFba = FBA_QTY_CANDIDATES.some(c => sample[c] !== undefined);
   const hasSf = WAREHOUSE_SF_QTY_CANDIDATES.some(c => sample[c] !== undefined);
   if (!hasFba && !hasSf) {
-    console.warn('[run-ppc-strategy-analysis] Could not find an Amazon FBA or Medaltus Warehouse SF column on SHEET_NEWDERM_INVENTORY (tried:', FBA_QTY_CANDIDATES.join(', '), '/', WAREHOUSE_SF_QTY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU. See GAP #1b in the file header comment.');
+    console.warn('[run-ppc-strategy-analysis] Could not find an Amazon FBA or Medaltus Warehouse SF column on SHEET_NEWDERM_INVENTORY (tried:', FBA_QTY_CANDIDATES.join(', '), '/', WAREHOUSE_SF_QTY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU. Check the [qa] log lines just above: if the first rows keys look like a second header row rather than real column names/data, this is the merged-header row-offset problem described in GAP #1b, not a wrong-field-name problem.');
     return { bySku, byAsin };
   }
   inventoryRows.forEach(r => {
