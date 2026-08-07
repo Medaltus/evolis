@@ -267,6 +267,20 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 
 /* ── Overview specific ── */
 .brand-hero{background:linear-gradient(135deg,var(--navy) 0%,#0a2a78 100%);border-radius:var(--radius);padding:24px 28px;margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;gap:16px;}
+
+/* Added 2026-08-07 per Jaclyn — internal-only link to the Google Sheets
+   feeding a page's KPIs/tables, so the rest of the team doesn't need to
+   have every sheet ID memorized. Deliberately a dropdown, not a single
+   link — most internal pages (starting with Overview) pull from many
+   distinct sheets/tabs, not one. */
+.sheet-link-menu{position:relative;display:inline-block;margin-bottom:14px;}
+.sheet-link-btn{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:7px 14px;font-size:11.5px;font-weight:600;color:var(--navy);cursor:pointer;font-family:var(--font);transition:all .13s;}
+.sheet-link-btn:hover{background:var(--bg2);border-color:var(--slate);}
+.sheet-link-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 8px 24px rgba(0,31,96,.14);min-width:260px;z-index:50;padding:6px;max-height:360px;overflow-y:auto;}
+.sheet-link-dropdown.open{display:block;}
+.sheet-link-dropdown a{display:block;padding:8px 12px;border-radius:6px;font-size:12px;color:var(--navy);text-decoration:none;transition:background .1s;}
+.sheet-link-dropdown a:hover{background:var(--bg2);}
+.sheet-link-dropdown a span.sheet-link-icon{margin-right:6px;}
 .brand-hero-left .brand-name{font-size:22px;font-weight:600;color:#fff;letter-spacing:-.4px;}
 .brand-hero-left .brand-tagline{font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px;}
 .brand-hero-right{display:flex;gap:20px;}
@@ -340,6 +354,18 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
 .sc-value{font-size:18px;font-weight:700;color:var(--navy);line-height:1;}
 .sc-sub{font-size:10px;color:var(--muted);margin-top:3px;}
 .sc-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;}
+
+/* Added 2026-08-07 per Jaclyn — the shared .sc-badge above (9px, low-
+   opacity tinted background + matching-hue text) is too small/low-
+   contrast to read comfortably on the PPC Strategy status badges
+   specifically ("IMMEDIATE — 0 sessions, 0 units" etc). Scoped to just
+   .ppc-strategy-hd rather than changing .sc-badge everywhere else it's
+   used (Product Portfolio HEALTHY/WATCH/CRITICAL, etc.), since those
+   weren't flagged as a problem and are tightly spaced already. */
+.ppc-strategy-hd .sc-badge{font-size:13px;font-weight:700;padding:6px 14px;border-radius:14px;}
+.ppc-strategy-hd .sc-badge.good{background:#1db88a;color:#fff;}
+.ppc-strategy-hd .sc-badge.warn{background:var(--warn);color:#fff;}
+.ppc-strategy-hd .sc-badge.danger{background:var(--danger);color:#fff;}
 .sc-badge.good{background:rgba(36,233,163,.13);color:#1db88a;}
 .sc-badge.warn{background:rgba(200,125,47,.1);color:var(--warn);}
 .sc-badge.danger{background:rgba(219,55,45,.1);color:var(--danger);}
@@ -740,12 +766,13 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
    Jaclyn. Buttons redesigned as a clean modern pair: Run Analysis as the
    solid-fill primary action, Run Listing Audit as an outlined secondary
    action of the same shape/size. */
-.upload-run-btn{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--navy) 0%,#0d3494 100%);color:#fff;border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(0,31,96,.18);}
-.upload-run-btn:hover{box-shadow:0 4px 14px rgba(0,31,96,.28);transform:translateY(-1px);}
-.upload-run-btn:disabled{background:var(--muted);cursor:not-allowed;box-shadow:none;transform:none;}
-.upload-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
+.upload-run-btn{display:flex;align-items:center;gap:9px;background:var(--green);color:var(--navy);border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(36,233,163,.35);}
+.upload-run-btn:hover{box-shadow:0 4px 14px rgba(36,233,163,.5);transform:translateY(-1px);}
+.upload-run-btn:disabled{background:var(--muted);color:#fff;cursor:not-allowed;box-shadow:none;transform:none;}
+.upload-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(0,31,96,.25);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;display:none;}
 .upload-run-btn.running .spinner{display:block;}
 .upload-run-btn.running .btn-label{opacity:.7;}
+.last-run-note{font-size:10.5px;color:var(--muted);margin-top:6px;text-align:center;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .upload-status{font-size:11.5px;color:var(--muted);margin-left:12px;font-style:italic;}
 .upload-status.error{color:var(--danger);}
@@ -799,6 +826,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .audit-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
 .audit-run-btn.running .spinner{display:block;}
 .audit-run-btn.running .btn-label{opacity:.7;}
+.ppc-run-btn{display:flex;align-items:center;gap:9px;background:var(--sand);color:var(--navy);border:none;border-radius:999px;padding:13px 26px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;box-shadow:0 2px 8px rgba(244,223,208,.6);}
+.ppc-run-btn:hover{box-shadow:0 4px 14px rgba(244,223,208,.85);transform:translateY(-1px);}
+.ppc-run-btn:disabled{background:var(--muted);color:#fff;cursor:not-allowed;box-shadow:none;transform:none;}
+.ppc-run-btn .spinner{width:14px;height:14px;border:2px solid rgba(0,31,96,.25);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite;display:none;}
+.ppc-run-btn.running .spinner{display:block;}
+.ppc-run-btn.running .btn-label{opacity:.7;}
 
 /* ══════════════════════════════════════════════════════════════
    PDF EXPORT — button + hidden report template
@@ -1212,6 +1245,29 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   </div>
 
   <div class="page" id="page-overview">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('overview-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="overview-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=1163928587#gid=1163928587" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/16mnFaFkTfXS4FzZ2mI5aoDKNrw8FWe8R8IUDnv3FHVs/edit?gid=267551179#gid=267551179" target="_blank" rel="noopener"><span class="sheet-link-icon">↩️</span>Amazon Returns</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI/edit?gid=158578426#gid=158578426" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Amazon Ad Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1equxdiqpzonA5TgsrKzbrpq92QHyJP8kQ2RoUiYmank/edit?gid=1237377804#gid=1237377804" target="_blank" rel="noopener"><span class="sheet-link-icon">💰</span>Amazon Revenue</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=597852778#gid=597852778" target="_blank" rel="noopener"><span class="sheet-link-icon">🌐</span>Website Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=1033366681#gid=1033366681" target="_blank" rel="noopener"><span class="sheet-link-icon">↩️</span>Website Returns</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=7000599#gid=7000599" target="_blank" rel="noopener"><span class="sheet-link-icon">💰</span>Website Revenue</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=219707263#gid=219707263" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Website Google Ads</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=1841786277#gid=1841786277" target="_blank" rel="noopener"><span class="sheet-link-icon">🛒</span>Website Shopping/PMAX</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y/edit?gid=1844526926#gid=1844526926" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Walmart Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1XxYmX0NT-4bqKh4N96zNAPIAzctXDQaK6Yzp6hVWjJc/edit?gid=344983459#gid=344983459" target="_blank" rel="noopener"><span class="sheet-link-icon">↩️</span>Walmart Returns</a>
+        <a href="https://docs.google.com/spreadsheets/d/1PYUPePnhnBJp77n3HVSKeM824ZorAMkiJC8WFbyORCU/edit?gid=664808652#gid=664808652" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Walmart Ad Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1H1mAYxu8udO7vuCPGs8u0iVzHaRh0wbHb4PyIka4pUU/edit?gid=844750080#gid=844750080" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Walmart Advertising</a>
+        <a href="https://docs.google.com/spreadsheets/d/1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE/edit?gid=812984298#gid=812984298" target="_blank" rel="noopener"><span class="sheet-link-icon">💰</span>Walmart Revenue</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/edit?gid=164358627#gid=164358627" target="_blank" rel="noopener"><span class="sheet-link-icon">🏷️</span>Product Short Name (SKU/ASIN crosswalk)</a>
+      </div>
+    </div>
     <div class="brand-hero">
       <div class="brand-hero-left">
         <div class="brand-name" style="font-family:var(--font-subheader);font-weight:700;font-size:28px;">évolis</div>
@@ -3362,20 +3418,29 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <!-- ── ANALYSIS PANEL ── -->
       <div class="upload-panel">
         <div class="upload-panel-title">Weekly Brand Analysis</div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <button class="upload-run-btn" id="run-analysis-btn" onclick="runInsightAnalysis()">
-            <div class="spinner"></div>
-            <span class="btn-label">✦ Run Analysis</span>
-          </button>
-          <button class="audit-run-btn" id="run-audit-btn" onclick="runListingAudit()">
-            <div class="spinner"></div>
-            <span class="btn-label">📋 Run Listing Audit</span>
-          </button>
-          <button class="audit-run-btn" id="run-ppc-strategy-btn" onclick="runPpcStrategyAnalysis()">
-            <div class="spinner"></div>
-            <span class="btn-label">📈 Run PPC Analysis</span>
-          </button>
-          <span class="upload-status" id="upload-status"></span>
+        <div style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+          <div>
+            <button class="upload-run-btn" id="run-analysis-btn" onclick="runInsightAnalysis()">
+              <div class="spinner"></div>
+              <span class="btn-label">📊 Run Analysis</span>
+            </button>
+            <div class="last-run-note" id="last-run-analysis">Last run: —</div>
+          </div>
+          <div>
+            <button class="audit-run-btn" id="run-audit-btn" onclick="runListingAudit()">
+              <div class="spinner"></div>
+              <span class="btn-label">📋 Run Listing Audit</span>
+            </button>
+            <div class="last-run-note" id="last-run-audit">Last run: —</div>
+          </div>
+          <div>
+            <button class="ppc-run-btn" id="run-ppc-strategy-btn" onclick="runPpcStrategyAnalysis()">
+              <div class="spinner"></div>
+              <span class="btn-label">📈 Run PPC Analysis</span>
+            </button>
+            <div class="last-run-note" id="last-run-ppc">Last run: —</div>
+          </div>
+          <span class="upload-status" id="upload-status" style="align-self:center;"></span>
         </div>
       </div>
 
@@ -4387,6 +4452,15 @@ function showChannel(page, channelId, btn) {
   }
 
   // ── Sub-tab navigation (nested product/variation tabs) ──
+  // Closes any open .sheet-link-dropdown when clicking outside its
+  // .sheet-link-menu wrapper — added 2026-08-07 alongside the internal
+  // "Source Sheets" link menu on the Overview page.
+  document.addEventListener('click', function(e) {
+    document.querySelectorAll('.sheet-link-dropdown.open').forEach(function(dd) {
+      if (!dd.closest('.sheet-link-menu').contains(e.target)) dd.classList.remove('open');
+    });
+  });
+
   function showSubTab(parentId, tabId, btn) {
     const parent = document.getElementById(parentId);
     if (!parent) return;
@@ -10560,6 +10634,7 @@ async function initSnsExternal() {
       window.renderSearchQueryPerformance('ins-sqp-container');
     }
     if (typeof window.renderReviewsTab === 'function') window.renderReviewsTab();
+    if (typeof window.loadLastRunDates === 'function') window.loadLastRunDates();
     if (typeof window.loadActivatorsPerformanceTable === 'function') window.loadActivatorsPerformanceTable();
     if (typeof window.renderCategoryPerformanceTable === 'function') {
       window.renderCategoryPerformanceTable('perf-shampoo-container', 'Shampoo');
@@ -13911,7 +13986,7 @@ window.ppcLoadKeywordCoverage = ppcLoadKeywordCoverage;
 // that data starts populating, no code change needed then.
 function ppcStatusBadgeClass(label) {
   const l = (label || '').toUpperCase();
-  if (l.includes('IMMEDIATE') || l.includes('LISTING FIX')) return 'danger';
+  if (l.includes('OUT OF STOCK') || l.includes('IMMEDIATE') || l.includes('LISTING FIX')) return 'danger';
   if (l.includes('TRAFFIC')) return 'warn';
   return 'good';
 }
@@ -15482,11 +15557,53 @@ async function runPpcStrategyAnalysis() {
     if (!res.ok) throw new Error(data.error || ('Request failed: ' + res.status));
     st.textContent = `✓ Done — ${data.sku_count || 0} SKUs — ` + new Date().toLocaleTimeString();
     st.className = 'upload-status success';
+    if (typeof window.loadLastRunDates === 'function') window.loadLastRunDates();
   } catch (err) {
     console.error(err);
     st.textContent = '✗ ' + err.message; st.className = 'upload-status error';
   } finally { btn.classList.remove('running'); btn.disabled = false; }
 }
+
+// Added 2026-08-07 per Jaclyn — shows when each of the 3 buttons above
+// was last successfully run, read from the same sheets each one writes
+// to (not a separately-tracked "last run" record). Runs on page load so
+// the note is accurate even before anyone clicks a button this session.
+function formatLastRun(dateStr) {
+  if (!dateStr) return 'Last run: never';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Last run: never';
+  return 'Last run: ' + d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' });
+}
+async function loadLastRunDates() {
+  // Run Analysis — most recent row's `date` on SHEET_INSIGHTS's évolis tab.
+  try {
+    const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, INSIGHTS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    const latest = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const el = document.getElementById('last-run-analysis');
+    if (el) el.textContent = formatLastRun(latest);
+  } catch (err) { console.warn('[LastRun] analysis failed:', err.message); }
+
+  // Run Listing Audit — most recent `audited_at` across all SKUs.
+  try {
+    const csv = await fetch(ovCsvUrl(LISTING_AUDIT_SHEET_ID, LISTING_AUDIT_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    const latest = rows.reduce((max, r) => ((r.audited_at || '') > max ? r.audited_at : max), '');
+    const el = document.getElementById('last-run-audit');
+    if (el) el.textContent = formatLastRun(latest);
+  } catch (err) { console.warn('[LastRun] audit failed:', err.message); }
+
+  // Run PPC Analysis — most recent `uploaded_at` for this brand's rows
+  // on the shared ppc_strategy tab.
+  try {
+    const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, PPC_STRATEGY_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv).filter(r => (r.brand || '').trim().toLowerCase() === INSIGHTS_BRAND_TAB.toLowerCase());
+    const latest = rows.reduce((max, r) => ((r.uploaded_at || '') > max ? r.uploaded_at : max), '');
+    const el = document.getElementById('last-run-ppc');
+    if (el) el.textContent = formatLastRun(latest);
+  } catch (err) { console.warn('[LastRun] ppc failed:', err.message); }
+}
+window.loadLastRunDates = loadLastRunDates;
 
 async function runInsightAnalysis() {
   const btn=document.getElementById('run-analysis-btn');
@@ -15513,6 +15630,7 @@ async function runInsightAnalysis() {
     // itself, two rows for the same date, one of them column-shifted.
     st.textContent='\u2713 Done \u2014 '+new Date().toLocaleTimeString();
     st.className='upload-status success';
+    if (typeof window.loadLastRunDates === 'function') window.loadLastRunDates();
   } catch(err) {
     console.error(err);
     st.textContent='\u2717 '+err.message; st.className='upload-status error';
@@ -16021,6 +16139,7 @@ async function runListingAudit() {
       st.textContent = '✓ Audit complete — ' + totalSkus + ' SKUs — results loaded — ' + new Date().toLocaleTimeString();
       st.className = 'upload-status success';
     }
+    if (typeof window.loadLastRunDates === 'function') window.loadLastRunDates();
 
   } catch(err) {
     console.error('Listing audit error:', err);
