@@ -42,16 +42,27 @@
  * ═══════════════════════════════════════════════════════════════════
  * REAL GAPS BELOW — FLAGGED, NOT SILENTLY GUESSED:
  *
- *   1. TAB NAME FOR gid=1053885538 IS UNKNOWN. Jaclyn gave the gid from
- *      the sheet's URL, but Google's write API (which ensureTab/
- *      appendRows/replaceRows all ultimately call) addresses tabs by
- *      NAME, not by gid — there's no lookup available here from gid to
- *      name. PPC_STRATEGY_TAB_NAME below is a placeholder guess
- *      ("ppc_strategy"). This MUST be corrected to whatever the actual
- *      tab name is (right-click the tab in Google Sheets to check, or
- *      just rename that tab to match this constant) before this will
- *      write to the right place — right now it would either fail or
- *      silently create a NEW tab with the wrong gid.
+ *   1. RESOLVED 2026-08-07: the guessed tab name ("ppc_strategy") turned
+ *      out not to match gid=1053885538 (Jaclyn's originally-intended
+ *      blank tab) — since Google's write API needs a name not a gid,
+ *      writing to the guessed name created a NEW tab instead, with its
+ *      own new gid (1273080018). Confirmed working and Jaclyn opted to
+ *      just keep this new tab as the real one going forward rather than
+ *      correct it — PPC_STRATEGY_TAB_NAME below is now the confirmed,
+ *      real destination.
+ *
+ *   1b. NEW 2026-08-07 per Jaclyn: PPC should never be recommended on an
+ *      out-of-stock product. Added an inventory check against
+ *      SHEET_NEWDERM_INVENTORY (évolis tab gid=2074324776) — same
+ *      column-name caveat as everything else in this file: I do not
+ *      have that sheet's real header row, so FBA_QTY_CANDIDATES /
+ *      WAREHOUSE_SF_QTY_CANDIDATES below are guessed field names
+ *      ("Amazon FBA" and "Medaltus Warehouse - SF" per Jaclyn's
+ *      description, normalized a few plausible ways). See
+ *      buildOosBySku()'s console warning if neither matches — that
+ *      means is_oos will silently read false for every SKU (nothing
+ *      gets wrongly blocked, but nothing gets correctly blocked either)
+ *      until the real column names are confirmed and fixed there.
  *
  *   2. replaceRows()'s EXACT SIGNATURE IS UNCONFIRMED. Every other file
  *      I've seen in this project uses ensureTab+appendRows (pure
@@ -93,15 +104,66 @@ const brands = require('./config/brands');
 // pulls) — confirmed directly, not routed through sheets.keywordTracker.
 const KEYWORD_TRACKER_SHEET_ID = '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4';
 
-// ═══ GAP #1 — SEE HEADER COMMENT — CONFIRM THIS AGAINST THE REAL TAB ═══
-const PPC_STRATEGY_TAB_NAME = 'ppc_strategy';
+const PPC_STRATEGY_TAB_NAME = 'ppc_strategy'; // resolved 2026-08-07 — see GAP #1 in header comment
 
 const PPC_STRATEGY_HEADERS = [
-  'date', 'brand', 'sku', 'asin', 'status_badge',
+  'date', 'brand', 'sku', 'asin', 'status_badge', 'is_oos',
   'sessions', 'units', 'revenue', 'conversion_pct',
   'headline', 'recommended_bullets_json', 'suggested_exact_match_targets_json',
   'wasted_spend_terms_json', 'uploaded_at',
 ];
+
+// ═══ GAP #1b — SEE HEADER COMMENT — CONFIRM AGAINST THE REAL SHEET ═══
+// Évolis tab, gid=2074324776, per Jaclyn 2026-08-07. The actual
+// config/sheets.js key for this is guessed below (tried in order) since
+// I don't have that file to confirm against — matches the naming of the
+// existing sync-newderm-inventory-reconciliation.js cron, which almost
+// certainly already reads/writes this same sheet.
+const NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES = ['newdermInventory', 'newdermInventoryReconciliation', 'newderm_inventory'];
+const FBA_QTY_CANDIDATES = ['amazon_fba', 'Amazon FBA', 'fba_available', 'fba_quantity', 'FBA'];
+const WAREHOUSE_SF_QTY_CANDIDATES = ['medaltus_warehouse_sf', 'Medaltus Warehouse - SF', 'warehouse_sf', 'sf_quantity'];
+const OOS_ASIN_CANDIDATES = ['ASIN', 'asin', 'Asin'];
+const OOS_SKU_CANDIDATES = ['SKU', 'sku', 'Sku'];
+
+function resolveNewdermInventorySheetId() {
+  for (const key of NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES) {
+    if (sheets[key]) return sheets[key];
+  }
+  return null;
+}
+
+// Returns { bySku: Map, byAsin: Map } of booleans — true means this
+// product is out of stock (Amazon FBA + Medaltus Warehouse SF both at
+// or below zero). Never throws: if the sheet or the expected columns
+// aren't found, logs a clear warning and returns empty maps, so every
+// SKU just falls back to is_oos=false (behaves exactly as before this
+// feature existed) rather than crashing the whole run.
+function buildOosMaps(inventoryRows) {
+  const bySku = new Map();
+  const byAsin = new Map();
+  if (!inventoryRows.length) {
+    console.warn('[run-ppc-strategy-analysis] SHEET_NEWDERM_INVENTORY returned no rows — is_oos will be false for every SKU.');
+    return { bySku, byAsin };
+  }
+  const sample = inventoryRows[0];
+  const hasFba = FBA_QTY_CANDIDATES.some(c => sample[c] !== undefined);
+  const hasSf = WAREHOUSE_SF_QTY_CANDIDATES.some(c => sample[c] !== undefined);
+  if (!hasFba && !hasSf) {
+    console.warn('[run-ppc-strategy-analysis] Could not find an Amazon FBA or Medaltus Warehouse SF column on SHEET_NEWDERM_INVENTORY (tried:', FBA_QTY_CANDIDATES.join(', '), '/', WAREHOUSE_SF_QTY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU. See GAP #1b in the file header comment.');
+    return { bySku, byAsin };
+  }
+  inventoryRows.forEach(r => {
+    const fba = parseFloat(findField(r, FBA_QTY_CANDIDATES)) || 0;
+    const sf = parseFloat(findField(r, WAREHOUSE_SF_QTY_CANDIDATES)) || 0;
+    const isOos = (fba + sf) <= 0;
+    const sku = (findField(r, OOS_SKU_CANDIDATES) || '').toString().trim().toUpperCase();
+    const asin = (findField(r, OOS_ASIN_CANDIDATES) || '').toString().trim().toUpperCase();
+    if (sku) bySku.set(sku, isOos);
+    if (asin) byAsin.set(asin, isOos);
+  });
+  return { bySku, byAsin };
+}
+
 
 const BRAND_DESCRIPTIONS = {
   evolis:  'évolis (EVO) — a clinically tested hair growth brand using FGF5-inhibiting botanicals',
@@ -239,8 +301,13 @@ function buildWastedSpend(ppcByAsin, asin) {
 
 // GAP #4 — SEE HEADER COMMENT. Calibrated against exactly 3 examples;
 // treat as a first draft, not settled thresholds.
-//   - No sessions/units at all → most urgent: can't tell if this is a
-//     traffic problem or a listing problem until there's ANY data.
+//   - Out of stock → OVERRIDES every other signal below. Doesn't matter
+//     how well a product was converting or how much traffic it had —
+//     if it's not sellable right now, PPC spend on it is wasted by
+//     definition. Added 2026-08-07 per Jaclyn.
+//   - No sessions/units at all → most urgent otherwise: can't tell if
+//     this is a traffic problem or a listing problem until there's ANY
+//     data.
 //   - Meaningful traffic (>=500 sessions) but weak conversion (<10%) →
 //     the product IS being found, but the listing isn't closing the
 //     sale — fixing the listing multiplies whatever traffic already
@@ -248,8 +315,11 @@ function buildWastedSpend(ppcByAsin, asin) {
 //   - Strong conversion (>=15%) → the listing is doing its job; the
 //     lever left to pull is more traffic (PPC), not the listing itself.
 //   - Anything in between → no strong signal either way; flagged as
-//     WATCH rather than forced into one of the other 3 buckets.
-function computeStatusBadge(sessions, units, conversionPct) {
+//     WATCH rather than forced into one of the other 4 buckets.
+function computeStatusBadge(sessions, units, conversionPct, isOos) {
+  if (isOos) {
+    return { code: 'OOS', label: 'OUT OF STOCK — do not run PPC' };
+  }
   const s = sessions || 0;
   const u = units || 0;
   if (s === 0 && u === 0) {
@@ -264,7 +334,7 @@ function computeStatusBadge(sessions, units, conversionPct) {
   return { code: 'WATCH', label: 'WATCH — no strong signal yet' };
 }
 
-function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin) {
+function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps) {
   const bizBySku = latestBizRowPerSku(bizRowsFull);
 
   const kwBySku = new Map();
@@ -301,6 +371,13 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin) {
     const revenue = bizRow ? parseNumericCell(findField(bizRow, BIZ_FIELD_CANDIDATES.revenue)) : null;
     const conversionPct = bizRow ? parseConversionPct(findField(bizRow, BIZ_FIELD_CANDIDATES.conversion)) : null;
 
+    // OOS lookup — try ASIN first (more reliable, per the same reasoning
+    // used for wasted-spend scoping elsewhere in this file), fall back
+    // to SKU if the inventory sheet doesn't have this ASIN for some
+    // reason.
+    const isOos = (asin && oosMaps.byAsin.has(asin)) ? oosMaps.byAsin.get(asin)
+      : (oosMaps.bySku.has(sku) ? oosMaps.bySku.get(sku) : false);
+
     snapshots[sku] = {
       sku,
       asin,
@@ -310,7 +387,8 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin) {
       conversion_pct: conversionPct,
       top_keywords: topKeywords,
       wasted_spend_terms: asin ? buildWastedSpend(ppcByAsin, asin) : [],
-      status_badge: computeStatusBadge(sessions, units, conversionPct),
+      is_oos: isOos,
+      status_badge: computeStatusBadge(sessions, units, conversionPct, isOos),
     };
   });
 
@@ -376,9 +454,10 @@ Return ONLY this JSON structure:
 
 Rules:
 - One entry per SKU from the snapshot below, keyed EXACTLY by SKU. Do not add or omit SKUs.
+- IF a SKU's is_oos is true: do NOT recommend launching, scaling, or bidding on PPC for it under any circumstances — status_badge already says OUT OF STOCK. headline and every bullet should instead say plainly that this product is out of stock and PPC spend should stay paused until it's back in stock. suggested_exact_match_targets should be an empty list for an out-of-stock SKU — there is nothing to target while it can't be sold.
 - headline: one sentence, matches the tone/urgency of that SKU's status_badge (already computed — do not contradict it).
 - recommended_bullets: 2-4 bullets, HIGH priority first, each one tactical sentence referencing REAL numbers from that SKU's own snapshot only (sessions, conversion_pct, revenue, or a keyword's vol_mo/aba_pct/cpc). Do not invent numbers. Do not compare one SKU against another SKU.
-- suggested_exact_match_targets: 3-7 keyword strings pulled ONLY from that SKU's own top_keywords list — do not invent keywords.
+- suggested_exact_match_targets: 3-7 keyword strings pulled ONLY from that SKU's own top_keywords list — do not invent keywords. (Empty for an out-of-stock SKU — see above.)
 - Do not mention wasted_spend_terms in prose — that's rendered separately by the dashboard from the same data you're seeing here, no need to restate it.
 - No apostrophes in string values — use "does not" not "doesn't".
 - Keep all string values under 200 characters.
@@ -434,6 +513,7 @@ async function writeSkuStrategyRows(brand, rows) {
     r.sku,
     r.asin,
     r.status_badge.label,
+    r.is_oos ? 'TRUE' : 'FALSE',
     r.sessions ?? '',
     r.units ?? '',
     r.revenue ?? '',
@@ -477,11 +557,17 @@ module.exports = async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
 
   try {
-    const [kwRows, bizRows, sqpRows, ppcRows] = await Promise.all([
+    const inventorySheetId = resolveNewdermInventorySheetId();
+    if (!inventorySheetId) {
+      console.warn('[run-ppc-strategy-analysis] Could not resolve a config/sheets.js key for SHEET_NEWDERM_INVENTORY (tried:', NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU until this is fixed. See GAP #1b in the file header comment.');
+    }
+
+    const [kwRows, bizRows, sqpRows, ppcRows, inventoryRows] = await Promise.all([
       readRows(KEYWORD_TRACKER_SHEET_ID, brand.tabName).catch(() => []),
       readRows(sheets.businessReport, brand.tabName).catch(() => []),
       readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []),
       readRows(sheets.advertising, brand.tabName).catch(() => []),
+      inventorySheetId ? readRows(inventorySheetId, brand.tabName).catch(() => []) : Promise.resolve([]),
     ]);
 
     const { byAsin: ppcByAsin, sawAsinField } = aggregatePpcByAsinAndTerm(ppcRows);
@@ -489,7 +575,11 @@ module.exports = async function handler(req, res) {
       console.warn(`[run-ppc-strategy-analysis] ${brand.id} — no asin/ASIN field found on the advertising sheet; wasted_spend_terms will be empty for every SKU. See GAP #3 in the file header comment.`);
     }
 
-    const snapshots = buildSkuSnapshots(kwRows, bizRows, sqpRows, ppcByAsin);
+    const oosMaps = buildOosMaps(inventoryRows);
+    const oosCount = [...oosMaps.byAsin.values(), ...oosMaps.bySku.values()].filter(Boolean).length;
+    console.log(`[run-ppc-strategy-analysis] ${brand.id} — inventory check found ${oosCount} out-of-stock entr${oosCount === 1 ? 'y' : 'ies'} across ${oosMaps.byAsin.size} ASINs / ${oosMaps.bySku.size} SKUs checked.`);
+
+    const snapshots = buildSkuSnapshots(kwRows, bizRows, sqpRows, ppcByAsin, oosMaps);
     if (!Object.keys(snapshots).length) {
       return res.status(200).json({ ok: true, message: 'No SKUs found in Business Report or Keyword Tracker for this brand — nothing to write.' });
     }
