@@ -737,23 +737,36 @@ async function writeSkuStrategyRows(brand, rows) {
     uploadedAt,
   ]);
 
-  // FIXED 2026-08-08 per Jaclyn: this used to strip out EVERY row for
-  // this brand regardless of date before writing — meaning a run today
-  // silently deleted last week's rows too, not just prevented a same-
-  // day duplicate. This tab is meant to hold HISTORY (Jaclyn: "if I run
-  // this a week from now, I want it to add new rows"), with same-day
-  // re-runs overwriting only that day's row per SKU. Now only strips
-  // rows matching THIS brand AND THIS exact date — every other row
-  // (other brands, and this brand's own rows from any other date) is
-  // preserved untouched.
+  // FIXED 2026-08-07 per Jaclyn (real production bug, confirmed from a
+  // live sheet screenshot): this tab's header row was written ONCE by
+  // ensureTab() on the very first run, back when the schema was 14
+  // columns (before is_oos existed). ensureTab() only writes headers
+  // when the tab is blank — it never corrects an existing header row —
+  // so after is_oos was added, the header row stayed stuck at the old
+  // 14 columns while every data row started writing 15 columns. Result:
+  // every field from `headline` onward landed one column to the right
+  // of what its own header label said, e.g. the column LABELED
+  // recommended_bullets_json actually held the headline text (which is
+  // why it failed to JSON.parse and showed "No recommendations
+  // generated"), and the column labeled suggested_exact_match_targets_
+  // json actually held the real bullets — which is why the dashboard's
+  // "target pills" were rendering full bullet sentences instead of
+  // short keywords. replaceRows()'s own `headers` parameter does NOT
+  // rewrite row 1 (proven by this exact bug — the header stayed stale
+  // across multiple runs that all passed the updated 15-column
+  // PPC_STRATEGY_HEADERS to it), so it's not safe to rely on for schema
+  // changes. Fixed by making the header row part of the actual data
+  // array passed to replaceRows, so row 1 is unconditionally correct on
+  // every single run, regardless of what ensureTab or replaceRows do on
+  // their own with a separate headers argument.
   const token = await ensureTab(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS);
   const existingRows = await readRows(sheets.insights, PPC_STRATEGY_TAB_NAME).catch(() => []);
   const preservedRows = existingRows
     .filter(r => !((r.brand || '') === brand.id && (r.date || '') === today))
     .map(r => PPC_STRATEGY_HEADERS.map(h => r[h] !== undefined ? r[h] : ''));
 
-  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [...preservedRows, ...newRows], token);
-  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows for ${today} to "${PPC_STRATEGY_TAB_NAME}" (${preservedRows.length} rows from other dates/brands preserved as history)`);
+  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [PPC_STRATEGY_HEADERS, ...preservedRows, ...newRows], token);
+  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows for ${today} to "${PPC_STRATEGY_TAB_NAME}" (${preservedRows.length} rows from other dates/brands preserved as history, header row force-corrected)`);
 }
 
 module.exports = async function handler(req, res) {
