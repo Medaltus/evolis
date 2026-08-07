@@ -3371,6 +3371,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
             <div class="spinner"></div>
             <span class="btn-label">📋 Run Listing Audit</span>
           </button>
+          <button class="audit-run-btn" id="run-ppc-strategy-btn" onclick="runPpcStrategyAnalysis()">
+            <div class="spinner"></div>
+            <span class="btn-label">📈 Run PPC Analysis</span>
+          </button>
           <span class="upload-status" id="upload-status"></span>
         </div>
       </div>
@@ -15524,6 +15528,32 @@ function buildListingContext() {
     if (label&&copy) items.push(label.textContent.trim()+': '+copy.textContent.trim().slice(0,400));
   });
   return items.join('\n---\n').slice(0,6000);
+}
+
+// Added 2026-08-07 per Jaclyn — calls the new /api/run-ppc-strategy-analysis
+// endpoint (writes one row per SKU to SHEET_INSIGHTS's shared PPC-strategy
+// tab, replacing the hardcoded "Strategy by Product" cards). Same
+// running/disabled/status pattern as runInsightAnalysis and
+// runListingAudit below.
+async function runPpcStrategyAnalysis() {
+  const btn = document.getElementById('run-ppc-strategy-btn');
+  const st = document.getElementById('upload-status');
+  btn.classList.add('running'); btn.disabled = true;
+  try {
+    st.textContent = 'Running PPC strategy analysis…'; st.className = 'upload-status';
+    const res = await fetch('/api/run-ppc-strategy-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand: INSIGHTS_BRAND_TAB }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Request failed: ' + res.status));
+    st.textContent = `✓ Done — ${data.sku_count || 0} SKUs — ` + new Date().toLocaleTimeString();
+    st.className = 'upload-status success';
+  } catch (err) {
+    console.error(err);
+    st.textContent = '✗ ' + err.message; st.className = 'upload-status error';
+  } finally { btn.classList.remove('running'); btn.disabled = false; }
 }
 
 async function runInsightAnalysis() {
