@@ -318,7 +318,47 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin) {
 }
 
 // ── Claude prompt — writes prose only, against the snapshot above ───
+//
+// FIXED 2026-08-07: the original version sent EVERY SKU's snapshot to
+// Claude in one API call, asking for a headline + 2-4 bullets + 3-7
+// targets per SKU all at once. For a full catalog (~18 SKUs here) that's
+// enough generation work that the Claude call itself took longer than
+// Vercel's 30s function timeout and got killed mid-response (confirmed
+// in the Vercel logs: the Anthropic call hit "Timeout" at 29.18s).
+// Not a data problem — a single-call-does-everything design problem.
+// Fixed by splitting into small batches run in PARALLEL: each batch only
+// has to generate output for a few SKUs, so each individual call
+// finishes fast, and the total wall-clock time is bounded by the
+// slowest single batch rather than the sum of all of them. A failed or
+// slow batch also only blanks bullets for ITS few SKUs, not the whole
+// run.
+const SKUS_PER_BATCH = 4;
+
+function chunkSnapshotsBySku(snapshots, batchSize) {
+  const skus = Object.keys(snapshots);
+  const batches = [];
+  for (let i = 0; i < skus.length; i += batchSize) {
+    const batch = {};
+    skus.slice(i, i + batchSize).forEach(sku => { batch[sku] = snapshots[sku]; });
+    batches.push(batch);
+  }
+  return batches;
+}
+
 async function callClaudeForBullets(brand, snapshots, apiKey) {
+  const batches = chunkSnapshotsBySku(snapshots, SKUS_PER_BATCH);
+  console.log(`[run-ppc-strategy-analysis] ${brand.id} — ${Object.keys(snapshots).length} SKUs split into ${batches.length} batch(es) of up to ${SKUS_PER_BATCH}, run in parallel.`);
+
+  const batchResults = await Promise.all(
+    batches.map(batch => callClaudeForOneBatch(brand, batch, apiKey))
+  );
+
+  const merged = {};
+  batchResults.forEach(result => Object.assign(merged, result));
+  return merged;
+}
+
+async function callClaudeForOneBatch(brand, snapshotBatch, apiKey) {
   const brandDesc = BRAND_DESCRIPTIONS[brand.id] || BRAND_DESCRIPTIONS.default;
 
   const systemPrompt = `You are an expert Amazon PPC strategist for Medaltus. Analyzing per-product PPC opportunity for ${brandDesc}.
@@ -332,7 +372,7 @@ CRITICAL: Respond with a single valid JSON object only. No markdown fences, no p
 "Prevent had 15 sessions and 0 units in April. This product has no organic rank signal on any keyword. Zero revenue means zero organic velocity."
 
 Return ONLY this JSON structure:
-{"<SKU>":{"headline":"string","recommended_bullets":[{"priority":"HIGH|MED|LOW","text":"string"}]},"suggested_exact_match_targets":["string"]}}
+{"<SKU>":{"headline":"string","recommended_bullets":[{"priority":"HIGH|MED|LOW","text":"string"}],"suggested_exact_match_targets":["string"]}}
 
 Rules:
 - One entry per SKU from the snapshot below, keyed EXACTLY by SKU. Do not add or omit SKUs.
@@ -344,44 +384,42 @@ Rules:
 - Keep all string values under 200 characters.
 
 PER-SKU SNAPSHOT:
-${JSON.stringify(snapshots)}`;
-
-  const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  });
-
-  if (!claudeRes.ok) {
-    const err = await claudeRes.text();
-    const e = new Error(`Claude API error ${claudeRes.status}: ${err.slice(0, 300)}`);
-    e.status = 502;
-    throw e;
-  }
-
-  const data = await claudeRes.json();
-  if (data.stop_reason === 'max_tokens') {
-    console.warn(`[run-ppc-strategy-analysis] ${brand.id} — response truncated by max_tokens`);
-  }
-
-  const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-  const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
+${JSON.stringify(snapshotBatch)}`;
 
   try {
+    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 3000, // reduced from 8000 now that each call only covers up to SKUS_PER_BATCH SKUs
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+
+    if (!claudeRes.ok) {
+      const err = await claudeRes.text();
+      console.error(`[run-ppc-strategy-analysis] ${brand.id} — batch failed with Claude API error ${claudeRes.status}: ${err.slice(0, 300)}`);
+      return {}; // this batch's SKUs get empty bullets; other batches are unaffected
+    }
+
+    const data = await claudeRes.json();
+    if (data.stop_reason === 'max_tokens') {
+      console.warn(`[run-ppc-strategy-analysis] ${brand.id} — a batch response was truncated by max_tokens`);
+    }
+
+    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
     return JSON.parse(clean);
   } catch (e) {
-    console.error(`[run-ppc-strategy-analysis] ${brand.id} — Claude response was not valid JSON:`, e.message);
-    console.error('[run-ppc-strategy-analysis] Raw (first 500):', clean.slice(0, 500));
-    return {}; // fall back to bullets-less rows rather than failing the whole run
+    console.error(`[run-ppc-strategy-analysis] ${brand.id} — a batch failed (network error or invalid JSON):`, e.message);
+    return {}; // this batch's SKUs get empty bullets rather than failing the entire run
   }
 }
 
