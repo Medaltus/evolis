@@ -1328,6 +1328,14 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
   <!-- ══ INVENTORY ══ -->
   <div class="page" id="page-inventory">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('inventory-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="inventory-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s/edit?gid=1672819862#gid=1672819862" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Products Cache</a>
+        <a href="https://docs.google.com/spreadsheets/d/17ZTBMaZrZ6avFoHte8M_Zi1a_xhE3nZUnbn21EtRRRY/edit?gid=356984145#gid=356984145" target="_blank" rel="noopener"><span class="sheet-link-icon">🚚</span>Fulfillment Daily Shipments</a>
+        <a href="https://docs.google.com/spreadsheets/d/17ZTBMaZrZ6avFoHte8M_Zi1a_xhE3nZUnbn21EtRRRY/edit?gid=106183169#gid=106183169" target="_blank" rel="noopener"><span class="sheet-link-icon">🚚</span>Fulfillment KPIs</a>
+      </div>
+    </div>
     <div class="page-hd">
       <div><div class="page-title">Inventory</div><div class="page-sub">Amazon Products Cache · Days of inventory = sellable units ÷ (90-day purchased units ÷ 90)</div></div>
     </div>
@@ -2417,6 +2425,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
   <!-- ══ EVENTS ══ -->
   <div class="page" id="page-events">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('events-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="events-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/edit?gid=347530381#gid=347530381" target="_blank" rel="noopener"><span class="sheet-link-icon">📅</span>Event Dates (Master SKU List workbook)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/edit?gid=164358627#gid=164358627" target="_blank" rel="noopener"><span class="sheet-link-icon">🏷️</span>Master SKU List</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=893121583#gid=893121583" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Prime Day — Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI/edit?gid=1513774721#gid=1513774721" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Prime Day — Ad Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=1255964265#gid=1255964265" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Big Spring Sale — Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI/edit?gid=1312857917#gid=1312857917" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Big Spring Sale — Ad Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=1090722755#gid=1090722755" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Prime Big Deal Days — Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI/edit?gid=687755000#gid=687755000" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>Prime Big Deal Days — Ad Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=942023472#gid=942023472" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>BFCM — Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI/edit?gid=23521749#gid=23521749" target="_blank" rel="noopener"><span class="sheet-link-icon">📣</span>BFCM — Ad Orders</a>
+      </div>
+    </div>
     <div class="page-hd">
       <div><div class="page-title">Events</div><div class="page-sub">Promotional event performance & strategy</div></div>
     </div>
@@ -2674,6 +2698,31 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
   <!-- ══ INSIGHTS LOG (internal only) ══ -->
   <div class="page" id="page-insights">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('insights-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="insights-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4/edit?gid=579593778#gid=579593778" target="_blank" rel="noopener"><span class="sheet-link-icon">🔑</span>Keyword Tracker — Summary</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww/edit?gid=310979287#gid=310979287" target="_blank" rel="noopener"><span class="sheet-link-icon">📊</span>Business Report</a>
+        <a href="https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/edit?gid=1163928587#gid=1163928587" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y/edit?gid=1844526926#gid=1844526926" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Walmart Orders</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/edit?gid=597852778#gid=597852778" target="_blank" rel="noopener"><span class="sheet-link-icon">🌐</span>Website Orders</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=486436437#gid=486436437" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research — Activators</a>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=506089487#gid=506089487" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research — Shampoos</a>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=1468676198#gid=1468676198" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research — Conditioners</a>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=1350976977#gid=1350976977" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research — Hair Masks</a>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=358283602#gid=358283602" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research — Dry Shampoo</a>
+        <a href="https://docs.google.com/spreadsheets/d/1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4/edit?gid=898118227#gid=898118227" target="_blank" rel="noopener"><span class="sheet-link-icon">🔑</span>Keyword Tracker — évolis (per-keyword)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/edit?gid=164358627#gid=164358627" target="_blank" rel="noopener"><span class="sheet-link-icon">🏷️</span>Master SKU List</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1naEu4kADM0PBjM-lntqUU8IbI7s5ENhRmc72Q7_pVrc/edit?gid=283797149#gid=283797149" target="_blank" rel="noopener"><span class="sheet-link-icon">🔍</span>Search Query Performance</a>
+        <a href="https://docs.google.com/spreadsheets/d/1COergq71E4nqjdupLQx6kRDg-MrjY5TEuppCj7TfgQo/edit?gid=2039993638#gid=2039993638" target="_blank" rel="noopener"><span class="sheet-link-icon">⭐</span>Amazon Reviews</a>
+        <div style="border-top:1px solid var(--border2);margin:6px 4px;"></div>
+        <a href="https://docs.google.com/spreadsheets/d/1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg/edit?gid=1069613491#gid=1069613491" target="_blank" rel="noopener"><span class="sheet-link-icon">📝</span>Insights Log (Run Analysis output)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg/edit?gid=1273080018#gid=1273080018" target="_blank" rel="noopener"><span class="sheet-link-icon">📈</span>PPC Strategy (Run PPC Analysis output)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1NrCQPR7vuuHKgG6nVnh3hGnHGHD6txjXGdhrIn63w-M/edit?gid=2075287627#gid=2075287627" target="_blank" rel="noopener"><span class="sheet-link-icon">📋</span>Listing Audit (Run Listing Audit output)</a>
+      </div>
+    </div>
 
     <div class="page-hd">
       <div><div class="page-title">Insights</div><div class="page-sub">Brand intelligence, product analysis, and listing health</div></div>
@@ -3499,6 +3548,14 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
   <!-- ══ LISTING AUDIT (internal only) ══ -->
   <div class="page" id="page-listing">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('listing-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="listing-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s/edit?gid=1672819862#gid=1672819862" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Products Cache (current listing content)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1NrCQPR7vuuHKgG6nVnh3hGnHGHD6txjXGdhrIn63w-M/edit?gid=2075287627#gid=2075287627" target="_blank" rel="noopener"><span class="sheet-link-icon">📋</span>Listing Audit (Run Listing Audit output)</a>
+        <a href="https://docs.google.com/spreadsheets/d/19SfYJ99fMtqXna4VKGr8TtNMNxg6z52b0yDQPm7yI9M/edit?gid=486436437#gid=486436437" target="_blank" rel="noopener"><span class="sheet-link-icon">🥇</span>Competitor Research (Key Ingredients, Key Features)</a>
+      </div>
+    </div>
 
     <div class="page-hd">
       <div><div class="page-title">Listing Audit</div><div class="page-sub">Live listing copy · Title · Item Highlights · Bullets 1–5 · Description · Backend Keywords</div></div>
@@ -3971,6 +4028,16 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
   <!-- ══ PPC (internal only) ══ -->
   <div class="page" id="page-ppc">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('ppc-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="ppc-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o/edit?gid=1865714213#gid=1865714213" target="_blank" rel="noopener"><span class="sheet-link-icon">🔍</span>Ad Search Terms</a>
+        <a href="https://docs.google.com/spreadsheets/d/1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww/edit?gid=310979287#gid=310979287" target="_blank" rel="noopener"><span class="sheet-link-icon">📊</span>Business Report</a>
+        <a href="https://docs.google.com/spreadsheets/d/1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s/edit?gid=1672819862#gid=1672819862" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Products Cache</a>
+        <a href="https://docs.google.com/spreadsheets/d/1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4/edit?gid=898118227#gid=898118227" target="_blank" rel="noopener"><span class="sheet-link-icon">🔑</span>Keyword Tracker — évolis (per-keyword)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg/edit?gid=1273080018#gid=1273080018" target="_blank" rel="noopener"><span class="sheet-link-icon">📈</span>PPC Strategy (Run PPC Analysis output)</a>
+      </div>
+    </div>
 
     <div class="page-hd">
       <div><div class="page-title">PPC</div><div class="page-sub">Sponsored Products · ACoS · Strategy by product type · Data-informed opportunities</div></div>
@@ -4100,6 +4167,15 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
   <!-- ══ ORGANIC (internal only) ══ -->
   <div class="page" id="page-organic">
+    <div class="sheet-link-menu">
+      <button class="sheet-link-btn" onclick="document.getElementById('organic-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
+      <div class="sheet-link-dropdown" id="organic-sheet-dropdown">
+        <a href="https://docs.google.com/spreadsheets/d/1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4/edit?gid=898118227#gid=898118227" target="_blank" rel="noopener"><span class="sheet-link-icon">🔑</span>Keyword Tracker — évolis (per-keyword)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s/edit?gid=1672819862#gid=1672819862" target="_blank" rel="noopener"><span class="sheet-link-icon">📦</span>Amazon Products Cache (current listing content)</a>
+        <a href="https://docs.google.com/spreadsheets/d/1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o/edit?gid=1865714213#gid=1865714213" target="_blank" rel="noopener"><span class="sheet-link-icon">🔍</span>Ad Search Terms</a>
+        <a href="https://docs.google.com/spreadsheets/d/1FPy4Upzf8-S8TovDwPEPul2CHxzK8MGOYtRPOohTPwg/edit?gid=1069613491#gid=1069613491" target="_blank" rel="noopener"><span class="sheet-link-icon">📝</span>Insights Log (Run Analysis output)</a>
+      </div>
+    </div>
 
     <div class="page-hd">
       <div><div class="page-title">Organic</div><div class="page-sub">Keyword rank tracking · Fastest path to page 1</div></div>
@@ -10507,8 +10583,8 @@ async function initSnsExternal() {
   // Declared locally (not reusing the same-named consts declared later in
   // this file for the Listing Audit / PPC pages) to avoid any fragile
   // cross-scope assumption — same confirmed IDs either way.
-  const RT_LISTINGS_SHEET_ID = '142l0fEr7TnNCLfqbxfK3PoS4gREaoqfXevqjB1_dB-M';
-  const RT_LISTINGS_GID      = '1253931757';
+  const RT_LISTINGS_SHEET_ID = '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s'; // FIXED 2026-08-07 — was still pointing at the old deprecated Listings sheet ('142l0fEr7TnNCLfqbxfK3PoS4gREaoqfXevqjB1_dB-M'), same one SHEET_LISTINGS_ID was already corrected away from earlier. Now the Products Cache sheet, matching that fix.
+  const RT_LISTINGS_GID      = '1672819862';
   const RT_PPC_SHEET_ID      = '1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o';
   const RT_PPC_GID           = '1865714213'; // evolis tab
 
@@ -10516,10 +10592,13 @@ async function initSnsExternal() {
     return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}&_cb=${Date.now()}`;
   }
 
-  // Live listing copy has no history — SHEET_LISTINGS is overwritten per
-  // sync, one row per SKU, not appended. That means this can only report
-  // CURRENT placement, never "added on <date>" — there's nothing to diff
-  // against. Flagged in the on-page note too, not just here.
+  // Live listing copy has no per-keyword history — it's always the
+  // CURRENT listing content, never "added on <date>". FIXED 2026-08-07:
+  // this now reads Products Cache (daily snapshots, already collapsed to
+  // the latest date per SKU before _listingRows is set — see above), not
+  // the old single-row-per-SKU Listings sheet this comment used to
+  // describe. Still can't report a placement history, just current
+  // placement — flagged in the on-page note too, not just here.
   function computeWhereInListing(keyword, sku) {
     if (!_listingRows) return '—';
     const row = _listingRows.find(r => (r.sku || '').trim() === sku);
@@ -10625,7 +10704,17 @@ async function initSnsExternal() {
           ]);
           if (!isCsv(kwCsv)) throw new Error('Keyword tracker sheet returned no CSV data');
           _kwRows = parseCsvRows(kwCsv).filter(r => r.date && r.asin && r.keyword);
-          _listingRows = isCsv(listingCsv) ? parseCsvRows(listingCsv) : [];
+          // FIXED 2026-08-07: RT_LISTINGS_SHEET_ID now points at Products
+          // Cache (daily snapshots, many rows per SKU) instead of the old
+          // deprecated Listings sheet (one row per SKU, no date
+          // ambiguity). A plain .find() on sku alone would silently grab
+          // whichever date happens to appear first in the array rather
+          // than the most recent one — collapse to latest-date-per-SKU
+          // first, same pattern used everywhere else this sheet is read
+          // (getItemTypeBySku, run-listing-audit.js, etc).
+          const allListingRows = isCsv(listingCsv) ? parseCsvRows(listingCsv) : [];
+          const latestListingDate = allListingRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+          _listingRows = latestListingDate ? allListingRows.filter(r => r.date === latestListingDate) : allListingRows;
           _ppcRows = isCsv(ppcCsv) ? parseCsvRows(ppcCsv) : [];
           _aiRecommendations = isCsv(insightsCsv) ? buildAiRecommendationMap(parseCsvRows(insightsCsv)) : null;
         }
@@ -14225,28 +14314,70 @@ function ppcStatusBadgeClass(label) {
   return 'good';
 }
 
+// Coerces a single target/keyword entry to a plain display string,
+// regardless of whether the backend sent a string (the intended shape)
+// or accidentally sent an object (a real failure mode observed
+// 2026-08-07 — a malformed batch response on the backend produced
+// objects here for at least one SKU, which rendered as literal
+// "[object Object]" text before this fix). Tries a few plausible object
+// shapes before falling back to a safe placeholder rather than ever
+// stringifying a raw object into the page.
+function ppcCoerceToText(entry) {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry === 'object') {
+    return entry.keyword || entry.term || entry.text || entry.name || '';
+  }
+  return '';
+}
+
 function ppcRenderStrategyCard(row, productLabel) {
   let bullets = [];
   let targets = [];
   let wasted = [];
-  try { bullets = JSON.parse(row.recommended_bullets_json || '[]'); } catch (e) { /* leave empty */ }
-  try { targets = JSON.parse(row.suggested_exact_match_targets_json || '[]'); } catch (e) { /* leave empty */ }
-  try { wasted = JSON.parse(row.wasted_spend_terms_json || '[]'); } catch (e) { /* leave empty */ }
+  try {
+    bullets = JSON.parse(row.recommended_bullets_json || '[]');
+  } catch (e) {
+    console.warn(`[PPC][Strategy] ${row.sku}: recommended_bullets_json failed to parse — this SKU will show "No recommendations generated." Raw value:`, row.recommended_bullets_json);
+  }
+  try {
+    targets = JSON.parse(row.suggested_exact_match_targets_json || '[]');
+  } catch (e) {
+    console.warn(`[PPC][Strategy] ${row.sku}: suggested_exact_match_targets_json failed to parse. Raw value:`, row.suggested_exact_match_targets_json);
+  }
+  try {
+    wasted = JSON.parse(row.wasted_spend_terms_json || '[]');
+  } catch (e) {
+    console.warn(`[PPC][Strategy] ${row.sku}: wasted_spend_terms_json failed to parse. Raw value:`, row.wasted_spend_terms_json);
+  }
 
   const badgeClass = ppcStatusBadgeClass(row.status_badge);
-  const bulletsHtml = bullets.map(b => `<div class="ppc-priority-row">
-      <span class="ppc-priority-badge ${(b.priority || 'low').toLowerCase()}">${escapeHtmlOrg(b.priority || '')}</span>
-      <div class="ppc-priority-text">${escapeHtmlOrg(b.text || '')}</div>
-    </div>`).join('');
+  const bulletsHtml = bullets.map(b => {
+    // Defensive against a bullet entry itself being a plain string
+    // instead of the expected {priority,text} object — same failure
+    // family as the targets/wasted coercion above.
+    const priority = (b && typeof b === 'object') ? (b.priority || 'LOW') : 'LOW';
+    const text = (b && typeof b === 'object') ? (b.text || '') : ppcCoerceToText(b);
+    if (!text) return '';
+    return `<div class="ppc-priority-row">
+      <span class="ppc-priority-badge ${String(priority).toLowerCase()}">${escapeHtmlOrg(priority)}</span>
+      <div class="ppc-priority-text">${escapeHtmlOrg(text)}</div>
+    </div>`;
+  }).join('');
 
-  const targetsHtml = targets.length ? `<div class="ppc-kw-targets">
+  const targetTexts = targets.map(ppcCoerceToText).filter(Boolean);
+  const targetsHtml = targetTexts.length ? `<div class="ppc-kw-targets">
       <div class="ppc-kw-lbl">Suggested Exact Match Targets</div>
-      ${targets.map(t => `<span class="rank-pill rank-mid">${escapeHtmlOrg(t)}</span>`).join('')}
+      ${targetTexts.map(t => `<span class="rank-pill rank-mid">${escapeHtmlOrg(t)}</span>`).join('')}
     </div>` : '';
 
   const wastedHtml = wasted.length ? `<div class="ppc-alert warn" style="margin-top:14px;">
       <span class="ppc-alert-icon">⚠️</span>
-      <div><strong>Wasted spend detected:</strong> ${wasted.map(w => `"${escapeHtmlOrg(w.term)}" ($${(w.spend || 0).toFixed(2)}, ${w.clicks || 0} clicks, 0 orders)`).join(' · ')}</div>
+      <div><strong>Wasted spend detected:</strong> ${wasted.map(w => {
+        const term = ppcCoerceToText(w && w.term !== undefined ? w.term : w);
+        const spend = (w && typeof w === 'object' && !isNaN(parseFloat(w.spend))) ? parseFloat(w.spend).toFixed(2) : '0.00';
+        const clicks = (w && typeof w === 'object') ? (w.clicks || 0) : 0;
+        return `"${escapeHtmlOrg(term)}" ($${spend}, ${clicks} clicks, 0 orders)`;
+      }).join(' · ')}</div>
     </div>` : '';
 
   return `<div class="ppc-strategy-card">
