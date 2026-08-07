@@ -3378,23 +3378,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div id="ai-log-entries">
         <!-- Populated by runInsightAnalysis() and loadInsightsFromSheet() -->
       </div>
-
-      <!-- ── STATIC LEGACY LOG ── -->
-      <div class="log-entry">
-        <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Amazon</span><span class="log-status-staging">◎ In Staging</span></div>
-        <div class="log-text">Amazon units declined 4% MOM, consistent with seasonal softness. Ad-attributed units held (+2%) while organic softened. Top SKU: Reverse Shampoo Travel Size (59 units).</div>
-        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
-      </div>
-      <div class="log-entry">
-        <div class="log-entry-hd"><span class="log-date">2026-05-31</span><span class="log-page">Sales → Overview</span><span class="log-status-live">● Live</span></div>
-        <div class="log-text">Amazon remains dominant at 68% of revenue but declined MOM. Website share grew to 22% on subscription momentum. Walmart softened as expected post-promo period.</div>
-        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
-      </div>
-      <div class="log-entry">
-        <div class="log-entry-hd"><span class="log-date">2026-04-30</span><span class="log-page">Overview</span><span class="log-status-live">● Live</span></div>
-        <div class="log-text">April saw strong Website growth (+35% units) offset by Amazon softness. Subscription attach rate reached 18% of Website orders — a new high.</div>
-        <div class="log-actions"><button class="btn-edit">✏️ Edit</button></div>
-      </div>
     </div><!-- /ins-log -->
 
   </div>
@@ -15483,8 +15466,18 @@ async function loadInsightsFromSheet() {
     const rows = parseCsvToRows(await res.text());
     if (!rows.length) return;
 
+    // FIXED 2026-08-07 per Jaclyn: rows were being used in raw sheet
+    // order. This cron appends new analysis runs to the END of the
+    // sheet (same convention as every other cron in this project), so
+    // row 0 was actually the OLDEST entry — meaning the log displayed
+    // oldest-first instead of newest-first, AND the "latest" organic/
+    // PPC/listing boxes above it were quietly reading the oldest row
+    // instead of the most recent one. Sorting by date (descending)
+    // fixes both in one place rather than assuming physical row order.
+    const sortedRows = rows.slice().sort((a, b) => (b['date'] || '').localeCompare(a['date'] || ''));
+
     // ── Most recent row → populate organic/PPC/listing green boxes ──
-    const latest = rows[0];
+    const latest = sortedRows[0];
     const latestInsights = {
       date:        latest['date'] || '',
       organic:     safeJson(latest['organic_json']),
@@ -15495,11 +15488,11 @@ async function loadInsightsFromSheet() {
     // Only inject organic/PPC/listing boxes (not the log card) from latest
     injectInsightsBoxes(latestInsights);
 
-    // ── All rows → populate the insights log ──
+    // ── All rows → populate the insights log, newest first ──
     const logEl = document.getElementById('ai-log-entries');
     if (logEl) {
       logEl.innerHTML = ''; // clear any existing cards
-      for (const row of rows) {
+      for (const row of sortedRows) {
         const ins = {
           date:        row['date'] || '',
           organic:     safeJson(row['organic_json']),
