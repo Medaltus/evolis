@@ -13428,7 +13428,10 @@ async function renderSearchQueryPerformance(containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
   try {
-    const csv = await fetch(ovCsvUrl(SHEET_SQP_ID, SHEET_SQP_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const [csv, master] = await Promise.all([
+      fetch(ovCsvUrl(SHEET_SQP_ID, SHEET_SQP_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      getProductMaster(),
+    ]);
     const rows = parseCsvToRows(csv);
     if (!rows.length) {
       container.innerHTML = '<div class="org-sqp-card"><div style="color:var(--muted);font-size:12px;">No Search Query Performance data found.</div></div>';
@@ -13440,21 +13443,29 @@ async function renderSearchQueryPerformance(containerId) {
     const latestRows = rows.filter(r => r.month === latestMonth);
     console.log('[SQP][qa] latest month:', latestMonth, '— rows for that month:', latestRows.length);
 
-    const parsed = latestRows.map(r => ({
-      query: r.search_query || '',
-      asin: r.asin || '',
-      volume: parseInt(r.search_query_volume, 10) || 0,
-      impressionShare: r.asin_impression_share || '',
-      clicks: parseInt(r.asin_click_count, 10) || 0,
-      clickShare: r.asin_click_share || '',
-      purchases: parseInt(r.asin_purchase_count, 10) || 0,
-      purchaseShare: r.asin_purchase_share || '',
-    })).filter(r => r.query).sort((a, b) => b.volume - a.volume).slice(0, 50);
+    // SKU instead of ASIN — added 2026-08-07 per Jaclyn (nobody memorizes
+    // ASINs). Looked up via getProductMaster() (Product Short Name
+    // sheet); falls back to the raw ASIN if no match is found, so a gap
+    // in the crosswalk is visible rather than silently blank.
+    const parsed = latestRows.map(r => {
+      const asin = r.asin || '';
+      const entry = master.byAsin[asin.trim().toUpperCase()];
+      return {
+        query: r.search_query || '',
+        sku: entry ? entry.sku : asin,
+        volume: parseInt(r.search_query_volume, 10) || 0,
+        impressionShare: r.asin_impression_share || '',
+        clicks: parseInt(r.asin_click_count, 10) || 0,
+        clickShare: r.asin_click_share || '',
+        purchases: parseInt(r.asin_purchase_count, 10) || 0,
+        purchaseShare: r.asin_purchase_share || '',
+      };
+    }).filter(r => r.query).sort((a, b) => b.volume - a.volume).slice(0, 50);
 
     const pct = v => (v === '' || v == null) ? '—' : `${v}%`;
     const rowsHtml = parsed.map(r => `<tr>
       <td>${escapeHtmlOrg(r.query)}</td>
-      <td style="font-family:var(--mono);font-size:10px;">${escapeHtmlOrg(r.asin)}</td>
+      <td style="font-family:var(--mono);font-size:10px;">${escapeHtmlOrg(r.sku)}</td>
       <td>${r.volume.toLocaleString()}</td>
       <td>${pct(r.impressionShare)}</td>
       <td>${r.clicks.toLocaleString()}</td>
@@ -13467,7 +13478,7 @@ async function renderSearchQueryPerformance(containerId) {
       <div class="org-sqp-title">Search Query Performance — Brand-Wide <span class="org-sqp-badge">${escapeHtmlOrg(latestMonth)}</span></div>
       <div style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Search Query</th><th>ASIN</th><th>Query Volume</th><th>ASIN Impr. Share</th><th>ASIN Clicks</th><th>ASIN Click Share</th><th>ASIN Purchases</th><th>ASIN Purchase Share</th></tr></thead>
+          <thead><tr><th>Search Query</th><th>SKU</th><th>Query Volume</th><th>ASIN Impr. Share</th><th>ASIN Clicks</th><th>ASIN Click Share</th><th>ASIN Purchases</th><th>ASIN Purchase Share</th></tr></thead>
           <tbody>${rowsHtml || '<tr><td colspan="8" style="color:var(--muted);">No rows for this month.</td></tr>'}</tbody>
         </table>
       </div>
