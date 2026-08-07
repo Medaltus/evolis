@@ -39,6 +39,33 @@
  * out as suggested exact-match targets — it does not invent numbers,
  * classify status, or decide what counts as wasted spend.
  *
+ * ADDED 2026-08-07 per Jaclyn: this cron, run-analysis.js, and
+ * run-listing-audit.js were operating as three independent silos —
+ * PPC strategy had no idea the listing had a known, already-flagged
+ * compliance violation; a fresh listing audit had no idea PPC already
+ * concluded a product needs a listing fix before scaling spend. Fixed
+ * by pulling in BOTH other analyses' latest output as extra read-only
+ * context per SKU:
+ *   - SHEET_INSIGHTS (évolis tab, gid=1069613491) — run-analysis.js's
+ *     own most recent weekly row. Its ppc_json.strategy_by_sku is
+ *     surfaced per SKU as "what the other weekly analysis already
+ *     concluded" (a second opinion, not a duplicate — this cron's own
+ *     status_badge/wasted_spend/inventory checks aren't in that older
+ *     analysis at all), and its listing_json.implementation_status is
+ *     surfaced too (whether a PRIOR listing recommendation actually got
+ *     implemented, per that file's own already-built comparison logic).
+ *   - SHEET_LISTING_AUDIT (évolis tab, gid=2075287627) — the latest
+ *     audit row per SKU. Its *_notes fields (compliance findings, not
+ *     the full rewrite text — kept short deliberately, see GAP #5) are
+ *     surfaced so Claude can factor in a REAL, currently-open listing
+ *     issue when writing PPC recommendations, the same way it already
+ *     factors in this cron's own status_badge.
+ * See buildCrossAnalysisContext() below. Same instruction pattern as
+ * the OOS check further down: Claude is told explicitly what to do
+ * with this context (don't recommend scaling PPC into a listing with
+ * an unresolved violation), not just handed the data and left to guess
+ * how much weight to give it.
+ *
  * ═══════════════════════════════════════════════════════════════════
  * REAL GAPS BELOW — FLAGGED, NOT SILENTLY GUESSED:
  *
@@ -81,13 +108,16 @@
  *      first time this runs against real data, rather than silently
  *      reading is_oos=false for every SKU with no visible clue why.
  *
- *   2. replaceRows()'s EXACT SIGNATURE IS UNCONFIRMED. Every other file
- *      I've seen in this project uses ensureTab+appendRows (pure
- *      append, one row per run). This endpoint needs different
- *      behavior: since ALL BRANDS share one tab and this represents
- *      CURRENT state per product (not a historical log), re-running
- *      this for one brand should REPLACE that brand's existing rows,
- *      not pile up duplicates forever. I'm assuming replaceRows(sheetId,
+ *   2. UPDATED 2026-08-08 per Jaclyn: this tab is meant to hold HISTORY,
+ *      not just current state — "if I run this a week from now, I want
+ *      it to add new rows," with same-day re-runs overwriting only that
+ *      day's row per SKU. writeSkuStrategyRows() below was originally
+ *      wrong here (stripped ALL of a brand's rows on every run
+ *      regardless of date, silently deleting prior history) — fixed to
+ *      only strip rows matching this brand AND today's exact date.
+ *      replaceRows()'s EXACT SIGNATURE IS STILL UNCONFIRMED, though —
+ *      every other file I've seen in this project uses ensureTab+
+ *      appendRows (pure append). I'm assuming replaceRows(sheetId,
  *      tabName, headers, rowsAsArrays) mirrors appendRows's shape —
  *      confirm against config/_sheets_client.js and adjust
  *      writeSkuStrategyRows() below if the real signature differs.
@@ -109,6 +139,21 @@
  *      numbers — these are almost certainly worth tuning once this runs
  *      against the full catalog and Jaclyn can eyeball whether the
  *      cutoffs feel right on products outside those 3 examples.
+ *
+ *   5. CROSS-ANALYSIS FIELD NAMES — mostly confirmed, one guess. SHEET_
+ *      INSIGHTS's date/organic_json/ppc_json/listing_json/summary/
+ *      uploaded_at columns and listing_json.implementation_status are
+ *      confirmed directly from run-analysis.js's own header comment and
+ *      code (same file this endpoint is meant to collaborate with).
+ *      SHEET_LISTING_AUDIT's `sku` and `audited_at` fields are confirmed
+ *      from the dashboard's own already-working loadAuditResultsFromSheet()
+ *      code. The one real guess: the exact *_notes field names
+ *      (title_notes/ih_notes/bullets_notes/desc_notes/backend_notes) —
+ *      these match what showed up in a screenshot of one real audit
+ *      result earlier in this project, but weren't re-confirmed against
+ *      a fresh fetch here. buildCrossAnalysisContext() logs the real
+ *      keys it finds on the first row of each sheet every run, so a
+ *      naming drift is a quick console check rather than a silent gap.
  * ═══════════════════════════════════════════════════════════════════
  */
 
@@ -129,6 +174,69 @@ const PPC_STRATEGY_HEADERS = [
   'headline', 'recommended_bullets_json', 'suggested_exact_match_targets_json',
   'wasted_spend_terms_json', 'uploaded_at',
 ];
+
+// ═══════════════════════════════════════════════════════════════════
+// CROSS-ANALYSIS CONTEXT — added 2026-08-07 per Jaclyn (see GAP #5 and
+// the file header comment for what's confirmed vs. guessed here).
+// Pulls run-analysis.js's and run-listing-audit.js's latest output as
+// extra read-only context per SKU, so PPC strategy can build on what
+// those two already found instead of contradicting them.
+const LISTING_AUDIT_NOTE_FIELDS = ['title_notes', 'ih_notes', 'bullets_notes', 'desc_notes', 'backend_notes'];
+
+async function buildCrossAnalysisContext(brand) {
+  const context = {
+    priorPpcBySku: {},       // from SHEET_INSIGHTS's latest ppc_json.strategy_by_sku
+    implementationBySku: {}, // from SHEET_INSIGHTS's latest listing_json.implementation_status
+    listingViolations: [],   // from SHEET_INSIGHTS's latest listing_json.violations (brand-level, not per-SKU)
+    auditNotesBySku: {},     // from SHEET_LISTING_AUDIT, latest row per SKU
+  };
+
+  try {
+    const insightsRows = await readRows(sheets.insights, brand.tabName).catch(() => []);
+    if (insightsRows.length) {
+      const latest = insightsRows.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
+      let ppcJson = {}, listingJson = {};
+      try { ppcJson = JSON.parse(latest.ppc_json || '{}'); } catch (e) { console.warn('[run-ppc-strategy-analysis] SHEET_INSIGHTS latest row: ppc_json did not parse as JSON.'); }
+      try { listingJson = JSON.parse(latest.listing_json || '{}'); } catch (e) { console.warn('[run-ppc-strategy-analysis] SHEET_INSIGHTS latest row: listing_json did not parse as JSON.'); }
+      context.priorPpcBySku = ppcJson.strategy_by_sku || {};
+      context.listingViolations = Array.isArray(listingJson.violations) ? listingJson.violations : [];
+      (listingJson.implementation_status || []).forEach(item => {
+        if (item && item.sku) context.implementationBySku[item.sku] = item;
+      });
+      console.log(`[run-ppc-strategy-analysis] ${brand.id} — SHEET_INSIGHTS latest row date: ${latest.date || '(none)'}, prior PPC SKUs found: ${Object.keys(context.priorPpcBySku).length}, implementation_status entries: ${(listingJson.implementation_status || []).length}`);
+    } else {
+      console.warn(`[run-ppc-strategy-analysis] ${brand.id} — SHEET_INSIGHTS returned no rows for this brand's tab.`);
+    }
+  } catch (e) {
+    console.warn('[run-ppc-strategy-analysis] SHEET_INSIGHTS fetch failed:', e.message);
+  }
+
+  try {
+    const auditRows = await readRows(sheets.listingAudit, brand.tabName).catch(() => []);
+    if (auditRows.length) {
+      console.log('[run-ppc-strategy-analysis][qa] SHEET_LISTING_AUDIT — row[0] keys:', Object.keys(auditRows[0]).join(' | '));
+      const bySku = {};
+      auditRows.forEach(r => {
+        const sku = (r.sku || r.SKU || '').toString().trim();
+        if (!sku) return;
+        const existing = bySku[sku];
+        if (!existing || (r.audited_at || '') > (existing.audited_at || '')) bySku[sku] = r;
+      });
+      Object.keys(bySku).forEach(sku => {
+        const r = bySku[sku];
+        const notes = LISTING_AUDIT_NOTE_FIELDS.map(f => r[f]).filter(Boolean).join(' | ').slice(0, 500);
+        context.auditNotesBySku[sku] = notes;
+      });
+      console.log(`[run-ppc-strategy-analysis] ${brand.id} — SHEET_LISTING_AUDIT: ${Object.keys(bySku).length} SKUs with a latest audit row.`);
+    } else {
+      console.warn(`[run-ppc-strategy-analysis] ${brand.id} — SHEET_LISTING_AUDIT returned no rows for this brand's tab.`);
+    }
+  } catch (e) {
+    console.warn('[run-ppc-strategy-analysis] SHEET_LISTING_AUDIT fetch failed:', e.message);
+  }
+
+  return context;
+}
 
 // Évolis tab, gid=2074324776, per Jaclyn 2026-08-07.
 // CONFIRMED 2026-08-07 against the real config/sheets.js: the key is
@@ -367,7 +475,7 @@ function computeStatusBadge(sessions, units, conversionPct, isOos) {
   return { code: 'WATCH', label: 'WATCH — no strong signal yet' };
 }
 
-function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps) {
+function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps, crossContext) {
   const bizBySku = latestBizRowPerSku(bizRowsFull);
 
   const kwBySku = new Map();
@@ -411,6 +519,17 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps) {
     const isOos = (asin && oosMaps.byAsin.has(asin)) ? oosMaps.byAsin.get(asin)
       : (oosMaps.bySku.has(sku) ? oosMaps.bySku.get(sku) : false);
 
+    // Cross-analysis context — added 2026-08-07 per Jaclyn, see file
+    // header comment. Read-only inputs from the OTHER two analyses;
+    // Claude is instructed (see the prompt below) to factor these in
+    // rather than treating this SKU in isolation.
+    const priorPpc = crossContext.priorPpcBySku[sku];
+    const priorRecommendedBullets = priorPpc && Array.isArray(priorPpc.recommended_bullets)
+      ? priorPpc.recommended_bullets.map(b => b.text).filter(Boolean).join(' | ')
+      : '';
+    const implementation = crossContext.implementationBySku[sku] || null;
+    const auditNotes = crossContext.auditNotesBySku[sku] || '';
+
     snapshots[sku] = {
       sku,
       asin,
@@ -422,11 +541,15 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps) {
       wasted_spend_terms: asin ? buildWastedSpend(ppcByAsin, asin) : [],
       is_oos: isOos,
       status_badge: computeStatusBadge(sessions, units, conversionPct, isOos),
+      prior_weekly_analysis_ppc_notes: priorRecommendedBullets,
+      listing_implementation_status: implementation,
+      listing_audit_notes: auditNotes,
     };
   });
 
   return snapshots;
 }
+
 
 // ── Claude prompt — writes prose only, against the snapshot above ───
 //
@@ -488,6 +611,9 @@ Return ONLY this JSON structure:
 Rules:
 - One entry per SKU from the snapshot below, keyed EXACTLY by SKU. Do not add or omit SKUs.
 - IF a SKU's is_oos is true: do NOT recommend launching, scaling, or bidding on PPC for it under any circumstances — status_badge already says OUT OF STOCK. headline and every bullet should instead say plainly that this product is out of stock and PPC spend should stay paused until it's back in stock. suggested_exact_match_targets should be an empty list for an out-of-stock SKU — there is nothing to target while it can't be sold.
+- IF a SKU's listing_audit_notes is non-empty: that is a REAL, currently-open compliance/quality finding from this week's separate listing audit. Treat it the same weight as is_oos and status_badge — if there's an unresolved listing issue, at least one HIGH priority bullet should say to fix that specific issue before or alongside scaling PPC, referencing what the note actually says (do not paraphrase it into something vaguer).
+- IF a SKU's prior_weekly_analysis_ppc_notes is non-empty: that is what last week's separate brand analysis already concluded about this SKU's PPC strategy. Use it as a second opinion, not a script to copy — if this run's own numbers (sessions/conversion/is_oos/audit notes) tell a different story than that prior note, trust THIS run's real numbers and say so, rather than silently repeating a stale conclusion.
+- IF a SKU's listing_implementation_status is present: it says whether a PREVIOUSLY recommended listing fix has actually gone live yet. If it shows the fix is still NOT implemented, do not write a bullet assuming the fix already happened.
 - headline: one sentence, matches the tone/urgency of that SKU's status_badge (already computed — do not contradict it).
 - recommended_bullets: 2-4 bullets, HIGH priority first, each one tactical sentence referencing REAL numbers from that SKU's own snapshot only (sessions, conversion_pct, revenue, or a keyword's vol_mo/aba_pct/cpc). Do not invent numbers. Do not compare one SKU against another SKU.
 - suggested_exact_match_targets: 3-7 keyword strings pulled ONLY from that SKU's own top_keywords list — do not invent keywords. (Empty for an out-of-stock SKU — see above.)
@@ -558,19 +684,23 @@ async function writeSkuStrategyRows(brand, rows) {
     uploadedAt,
   ]);
 
-  // GAP #2 — SEE HEADER COMMENT. This tab holds CURRENT state per
-  // product, shared across every brand — re-running for one brand
-  // should replace that brand's rows, not pile up duplicates on every
-  // run. Reads existing rows, strips out ONLY this brand's old rows,
-  // and writes back everyone else's rows plus this brand's fresh ones.
+  // FIXED 2026-08-08 per Jaclyn: this used to strip out EVERY row for
+  // this brand regardless of date before writing — meaning a run today
+  // silently deleted last week's rows too, not just prevented a same-
+  // day duplicate. This tab is meant to hold HISTORY (Jaclyn: "if I run
+  // this a week from now, I want it to add new rows"), with same-day
+  // re-runs overwriting only that day's row per SKU. Now only strips
+  // rows matching THIS brand AND THIS exact date — every other row
+  // (other brands, and this brand's own rows from any other date) is
+  // preserved untouched.
   const token = await ensureTab(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS);
   const existingRows = await readRows(sheets.insights, PPC_STRATEGY_TAB_NAME).catch(() => []);
-  const otherBrandsRows = existingRows
-    .filter(r => (r.brand || '') !== brand.id)
+  const preservedRows = existingRows
+    .filter(r => !((r.brand || '') === brand.id && (r.date || '') === today))
     .map(r => PPC_STRATEGY_HEADERS.map(h => r[h] !== undefined ? r[h] : ''));
 
-  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [...otherBrandsRows, ...newRows], token);
-  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows to "${PPC_STRATEGY_TAB_NAME}" (${otherBrandsRows.length} other-brand rows preserved)`);
+  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [...preservedRows, ...newRows], token);
+  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows for ${today} to "${PPC_STRATEGY_TAB_NAME}" (${preservedRows.length} rows from other dates/brands preserved as history)`);
 }
 
 module.exports = async function handler(req, res) {
@@ -595,12 +725,13 @@ module.exports = async function handler(req, res) {
       console.warn('[run-ppc-strategy-analysis] Could not resolve a config/sheets.js key for SHEET_NEWDERM_INVENTORY (tried:', NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU until this is fixed. See GAP #1b in the file header comment.');
     }
 
-    const [kwRows, bizRows, sqpRows, ppcRows, inventoryRows] = await Promise.all([
+    const [kwRows, bizRows, sqpRows, ppcRows, inventoryRows, crossContext] = await Promise.all([
       readRows(KEYWORD_TRACKER_SHEET_ID, brand.tabName).catch(() => []),
       readRows(sheets.businessReport, brand.tabName).catch(() => []),
       readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []),
       readRows(sheets.advertising, brand.tabName).catch(() => []),
       inventorySheetId ? readRows(inventorySheetId, brand.tabName).catch(() => []) : Promise.resolve([]),
+      buildCrossAnalysisContext(brand),
     ]);
 
     const { byAsin: ppcByAsin, sawAsinField } = aggregatePpcByAsinAndTerm(ppcRows);
@@ -612,7 +743,7 @@ module.exports = async function handler(req, res) {
     const oosCount = [...oosMaps.byAsin.values(), ...oosMaps.bySku.values()].filter(Boolean).length;
     console.log(`[run-ppc-strategy-analysis] ${brand.id} — inventory check found ${oosCount} out-of-stock entr${oosCount === 1 ? 'y' : 'ies'} across ${oosMaps.byAsin.size} ASINs / ${oosMaps.bySku.size} SKUs checked.`);
 
-    const snapshots = buildSkuSnapshots(kwRows, bizRows, sqpRows, ppcByAsin, oosMaps);
+    const snapshots = buildSkuSnapshots(kwRows, bizRows, sqpRows, ppcByAsin, oosMaps, crossContext);
     if (!Object.keys(snapshots).length) {
       return res.status(200).json({ ok: true, message: 'No SKUs found in Business Report or Keyword Tracker for this brand — nothing to write.' });
     }
