@@ -568,6 +568,35 @@ function buildSkuSnapshots(kwRows, bizRowsFull, sqpRows, ppcByAsin, oosMaps, cro
 // run.
 const SKUS_PER_BATCH = 4;
 
+// Bracket/string-tracking JSON repair — ported directly from
+// run-analysis.js's own repairTruncatedJson(), added here 2026-08-07
+// after a real batch response came back malformed (see the note above
+// callClaudeForOneBatch's parse logic). Works regardless of WHERE a cut
+// or broken escape happened, unlike a naive "just close the last brace"
+// approach — not guaranteed to recover every SKU in a badly broken
+// response, but recovers far more than failing the whole batch outright.
+function repairTruncatedJson(text) {
+  const stack = [];
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escapeNext) { escapeNext = false; continue; }
+    if (ch === '\\' && inString) { escapeNext = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let repaired = text;
+  if (inString) repaired += '"';
+  while (stack.length) {
+    const open = stack.pop();
+    repaired += (open === '{') ? '}' : ']';
+  }
+  return repaired;
+}
+
 function chunkSnapshotsBySku(snapshots, batchSize) {
   const skus = Object.keys(snapshots);
   const batches = [];
@@ -619,6 +648,7 @@ Rules:
 - suggested_exact_match_targets: 3-7 keyword strings pulled ONLY from that SKU's own top_keywords list — do not invent keywords. (Empty for an out-of-stock SKU — see above.)
 - Do not mention wasted_spend_terms in prose — that's rendered separately by the dashboard from the same data you're seeing here, no need to restate it.
 - No apostrophes in string values — use "does not" not "doesn't".
+- NEVER use a double-quote character anywhere inside a string value, including around keyword phrases — your entire response must itself be valid JSON, and an un-escaped double quote inside a JSON string breaks the whole response. Use single quotes for any quoted phrase instead (e.g. write 'hair growth serum', never "hair growth serum").
 - Keep all string values under 200 characters.
 
 PER-SKU SNAPSHOT:
@@ -654,9 +684,32 @@ ${JSON.stringify(snapshotBatch)}`;
     const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
 
-    return JSON.parse(clean);
+    // FIXED 2026-08-07: a real run produced malformed JSON for at least
+    // one batch (confirmed — 2 SKUs in the same batch showed "No
+    // recommendations generated" on the dashboard despite the batch
+    // clearly having run). The old code here caught the parse failure
+    // silently (logged only e.message, never the actual text that
+    // failed), so there was no way to diagnose what broke. Now: (1) logs
+    // the raw text on any failure so this is diagnosable next time, and
+    // (2) attempts the same bracket/string-tracking repair run-
+    // analysis.js already uses for its own Claude calls, so a single
+    // broken escape doesn't necessarily blank the whole batch.
+    try {
+      return JSON.parse(clean);
+    } catch (parseErr) {
+      console.error(`[run-ppc-strategy-analysis] ${brand.id} — batch response was not valid JSON: ${parseErr.message}`);
+      console.error(`[run-ppc-strategy-analysis] ${brand.id} — raw batch response (full):`, clean);
+      try {
+        const repaired = JSON.parse(repairTruncatedJson(clean));
+        console.warn(`[run-ppc-strategy-analysis] ${brand.id} — repair succeeded, recovered ${Object.keys(repaired).length} SKU(s) from this batch.`);
+        return repaired;
+      } catch (repairErr) {
+        console.error(`[run-ppc-strategy-analysis] ${brand.id} — repair also failed: ${repairErr.message}. This batch's SKUs will show no recommendations.`);
+        return {};
+      }
+    }
   } catch (e) {
-    console.error(`[run-ppc-strategy-analysis] ${brand.id} — a batch failed (network error or invalid JSON):`, e.message);
+    console.error(`[run-ppc-strategy-analysis] ${brand.id} — a batch failed (network error):`, e.message);
     return {}; // this batch's SKUs get empty bullets rather than failing the entire run
   }
 }
