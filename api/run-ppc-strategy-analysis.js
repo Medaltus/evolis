@@ -355,6 +355,115 @@ function buildOosMaps(inventoryRows) {
   return { bySku, byAsin };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// BUNDLE OOS CROSS-REFERENCE — added 2026-08-10 per Jaclyn. Bundles
+// have no FBA/Warehouse SF inventory of their own (they're virtual
+// combos assembled from catalog SKUs' own inventory), so a bundle's
+// is_oos can only be determined by checking whether ITS COMPONENTS are
+// in stock — looking the bundle's own SKU up in SHEET_NEWDERM_INVENTORY
+// directly will never find anything. Jaclyn added a "Bundle SKUs"
+// column (comma-separated component SKUs, spaces allowed) to Product
+// Short Name for exactly this purpose.
+//
+// GAP, FLAGGED NOT GUESSED: this sheet's exact tab name is unconfirmed
+// (readRows() needs a tab name, not a gid, and I only have this sheet's
+// gid from how the dashboard reads it via CSV export). Mirrors
+// sync-products.js's own proven workaround for this exact sheet:
+// fetches via gid-based CSV export directly instead of readRows(),
+// sidestepping the tab-name problem entirely. Needs a real CSV parser
+// (not naive comma-splitting) since the Bundle SKUs column's own values
+// contain commas — Google Sheets quotes such cells in CSV export, and
+// a naive split would break on that.
+// ═══════════════════════════════════════════════════════════════════
+const MASTER_SKU_LIST_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+const MASTER_SKU_LIST_GID = '164358627'; // "Product Short Name" tab
+const SKU_TYPE_CANDIDATES = ['SKU Type', 'sku_type', 'sku type', 'Sku Type'];
+const BUNDLE_SKUS_CANDIDATES = ['Bundle SKUs', 'bundle_skus', 'bundle skus', 'Bundle Skus'];
+const MASTER_SKU_CANDIDATES = ['SKU', 'sku', 'Sku'];
+
+// Minimal RFC4180-ish quoted-CSV parser (handles quoted fields containing
+// commas and doubled-quote escaping) — same requirement already noted
+// elsewhere in this project for this exact sheet ("Quoted-CSV parser
+// required for Product Short Name sheet... comma-containing fields
+// cause silent column alignment bugs with naive CSV parsing").
+function parseQuotedCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = '';
+        if (row.length > 1 || row[0] !== '') rows.push(row);
+        row = [];
+      } else field += ch;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, r[i] !== undefined ? r[i] : ''])));
+}
+
+// Returns a Map of bundleSku -> [componentSku1, componentSku2, ...] for
+// every BUNDLE-type row on Product Short Name that has a non-empty
+// Bundle SKUs value. Never throws — an empty/failed fetch just means no
+// bundle SKU gets an OOS override this run (same fail-safe pattern as
+// buildOosMaps above).
+async function fetchBundleComponentsBySku() {
+  const map = new Map();
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${MASTER_SKU_LIST_SHEET_ID}/export?format=csv&gid=${MASTER_SKU_LIST_GID}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[run-ppc-strategy-analysis] Product Short Name CSV fetch not ok (${res.status}) — bundle OOS cross-reference will be empty this run.`);
+      return map;
+    }
+    const csv = await res.text();
+    const rows = parseQuotedCsv(csv);
+    if (!rows.length) {
+      console.warn('[run-ppc-strategy-analysis] Product Short Name returned no rows — bundle OOS cross-reference will be empty this run.');
+      return map;
+    }
+    console.log('[run-ppc-strategy-analysis][qa] Product Short Name — row[0] keys:', Object.keys(rows[0]).join(' | '));
+    rows.forEach(r => {
+      const skuType = (findField(r, SKU_TYPE_CANDIDATES) || '').trim().toUpperCase();
+      if (skuType !== 'BUNDLE') return;
+      const sku = (findField(r, MASTER_SKU_CANDIDATES) || '').trim().toUpperCase();
+      const bundleSkusRaw = findField(r, BUNDLE_SKUS_CANDIDATES) || '';
+      if (!sku || !bundleSkusRaw) return;
+      const components = bundleSkusRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (components.length) map.set(sku, components);
+    });
+    console.log(`[run-ppc-strategy-analysis] found ${map.size} bundle SKU(s) with listed components on Product Short Name.`);
+  } catch (e) {
+    console.warn('[run-ppc-strategy-analysis] Product Short Name fetch failed:', e.message);
+  }
+  return map;
+}
+
+// Extends an existing bySku OOS map (mutates in place) with computed
+// bundle entries — a bundle is OOS if ANY of its listed component SKUs
+// are OOS, OR if a component isn't found in the inventory sheet at all
+// (treated the same as OOS deliberately — an unknown component
+// shouldn't quietly read as "in stock").
+function applyBundleOosOverrides(bySkuMap, bundleComponentsBySku) {
+  bundleComponentsBySku.forEach((components, bundleSku) => {
+    const anyComponentOosOrUnknown = components.some(c => !bySkuMap.has(c) || bySkuMap.get(c) === true);
+    bySkuMap.set(bundleSku, anyComponentOosOrUnknown);
+  });
+}
+
 
 const BRAND_DESCRIPTIONS = {
   evolis:  'évolis (EVO) — a clinically tested hair growth brand using FGF5-inhibiting botanicals',
@@ -863,8 +972,18 @@ module.exports = async function handler(req, res) {
     }
 
     const oosMaps = buildOosMaps(inventoryRows);
+
+    // Bundle OOS cross-reference — added 2026-08-10 per Jaclyn. Runs
+    // after the regular inventory-based OOS maps so it can check bundle
+    // components against them. Only meaningful for évolis right now
+    // (Bundle SKUs column only filled in for évolis so far, per Jaclyn)
+    // — for any other brand this just returns an empty map and is a
+    // harmless no-op.
+    const bundleComponentsBySku = await fetchBundleComponentsBySku();
+    applyBundleOosOverrides(oosMaps.bySku, bundleComponentsBySku);
+
     const oosCount = [...oosMaps.byAsin.values(), ...oosMaps.bySku.values()].filter(Boolean).length;
-    console.log(`[run-ppc-strategy-analysis] ${brand.id} — inventory check found ${oosCount} out-of-stock entr${oosCount === 1 ? 'y' : 'ies'} across ${oosMaps.byAsin.size} ASINs / ${oosMaps.bySku.size} SKUs checked.`);
+    console.log(`[run-ppc-strategy-analysis] ${brand.id} — inventory check found ${oosCount} out-of-stock entr${oosCount === 1 ? 'y' : 'ies'} across ${oosMaps.byAsin.size} ASINs / ${oosMaps.bySku.size} SKUs checked (including ${bundleComponentsBySku.size} bundle SKU(s) cross-referenced against their components).`);
 
     const snapshots = buildSkuSnapshots(kwRows, bizRows, sqpRows, ppcByAsin, oosMaps, crossContext);
     if (!Object.keys(snapshots).length) {
