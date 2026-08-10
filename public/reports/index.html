@@ -13021,6 +13021,7 @@ function getProductMaster() {
         price: parseAmt(r.price),
         skuType: (r['sku type'] || r.sku_type || '').trim(),
         category: stripCategoryBrandPrefix(r['product category'] || r.product_category || ''),
+        channel: (r['channel'] || r.channel || '').trim(), // added 2026-08-10 per Jaclyn — needed to scope bundles to Amazon-only
       };
       if (sku) bySku[sku] = entry;
       if (asin) byAsin[asin] = entry;
@@ -13043,10 +13044,25 @@ function getBundleProducts() {
   if (_bundleProductsPromise) return _bundleProductsPromise;
   _bundleProductsPromise = (async () => {
     const master = await getProductMaster();
+    // Normalizes for comparison — strips accents (é → e) and lowercases,
+    // so "évolis" (raw sheet value) matches INSIGHTS_BRAND_TAB ("evolis").
+    const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    const targetBrand = norm(INSIGHTS_BRAND_TAB);
+
+    // FIXED 2026-08-10 per Jaclyn — two real bugs confirmed live:
+    // (1) this had NO brand filter at all, so every brand's bundle rows
+    // on the shared Product Short Name sheet got included — Skinuva's
+    // bundles were showing up on évolis's own dashboard. (2) no channel
+    // filter either, so Shopify-only bundles (no Amazon listing at all)
+    // were included even though every downstream data source here
+    // (Business Report, PPC's OOS check, Products Cache) is Amazon-only
+    // — a Shopify-only bundle can never have real data from any of them.
     const bundles = Object.values(master.bySku)
       .filter(entry => (entry.skuType || '').toUpperCase() === 'BUNDLE')
+      .filter(entry => norm(entry.brand) === targetBrand)
+      .filter(entry => norm(entry.channel).includes('amazon'))
       .map(entry => ({ sku: entry.sku, asin: entry.asin, label: entry.name || entry.sku }));
-    console.log('[Bundles][qa] found', bundles.length, 'bundle SKU(s) on Product Short Name:', bundles.map(b => b.sku).join(', '));
+    console.log('[Bundles][qa] found', bundles.length, `bundle SKU(s) for brand "${INSIGHTS_BRAND_TAB}" with an Amazon channel:`, bundles.map(b => b.sku).join(', '));
     return bundles;
   })();
   return _bundleProductsPromise;
