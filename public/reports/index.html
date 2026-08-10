@@ -1,4 +1,24 @@
 <!DOCTYPE html>
+<!--
+  ARCHITECTURE NOTE — added 2026-08-10 per Jaclyn.
+
+  This dashboard hardcodes every Google Sheet's file ID and gid directly
+  in this file (search for any `const X_SHEET_ID = '...'` / `const
+  X_GID = '...'` pattern throughout). Newer brand dashboards (starting
+  with Skinuva, built 2026-08-10) use a different, more secure pattern
+  instead: a server-side SHEET_CONFIG Vercel env var + api/sheet-
+  config.js endpoint, injected as window.SHEET_CFG before any other
+  script runs, so sheet IDs never appear in this file's source at all.
+
+  This is a DELIBERATE, KNOWN divergence, not an oversight: Jaclyn opted
+  to leave évolis on its current hardcoded pattern since it's already
+  working, rather than risk a large mechanical refactor (dozens of
+  constants across this file) on a production dashboard. All FUTURE
+  brand dashboards should be built on the SHEET_CONFIG pattern from the
+  start. If évolis is ever migrated to match, see the Skinuva build's
+  own api/sheet-config.js as the reference implementation — it's brand-
+  agnostic already.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2835,6 +2855,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <button class="sub-tab" onclick="showSubTab('ins-products','pt-conditioners',this)">Conditioners</button>
         <button class="sub-tab" onclick="showSubTab('ins-products','pt-masks',this)">Hair Masks</button>
         <button class="sub-tab" onclick="showSubTab('ins-products','pt-dryshampoo',this)">Dry Shampoo</button>
+        <button class="sub-tab" onclick="showSubTab('ins-products','pt-bundles',this)">Bundles</button>
       </div>
 
       <!-- ── ACTIVATORS ── -->
@@ -3322,6 +3343,20 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
       </div><!-- /pt-dryshampoo -->
 
+      <!-- Bundles — added 2026-08-10 per Jaclyn. Deliberately simpler
+           than the other 5 categories: no Competitive Landscape or
+           Keyword Strategy sections, since no competitor-research tab
+           exists for bundles and they aren't individually keyword-
+           tracked the way single products are. Shows Performance
+           (sessions from Business Report, units/revenue from the new
+           bundle_sales sheet) and a basic product list (name/sku/asin/
+           price from Product Short Name) instead. Generated dynamically
+           by renderBundlesInsightsTab() from the bundle product list,
+           not hand-authored. -->
+      <div class="sub-page" id="pt-bundles">
+        <div id="pt-bundles-container"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+      </div>
+
     </div><!-- /ins-products -->
 
     <!-- ── SEARCH QUERY PERFORMANCE ── moved here from Organic → Activators,
@@ -3578,6 +3613,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <button class="ch-tab" onclick="showChannel('listing','la-conditioners',this)">Conditioners</button>
       <button class="ch-tab" onclick="showChannel('listing','la-masks',this)">Hair Masks</button>
       <button class="ch-tab" onclick="showChannel('listing','la-dryshampoo',this)">Dry Shampoo</button>
+      <button class="ch-tab" onclick="showChannel('listing','la-bundles',this)">Bundles</button>
     </div>
 
     <!-- ── ACTIVATORS ── -->
@@ -4030,6 +4066,21 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
 
   </div>
 
+  <!-- Bundles — added 2026-08-10 per Jaclyn. Deliberately simpler than
+       the other 5 categories above: this shows CURRENT live listing
+       content only (Title/Item Highlights/Bullets/Description/Backend
+       Keywords, from Products Cache — bundles ARE processed by
+       sync-products.js, no exclusion there), NOT a full AI audit —
+       run-listing-audit.js hasn't been confirmed to cover bundle SKUs,
+       so this doesn't claim audit findings it can't back up. Sub-tabs
+       and card shells are generated dynamically by
+       renderBundleListingTabs() from Product Short Name's bundle list,
+       not hand-authored, since bundle SKUs/ASINs are opaque
+       Amazon-generated codes not worth hardcoding. -->
+  <div class="channel-page" id="la-bundles">
+    <div id="la-bundles-container"><div style="color:var(--muted);font-size:12px;padding:12px;">Loading…</div></div>
+  </div>
+
   </div><!-- /page-listing -->
 
   <!-- ══ PPC (internal only) ══ -->
@@ -4113,6 +4164,7 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         <button class="sub-tab" onclick="showSubTab('ppc-strategy','ppc-cond',this)">Conditioners</button>
         <button class="sub-tab" onclick="showSubTab('ppc-strategy','ppc-mask',this)">Hair Masks</button>
         <button class="sub-tab" onclick="showSubTab('ppc-strategy','ppc-dry',this)">Dry Shampoo</button>
+        <button class="sub-tab" onclick="showSubTab('ppc-strategy','ppc-bundles',this)">Bundles</button>
       </div>
 
       <div class="sub-page active" id="ppc-act">
@@ -4129,6 +4181,9 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       </div>
       <div class="sub-page" id="ppc-dry">
         <div id="ppc-dry-container"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+      </div>
+      <div class="sub-page" id="ppc-bundles">
+        <div id="ppc-bundles-container"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
       </div>
 
     </div><!-- /ppc-strategy -->
@@ -5436,9 +5491,9 @@ async function initSns() {
       // Determine which sheet(s) hold each period:
       // sync-orders sheet has the most recent MOM data
       // historical sheet has everything else
-      // gid for 'evolis' tab — historical: 1249281379, sync: update once confirmed
+      // FIXED 2026-08-10 per Jaclyn -- was hardcoded to Skinuva's historical-orders gid ('1249281379'), not evolis's own ('1798449240', confirmed via Dashboard Mapping). Found while building Skinuva's dashboard from this same codebase.
       const SYNC_GID = '1163928587';
-      const HIST_GID = '1249281379';
+      const HIST_GID = '1798449240';
 
       console.log('[Evolis] Starting fetch...');
       const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, amzReturnsCsv] = await Promise.all([
@@ -7318,9 +7373,9 @@ async function initSns() {
       // Determine which sheet(s) hold each period:
       // sync-orders sheet has the most recent MOM data
       // historical sheet has everything else
-      // gid for 'evolis' tab — historical: 1249281379, sync: update once confirmed
+      // FIXED 2026-08-10 per Jaclyn -- was hardcoded to Skinuva's historical-orders gid ('1249281379'), not evolis's own ('1798449240', confirmed via Dashboard Mapping). Found while building Skinuva's dashboard from this same codebase.
       const SYNC_GID = '1163928587';
-      const HIST_GID = '1249281379';
+      const HIST_GID = '1798449240';
 
       console.log('[Evolis] Starting fetch...');
       const [syncCsv, histCsv, adSummaryCsv, adOrdersCsv, amzReturnsCsv] = await Promise.all([
@@ -10984,6 +11039,7 @@ async function initSnsExternal() {
       window.renderProductPortfolioCards('conditioners', ['EVO0003', 'EVO0007', 'EVO0011', 'EVO0015', 'EVO0017']);
       window.renderProductPortfolioCards('masks', ['EVO0004', 'EVO0008', 'EVO0018', 'EVO0019']);
       window.renderProductPortfolioCards('dryshampoo', ['EVO0012']);
+      if (typeof window.renderBundlesInsightsTab === 'function') window.renderBundlesInsightsTab();
     }
     if (typeof window.renderSimpleKeywordStrategy === 'function') {
       window.renderSimpleKeywordStrategy('act-keywords-container', COMPETITOR_GID_BY_PRODUCT_TYPE.activators);
@@ -12974,6 +13030,130 @@ function getProductMaster() {
   return _productMasterPromise;
 }
 
+// Bundle product list — added 2026-08-10 per Jaclyn. Built dynamically
+// from Product Short Name (skuType === 'BUNDLE') rather than a hardcoded
+// list like REVIEW_CATEGORY_PRODUCTS uses for the 5 regular categories —
+// bundle SKUs/ASINs are Amazon-generated opaque codes with no memorable
+// pattern, so hand-copying them risks a silent wrong-ASIN bug. This is
+// deliberately évolis-only in practice right now (matches where the
+// Bundle SKUs cross-reference column has actually been filled in), but
+// works for any brand once that data exists.
+let _bundleProductsPromise = null;
+function getBundleProducts() {
+  if (_bundleProductsPromise) return _bundleProductsPromise;
+  _bundleProductsPromise = (async () => {
+    const master = await getProductMaster();
+    const bundles = Object.values(master.bySku)
+      .filter(entry => (entry.skuType || '').toUpperCase() === 'BUNDLE')
+      .map(entry => ({ sku: entry.sku, asin: entry.asin, label: entry.name || entry.sku }));
+    console.log('[Bundles][qa] found', bundles.length, 'bundle SKU(s) on Product Short Name:', bundles.map(b => b.sku).join(', '));
+    return bundles;
+  })();
+  return _bundleProductsPromise;
+}
+
+// Bundle Sales — added 2026-08-10 per Jaclyn. Shared, multi-brand sheet
+// (source_account is "newderm" for every row regardless of actual
+// brand, per Jaclyn's own description of how it's built), so brand
+// scoping happens by matching bundle_asin against THIS brand's own
+// bundle ASINs from Product Short Name, not by a brand-name column on
+// this sheet. Sums ALL available rows — this sheet has no reliable
+// per-month scoping confirmed yet, so this is a lifetime/all-available
+// total, not month-scoped like the other Performance tables elsewhere
+// on this dashboard. Column E's exact meaning ("is_virtual_multiple"?,
+// cut off in the screenshot this was built from) is NOT confirmed —
+// not used here, flagging in case it turns out to matter for how
+// bundles_sold should be interpreted.
+const BUNDLE_SALES_SHEET_ID = '1le4ABxViZqTnuVP2BitKrPcNuxPQwvWD-Gw5y_3cicc';
+const BUNDLE_SALES_GID = '1006822834'; // "bundle_sales" tab
+async function fetchBundleSalesByAsin() {
+  const map = {};
+  try {
+    const csv = await fetch(ovCsvUrl(BUNDLE_SALES_SHEET_ID, BUNDLE_SALES_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const rows = parseCsvToRows(csv);
+    if (!rows.length) {
+      console.warn('[Bundles][Sales] bundle_sales sheet returned no rows.');
+      return map;
+    }
+    console.log('[Bundles][Sales][qa] header keys:', Object.keys(rows[0]).join(' | '));
+    rows.forEach(r => {
+      const asin = (r.bundle_asin || '').trim().toUpperCase();
+      if (!asin) return;
+      if (!map[asin]) map[asin] = { bundlesSold: 0, totalSales: 0 };
+      map[asin].bundlesSold += parseInt(r.bundles_sold, 10) || 0;
+      map[asin].totalSales += parseFloat(r.total_sales) || 0;
+    });
+  } catch (e) {
+    console.warn('[Bundles][Sales] fetch failed:', e.message);
+  }
+  return map;
+}
+
+// Insights > Products' Bundles tab — added 2026-08-10 per Jaclyn.
+// Deliberately simpler than the other 5 categories: no Competitive
+// Landscape or Keyword Strategy sections (no competitor-research tab
+// exists for bundles, and they aren't individually keyword-tracked).
+// Shows Performance (sessions from Business Report + units/revenue from
+// the new bundle_sales sheet above) and basic product identity only.
+async function renderBundlesInsightsTab() {
+  const container = document.getElementById('pt-bundles-container');
+  if (!container) return;
+  try {
+    const bundleProducts = await getBundleProducts();
+    if (!bundleProducts.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:12px;">No bundle SKUs found on Product Short Name.</div>';
+      return;
+    }
+
+    const [bizCsv, salesByAsin] = await Promise.all([
+      fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetchBundleSalesByAsin(),
+    ]);
+    const bizRows = parseCsvToRows(bizCsv);
+    const latestMonthKey = bizRows.reduce((max, r) => {
+      const y = parseInt(r.YEAR, 10), m = parseInt(r.MONTH, 10);
+      if (!y || !m) return max;
+      const key = y * 100 + m;
+      return key > max ? key : max;
+    }, 0);
+    const sessionsByAsin = {};
+    bizRows.forEach(r => {
+      const y = parseInt(r.YEAR, 10), m = parseInt(r.MONTH, 10);
+      if (y * 100 + m !== latestMonthKey) return;
+      const asin = (r.ASIN || '').trim().toUpperCase();
+      if (asin) sessionsByAsin[asin] = parseInt(r.SESSIONS, 10) || 0;
+    });
+    console.log('[Bundles][Insights][qa] latest month key:', latestMonthKey, '— sessions found for', Object.keys(sessionsByAsin).length, 'ASIN(s).');
+
+    const rowsHtml = bundleProducts.map(p => {
+      const sessions = sessionsByAsin[p.asin.toUpperCase()];
+      const sales = salesByAsin[p.asin.toUpperCase()] || { bundlesSold: 0, totalSales: 0 };
+      return `<tr>
+        <td><strong>${escapeHtmlOrg(p.label)}</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">${escapeHtmlOrg(p.sku)}</span></td>
+        <td style="font-family:var(--mono);font-size:10px;">${escapeHtmlOrg(p.asin)}</td>
+        <td>${sessions !== undefined ? sessions.toLocaleString() : '—'}</td>
+        <td>${sales.bundlesSold.toLocaleString()}</td>
+        <td>$${sales.totalSales.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `<div class="card">
+      <div class="card-title">Performance</div>
+      <div class="ppc-note" style="margin-bottom:12px;">ℹ Sessions from Business Report (latest available month). Bundles Sold / Total Sales from the new Bundle Sales sheet — this is an all-available-data total, not scoped to one month like the other categories' Performance tables (shared, multi-brand sheet with no confirmed per-month filter yet). No Competitive Landscape or Keyword Strategy section — no competitor-research data exists for bundles.</div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Product</th><th>ASIN</th><th>Sessions (latest month)</th><th>Bundles Sold</th><th>Total Sales</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--muted);">No bundle products found.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+  } catch (err) {
+    console.warn('[Bundles][Insights] failed:', err.message);
+    container.innerHTML = '<div style="color:var(--danger);font-size:12px;">Error loading bundle performance — see console.</div>';
+  }
+}
+window.renderBundlesInsightsTab = renderBundlesInsightsTab;
+
 // Item Type keyword (column Y on the Products Cache sheet) — added
 // 2026-08-07 per Jaclyn, shown under the product name on each Product
 // Portfolio card. Formatted from the sheet's dash-separated form (e.g.
@@ -14464,20 +14644,38 @@ async function ppcLoadStrategyByProduct() {
       if (!bySku[sku] || (isValidDateStr(r.date) && (!isValidDateStr(bySku[sku].date) || r.date > bySku[sku].date))) bySku[sku] = r;
     });
 
-    Object.keys(REVIEW_CATEGORY_PRODUCTS).forEach(catKey => {
-      const containerId = { activators: 'ppc-act', shampoos: 'ppc-shampoo', conditioners: 'ppc-cond', masks: 'ppc-mask', dryshampoo: 'ppc-dry' }[catKey];
+    // Extracted 2026-08-10 so the same rendering logic can drive both the
+    // 5 hardcoded categories below AND the new dynamic Bundles tab.
+    const renderIntoContainer = (containerId, products) => {
       const container = document.getElementById(`${containerId}-container`);
       if (!container) return;
-
-      const products = REVIEW_CATEGORY_PRODUCTS[catKey];
       const cardsHtml = products.map(p => {
         const row = bySku[p.sku];
         if (!row) return `<div class="ppc-strategy-card"><div class="ppc-strategy-hd"><div><div class="ppc-strategy-sku">${escapeHtmlOrg(p.sku)} · ${escapeHtmlOrg(p.asin)}</div><div class="ppc-strategy-name">${escapeHtmlOrg(p.label)}</div></div></div><div class="ppc-strategy-body"><div style="color:var(--muted);font-size:12px;">No PPC analysis run yet for this SKU — click "Run PPC Analysis" on the Insights Log page.</div></div></div>`;
         return ppcRenderStrategyCard(row, p.label);
       }).join('');
-
       container.innerHTML = cardsHtml;
+    };
+
+    Object.keys(REVIEW_CATEGORY_PRODUCTS).forEach(catKey => {
+      const containerId = { activators: 'ppc-act', shampoos: 'ppc-shampoo', conditioners: 'ppc-cond', masks: 'ppc-mask', dryshampoo: 'ppc-dry' }[catKey];
+      renderIntoContainer(containerId, REVIEW_CATEGORY_PRODUCTS[catKey]);
     });
+
+    // Bundles — added 2026-08-10 per Jaclyn. Product list is dynamic
+    // (getBundleProducts(), built from Product Short Name), not
+    // hardcoded like the 5 categories above — bundle SKUs/ASINs are
+    // opaque Amazon-generated codes not worth hand-copying. Card
+    // rendering itself needs no changes: ppc_strategy rows for bundle
+    // SKUs have the exact same shape as any other product now that
+    // Business Report and the OOS cross-reference both cover them.
+    const bundleProducts = await getBundleProducts();
+    if (bundleProducts.length) {
+      renderIntoContainer('ppc-bundles', bundleProducts);
+    } else {
+      const bundlesContainer = document.getElementById('ppc-bundles-container');
+      if (bundlesContainer) bundlesContainer.innerHTML = '<div style="color:var(--muted);font-size:12px;">No bundle SKUs found on Product Short Name.</div>';
+    }
   } catch (err) {
     console.warn('[PPC] strategy by product failed:', err.message);
   }
@@ -16369,6 +16567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadInsightsFromSheet();
   await loadListingsFromSheet(false);
   await loadAuditResultsFromSheet();
+  await renderBundleListingTabs();
 });
 
 
@@ -16700,6 +16899,86 @@ const SKU_TO_PAGE_ID = {
   'EVO0018':'la-mask-evo0018', 'EVO0019':'la-mask-evo0019',
   'EVO0012':'la-dryshampoo'
 };
+
+// Bundles — added 2026-08-10 per Jaclyn. Deliberately simpler than the
+// other 5 Listing Audit categories: shows CURRENT live listing content
+// only (same Products Cache source loadListingsFromSheet uses below),
+// NOT a full AI audit — run-listing-audit.js hasn't been confirmed to
+// cover bundle SKUs, so this doesn't fabricate compliance notes or
+// keyword-coverage tags it can't back up. Sub-tabs and card content are
+// generated dynamically from getBundleProducts() rather than hand-
+// authored, since bundle SKUs/ASINs are opaque Amazon-generated codes.
+function sanitizeForId(s) {
+  return String(s || '').replace(/[^A-Za-z0-9_-]/g, '-');
+}
+async function renderBundleListingTabs() {
+  const container = document.getElementById('la-bundles-container');
+  if (!container) return;
+  try {
+    const bundleProducts = await getBundleProducts();
+    if (!bundleProducts.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:12px;">No bundle SKUs found on Product Short Name.</div>';
+      return;
+    }
+
+    const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_LISTINGS_ID +
+      '/export?format=csv&gid=' + SHEET_LISTINGS_GID + '&_cb=' + Date.now();
+    const res = await fetch(url).catch(() => null);
+    const text = (res && res.ok) ? await res.text() : '';
+    const rows = parseCsvToRows(text);
+    const latestRowBySku = {};
+    rows.forEach(row => {
+      const sku = (row['sku'] || '').trim().toUpperCase();
+      if (!sku) return;
+      const date = row['date'] || '';
+      if (!latestRowBySku[sku] || date > (latestRowBySku[sku]['date'] || '')) latestRowBySku[sku] = row;
+    });
+    console.log('[Bundles][Listing][qa] Products Cache resolved', Object.keys(latestRowBySku).length, 'SKUs — checking against', bundleProducts.length, 'bundle SKU(s) from Product Short Name.');
+
+    const idFor = sku => 'la-bundle-' + sanitizeForId(sku);
+
+    const subTabsHtml = bundleProducts.map((p, i) =>
+      `<button class="sub-tab${i === 0 ? ' active' : ''}" onclick="showSubTab('la-bundles-container','${idFor(p.sku)}',this)">${escapeHtmlOrg(p.label)} (${escapeHtmlOrg(p.sku)})</button>`
+    ).join('');
+
+    const fieldOrEmpty = (row, field) => {
+      if (!row) return '<span style="color:var(--muted);">No Products Cache row found for this SKU.</span>';
+      const val = row[field] || '';
+      return val ? escapeHtmlOrg(val) : '<span style="color:var(--muted);">(empty)</span>';
+    };
+
+    const pagesHtml = bundleProducts.map((p, i) => {
+      const row = latestRowBySku[p.sku.toUpperCase()];
+      const bulletsHtml = [1, 2, 3, 4, 5].map(n => `<div class="la-card">
+          <div class="la-card-label">${n === 1 ? 'Active Bullet Points' : ''}</div>
+          <div class="la-card-sublabel">BULLET ${n}</div>
+          <div class="la-copy-row"><div class="la-num">${n}</div><div class="la-copy-block ok">${fieldOrEmpty(row, 'bullet_' + n)}</div></div>
+        </div>`).join('');
+
+      return `<div class="sub-page${i === 0 ? ' active' : ''}" id="${idFor(p.sku)}">
+        <div class="la-hero"><div class="la-hero-left">
+          <div class="la-hero-meta">${escapeHtmlOrg(p.sku)} &nbsp;·&nbsp; ASIN ${escapeHtmlOrg(p.asin)} &nbsp;·&nbsp; Bundle</div>
+          <div class="la-hero-title">${escapeHtmlOrg(p.label)}</div>
+        </div></div>
+        <div class="la-card"><div class="la-card-label">Active Title</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">${fieldOrEmpty(row, 'title')}</div></div></div>
+        <div class="la-card"><div class="la-card-label">Item Highlights</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">${fieldOrEmpty(row, 'item_highlights')}</div></div></div>
+        ${bulletsHtml}
+        <div class="la-card"><div class="la-card-label">Active Product Description</div><div class="la-copy-row"><div class="la-num">1</div><div class="la-copy-block ok">${fieldOrEmpty(row, 'description')}</div></div></div>
+        <div class="la-card"><div class="la-card-label">Backend Keywords</div><div class="la-backend-block">${row ? escapeHtmlOrg(row['backend_keywords'] || '') : ''}</div>
+          <button class="la-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('.la-backend-block').textContent)">📋 Copy Backend Keywords</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    container.innerHTML = `<div class="ppc-note" style="margin-bottom:14px;">ℹ Current live listing content only, pulled directly from the Products Cache sheet. This is NOT a full AI audit like the other 5 categories — no compliance notes, no keyword-coverage tags. Bundle SKUs haven't been confirmed as covered by the Listing Audit AI review yet.</div>
+      <div class="sub-tabs">${subTabsHtml}</div>
+      ${pagesHtml}`;
+  } catch (err) {
+    console.warn('[Bundles][Listing] failed:', err.message);
+    container.innerHTML = '<div style="color:var(--danger);font-size:12px;">Error loading bundle listing content — see console.</div>';
+  }
+}
+window.renderBundleListingTabs = renderBundleListingTabs;
 
 async function loadListingsFromSheet(forceRefresh) {
   const badge = document.getElementById('listings-sync-badge');
