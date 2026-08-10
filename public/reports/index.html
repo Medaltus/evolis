@@ -14455,7 +14455,13 @@ async function ppcLoadStrategyByProduct() {
       const sku = (r.sku || '').trim().toUpperCase();
       if (!sku) return;
       // Latest date wins if this brand somehow has more than one row per SKU.
-      if (!bySku[sku] || (r.date || '') > (bySku[sku].date || '')) bySku[sku] = r;
+      // FIXED 2026-08-10 — same class of bug as loadLastRunDates(): a
+      // plain string comparison here would let a garbage `date` value
+      // (this sheet has a documented history of stray "[]"-type values
+      // ending up in the wrong column) beat a real date and get shown
+      // as "the latest" for that SKU. isValidDateStr() keeps a garbage
+      // row from ever winning over a real one.
+      if (!bySku[sku] || (isValidDateStr(r.date) && (!isValidDateStr(bySku[sku].date) || r.date > bySku[sku].date))) bySku[sku] = r;
     });
 
     Object.keys(REVIEW_CATEGORY_PRODUCTS).forEach(catKey => {
@@ -15983,12 +15989,26 @@ function formatLastRun(dateStr) {
   if (isNaN(d.getTime())) return 'Last run: never';
   return 'Last run: ' + d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' });
 }
+// FIXED 2026-08-10 per Jaclyn (real bug, confirmed via console log):
+// a plain string-comparison reduce (`(r.date||'') > max ? ... : max`)
+// trusts ANY string in that column as comparable — including garbage
+// left over from this sheet's messy history (a stray "[]" landed in an
+// uploaded_at cell at some point). "[" sorts higher than every digit in
+// a plain string comparison, so "[]" silently beat every real ISO
+// timestamp and became "the latest" — formatLastRun() then correctly
+// rejected it as an invalid date and showed "never", even though real,
+// valid dates existed in the same column. Used below to filter out
+// non-date values before the reduce, so garbage can no longer crowd out
+// a real timestamp.
+function isValidDateStr(s) {
+  return !!s && !isNaN(new Date(s).getTime());
+}
 async function loadLastRunDates() {
   // Run Analysis — most recent row's `date` on SHEET_INSIGHTS's évolis tab.
   try {
     const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, INSIGHTS_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
-    const latest = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    const latest = rows.reduce((max, r) => (isValidDateStr(r.date) && r.date > max ? r.date : max), '');
     const el = document.getElementById('last-run-analysis');
     if (el) el.textContent = formatLastRun(latest);
   } catch (err) { console.warn('[LastRun] analysis failed:', err.message); }
@@ -15997,7 +16017,7 @@ async function loadLastRunDates() {
   try {
     const csv = await fetch(ovCsvUrl(LISTING_AUDIT_SHEET_ID, LISTING_AUDIT_EVOLIS_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
-    const latest = rows.reduce((max, r) => ((r.audited_at || '') > max ? r.audited_at : max), '');
+    const latest = rows.reduce((max, r) => (isValidDateStr(r.audited_at) && r.audited_at > max ? r.audited_at : max), '');
     const el = document.getElementById('last-run-audit');
     if (el) el.textContent = formatLastRun(latest);
   } catch (err) { console.warn('[LastRun] audit failed:', err.message); }
@@ -16008,7 +16028,7 @@ async function loadLastRunDates() {
     const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, PPC_STRATEGY_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
     const allRows = parseCsvToRows(csv);
     const rows = allRows.filter(r => (r.brand || '').trim().toLowerCase() === INSIGHTS_BRAND_TAB.toLowerCase());
-    const latest = rows.reduce((max, r) => ((r.uploaded_at || '') > max ? r.uploaded_at : max), '');
+    const latest = rows.reduce((max, r) => (isValidDateStr(r.uploaded_at) && r.uploaded_at > max ? r.uploaded_at : max), '');
     console.log('[LastRun][ppc][qa] csv length:', csv.length, '— total rows parsed:', allRows.length, '— header keys:', allRows.length ? Object.keys(allRows[0]).join(' | ') : '(none)', '— INSIGHTS_BRAND_TAB:', JSON.stringify(INSIGHTS_BRAND_TAB), '— rows matching brand filter:', rows.length, '— latest uploaded_at found:', JSON.stringify(latest));
     const el = document.getElementById('last-run-ppc');
     if (el) el.textContent = formatLastRun(latest);
