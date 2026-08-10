@@ -71,6 +71,21 @@
  * since nothing rules out a future export marking an évolis or Hillside
  * row the same way.
  *
+ * SKINUVA-ONLY EXTRA MATCHING RULES (added 2026-08-10 per Jaclyn, do NOT
+ * apply to Just Bjorn/Hillside/évolis): a row counts as a Skinuva
+ * consignment item two additional ways, both requiring the row's own
+ * Brand column (now extracted in parseWorkbook — it wasn't read at all
+ * before this) to say Skinuva:
+ *   1. P-/I-/S-prefixed SKUs, not just C- — same shape as the existing
+ *      C-prefix pattern, prefix kept intact in the output SKU (e.g.
+ *      "P-SVA0001" stays "P-SVA0001") so the external Inventory page
+ *      shows which kind of item each row is, not a bare stripped code.
+ *   2. Any row whose Product name contains BROCHURE, INSERT, CARD, or
+ *      BAG, regardless of SKU shape — these are marketing/packaging
+ *      materials that may not follow any SKU convention. Uses the row's
+ *      own raw SKU as-is; skipped (logged, not silently dropped) if that
+ *      row has no SKU at all, since there's nothing to group it by.
+ *
  * Sheet: SHEET_CONSIGNMENT_INVENTORY (same sheet as the ShipStation
  * cron — sheets.consignmentInventory must already be configured in
  * config/sheets.js since that cron depends on it too). One tab per brand:
@@ -111,6 +126,26 @@ const CONSIGNMENT_BRANDS = [
 const EXCLUDE_PATTERN = /old sku|do not use/i;
 const JBJ_EXTRACT_PATTERN = /(C-JBJ\d+)/i;
 const STANDARD_SKU_PATTERN = /^(C-([A-Z]+)\d+)$/i;
+
+// Added 2026-08-10 per Jaclyn — SKINUVA-ONLY, does not apply to Just
+// Bjorn/Hillside/évolis. Two additional ways a row can count as a
+// Skinuva consignment item, both requiring the row's own Brand column
+// to say Skinuva (checked separately below, not baked into these
+// patterns themselves):
+//   1. P-/I-/S- prefixed SKUs (not just C-) — same "PREFIX-LETTERS####"
+//      shape as the existing standard pattern, just with 3 more allowed
+//      leading letters. Keeps the full prefix intact in the captured
+//      group (e.g. "P-SVA0001" stays "P-SVA0001"), same as the existing
+//      C- pattern already does — so these show up on the external
+//      Inventory page with their distinguishing prefix visible, not
+//      stripped down to a bare code.
+//   2. Any row whose Product name contains BROCHURE, INSERT, CARD, or
+//      BAG, regardless of what shape its SKU is — these are marketing/
+//      packaging materials that may not follow any SKU convention at
+//      all. Uses the row's own raw SKU as-is for grouping (whatever it
+//      actually is), not forced into a P-/I-/S-/C- pattern.
+const SKINUVA_EXTRA_PREFIX_PATTERN = /^([PIS]-[A-Z]+\d+)$/i;
+const SKINUVA_MARKETING_MATERIAL_PATTERN = /BROCHURE|INSERT|CARD|BAG/i;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -173,7 +208,7 @@ module.exports = async (req, res) => {
 
   console.log(`[sync-cin7-consignment-inventory] source file: "${fileInfo.name}" (modified ${fileInfo.modifiedTime}) — ${rows.length} data rows${dryRun ? ' [DRY RUN]' : ''}`);
 
-  const { groups, skippedNoCode, skippedExcluded, unmatched } = aggregateConsignmentRows(rows);
+  const { groups, skippedNoCode, skippedExcluded, skippedNoSkuMarketing, unmatched } = aggregateConsignmentRows(rows);
 
   const results = [];
   for (const { brandId, skuPrefix, tabName } of CONSIGNMENT_BRANDS) {
@@ -212,6 +247,9 @@ module.exports = async (req, res) => {
   if (skippedExcluded.length) {
     console.log(`[sync-cin7-consignment-inventory] ${skippedExcluded.length} row(s) excluded via OLD SKU / DO NOT USE marker:`, skippedExcluded.slice(0, 20).join('; '));
   }
+  if (skippedNoSkuMarketing.length) {
+    console.log(`[sync-cin7-consignment-inventory] ${skippedNoSkuMarketing.length} Skinuva marketing-material row(s) (BROCHURE/INSERT/CARD/BAG) had no SKU at all — skipped:`, skippedNoSkuMarketing.slice(0, 20).join('; '));
+  }
   if (unmatched.length) {
     console.log(`[sync-cin7-consignment-inventory] ${unmatched.length} row(s) looked like consignment SKUs but didn't match any of the 4 supported brand prefixes:`, unmatched.slice(0, 20).join('; '));
   }
@@ -234,6 +272,7 @@ module.exports = async (req, res) => {
     synced: results,
     justBjornSkippedNoCode: skippedNoCode.length,
     excludedOldSku: skippedExcluded.length,
+    skinuvaMarketingMaterialNoSku: skippedNoSkuMarketing.length,
     unmatchedConsignmentSkus: unmatched.length,
     timestamp: now,
   });
@@ -245,12 +284,14 @@ function aggregateConsignmentRows(rows) {
   const groups = {}; // "PREFIX::SKU" -> { sku, name, onHand, allocated, names:Set }
   const skippedNoCode = [];
   const skippedExcluded = [];
+  const skippedNoSkuMarketing = []; // Skinuva marketing-material rows with no SKU at all — added 2026-08-10
   const unmatched = [];
   const supportedPrefixes = new Set(CONSIGNMENT_BRANDS.map(b => b.skuPrefix));
 
   for (const row of rows) {
     const skuRaw = String(row.sku ?? '').trim();
     const product = String(row.product ?? '').trim();
+    const brand = String(row.brand ?? '').trim();
     const qty = numOrZero(row.qtyOnHand);
     const alloc = numOrZero(row.allocated);
 
@@ -259,11 +300,30 @@ function aggregateConsignmentRows(rows) {
       continue;
     }
 
+    // Added 2026-08-10 per Jaclyn — every Skinuva-specific rule below
+    // requires this to be true. A P-/I-/S- SKU or a BROCHURE/INSERT/
+    // CARD/BAG product name on a NON-Skinuva row still falls through to
+    // the normal C-only / Just Bjorn / unmatched handling further down,
+    // completely unchanged from before.
+    const isSkinuvaRow = /skinuva/i.test(brand);
+
     let key, prefix, groupSku;
     const stdMatch = STANDARD_SKU_PATTERN.exec(skuRaw);
+    const skinuvaExtraMatch = isSkinuvaRow ? SKINUVA_EXTRA_PREFIX_PATTERN.exec(skuRaw) : null;
+
     if (stdMatch) {
       groupSku = stdMatch[1].toUpperCase();
       prefix = stdMatch[2].toUpperCase();
+    } else if (skinuvaExtraMatch) {
+      groupSku = skinuvaExtraMatch[1].toUpperCase(); // full "P-SVA0001"-style match, prefix kept intact
+      prefix = 'SVA';
+    } else if (isSkinuvaRow && SKINUVA_MARKETING_MATERIAL_PATTERN.test(product)) {
+      if (!skuRaw) {
+        skippedNoSkuMarketing.push(`(no SKU) ${product.slice(0, 60)}`);
+        continue;
+      }
+      groupSku = skuRaw.toUpperCase();
+      prefix = 'SVA';
     } else {
       const jbjMatch = JBJ_EXTRACT_PATTERN.exec(product);
       if (jbjMatch) {
@@ -297,7 +357,7 @@ function aggregateConsignmentRows(rows) {
   // (logged as a warning per-brand above), keep whichever was seen first.
   Object.values(groups).forEach(g => { g.name = Array.from(g.names)[0] || g.sku; });
 
-  return { groups, skippedNoCode, skippedExcluded, unmatched };
+  return { groups, skippedNoCode, skippedExcluded, skippedNoSkuMarketing, unmatched };
 }
 
 function numOrZero(v) {
@@ -329,13 +389,15 @@ function parseWorkbook(buffer) {
       headerRowIdx = i;
       const qtyIdx = cells.findIndex(c => c === 'quantity on hand' || c === 'qty on hand');
       const allocIdx = cells.indexOf('allocated');
-      colIdx = { sku: skuIdx, product: productIdx, qtyOnHand: qtyIdx, allocated: allocIdx };
+      const brandIdx = cells.indexOf('brand'); // added 2026-08-10 per Jaclyn — needed for Skinuva-only matching rules below
+      colIdx = { sku: skuIdx, product: productIdx, qtyOnHand: qtyIdx, allocated: allocIdx, brand: brandIdx };
       break;
     }
   }
   if (headerRowIdx === -1) throw new Error('Could not locate header row (no row found with both "SKU" and "Product" columns)');
   if (colIdx.qtyOnHand === -1) throw new Error('Header row found, but no "Quantity on hand" / "Qty on hand" column present');
   if (colIdx.allocated === -1) throw new Error('Header row found, but no "Allocated" column present');
+  if (colIdx.brand === -1) throw new Error('Header row found, but no "Brand" column present');
 
   const out = [];
   for (let i = headerRowIdx + 1; i < raw.length; i++) {
@@ -346,6 +408,7 @@ function parseWorkbook(buffer) {
       product: r[colIdx.product],
       qtyOnHand: r[colIdx.qtyOnHand],
       allocated: r[colIdx.allocated],
+      brand: r[colIdx.brand],
     });
   }
   return out;
