@@ -26,6 +26,13 @@
  * (sku, sessions, unitsOrdered, pageViews, orderedProductSales) are per
  * Amazon's documented schema — VERIFY with ?debug=true before relying on
  * this in production, in case Amazon's actual response differs.
+ *
+ * UPDATED 2026-08-10 per Jaclyn: sessions now sums BOTH `sessions` and
+ * `sessionsB2B` from trafficByAsin — the old version only counted B2C
+ * sessions, silently undercounting any ASIN with real B2B traffic.
+ * `sessionsB2B` is the expected Amazon field name for this split, NOT
+ * independently confirmed against a real response yet — verify with
+ * ?debug=true the same way every other field name in this file should be.
  */
 
 const zlib                                 = require('zlib');
@@ -252,7 +259,16 @@ module.exports = async (req, res) => {
 
           if (!perAsin.has(asin)) perAsin.set(asin, { sessions: 0, pageViews: 0, unitsOrdered: 0, orderedProductSales: 0 });
           const acc = perAsin.get(asin);
-          acc.sessions            += parseInt(row.trafficByAsin?.sessions ?? 0, 10) || 0;
+          // ADDED 2026-08-10 per Jaclyn: `sessions` alone was undercounting
+          // — Amazon's Sales and Traffic report splits regular (B2C) and
+          // B2B sessions into separate fields, and this was only reading
+          // the B2C one. `sessionsB2B` is the expected field name per
+          // Amazon's documented schema for this report, matching the same
+          // regular/B2B split pattern the report uses elsewhere — NOT yet
+          // confirmed against a real response. VERIFY with ?debug=true
+          // before trusting this in production, same as this file's own
+          // header comment already says for every other field name below.
+          acc.sessions            += (parseInt(row.trafficByAsin?.sessions ?? 0, 10) || 0) + (parseInt(row.trafficByAsin?.sessionsB2B ?? 0, 10) || 0);
           acc.pageViews           += parseInt(row.trafficByAsin?.pageViews ?? 0, 10) || 0;
           acc.unitsOrdered        += parseInt(row.salesByAsin?.unitsOrdered ?? 0, 10) || 0;
           acc.orderedProductSales += parseFloat(row.salesByAsin?.orderedProductSales?.amount ?? 0) || 0;
