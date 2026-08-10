@@ -9973,6 +9973,7 @@ async function initSnsExternal() {
   let _stockSearchWired = false;
   let _skuNameMap = {};   // SKU (base, no -SF) -> Product Short Name, from the master sheet
   let _skuStatusMap = {}; // SKU (base, no -SF) -> 'LIVE' | 'DELETED', col H of the same master sheet
+  let _skuTypeMap = {};   // SKU (base, no -SF) -> 'CATALOG' | 'BUNDLE', col J of the same master sheet — added 2026-08-10 per Jaclyn
   let _inboundBySku = {}; // SKU -> summed Expected Qty across all *Open* ASNs
 
   // Same SKU-keyed lookup pattern already used elsewhere on this dashboard.
@@ -9986,8 +9987,10 @@ async function initSnsExternal() {
         const sku    = (cols[1] || '').replace(/^"|"$/g,'').trim().toUpperCase().replace(/-SF$/i, '');
         const name   = (cols[2] || '').replace(/^"|"$/g,'').trim();
         const status = (cols[7] || '').replace(/^"|"$/g,'').trim().toUpperCase();
+        const skuType = (cols[9] || '').replace(/^"|"$/g,'').trim().toUpperCase(); // column J
         if (sku && name) _skuNameMap[sku] = name;
         if (sku && status) _skuStatusMap[sku] = status;
+        if (sku && skuType) _skuTypeMap[sku] = skuType;
       }
     } catch (e) {
       console.warn('[InventoryExternal] Product name lookup failed:', e.message);
@@ -10031,11 +10034,17 @@ async function initSnsExternal() {
 
       const productRows = isCsv(productsCsv) ? parseCsvRows(productsCsv) : [];
       const latestDate = productRows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+      // FIXED 2026-08-10 per Jaclyn — same fix as the Home page's Total
+      // SKUs KPI: bundle SKUs are present in Products Cache (confirmed —
+      // sync-products.js has no bundle exclusion), and this page's
+      // Total SKUs count/table was including them alongside real catalog
+      // products. Now excludes SKU Type = BUNDLE, same as loadHomeTotalSkus.
       const skuSet = new Set(
         productRows.filter(r => r.date === latestDate)
           .map(r => (r.sku || '').trim().toUpperCase().replace(/-SF$/i, ''))
-          .filter(Boolean)
+          .filter(sku => sku && _skuTypeMap[sku] !== 'BUNDLE')
       );
+      console.log('[InventoryExternal][qa]', skuSet.size, 'catalog SKUs in Stock Levels — bundles excluded via SKU Type.');
 
       _stockRows = [...skuSet].map(sku => {
         const c = consignMap[sku] || { onHand: 0, available: 0, lastUpdated: '' };
@@ -12524,10 +12533,16 @@ async function ovLoadUnitsAndPeakMonth() {
 // count as real, sellable products (base SKU, -SF suffix stripped so FBA/
 // seller-fulfilled variants count once); the Product Short Name sheet is
 // consulted ONLY for its Status column, counting SKUs marked LIVE.
+//
+// REWRITTEN AGAIN 2026-08-10 per Jaclyn: this comment claimed to reuse
+// loadHomeTotalSkus's logic but was actually a separate, duplicated copy
+// that never got the SKU Type fix applied there — same bundle-inclusion
+// bug, found independently here. Now also excludes SKU Type = BUNDLE,
+// matching loadHomeTotalSkus exactly.
 async function ovLoadTotalSkus() {
   const totalEl = document.getElementById('ms-total-skus');
   try {
-    const [productsCsv, statusCsv] = await Promise.all([
+    const [productsCsv, masterCsv] = await Promise.all([
       fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627')).then(r => r.ok ? r.text() : '').catch(() => ''),
     ]);
@@ -12543,14 +12558,22 @@ async function ovLoadTotalSkus() {
     );
 
     const statusMap = {};
-    parseCsvToRows(statusCsv).forEach(r => {
+    const skuTypeMap = {};
+    parseCsvToRows(masterCsv).forEach(r => {
       const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      if (!sku) return;
       const status = (r.status || '').trim().toUpperCase();
-      if (sku && status) statusMap[sku] = status;
+      if (status) statusMap[sku] = status;
+      const skuType = (r['sku type'] || r.sku_type || '').trim().toUpperCase();
+      if (skuType) skuTypeMap[sku] = skuType;
     });
 
     let activeCount = 0;
-    productSkus.forEach(sku => { if (statusMap[sku] === 'LIVE') activeCount++; });
+    productSkus.forEach(sku => {
+      if (statusMap[sku] !== 'LIVE') return;
+      if (skuTypeMap[sku] === 'BUNDLE') return;
+      activeCount++;
+    });
 
     if (totalEl) {
       totalEl.querySelector('.ms-value').textContent = activeCount.toLocaleString();
@@ -19401,20 +19424,23 @@ document.addEventListener('DOMContentLoaded', loadHomeConsignmentKpi);
 // Total SKUs KPI — REWRITTEN 2026-08-03 per Jaclyn: the previous version
 // (below, superseded) counted rows on the master Product Short Name
 // sheet directly, which includes bundle SKUs the brand does not consider
-// real SKUs. Now: the Products Cache sheet (evolis tab — same sheet the
-// internal Inventory page reads) is the source of truth for WHICH SKUs
-// count as real, sellable products; the Product Short Name sheet is
-// consulted ONLY for its Status column (LIVE/DISCONTINUED), exactly the
-// same two-sheet cross-reference pattern already established by the
-// internal Inventory page's statusMap lookup (see loadInventoryPage()).
-// This assumes bundle SKUs simply don't appear in the Products Cache
-// sheet at all — if they turn out to be in there too, this won't fully
-// fix the issue and Products Cache would need its own bundle filter.
+// real SKUs. Rewritten again 2026-08-10 per Jaclyn: this function's own
+// prior comment predicted the exact bug she then found — "this assumes
+// bundle SKUs simply don't appear in the Products Cache sheet at all —
+// if they turn out to be in there too, this won't fully fix the issue."
+// They do (confirmed: sync-products.js has no bundle-type exclusion,
+// and the Listing Audit / PPC / Insights Bundles tabs all pull bundle
+// rows from this exact sheet), so Total SKUs was counting ~12 bundles
+// alongside the ~18 real catalog products. Now cross-references SKU
+// Type from Product Short Name (column J) too, same two-sheet pattern
+// as before, just with one more condition: a SKU only counts if it's
+// (1) present in today's Products Cache snapshot, (2) LIVE per Product
+// Short Name's Status column, AND (3) SKU Type = CATALOG, not BUNDLE.
 async function loadHomeTotalSkus() {
   const valEl = document.getElementById('home-kpi-skus');
   if (!valEl) return;
   try {
-    const [productsCsv, statusCsv] = await Promise.all([
+    const [productsCsv, masterCsv] = await Promise.all([
       fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl('1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA', '164358627') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
     ]);
@@ -19435,14 +19461,24 @@ async function loadHomeTotalSkus() {
     );
 
     const statusMap = {};
-    parseCsvToRows(statusCsv).forEach(r => {
+    const skuTypeMap = {};
+    parseCsvToRows(masterCsv).forEach(r => {
       const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+      if (!sku) return;
       const status = (r.status || '').trim().toUpperCase();
-      if (sku && status) statusMap[sku] = status;
+      if (status) statusMap[sku] = status;
+      const skuType = (r['sku type'] || r.sku_type || '').trim().toUpperCase();
+      if (skuType) skuTypeMap[sku] = skuType;
     });
 
     let activeCount = 0;
-    productSkus.forEach(sku => { if (statusMap[sku] === 'LIVE') activeCount++; });
+    let excludedBundleCount = 0;
+    productSkus.forEach(sku => {
+      if (statusMap[sku] !== 'LIVE') return;
+      if (skuTypeMap[sku] === 'BUNDLE') { excludedBundleCount++; return; }
+      activeCount++;
+    });
+    console.log('[Home][TotalSKUs][qa]', activeCount, 'catalog SKUs counted —', excludedBundleCount, 'bundle SKU(s) correctly excluded.');
 
     valEl.textContent = activeCount.toLocaleString();
   } catch (err) {
