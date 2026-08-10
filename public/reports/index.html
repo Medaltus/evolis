@@ -16006,8 +16006,10 @@ async function loadLastRunDates() {
   // on the shared ppc_strategy tab.
   try {
     const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, PPC_STRATEGY_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv).filter(r => (r.brand || '').trim().toLowerCase() === INSIGHTS_BRAND_TAB.toLowerCase());
+    const allRows = parseCsvToRows(csv);
+    const rows = allRows.filter(r => (r.brand || '').trim().toLowerCase() === INSIGHTS_BRAND_TAB.toLowerCase());
     const latest = rows.reduce((max, r) => ((r.uploaded_at || '') > max ? r.uploaded_at : max), '');
+    console.log('[LastRun][ppc][qa] csv length:', csv.length, '— total rows parsed:', allRows.length, '— header keys:', allRows.length ? Object.keys(allRows[0]).join(' | ') : '(none)', '— INSIGHTS_BRAND_TAB:', JSON.stringify(INSIGHTS_BRAND_TAB), '— rows matching brand filter:', rows.length, '— latest uploaded_at found:', JSON.stringify(latest));
     const el = document.getElementById('last-run-ppc');
     if (el) el.textContent = formatLastRun(latest);
   } catch (err) { console.warn('[LastRun] ppc failed:', err.message); }
