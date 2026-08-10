@@ -13,7 +13,7 @@
  * It's delivered by email as a "Download Now" link (not an attachment) and
  * downloaded manually today, so like the Keyword Tracker flow, this
  * endpoint is the write step: download the file to
- * ~/Documents/Claude/"Newderm Product Bundles Sales Reports"/, then run
+ * ~/Documents/Claude/"Newderm Product Bundles Sales Report"/, then run
  * upload_bundle_report.sh to POST it here.
  *
  * There are two selling accounts (Newderm, VB Cosmetics) that each get
@@ -32,17 +32,68 @@
  * heavily — incoming rows overwrite existing rows for the same key, so a
  * later pull's numbers (which may be more finalized) win.
  *
- * Uses the `xlsx` package (SheetJS) to parse the CSV — it already handles
- * quoted fields with embedded commas correctly (the TITLE column in this
- * report routinely contains commas), so there's no need for a separate
- * hand-rolled CSV parser. `xlsx` is already a dependency of this repo
- * (added for upload-keyword-tracker.js).
+ * FIXED 2026-08-10 — real incident: this originally used the `xlsx`
+ * (SheetJS) package to parse the CSV, reused from upload-keyword-tracker.js
+ * since it already handles quoted fields with embedded commas (the TITLE
+ * column here routinely has commas). The problem: SheetJS's CSV reader
+ * auto-detects date-looking strings (e.g. "2026-06-04") and silently
+ * converts them to Excel's internal date representation — a serial number
+ * counting days since 1899-12-30 — and sheet_to_json() returns that raw
+ * number instead of the original text. Confirmed live: every DATE value in
+ * the bundle_sales tab was written as a 5-digit number (e.g. 46177) instead
+ * of "2026-06-04". CSV has no real concept of cell types — every field is
+ * just text — so this endpoint now uses a small quote-aware CSV parser
+ * (identical logic to index.html's own parseCsv/parseCsvLine) instead of
+ * xlsx. It does zero type inference: every field stays exactly the string
+ * it was in the file, dates included. `xlsx` is no longer a dependency of
+ * this specific endpoint (still used by upload-keyword-tracker.js, which
+ * parses real .xlsx workbooks, not CSV, so it isn't affected by this bug).
  */
-const XLSX = require('xlsx');
 const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
 
 const TAB_NAME = 'bundle_sales';
 const HEADERS = ['date', 'source_account', 'bundle_asin', 'title', 'is_virtual_multipack', 'bundles_sold', 'total_sales'];
+
+// Quote-aware CSV line splitter — handles embedded commas inside quoted
+// fields (e.g. TITLE values like `"Foo, Bar & Baz"`) and doubled-quote
+// escaping (`""` inside a quoted field means a literal `"`). Deliberately
+// does NO type inference — every field comes back as a plain string.
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuote) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuote = false; }
+      } else {
+        cur += c;
+      }
+    } else {
+      if (c === '"') inQuote = true;
+      else if (c === ',') { result.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCsv(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.length > 0);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = parseCsvLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').replace(/^"|"$/g, '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -60,10 +111,8 @@ module.exports = async (req, res) => {
 
   let rows;
   try {
-    const buffer = Buffer.from(contentBase64, 'base64');
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const firstSheetName = workbook.SheetNames[0];
-    rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: '' });
+    const text = Buffer.from(contentBase64, 'base64').toString('utf-8');
+    rows = parseCsv(text);
   } catch (err) {
     console.error('[upload-bundle-report] failed to parse CSV:', err.message);
     return res.status(400).json({ error: 'Could not parse file as CSV', detail: err.message });
