@@ -82,31 +82,35 @@
  *      out-of-stock product. Added an inventory check against
  *      SHEET_NEWDERM_INVENTORY (évolis tab gid=2074324776).
  *
- *      PARTIALLY RESOLVED — Jaclyn provided the real config/sheets.js
- *      (2026-08-07): confirmed the config key really is `newdermInventory`
- *      (one of the candidates guessed below happened to be right — kept
- *      the candidate list anyway as a defensive fallback rather than
- *      hardcoding a bare `sheets.newdermInventory` reference, in case
- *      that ever gets renamed).
- *
- *      STILL A REAL GAP, AND A BIGGER ONE THAN THE COLUMN NAMES: that
- *      same sheets.js comment describes this sheet as having "pre-built
- *      2-row merged headers (data starts row 3)". Every other sheet in
- *      this whole codebase assumes row 1 is a plain single-row header —
- *      if readRows() does the same here (no special-casing for this
- *      sheet), it will treat the FIRST of the two merged header rows as
- *      column names and the SECOND header row as if it were a real data
- *      row, and my FBA_QTY_CANDIDATES/WAREHOUSE_SF_QTY_CANDIDATES field
- *      names below will very likely not match anything real. I do not
- *      have visibility into readRows()'s implementation to know whether
- *      it already special-cases this sheet's row offset — if it
- *      doesn't, this needs a real fix (either readRows() gains a
- *      header-row-offset parameter, or this file fetches the raw range
- *      starting at row 3 itself). Added a diagnostic log
- *      (buildOosMaps() logs the actual first-row keys it receives every
- *      run) specifically so this is fast to confirm or rule out the
- *      first time this runs against real data, rather than silently
- *      reading is_oos=false for every SKU with no visible clue why.
+ *      FULLY RESOLVED 2026-08-10 — Jaclyn provided both config/sheets.js
+ *      and a screenshot of the real sheet. Confirmed: config key is
+ *      `newdermInventory`; the sheet genuinely has the 2-row merged
+ *      header sheets.js's own comment described (row 1 = merged section
+ *      titles like "Amazon Warehouse USA - FBA" / "Medaltus Warehouse -
+ *      SF", blank outside each merge's leftmost cell; row 2 = the real
+ *      column names; data starts row 3); readRows() (confirmed from its
+ *      actual source) always treats row 1 as headers with no per-sheet
+ *      override, so it was reading row 2's real headers as if they were
+ *      the first data row, and every value came back undefined —
+ *      exactly why is_oos read false for every single SKU. Fixed by
+ *      fetchNewdermInventoryRows() below, which fetches this one sheet's
+ *      raw range directly (A2:AE, skipping row 1 entirely) instead of
+ *      going through readRows(). Also confirmed: this sheet has NO ASIN
+ *      column at all, only `sku` — buildSkuSnapshots()'s existing
+ *      ASIN-then-SKU fallback already handles this correctly since
+ *      oosMaps.byAsin is simply always empty for this sheet, no code
+ *      change needed there. FBA_QTY_CANDIDATES/WAREHOUSE_SF_QTY_
+ *      CANDIDATES below now lead with `core_available_fba`/
+ *      `core_available_sf` — this sheet reconciles marketplace-reported
+ *      quantities against Cin7 Core's own tracked quantities (per
+ *      sheets.js: "marketplace vs Cin7 Core by location"), and the
+ *      core_available_* columns are Cin7's reconciled true-available
+ *      figure, which is presumably the whole reason this reconciliation
+ *      sheet exists rather than reading Amazon's/Walmart's own reported
+ *      numbers directly. The raw marketplace-reported columns
+ *      (amazon_fulfillable_quantity, amazon_seller_fulfilled_quantity)
+ *      are kept as fallback candidates in case core_available_* is ever
+ *      blank for a row Cin7 hasn't reconciled yet.
  *
  *   2. UPDATED 2026-08-08 per Jaclyn: this tab is meant to hold HISTORY,
  *      not just current state — "if I run this a week from now, I want
@@ -115,12 +119,29 @@
  *      wrong here (stripped ALL of a brand's rows on every run
  *      regardless of date, silently deleting prior history) — fixed to
  *      only strip rows matching this brand AND today's exact date.
- *      replaceRows()'s EXACT SIGNATURE IS STILL UNCONFIRMED, though —
- *      every other file I've seen in this project uses ensureTab+
- *      appendRows (pure append). I'm assuming replaceRows(sheetId,
- *      tabName, headers, rowsAsArrays) mirrors appendRows's shape —
- *      confirm against config/_sheets_client.js and adjust
- *      writeSkuStrategyRows() below if the real signature differs.
+ *
+ *      REVISITED 2026-08-10 — Jaclyn provided the real
+ *      config/_sheets_client.js. Confirmed: replaceRows(sheetId,
+ *      tabName, headers, rows, token) clears A2:ZZ then writes `rows`
+ *      starting at A2 — it NEVER touches row 1, and its `headers`
+ *      parameter is dead code, never referenced in the function body.
+ *      ensureTab() only writes row 1 when the tab doesn't exist yet; on
+ *      an existing tab it just logs a loud warning on header mismatch
+ *      and deliberately does not auto-correct (its own comment: sheets
+ *      "get hand-edited sometimes... blind auto-correction could clobber
+ *      that"). Practical result confirmed from a live incident: this
+ *      tab's header row got stuck at an old 14-column schema after
+ *      is_oos was added as a 15th column, and neither ensureTab() nor
+ *      replaceRows() will ever fix that automatically — it needs a
+ *      one-time manual correction of row 1 (already done as of
+ *      2026-08-10). The code in writeSkuStrategyRows() below does NOT
+ *      attempt to write or correct row 1 itself, on purpose — a prior
+ *      attempt to do so by prepending the header into the `rows` array
+ *      wrote it as a literal data row at A2 instead (since that's where
+ *      rows always start), stacking a duplicate-looking row instead of
+ *      fixing anything. If this schema changes again, row 1 needs
+ *      another manual fix — that's a real, known limitation of this
+ *      tab's write path, not an oversight.
  *
  *   3. WASTED-SPEND JOIN KEY IS GUESSED. aggregatePpcByTerm() (copied
  *      from run-analysis.js) doesn't scope by ASIN/SKU at all — it just
@@ -157,7 +178,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
-const { readRows, ensureTab, appendRows, replaceRows } = require('./config/_sheets_client');
+const { readRows, ensureTab, appendRows, replaceRows, getSheetsToken } = require('./config/_sheets_client');
 const sheets = require('./config/sheets');
 const brands = require('./config/brands');
 
@@ -239,18 +260,18 @@ async function buildCrossAnalysisContext(brand) {
 }
 
 // Évolis tab, gid=2074324776, per Jaclyn 2026-08-07.
-// CONFIRMED 2026-08-07 against the real config/sheets.js: the key is
-// `newdermInventory` (kept as first candidate in the list below, with
-// the other two kept only as a defensive fallback in case it's ever
-// renamed — not because the real name is still in doubt).
-// STILL UNCONFIRMED: the column names below, AND — more importantly —
-// whether readRows() correctly skips this sheet's documented "2-row
-// merged header, data starts row 3" structure. See GAP #1b in the file
-// header comment; buildOosMaps() below logs real header keys + sample
-// rows every run specifically so this is fast to check.
+// CONFIRMED 2026-08-10 against a real screenshot of the sheet: column
+// names are `sku` (no ASIN column exists on this sheet at all),
+// `core_available_fba`, `core_available_sf`, plus the raw marketplace-
+// reported `amazon_fulfillable_quantity` / `amazon_seller_fulfilled_
+// quantity` kept as fallbacks. core_available_* leads the candidate
+// list deliberately — this sheet's whole purpose (per sheets.js:
+// "marketplace vs Cin7 Core by location") is reconciling marketplace-
+// reported quantities against Cin7 Core's own tracked quantities, and
+// core_available_* is Cin7's reconciled true-available figure.
 const NEWDERM_INVENTORY_SHEET_KEY_CANDIDATES = ['newdermInventory', 'newdermInventoryReconciliation', 'newderm_inventory'];
-const FBA_QTY_CANDIDATES = ['amazon_fba', 'Amazon FBA', 'fba_available', 'fba_quantity', 'FBA'];
-const WAREHOUSE_SF_QTY_CANDIDATES = ['medaltus_warehouse_sf', 'Medaltus Warehouse - SF', 'warehouse_sf', 'sf_quantity'];
+const FBA_QTY_CANDIDATES = ['core_available_fba', 'amazon_fulfillable_quantity', 'amazon_fba', 'Amazon FBA', 'fba_available', 'fba_quantity', 'FBA'];
+const WAREHOUSE_SF_QTY_CANDIDATES = ['core_available_sf', 'amazon_seller_fulfilled_quantity', 'medaltus_warehouse_sf', 'Medaltus Warehouse - SF', 'warehouse_sf', 'sf_quantity'];
 const OOS_ASIN_CANDIDATES = ['ASIN', 'asin', 'Asin'];
 const OOS_SKU_CANDIDATES = ['SKU', 'sku', 'Sku'];
 
@@ -261,12 +282,45 @@ function resolveNewdermInventorySheetId() {
   return null;
 }
 
+// FIXED 2026-08-10 per Jaclyn (confirmed via a real screenshot of the
+// sheet — see GAP #1b in the file header comment): this sheet genuinely
+// has a 2-row merged header (row 1 = merged section titles, blank
+// outside each merge's leftmost cell; row 2 = real column names; data
+// starts row 3). readRows() always treats row 1 as headers with no
+// per-sheet override, so it was reading row 2's real headers as if they
+// were the first data row — every field came back undefined, which is
+// why is_oos read false for every SKU. Fetches the raw range directly
+// instead, skipping row 1 entirely and using row 2 as headers.
+async function fetchNewdermInventoryRows(sheetId, tabName) {
+  try {
+    const token = await getSheetsToken();
+    const range = encodeURIComponent(`${tabName}!A2:AE`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      console.warn(`[run-ppc-strategy-analysis] SHEET_NEWDERM_INVENTORY raw fetch not ok (${res.status}) — is_oos will be false for every SKU this run.`);
+      return [];
+    }
+    const data = await res.json();
+    const values = data.values || [];
+    if (values.length < 2) {
+      console.warn('[run-ppc-strategy-analysis] SHEET_NEWDERM_INVENTORY raw fetch returned no data rows (only the header row, or nothing at all).');
+      return [];
+    }
+    const headers = values[0]; // this is the sheet's real row 2 — the actual column names, not the merged section titles in row 1
+    return values.slice(1).map(row => Object.fromEntries(headers.map((h, i) => [h, row[i] !== undefined ? row[i] : ''])));
+  } catch (e) {
+    console.warn('[run-ppc-strategy-analysis] SHEET_NEWDERM_INVENTORY raw fetch failed:', e.message);
+    return [];
+  }
+}
+
 // Returns { bySku: Map, byAsin: Map } of booleans — true means this
-// product is out of stock (Amazon FBA + Medaltus Warehouse SF both at
-// or below zero). Never throws: if the sheet or the expected columns
-// aren't found, logs a clear warning and returns empty maps, so every
-// SKU just falls back to is_oos=false (behaves exactly as before this
-// feature existed) rather than crashing the whole run.
+// product is out of stock (FBA + Warehouse SF both at or below zero).
+// Never throws: if the sheet or the expected columns aren't found, logs
+// a clear warning and returns empty maps, so every SKU just falls back
+// to is_oos=false (behaves exactly as before this feature existed)
+// rather than crashing the whole run.
 function buildOosMaps(inventoryRows) {
   const bySku = new Map();
   const byAsin = new Map();
@@ -275,24 +329,20 @@ function buildOosMaps(inventoryRows) {
     return { bySku, byAsin };
   }
 
-  // Diagnostic — see GAP #1b in the file header comment. This sheet has
-  // "pre-built 2-row merged headers, data starts row 3" per Jaclyn's own
-  // config/sheets.js comment; if readRows() doesn't already account for
-  // that offset, row[0] here will actually be the SECOND header row
-  // (not real data), and none of the candidate field names below will
-  // match anything. Logging the real keys + first 2 rows every run so
-  // this is a 5-second check instead of a silent guess.
   console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[0] keys:', Object.keys(inventoryRows[0]).join(' | '));
   console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[0] sample:', JSON.stringify(inventoryRows[0]));
-  if (inventoryRows[1]) console.log('[run-ppc-strategy-analysis][qa] SHEET_NEWDERM_INVENTORY — row[1] sample:', JSON.stringify(inventoryRows[1]));
 
   const sample = inventoryRows[0];
   const hasFba = FBA_QTY_CANDIDATES.some(c => sample[c] !== undefined);
   const hasSf = WAREHOUSE_SF_QTY_CANDIDATES.some(c => sample[c] !== undefined);
   if (!hasFba && !hasSf) {
-    console.warn('[run-ppc-strategy-analysis] Could not find an Amazon FBA or Medaltus Warehouse SF column on SHEET_NEWDERM_INVENTORY (tried:', FBA_QTY_CANDIDATES.join(', '), '/', WAREHOUSE_SF_QTY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU. Check the [qa] log lines just above: if the first rows keys look like a second header row rather than real column names/data, this is the merged-header row-offset problem described in GAP #1b, not a wrong-field-name problem.');
+    console.warn('[run-ppc-strategy-analysis] Could not find an FBA or Warehouse SF column on SHEET_NEWDERM_INVENTORY (tried:', FBA_QTY_CANDIDATES.join(', '), '/', WAREHOUSE_SF_QTY_CANDIDATES.join(', '), ') — is_oos will be false for every SKU. Check the [qa] log line just above for the real column names on this run.');
     return { bySku, byAsin };
   }
+  // This sheet has no ASIN column at all (confirmed 2026-08-10) — byAsin
+  // will simply stay empty every run, and buildSkuSnapshots()'s existing
+  // ASIN-then-SKU fallback already handles that correctly with no
+  // further changes needed there.
   inventoryRows.forEach(r => {
     const fba = parseFloat(findField(r, FBA_QTY_CANDIDATES)) || 0;
     const sf = parseFloat(findField(r, WAREHOUSE_SF_QTY_CANDIDATES)) || 0;
@@ -737,36 +787,43 @@ async function writeSkuStrategyRows(brand, rows) {
     uploadedAt,
   ]);
 
-  // FIXED 2026-08-07 per Jaclyn (real production bug, confirmed from a
-  // live sheet screenshot): this tab's header row was written ONCE by
-  // ensureTab() on the very first run, back when the schema was 14
-  // columns (before is_oos existed). ensureTab() only writes headers
-  // when the tab is blank — it never corrects an existing header row —
-  // so after is_oos was added, the header row stayed stuck at the old
-  // 14 columns while every data row started writing 15 columns. Result:
-  // every field from `headline` onward landed one column to the right
-  // of what its own header label said, e.g. the column LABELED
-  // recommended_bullets_json actually held the headline text (which is
-  // why it failed to JSON.parse and showed "No recommendations
-  // generated"), and the column labeled suggested_exact_match_targets_
-  // json actually held the real bullets — which is why the dashboard's
-  // "target pills" were rendering full bullet sentences instead of
-  // short keywords. replaceRows()'s own `headers` parameter does NOT
-  // rewrite row 1 (proven by this exact bug — the header stayed stale
-  // across multiple runs that all passed the updated 15-column
-  // PPC_STRATEGY_HEADERS to it), so it's not safe to rely on for schema
-  // changes. Fixed by making the header row part of the actual data
-  // array passed to replaceRows, so row 1 is unconditionally correct on
-  // every single run, regardless of what ensureTab or replaceRows do on
-  // their own with a separate headers argument.
+  // ATTEMPTED FIX 2026-08-07, REVERTED 2026-08-10 per Jaclyn: I
+  // originally diagnosed this tab's stale 14-column header (written once
+  // by ensureTab() before is_oos existed, never corrected since) as the
+  // cause of headline/bullets/targets landing under the wrong column
+  // labels. That diagnosis was correct. My fix was not: I assumed
+  // replaceRows()'s separate `headers` argument doesn't touch row 1, so
+  // I additionally prepended PPC_STRATEGY_HEADERS as the first element
+  // of the `rows` array itself to force it. Confirmed wrong from a live
+  // screenshot after deploying: it produced THREE different stacked
+  // header-looking rows at the top of the sheet before any real data,
+  // meaning replaceRows() DOES write its own header row from the
+  // `headers` argument — and, more importantly, does NOT clear
+  // pre-existing rows the way "replace" implies. Every run was adding
+  // on top of what was already there, not overwriting it.
+  //
+  // I do not have visibility into config/_sheets_client.js to know
+  // replaceRows()'s exact real behavior, and two guesses in a row have
+  // both been wrong — a third guess isn't the right move here. The
+  // certain, verifiable fix: manually delete ALL rows in the ppc_strategy
+  // tab (including the header row) so it's genuinely blank, then run
+  // this endpoint once. ensureTab() will then write a single correct
+  // 15-column header from scratch (it only fires on a truly blank tab,
+  // which is exactly the condition this needs), and every column will
+  // line up with its label from that point on. This code below is
+  // reverted to its pre-2026-08-07 form — no header-prepending — since
+  // that's the version that never itself caused stacking; the header
+  // mismatch it still won't fix is the OLD stale header, which a manual
+  // clear resolves directly instead of more code trying to out-guess an
+  // unknown API.
   const token = await ensureTab(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS);
   const existingRows = await readRows(sheets.insights, PPC_STRATEGY_TAB_NAME).catch(() => []);
   const preservedRows = existingRows
     .filter(r => !((r.brand || '') === brand.id && (r.date || '') === today))
     .map(r => PPC_STRATEGY_HEADERS.map(h => r[h] !== undefined ? r[h] : ''));
 
-  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [PPC_STRATEGY_HEADERS, ...preservedRows, ...newRows], token);
-  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows for ${today} to "${PPC_STRATEGY_TAB_NAME}" (${preservedRows.length} rows from other dates/brands preserved as history, header row force-corrected)`);
+  await replaceRows(sheets.insights, PPC_STRATEGY_TAB_NAME, PPC_STRATEGY_HEADERS, [...preservedRows, ...newRows], token);
+  console.log(`[run-ppc-strategy-analysis] ${brand.id} — wrote ${newRows.length} SKU rows for ${today} to "${PPC_STRATEGY_TAB_NAME}" (${preservedRows.length} rows from other dates/brands preserved as history)`);
 }
 
 module.exports = async function handler(req, res) {
@@ -796,7 +853,7 @@ module.exports = async function handler(req, res) {
       readRows(sheets.businessReport, brand.tabName).catch(() => []),
       readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []),
       readRows(sheets.advertising, brand.tabName).catch(() => []),
-      inventorySheetId ? readRows(inventorySheetId, brand.tabName).catch(() => []) : Promise.resolve([]),
+      inventorySheetId ? fetchNewdermInventoryRows(inventorySheetId, brand.tabName).catch(() => []) : Promise.resolve([]),
       buildCrossAnalysisContext(brand),
     ]);
 
