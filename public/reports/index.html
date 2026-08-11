@@ -18520,9 +18520,22 @@ async function loadAuditResultsFromSheet() {
         '</div>';
     }
     function kpiCardPlain(k) {
+      // Splits a trailing unit word (e.g. "days") into a smaller sub-span
+      // so a long unit doesn't force the whole value onto two lines at
+      // .pdfx-kpi-val's 29px — added 2026-08-11 per Jaclyn, "0.12 days"
+      // was wrapping mid-value on this page. The regex only matches a
+      // NUMBER + space + WORD shape, so "100%", "$5.59", "41", "0" (every
+      // other value in this same row) are untouched — this isn't
+      // hardcoded to the processing-time card specifically, it'll also
+      // catch any future KPI value shaped the same way.
+      const val = k.value || '—';
+      const unitMatch = /^([\d.,$%]+)\s+([a-zA-Z]+)$/.exec(val);
+      const valHtml = unitMatch
+        ? pdfxEscape(unitMatch[1]) + ' <span style="font-size:15px;font-weight:600;">' + pdfxEscape(unitMatch[2]) + '</span>'
+        : pdfxEscape(val);
       return '<div class="pdfx-kpi">' +
         '<div class="pdfx-kpi-lbl">' + pdfxEscape(k.label) + '</div>' +
-        '<div class="pdfx-kpi-val">' + pdfxEscape(k.value || '—') + '</div>' +
+        '<div class="pdfx-kpi-val" style="white-space:nowrap;">' + valHtml + '</div>' +
         '<div class="pdfx-kpi-mom flat"></div>' +
         '</div>';
     }
