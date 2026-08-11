@@ -1699,12 +1699,20 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <span style="font-size:16px;font-weight:600;color:var(--navy);">WEB — evolisproducts.com</span>
         <span id="web-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
       </div>
+      <!-- Period selector — added 2026-08-11 per Jaclyn, same pattern as
+           Amazon Sales. Website/Walmart both keep enough history on their
+           single orders sheet already, per Jaclyn — no separate historical
+           sheet needed the way Amazon required for Last Year. -->
+      <div class="period-selector" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
+        <div class="period-pills" id="web-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+      </div>
       <div class="kpi-row">
-        <div class="kpi-card" id="web-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="web-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="web-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card kpi-card-tall" id="web-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card kpi-card-tall" id="web-kpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="web-kpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="web-kpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -1718,6 +1726,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <span class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--muted);font-weight:400;">(by Units)</span></span>
           <span id="web-products-source" style="font-size:10px;color:var(--muted);"></span>
         </div>
+        <div id="web-top-sellers-unavailable" style="display:none;padding:20px;text-align:center;color:var(--muted);font-size:12.5px;font-style:italic;">SKU-specific data not available for Last Year.</div>
         <table class="data-table" id="web-top-sellers">
           <thead><tr><th style="width:32px;">#</th><th>Product</th><th>Units</th><th>Units (Ads)</th><th>Units (Organic)</th></tr></thead>
           <tbody id="web-tp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
@@ -1745,12 +1754,17 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <span style="font-size:16px;font-weight:600;color:var(--navy);">Walmart</span>
         <span id="walmart-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
       </div>
+      <!-- Period selector — added 2026-08-11 per Jaclyn, same pattern as Amazon/Website. -->
+      <div class="period-selector" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
+        <div class="period-pills" id="walmart-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+      </div>
       <div class="kpi-row">
-        <div class="kpi-card" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card kpi-card-tall" id="wkpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
+        <div class="kpi-card kpi-card-tall" id="wkpi-avg-order"><div class="kpi-label">Average Order</div><div class="kpi-value sm">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="wkpi-units-ads"><div class="kpi-label">Units (Ads)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+        <div class="kpi-card kpi-card-tall" id="wkpi-units-organic"><div class="kpi-label">Units (Organic)</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -1764,6 +1778,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <span class="card-title" style="margin-bottom:0;">Top Selling Products <span style="font-size:11px;color:var(--muted);font-weight:400;">(by Units)</span></span>
           <span id="walmart-products-source" style="font-size:10px;color:var(--muted);"></span>
         </div>
+        <div id="walmart-top-sellers-unavailable" style="display:none;padding:20px;text-align:center;color:var(--muted);font-size:12.5px;font-style:italic;">SKU-specific data not available for Last Year.</div>
         <table class="data-table" id="walmart-top-sellers">
           <thead><tr><th style="width:32px;">#</th><th>Product</th><th>Units</th><th>Units (Ads)</th><th>Units (Organic)</th></tr></thead>
           <tbody id="wtp-tbody"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);font-style:italic;">Loading…</td></tr></tbody>
@@ -5608,7 +5623,7 @@ async function initSns() {
     const container = document.getElementById('amazon-period-pills');
     if (!container) return;
     container.innerHTML = Object.entries(AMZ_PERIOD_LABELS).map(([key, label]) =>
-      `<button class="period-pill${key === activeKey ? ' active' : ''}" onclick="window.__amazonSelectPeriod('${key}')">${label}</button>`
+      `<button class="period-pill${key === activeKey ? ' active' : ''}" data-period="${key}" onclick="window.__amazonSelectPeriod('${key}')">${label}</button>`
     ).join('');
   }
   window.__amazonSelectPeriod = function (key) {
@@ -6077,18 +6092,13 @@ async function initSns() {
   }
 
   // Aggregate KPIs for a given year-month from all rows
-  function aggregateMonth(rows, year, month) {
-    const prefix = `${year}-${String(month).padStart(2,'0')}`;
-    const filtered = rows.filter(r => {
-      const d = normalizeDate(r.date).substring(0, 7);
-      return d === prefix && isValidRow(r);
-    });
+  // REFACTORED 2026-08-11 per Jaclyn — split core aggregation math from the
+  // month-filtering step, same as the Amazon Sales page, so Month to Date
+  // can reuse it with a day-of-month cutoff instead of duplicating the math.
+  function aggregateFilteredRows(filtered) {
     if (!filtered.length) return null;
-
     const orderIds  = new Set(filtered.map(r => r.order_id).filter(Boolean));
     const totalUnits = filtered.reduce((s, r) => s + (parseInt(r.unit_count, 10) || 0), 0);
-
-    // AOV: sum item_price per unique order_id, then average
     const orderTotals = {};
     filtered.forEach(r => {
       if (!r.order_id) return;
@@ -6096,9 +6106,24 @@ async function initSns() {
     });
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder     = orderIds.size > 0 ? totalRevenue / orderIds.size : 0;
-
     return { totalUnits, totalOrders: orderIds.size, avgOrder };
   }
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    return aggregateFilteredRows(rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix && isValidRow(r)));
+  }
+  // Added 2026-08-11 per Jaclyn — Month to Date and its "vs MTD last month" comparison.
+  function aggregateMonthThroughDay(rows, year, month, throughDay) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    return aggregateFilteredRows(rows.filter(r => {
+      if (!isValidRow(r)) return false;
+      const d = normalizeDate(r.date);
+      if (d.substring(0, 7) !== prefix) return false;
+      const day = parseInt(d.substring(8, 10), 10);
+      return day > 0 && day <= throughDay;
+    }));
+  }
+
 
   function pct(current, previous) {
     if (!previous || previous === 0) return null;
@@ -6139,22 +6164,15 @@ async function initSns() {
     return { totalConversions: Math.round(totalConversions), prevConversions: Math.round(prevConversions) };
   }
 
+  // ── Shared state for period switching — added 2026-08-11 per Jaclyn ──────
+  let _webAllRows = [];
+  let _webAdsRows = [];
+  let _webShoppingRows = [];
+
   window.initWebLive = function () {
     if (window._webLivePromise) return window._webLivePromise;
     window._webLivePromise = (async function () {
     console.log('[Evolis] initWebLive() called');
-
-    const { year, month } = getLastFullMonth();
-    let prevMonth = month - 1, prevYear = year;
-    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
-
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const hdrEl = document.getElementById('web-hdr-date');
-    if (hdrEl) {
-      const lastDay = new Date(year, month, 0).getDate();
-      hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${lastDay}, ${year}`;
-      hdrEl.style.display = 'none'; // duplicated page-sub above; kept in DOM for PDF export only
-    }
 
     try {
       // Fetch orders, ads (campaign-level, still the KPI's source), and
@@ -6173,51 +6191,15 @@ async function initSns() {
         return;
       }
 
-      const allRows = parseCsv(csv);
-      const adsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
-      const shoppingRows = isCsv(shoppingCsv) ? parseCsv(shoppingCsv) : [];
-      const curr    = aggregateMonth(allRows, year, month);
-      const prev    = aggregateMonth(allRows, prevYear, prevMonth);
-      const ads     = aggregateAdMonth(adsRows, year, month);
+      _webAllRows = parseCsv(csv);
+      _webAdsRows = isCsv(adsCsv) ? parseCsv(adsCsv) : [];
+      _webShoppingRows = isCsv(shoppingCsv) ? parseCsv(shoppingCsv) : [];
 
-      const fmt  = n => (n ?? 0).toLocaleString();
-      const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+      renderWebPeriodPills('lastFull');
+      renderWebPeriod('lastFull');
 
-      if (!curr) {
-        setKpiValue('web-kpi-total-units',   '0');
-        setKpiValue('web-kpi-total-orders',  '0');
-        setKpiValue('web-kpi-avg-order',     '$0.00');
-        setKpiValue('web-kpi-units-ads',     '—');
-        setKpiValue('web-kpi-units-organic', '0');
-        document.getElementById('web-tp-tbody').innerHTML =
-          '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
-        buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-        return;
-      }
-
-      const adUnits      = ads.totalConversions;
-      const prevAdUnits  = ads.prevConversions;
-      const orgUnits     = Math.max(0, curr.totalUnits - adUnits);
-      const prevOrgUnits = Math.max(0, (prev ? prev.totalUnits : 0) - prevAdUnits);
-
-      // KPIs
-      setKpiValue('web-kpi-total-units', fmt(curr.totalUnits));
-      setBadgeWeb('web-kpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
-
-      setKpiValue('web-kpi-total-orders', fmt(curr.totalOrders));
-      setBadgeWeb('web-kpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
-
-      setKpiValue('web-kpi-avg-order', '$' + fmt2(curr.avgOrder));
-      setBadgeWeb('web-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
-
-      setKpiValue('web-kpi-units-ads', adUnits > 0 ? fmt(adUnits) : '—');
-      setBadgeWeb('web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prev ? pct(adUnits, prevAdUnits) : null, 'MOM');
-
-      setKpiValue('web-kpi-units-organic', fmt(orgUnits));
-      setBadgeWeb('web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
-
+      const { year } = getLastFullMonth();
       buildWebChart(year).catch(e => console.warn('[WebChart] failed:', e.message));
-      buildWebTopProducts(allRows, adsRows, shoppingRows, year, month, prevYear, prevMonth);
 
     } catch (err) {
       console.error('[WebLive]', err.message);
@@ -6226,6 +6208,124 @@ async function initSns() {
     })();
     return window._webLivePromise;
   };
+
+  // ── Period selector — added 2026-08-11 per Jaclyn, same pattern as Amazon.
+  // Simpler than Amazon: no separate historical sheet needed for Last Year —
+  // Jaclyn confirmed the one orders sheet already retains enough history for
+  // Website/Walmart, since order volume here is much lower than Amazon's.
+  const WEB_PERIOD_LABELS = { mtd: 'Month to Date', lastFull: 'Last Full Month', prior: 'Prior Month', lastYear: 'Last Year' };
+
+  function renderWebPeriodPills(activeKey) {
+    const container = document.getElementById('web-period-pills');
+    if (!container) return;
+    container.innerHTML = Object.entries(WEB_PERIOD_LABELS).map(([key, label]) =>
+      `<button class="period-pill${key === activeKey ? ' active' : ''}" data-period="${key}" onclick="window.__webSelectPeriod('${key}')">${label}</button>`
+    ).join('');
+  }
+  window.__webSelectPeriod = function (key) {
+    renderWebPeriodPills(key);
+    renderWebPeriod(key);
+  };
+
+  function buildWebPeriodConfig(key) {
+    const { year, month } = getLastFullMonth();
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+    const yoyYear = year - 1, yoyMonth = month;
+
+    if (key === 'lastFull') {
+      return { year, month, prevYear, prevMonth, yoyYear, yoyMonth, showYoy: true, isPartial: false, label: WEB_PERIOD_LABELS.lastFull };
+    }
+    if (key === 'prior') {
+      let priorPrevMonth = prevMonth - 1, priorPrevYear = prevYear;
+      if (priorPrevMonth === 0) { priorPrevMonth = 12; priorPrevYear--; }
+      return { year: prevYear, month: prevMonth, prevYear: priorPrevYear, prevMonth: priorPrevMonth, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: false, label: WEB_PERIOD_LABELS.prior };
+    }
+    if (key === 'lastYear') {
+      return { year: yoyYear, month: yoyMonth, prevYear: null, prevMonth: null, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: false, label: WEB_PERIOD_LABELS.lastYear };
+    }
+    const now = new Date();
+    const mtdYear = now.getFullYear(), mtdMonth = now.getMonth() + 1, mtdDay = now.getDate();
+    let mtdPrevMonth = mtdMonth - 1, mtdPrevYear = mtdYear;
+    if (mtdPrevMonth === 0) { mtdPrevMonth = 12; mtdPrevYear--; }
+    return { year: mtdYear, month: mtdMonth, throughDay: mtdDay, prevYear: mtdPrevYear, prevMonth: mtdPrevMonth, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: true, label: WEB_PERIOD_LABELS.mtd };
+  }
+
+  function renderWebPeriod(key) {
+    const cfg = buildWebPeriodConfig(key);
+
+    const curr = cfg.isPartial
+      ? aggregateMonthThroughDay(_webAllRows, cfg.year, cfg.month, cfg.throughDay)
+      : aggregateMonth(_webAllRows, cfg.year, cfg.month);
+    const prev = cfg.isPartial
+      ? aggregateMonthThroughDay(_webAllRows, cfg.prevYear, cfg.prevMonth, cfg.throughDay)
+      : (cfg.prevYear ? aggregateMonth(_webAllRows, cfg.prevYear, cfg.prevMonth) : null);
+    const prevYoy = cfg.showYoy ? aggregateMonth(_webAllRows, cfg.yoyYear, cfg.yoyMonth) : null;
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const rangeLastDay = cfg.isPartial ? cfg.throughDay : new Date(cfg.year, cfg.month, 0).getDate();
+    const hdrEl = document.getElementById('web-hdr-date');
+    if (hdrEl) {
+      hdrEl.textContent = `📅 ${monthNames[cfg.month - 1]} 1, ${cfg.year} – ${monthNames[cfg.month - 1]} ${rangeLastDay}, ${cfg.year}`;
+      hdrEl.style.display = 'none'; // duplicated page-sub above; kept in DOM for PDF export only
+    }
+
+    const fmt  = n => (n ?? 0).toLocaleString();
+    const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+    if (!curr) {
+      setKpiValue('web-kpi-total-units',   '0');
+      setKpiValue('web-kpi-total-orders',  '0');
+      setKpiValue('web-kpi-avg-order',     '$0.00');
+      setKpiValue('web-kpi-units-ads',     '—');
+      setKpiValue('web-kpi-units-organic', '0');
+      const tpTable = document.getElementById('web-top-sellers');
+      const tpUnavailable = document.getElementById('web-top-sellers-unavailable');
+      if (tpTable) tpTable.style.display = '';
+      if (tpUnavailable) tpUnavailable.style.display = 'none';
+      document.getElementById('web-tp-tbody').innerHTML =
+        '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
+    }
+
+    const ads = aggregateAdMonth(_webAdsRows, cfg.year, cfg.month);
+    const adUnits      = ads.totalConversions;
+    const prevAdUnits  = ads.prevConversions;
+    const orgUnits     = Math.max(0, curr.totalUnits - adUnits);
+    const prevOrgUnits = Math.max(0, (prev ? prev.totalUnits : 0) - prevAdUnits);
+
+    setKpiValue('web-kpi-total-units', fmt(curr.totalUnits));
+    setBadgeWeb('web-kpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
+    setBadgeWeb('web-kpi-total-units', '.kpi-yoy', prevYoy ? pct(curr.totalUnits, prevYoy.totalUnits) : null, 'YOY');
+
+    setKpiValue('web-kpi-total-orders', fmt(curr.totalOrders));
+    setBadgeWeb('web-kpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
+    setBadgeWeb('web-kpi-total-orders', '.kpi-yoy', prevYoy ? pct(curr.totalOrders, prevYoy.totalOrders) : null, 'YOY');
+
+    setKpiValue('web-kpi-avg-order', '$' + fmt2(curr.avgOrder));
+    setBadgeWeb('web-kpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+    setKpiValue('web-kpi-units-ads', adUnits > 0 ? fmt(adUnits) : '—');
+    setBadgeWeb('web-kpi-units-ads', '.kpi-mom', adUnits > 0 && prev ? pct(adUnits, prevAdUnits) : null, 'MOM');
+
+    setKpiValue('web-kpi-units-organic', fmt(orgUnits));
+    setBadgeWeb('web-kpi-units-organic', '.kpi-mom', prev ? pct(orgUnits, prevOrgUnits) : null, 'MOM');
+
+    // Top Selling Products — Last Year shows a note instead of the table,
+    // same reasoning as Amazon: no confirmed reliable per-SKU breakdown
+    // path for a full year back, and this is a lower-priority channel to
+    // build that out for right now.
+    const tpTable = document.getElementById('web-top-sellers');
+    const tpUnavailable = document.getElementById('web-top-sellers-unavailable');
+    if (key === 'lastYear') {
+      if (tpTable) tpTable.style.display = 'none';
+      if (tpUnavailable) tpUnavailable.style.display = 'block';
+    } else {
+      if (tpTable) tpTable.style.display = '';
+      if (tpUnavailable) tpUnavailable.style.display = 'none';
+      buildWebTopProducts(_webAllRows, _webAdsRows, _webShoppingRows, cfg.year, cfg.month, cfg.prevYear, cfg.prevMonth);
+    }
+  }
 
   // ── Revenue chart — computed from orders sheet ────────────────────────────
   // ── Website revenue chart — reads from revenue tab (mirrors Amazon/Walmart) ─
@@ -6908,12 +7008,10 @@ async function initSns() {
     return true;
   }
 
-  function aggregateMonth(rows, year, month) {
-    const prefix = `${year}-${String(month).padStart(2,'0')}`;
-    const filtered = rows.filter(r => {
-      const d = normalizeDate(r.date).substring(0, 7);
-      return d === prefix && isValidWalmartRow(r);
-    });
+  // REFACTORED 2026-08-11 per Jaclyn — split core aggregation math from the
+  // month-filtering step, same pattern as Amazon/Website, so Month to Date
+  // can reuse it with a day-of-month cutoff instead of duplicating the math.
+  function aggregateFilteredRows(filtered) {
     if (filtered.length === 0) return null;
     const orderIds = new Set(filtered.map(r => r.order_id).filter(Boolean));
     const totalOrders = orderIds.size;
@@ -6926,6 +7024,21 @@ async function initSns() {
     const totalRevenue = Object.values(orderTotals).reduce((s, v) => s + v, 0);
     const avgOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
     return { totalUnits, totalOrders, avgOrder };
+  }
+  function aggregateMonth(rows, year, month) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    return aggregateFilteredRows(rows.filter(r => normalizeDate(r.date).substring(0, 7) === prefix && isValidWalmartRow(r)));
+  }
+  // Added 2026-08-11 per Jaclyn — Month to Date and its "vs MTD last month" comparison.
+  function aggregateMonthThroughDay(rows, year, month, throughDay) {
+    const prefix = `${year}-${String(month).padStart(2,'0')}`;
+    return aggregateFilteredRows(rows.filter(r => {
+      if (!isValidWalmartRow(r)) return false;
+      const d = normalizeDate(r.date);
+      if (d.substring(0, 7) !== prefix) return false;
+      const day = parseInt(d.substring(8, 10), 10);
+      return day > 0 && day <= throughDay;
+    }));
   }
 
   function pct(current, previous) {
@@ -6940,7 +7053,7 @@ async function initSns() {
     if (valEl) valEl.textContent = value;
   }
 
-  function setBadge(id, selector, pctVal) {
+  function setBadge(id, selector, pctVal, label = 'MOM') {
     const el = document.getElementById(id);
     if (!el) return;
     const badge = el.querySelector(selector);
@@ -6948,22 +7061,22 @@ async function initSns() {
     if (pctVal == null) { badge.className = selector.replace('.','') + ' flat'; badge.textContent = ''; return; }
     const cls = pctVal === 0 ? 'flat' : pctVal > 0 ? 'up' : 'dn';
     badge.className = selector.replace('.','') + ' ' + cls;
-    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% MOM`;
+    // FIXED 2026-08-11 per Jaclyn (real bug, found while adding YoY here):
+    // this hardcoded "MOM" in the text regardless of what was passed —
+    // every existing call site already passed a 4th 'MOM' argument that
+    // was silently ignored, since this function never declared that
+    // parameter at all. Harmless before today since every call happened
+    // to want "MOM" anyway; would have shown "MOM" on a YoY badge too.
+    badge.textContent = `${pctVal > 0 ? '+' : ''}${pctVal}% ${label}`;
   }
+
+  // ── Shared state for period switching — added 2026-08-11 per Jaclyn ──────
+  let _wmtAllRows = [];
 
   window.initWalmartLive = function () {
     if (window._walmartLivePromise) return window._walmartLivePromise;
     window._walmartLivePromise = (async function () {
     console.log('[Evolis] initWalmartLive() called');
-
-    const { year, month } = getLastFullMonth();
-    let prevMonth = month - 1, prevYear = year;
-    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
-
-    // Update header date
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const hdrEl = document.getElementById('walmart-hdr-date');
-    if (hdrEl) { hdrEl.textContent = `📅 ${monthNames[month-1]} 1, ${year} – ${monthNames[month-1]} ${new Date(year, month, 0).getDate()}, ${year}`; hdrEl.style.display = 'none'; }
 
     try {
       const csv = await fetch(sheetCsvUrl(WALMART_SHEET_ID, WALMART_GID)).then(r => r.ok ? r.text() : (console.warn('[Evolis] Sheet fetch not ok:', r.status, r.url), '')).catch(e => (console.warn('[Evolis] Sheet fetch error:', e.message), ''));
@@ -6972,61 +7085,13 @@ async function initSns() {
         return;
       }
 
-      const allRows = parseCsv(csv);
+      _wmtAllRows = parseCsv(csv);
 
-      const curr = aggregateMonth(allRows, year, month);
-      const prev = aggregateMonth(allRows, prevYear, prevMonth);
+      await renderWalmartPeriod('lastFull');
+      renderWalmartPeriodPills('lastFull');
 
-      if (!curr) {
-        setKpiValue('wkpi-total-units',   '0');
-        setBadge('wkpi-total-units',  '.kpi-mom', null, 'MOM');
-        setKpiValue('wkpi-total-orders',  '0');
-        setBadge('wkpi-total-orders', '.kpi-mom', null, 'MOM');
-        setKpiValue('wkpi-avg-order',     '$0.00');
-        setBadge('wkpi-avg-order',    '.kpi-mom', null, 'MOM');
-        // Changed 2026-08-06 per Jaclyn: shows a real "0" now instead of a
-        // dash — no sales at all this period is a confirmed zero, not
-        // unknown data.
-        setKpiValue('wkpi-units-ads',     '0');
-        setBadge('wkpi-units-ads',    '.kpi-mom', null, 'MOM');
-        setKpiValue('wkpi-units-organic', '0');
-        setBadge('wkpi-units-organic','.kpi-mom', null, 'MOM');
-        document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
-        buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
-        return;
-      }
-
-      const fmt  = n => (n ?? 0).toLocaleString();
-      const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
-
-      // Total Units
-      setKpiValue('wkpi-total-units', fmt(curr.totalUnits));
-      setBadge('wkpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
-
-      // Total Orders
-      setKpiValue('wkpi-total-orders', fmt(curr.totalOrders));
-      setBadge('wkpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
-
-      // Average Order
-      setKpiValue('wkpi-avg-order', '$' + fmt2(curr.avgOrder));
-      setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
-
+      const { year } = getLastFullMonth();
       buildWalmartChart(year).catch(e => console.warn('[WalmartChart] Revenue chart failed:', e.message));
-
-      // Units (Ads) / Units (Organic) — added 2026-08-06 per Jaclyn,
-      // matching the same fix already live on the External Sales →
-      // Walmart page. buildWalmartTopProducts() below computes the real
-      // per-SKU ad/organic split (capped per-SKU at that product's own
-      // units, joined via Walmart Item ID -> SKU) and returns the totals
-      // here so the KPI row and the table underneath it are always
-      // mathematically consistent with each other.
-      const wmtTotals = await buildWalmartTopProducts(allRows, year, month, prevYear, prevMonth);
-
-      setKpiValue('wkpi-units-ads', fmt(wmtTotals.totalAdUnits));
-      setBadge('wkpi-units-ads', '.kpi-mom', wmtTotals.totalAdUnitsPrev ? pct(wmtTotals.totalAdUnits, wmtTotals.totalAdUnitsPrev) : null, 'MOM');
-
-      setKpiValue('wkpi-units-organic', fmt(wmtTotals.totalOrgUnits));
-      setBadge('wkpi-units-organic', '.kpi-mom', wmtTotals.totalOrgUnitsPrev ? pct(wmtTotals.totalOrgUnits, wmtTotals.totalOrgUnitsPrev) : null, 'MOM');
 
     } catch (err) {
       console.error('[WalmartLive]', err.message);
@@ -7035,6 +7100,128 @@ async function initSns() {
     })();
     return window._walmartLivePromise;
   };
+
+  // ── Period selector — added 2026-08-11 per Jaclyn, same pattern as
+  // Amazon/Website. Walmart's own Units (Ads)/(Organic) KPIs are computed
+  // INSIDE buildWalmartTopProducts() (the per-SKU ad/organic split), unlike
+  // Amazon/Website which have a separate ad-summary sheet — so Last Year,
+  // which skips the per-SKU table entirely (same reasoning as the other
+  // two channels: no confirmed reliable per-SKU breakdown a full year
+  // back), also can't populate those two KPIs and shows "—" for both.
+  const WMT_PERIOD_LABELS = { mtd: 'Month to Date', lastFull: 'Last Full Month', prior: 'Prior Month', lastYear: 'Last Year' };
+
+  function renderWalmartPeriodPills(activeKey) {
+    const container = document.getElementById('walmart-period-pills');
+    if (!container) return;
+    container.innerHTML = Object.entries(WMT_PERIOD_LABELS).map(([key, label]) =>
+      `<button class="period-pill${key === activeKey ? ' active' : ''}" data-period="${key}" onclick="window.__walmartSelectPeriod('${key}')">${label}</button>`
+    ).join('');
+  }
+  window.__walmartSelectPeriod = function (key) {
+    renderWalmartPeriodPills(key);
+    renderWalmartPeriod(key);
+  };
+
+  function buildWalmartPeriodConfig(key) {
+    const { year, month } = getLastFullMonth();
+    let prevMonth = month - 1, prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+    const yoyYear = year - 1, yoyMonth = month;
+
+    if (key === 'lastFull') {
+      return { year, month, prevYear, prevMonth, yoyYear, yoyMonth, showYoy: true, isPartial: false, label: WMT_PERIOD_LABELS.lastFull };
+    }
+    if (key === 'prior') {
+      let priorPrevMonth = prevMonth - 1, priorPrevYear = prevYear;
+      if (priorPrevMonth === 0) { priorPrevMonth = 12; priorPrevYear--; }
+      return { year: prevYear, month: prevMonth, prevYear: priorPrevYear, prevMonth: priorPrevMonth, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: false, label: WMT_PERIOD_LABELS.prior };
+    }
+    if (key === 'lastYear') {
+      return { year: yoyYear, month: yoyMonth, prevYear: null, prevMonth: null, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: false, label: WMT_PERIOD_LABELS.lastYear };
+    }
+    const now = new Date();
+    const mtdYear = now.getFullYear(), mtdMonth = now.getMonth() + 1, mtdDay = now.getDate();
+    let mtdPrevMonth = mtdMonth - 1, mtdPrevYear = mtdYear;
+    if (mtdPrevMonth === 0) { mtdPrevMonth = 12; mtdPrevYear--; }
+    return { year: mtdYear, month: mtdMonth, throughDay: mtdDay, prevYear: mtdPrevYear, prevMonth: mtdPrevMonth, yoyYear: null, yoyMonth: null, showYoy: false, isPartial: true, label: WMT_PERIOD_LABELS.mtd };
+  }
+
+  async function renderWalmartPeriod(key) {
+    const cfg = buildWalmartPeriodConfig(key);
+
+    const curr = cfg.isPartial
+      ? aggregateMonthThroughDay(_wmtAllRows, cfg.year, cfg.month, cfg.throughDay)
+      : aggregateMonth(_wmtAllRows, cfg.year, cfg.month);
+    const prev = cfg.isPartial
+      ? aggregateMonthThroughDay(_wmtAllRows, cfg.prevYear, cfg.prevMonth, cfg.throughDay)
+      : (cfg.prevYear ? aggregateMonth(_wmtAllRows, cfg.prevYear, cfg.prevMonth) : null);
+    const prevYoy = cfg.showYoy ? aggregateMonth(_wmtAllRows, cfg.yoyYear, cfg.yoyMonth) : null;
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const rangeLastDay = cfg.isPartial ? cfg.throughDay : new Date(cfg.year, cfg.month, 0).getDate();
+    const hdrEl = document.getElementById('walmart-hdr-date');
+    if (hdrEl) {
+      hdrEl.textContent = `📅 ${monthNames[cfg.month - 1]} 1, ${cfg.year} – ${monthNames[cfg.month - 1]} ${rangeLastDay}, ${cfg.year}`;
+      hdrEl.style.display = 'none';
+    }
+
+    const tpTable = document.getElementById('walmart-top-sellers');
+    const tpUnavailable = document.getElementById('walmart-top-sellers-unavailable');
+
+    if (!curr) {
+      setKpiValue('wkpi-total-units',   '0');
+      setBadge('wkpi-total-units',  '.kpi-mom', null, 'MOM');
+      setBadge('wkpi-total-units',  '.kpi-yoy', null, 'YOY');
+      setKpiValue('wkpi-total-orders',  '0');
+      setBadge('wkpi-total-orders', '.kpi-mom', null, 'MOM');
+      setBadge('wkpi-total-orders', '.kpi-yoy', null, 'YOY');
+      setKpiValue('wkpi-avg-order',     '$0.00');
+      setBadge('wkpi-avg-order',    '.kpi-mom', null, 'MOM');
+      setKpiValue('wkpi-units-ads',     '0');
+      setBadge('wkpi-units-ads',    '.kpi-mom', null, 'MOM');
+      setKpiValue('wkpi-units-organic', '0');
+      setBadge('wkpi-units-organic','.kpi-mom', null, 'MOM');
+      if (tpTable) tpTable.style.display = '';
+      if (tpUnavailable) tpUnavailable.style.display = 'none';
+      document.getElementById('wtp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--slate);font-style:italic;font-size:12px;">No data for this period.</td></tr>';
+      return;
+    }
+
+    const fmt  = n => (n ?? 0).toLocaleString();
+    const fmt2 = n => parseFloat(n ?? 0).toFixed(2);
+
+    setKpiValue('wkpi-total-units', fmt(curr.totalUnits));
+    setBadge('wkpi-total-units', '.kpi-mom', prev ? pct(curr.totalUnits, prev.totalUnits) : null, 'MOM');
+    setBadge('wkpi-total-units', '.kpi-yoy', prevYoy ? pct(curr.totalUnits, prevYoy.totalUnits) : null, 'YOY');
+
+    setKpiValue('wkpi-total-orders', fmt(curr.totalOrders));
+    setBadge('wkpi-total-orders', '.kpi-mom', prev ? pct(curr.totalOrders, prev.totalOrders) : null, 'MOM');
+    setBadge('wkpi-total-orders', '.kpi-yoy', prevYoy ? pct(curr.totalOrders, prevYoy.totalOrders) : null, 'YOY');
+
+    setKpiValue('wkpi-avg-order', '$' + fmt2(curr.avgOrder));
+    setBadge('wkpi-avg-order', '.kpi-mom', prev ? pct(Math.round(curr.avgOrder * 100), Math.round(prev.avgOrder * 100)) : null, 'MOM');
+
+    // Units (Ads) / Units (Organic) — computed inside buildWalmartTopProducts
+    // (per-SKU ad/organic split), same dependency as the table itself. Last
+    // Year skips this entirely (same reasoning as the table note below) and
+    // shows "—" for both rather than a number that can't actually be backed.
+    if (key === 'lastYear') {
+      setKpiValue('wkpi-units-ads', '—');
+      setBadge('wkpi-units-ads', '.kpi-mom', null, 'MOM');
+      setKpiValue('wkpi-units-organic', '—');
+      setBadge('wkpi-units-organic', '.kpi-mom', null, 'MOM');
+      if (tpTable) tpTable.style.display = 'none';
+      if (tpUnavailable) tpUnavailable.style.display = 'block';
+    } else {
+      if (tpTable) tpTable.style.display = '';
+      if (tpUnavailable) tpUnavailable.style.display = 'none';
+      const wmtTotals = await buildWalmartTopProducts(_wmtAllRows, cfg.year, cfg.month, cfg.prevYear, cfg.prevMonth);
+      setKpiValue('wkpi-units-ads', fmt(wmtTotals.totalAdUnits));
+      setBadge('wkpi-units-ads', '.kpi-mom', wmtTotals.totalAdUnitsPrev ? pct(wmtTotals.totalAdUnits, wmtTotals.totalAdUnitsPrev) : null, 'MOM');
+      setKpiValue('wkpi-units-organic', fmt(wmtTotals.totalOrgUnits));
+      setBadge('wkpi-units-organic', '.kpi-mom', wmtTotals.totalOrgUnitsPrev ? pct(wmtTotals.totalOrgUnits, wmtTotals.totalOrgUnitsPrev) : null, 'MOM');
+    }
+  }
 
   // ── Walmart Revenue chart ──────────────────────────────────────────────────
   // Reads from Walmart revenue history sheet (WALMART_REVENUE_SHEET_ID).
@@ -18528,6 +18715,7 @@ async function loadAuditResultsFromSheet() {
     if (btn) { btn.disabled = true; btn.classList.add('pdfx-loading'); }
 
     let root = null;
+    let _amazonPeriodKeyBeforeExport = null;
 
     try {
       // A PDF export shouldn't silently produce blank chart cards just
@@ -18594,6 +18782,27 @@ async function loadAuditResultsFromSheet() {
       if (initPromises.length) {
         console.log('[pdf-export] awaiting', initPromises.length, 'chart data load(s) before building PDF');
         await Promise.all(initPromises);
+      }
+
+      // Added 2026-08-11 per Jaclyn — hardcoded so the PDF export always
+      // reflects Last Full Month, regardless of whatever period someone
+      // currently has selected on the Amazon Sales page's period selector.
+      // Needed because this export reads live DOM state (pdfxText reads
+      // #amazon-hdr-date's current text; the chart/KPI capture below
+      // snapshots whatever's currently rendered) — without this, an
+      // export triggered while "Prior Month" or "Month to Date" was
+      // selected on screen would silently produce a report showing that
+      // period instead of the standard monthly one. initAmazonLive()
+      // above is a cached promise and does NOT re-render on repeat calls,
+      // so this has to be a fresh, explicit call to force it back.
+      // Captures whatever was active first so it can be restored once the
+      // export finishes — someone watching this page while an export runs
+      // in the background shouldn't see their own selection silently
+      // change and stay changed.
+      const _amazonPeriodBeforeExport = document.querySelector('#amazon-period-pills .period-pill.active');
+      _amazonPeriodKeyBeforeExport = _amazonPeriodBeforeExport ? _amazonPeriodBeforeExport.dataset.period : null;
+      if (includeSections.amazon && typeof window.__amazonSelectPeriod === 'function') {
+        window.__amazonSelectPeriod('lastFull');
       }
 
       // Defensive backstop only at this point — the real fix is the promise
@@ -18792,10 +19001,16 @@ async function loadAuditResultsFromSheet() {
       root.style.display = 'none';
       root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = '';
       if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
+      if (_amazonPeriodKeyBeforeExport && _amazonPeriodKeyBeforeExport !== 'lastFull' && typeof window.__amazonSelectPeriod === 'function') {
+        window.__amazonSelectPeriod(_amazonPeriodKeyBeforeExport);
+      }
     } catch (err) {
       console.error('[pdf-export] failed:', err);
       if (root) { root.style.display = 'none'; root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = ''; }
       if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
+      if (_amazonPeriodKeyBeforeExport && _amazonPeriodKeyBeforeExport !== 'lastFull' && typeof window.__amazonSelectPeriod === 'function') {
+        window.__amazonSelectPeriod(_amazonPeriodKeyBeforeExport);
+      }
       alert('PDF export failed — check the console for details.');
     }
   };
