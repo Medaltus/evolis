@@ -2889,6 +2889,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
               <thead><tr><th></th><th class="prodcol"><div class="prodcol-name">Reverse</div><div class="prodcol-sku">EVO0001</div></th><th class="prodcol"><div class="prodcol-name">Promote</div><div class="prodcol-sku">EVO0005</div></th><th class="prodcol"><div class="prodcol-name">Prevent</div><div class="prodcol-sku">EVO0009</div></th></tr></thead>
               <tbody>
                 <tr><td>BSR</td><td id="perf-act-bsr-0001">—</td><td id="perf-act-bsr-0005">—</td><td id="perf-act-bsr-0009">—</td></tr>
+                <tr><td>Subcategory BSR</td><td id="perf-act-subbsr-0001">—</td><td id="perf-act-subbsr-0005">—</td><td id="perf-act-subbsr-0009">—</td></tr>
                 <tr><td>Sessions</td><td id="perf-act-sessions-0001">—</td><td id="perf-act-sessions-0005">—</td><td id="perf-act-sessions-0009">—</td></tr>
                 <tr><td id="perf-act-units-label">Units</td><td id="perf-act-units-0001">—</td><td id="perf-act-units-0005">—</td><td id="perf-act-units-0009">—</td></tr>
                 <tr><td>Revenue</td><td id="perf-act-revenue-0001">—</td><td id="perf-act-revenue-0005">—</td><td id="perf-act-revenue-0009">—</td></tr>
@@ -13194,11 +13195,13 @@ async function renderBundlesInsightsTab() {
       return;
     }
 
-    const [bizCsv, salesByAsin] = await Promise.all([
+    const [bizCsv, salesByAsin, kwCsv] = await Promise.all([
       fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetchBundleSalesByAsin(),
+      fetch(ovCsvUrl(KEYWORD_TRACKER_SUMMARY_SHEET_ID, KEYWORD_TRACKER_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
     ]);
     const bizRows = parseCsvToRows(bizCsv);
+    const kwRows = parseCsvToRows(kwCsv);
     const latestMonthKey = bizRows.reduce((max, r) => {
       const y = parseInt(r.YEAR, 10), m = parseInt(r.MONTH, 10);
       if (!y || !m) return max;
@@ -13214,12 +13217,35 @@ async function renderBundlesInsightsTab() {
     });
     console.log('[Bundles][Insights][qa] latest month key:', latestMonthKey, '— sessions found for', Object.keys(sessionsByAsin).length, 'ASIN(s).');
 
+    // BSR / Subcategory BSR — added 2026-08-10 per Jaclyn, same format
+    // and same Keyword Tracker source as the other 5 categories'
+    // Performance tables. Bundles have their own real ASIN and can have
+    // a real BSR just like any other product — this was left out of the
+    // original simplified build, not because bundles can't have one.
     const rowsHtml = bundleProducts.map(p => {
       const sessions = sessionsByAsin[p.asin.toUpperCase()];
       const sales = salesByAsin[p.asin.toUpperCase()] || { bundlesSold: 0, totalSales: 0 };
+      const kwRow = pickKwRowForAsin(kwRows, p.asin.toUpperCase());
+      const prevKwRow = kwRow ? pickPreviousKwRowForAsin(kwRows, p.asin.toUpperCase(), kwRow.date || '') : null;
+
+      let bsrText = '—';
+      if (kwRow && kwRow.bsr) {
+        bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
+        if (kwRow.category) bsrText += ` (${escapeHtmlOrg(kwRow.category)})`;
+        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow, 'bsr');
+      }
+      let subBsrText = '—';
+      if (kwRow && kwRow.subcategory_bsr) {
+        subBsrText = '#' + (Number(kwRow.subcategory_bsr) || 0).toLocaleString();
+        if (kwRow.subcategory) subBsrText += ` (${escapeHtmlOrg(kwRow.subcategory)})`;
+        subBsrText += buildBsrTrendHtml(kwRow.subcategory_bsr, prevKwRow, 'subcategory_bsr');
+      }
+
       return `<tr>
         <td><strong>${escapeHtmlOrg(p.label)}</strong> <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">${escapeHtmlOrg(p.sku)}</span></td>
         <td style="font-family:var(--mono);font-size:10px;">${escapeHtmlOrg(p.asin)}</td>
+        <td>${bsrText}</td>
+        <td>${subBsrText}</td>
         <td>${sessions !== undefined ? sessions.toLocaleString() : '—'}</td>
         <td>${sales.bundlesSold.toLocaleString()}</td>
         <td>$${sales.totalSales.toFixed(2)}</td>
@@ -13228,11 +13254,11 @@ async function renderBundlesInsightsTab() {
 
     container.innerHTML = `<div class="card">
       <div class="card-title">Performance</div>
-      <div class="ppc-note" style="margin-bottom:12px;">ℹ Sessions from Business Report (latest available month). Bundles Sold / Total Sales from the new Bundle Sales sheet — this is an all-available-data total, not scoped to one month like the other categories' Performance tables (shared, multi-brand sheet with no confirmed per-month filter yet). No Competitive Landscape or Keyword Strategy section — no competitor-research data exists for bundles.</div>
+      <div class="ppc-note" style="margin-bottom:12px;">ℹ BSR/Subcategory BSR and Sessions from the same Keyword Tracker and Business Report sources used everywhere else. Bundles Sold / Total Sales from the new Bundle Sales sheet — this is an all-available-data total, not scoped to one month like the rest of this table (shared, multi-brand sheet with no confirmed per-month filter yet). No Competitive Landscape or Keyword Strategy section — no competitor-research data exists for bundles.</div>
       <div style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Product</th><th>ASIN</th><th>Sessions (latest month)</th><th>Bundles Sold</th><th>Total Sales</th></tr></thead>
-          <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--muted);">No bundle products found.</td></tr>'}</tbody>
+          <thead><tr><th>Product</th><th>ASIN</th><th>BSR</th><th>Subcategory BSR</th><th>Sessions (latest month)</th><th>Bundles Sold</th><th>Total Sales</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="7" style="color:var(--muted);">No bundle products found.</td></tr>'}</tbody>
         </table>
       </div>
     </div>`;
@@ -13346,10 +13372,14 @@ function setPerfCellHTML(id, html) {
 // arrow direction always matches the number's own direction, not a
 // generic "good/bad" convention, since that's what reads correctly next
 // to a number that's visibly moved up or down.
-function buildBsrTrendHtml(currentBsr, prevRow) {
-  if (!prevRow || !prevRow.bsr) return '';
-  const cur = Number(currentBsr) || 0;
-  const prev = Number(prevRow.bsr) || 0;
+// GENERALIZED 2026-08-10 per Jaclyn — now takes a field name (defaults
+// to 'bsr' so every existing call site keeps working unchanged) so the
+// same function drives the trend marker for subcategory_bsr too, once
+// that gets its own row on the Performance table.
+function buildBsrTrendHtml(currentValue, prevRow, field = 'bsr') {
+  if (!prevRow || !prevRow[field]) return '';
+  const cur = Number(currentValue) || 0;
+  const prev = Number(prevRow[field]) || 0;
   if (!cur || !prev || cur === prev) return '';
   const improved = cur < prev;
   const delta = Math.abs(prev - cur);
@@ -13391,16 +13421,23 @@ window.loadActivatorsPerformanceTable = async function() {
 
       // BSR + subcategory BSR + Rating/Reviews — Keyword Tracker summary tab.
       const kwRow = pickKwRowForAsin(kwRows, p.asin);
+      const prevKwRow = kwRow ? pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '') : null;
+
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
-        if (kwRow.subcategory_bsr) {
-          bsrText += ` (Sub #${(Number(kwRow.subcategory_bsr) || 0).toLocaleString()})`;
-        }
-        const prevKwRow = pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '');
-        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow);
+        if (kwRow.category) bsrText += ` (${escapeHtmlOrg(kwRow.category)})`;
+        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow, 'bsr');
       }
       setPerfCellHTML(`perf-act-bsr-${suffix}`, bsrText);
+
+      let subBsrText = '—';
+      if (kwRow && kwRow.subcategory_bsr) {
+        subBsrText = '#' + (Number(kwRow.subcategory_bsr) || 0).toLocaleString();
+        if (kwRow.subcategory) subBsrText += ` (${escapeHtmlOrg(kwRow.subcategory)})`;
+        subBsrText += buildBsrTrendHtml(kwRow.subcategory_bsr, prevKwRow, 'subcategory_bsr');
+      }
+      setPerfCellHTML(`perf-act-subbsr-${suffix}`, subBsrText);
 
       const rating = kwRow ? parseFloat(kwRow.rating) : NaN;
       const reviews = kwRow ? parseInt(kwRow.review_count, 10) : NaN;
@@ -13513,18 +13550,32 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
       return;
     }
 
-    const rowsData = { bsr: [], sessions: [], units: [], revenue: [], conv: [], rating: [] };
+    const rowsData = { bsr: [], subBsr: [], sessions: [], units: [], revenue: [], conv: [], rating: [] };
 
     products.forEach(p => {
       const kwRow = pickKwRowForAsin(kwRows, p.asin);
+      const prevKwRow = kwRow ? pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '') : null;
+
+      // Split into two rows 2026-08-10 per Jaclyn, now that category/
+      // subcategory are synced fields (upload-keyword-tracker.js) — BSR
+      // shows the overall category name, Subcategory BSR shows its own
+      // name, each with its own independent trend marker (the two ranks
+      // can move in different directions from each other).
       let bsrText = '—';
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
-        if (kwRow.subcategory_bsr) bsrText += ` (Sub #${(Number(kwRow.subcategory_bsr) || 0).toLocaleString()})`;
-        const prevKwRow = pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '');
-        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow);
+        if (kwRow.category) bsrText += ` (${escapeHtmlOrg(kwRow.category)})`;
+        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow, 'bsr');
       }
       rowsData.bsr.push(bsrText);
+
+      let subBsrText = '—';
+      if (kwRow && kwRow.subcategory_bsr) {
+        subBsrText = '#' + (Number(kwRow.subcategory_bsr) || 0).toLocaleString();
+        if (kwRow.subcategory) subBsrText += ` (${escapeHtmlOrg(kwRow.subcategory)})`;
+        subBsrText += buildBsrTrendHtml(kwRow.subcategory_bsr, prevKwRow, 'subcategory_bsr');
+      }
+      rowsData.subBsr.push(subBsrText);
 
       const rating = kwRow ? parseFloat(kwRow.rating) : NaN;
       const reviews = kwRow ? parseInt(kwRow.review_count, 10) : NaN;
@@ -13562,7 +13613,7 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
     }).join('') + '</tr>';
 
     const rowDefs = [
-      ['BSR', 'bsr'], ['Sessions', 'sessions'],
+      ['BSR', 'bsr'], ['Subcategory BSR', 'subBsr'], ['Sessions', 'sessions'],
       [`Units — ${OV_MONTH_ABBR[month - 1]}`, 'units'],
       ['Revenue', 'revenue'], ['Conversion', 'conv'], ['Rating', 'rating'],
     ];
