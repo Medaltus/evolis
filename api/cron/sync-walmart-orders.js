@@ -2,7 +2,18 @@
  * api/cron/sync-walmart-orders.js
  * Runs every 2 hours — pulls orders from Walmart Marketplace API.
  * Writes one row per line item (one SKU per row) to the rolling sheet.
- * Deduplicates on purchaseOrderId + sku — safe to re-run.
+ *
+ * UPSERTS on purchaseOrderId + sku — CHANGED 2026-08-11 per Jaclyn (was
+ * append-only + skip-if-key-exists, which meant a line item's status was
+ * frozen forever at whatever it was the first time this cron saw it; a
+ * real order sitting in Seller Center as Shipped could sit in this sheet
+ * showing Acknowledged indefinitely). Every run now overwrites the
+ * mutable fields (status, quantity_shipped, item_price, last_updated) on
+ * any row already in the sheet with whatever Walmart's API just
+ * returned, and adds genuinely new line items alongside them. Rows for
+ * orders that have aged out of the current fetch window are left
+ * untouched, not deleted — see getDateRange()'s rolling-mode comment for
+ * why a 30-day default makes that safe.
  *
  * Row structure mirrors amazon-orders for dashboard compatibility:
  *   order_id, date, status, order_total, promotion_ids, is_premium_order,
@@ -10,7 +21,12 @@
  *   unit_count, sku, brand, last_updated
  *
  * Modes:
- *   rolling   — last 2.5 hours (default, used by cron)
+ *   rolling   — last 30 days by default (CHANGED 2026-08-11, was 2.5
+ *               hours — see getDateRange() below for why that was the
+ *               root cause of a real incident: orders confirmed present
+ *               in Seller Center were invisible to this cron for days).
+ *               Used by the daily cron; ?hours= still overrides for a
+ *               one-off backfill reaching further back than 30 days.
  *   day       — today from midnight UTC to now
  *   yesterday — full yesterday
  *   week      — ?start=YYYY-MM-DD&end=YYYY-MM-DD (with optional startTime/endTime)
@@ -20,7 +36,7 @@
  */
 
 const https = require('https');
-const { ensureTab, appendRows, readRows } = require('../config/_sheets_client');
+const { ensureTab, replaceRows, readRows } = require('../config/_sheets_client');
 const brands = require('../config/brands');
 const { sendCronFailureAlert } = require('../_alerts');
 
@@ -193,33 +209,59 @@ module.exports = async (req, res) => {
       try {
         const token2       = await ensureTab(SHEET_ID, tabName, HEADERS);
         const existingRows = await readRows(SHEET_ID, tabName);
-        const existingKeys = new Set(
-          existingRows
-            .map(r => `${r.order_id}||${r.sku}`)
-            .filter(k => k !== '||')
-        );
 
-        const newRows = items
-          .filter(item => !existingKeys.has(`${item.order_id}||${item.sku}`))
-          .map(item => [
-            item.order_id, item.date, item.status, item.order_total,
-            item.promotion_ids, item.is_premium_order, item.promotion_discount,
-            item.item_price, item.quantity_ordered, item.quantity_shipped,
-            item.unit_count, item.sku, brand.id, item.last_updated,
-            item.fulfillment_type,
-          ]);
+        // REWRITTEN 2026-08-11 per Jaclyn — this used to be pure append +
+        // skip-if-key-already-exists, which meant an order's status was
+        // frozen at whatever it was the FIRST time this cron ever saw it.
+        // "As stuff moves from acknowledged to shipped to delivered" never
+        // got reflected, because a row that already existed was simply
+        // never touched again. Now: every row keyed by order_id+sku gets
+        // its mutable fields (status, quantity_shipped, item_price,
+        // last_updated) overwritten with whatever Walmart's API just
+        // returned — since that response is the authoritative current
+        // state of that line item, not just "new data to add." Rows for
+        // orders that have aged out of the current fetch window (now 30
+        // days by default, see getDateRange above) are left completely
+        // untouched here — they simply don't appear in `items` this run,
+        // so the merge below never modifies them. Nothing is deleted;
+        // older orders just stop receiving status refreshes once they're
+        // outside the window, which is fine since a Delivered order isn't
+        // expected to change status again anyway.
+        const merged = new Map();
+        existingRows.forEach(r => {
+          const key = `${r.order_id}||${r.sku}`;
+          if (key !== '||') merged.set(key, r);
+        });
 
-        const dupCount = items.length - newRows.length;
-        if (dupCount > 0) console.log(`[sync-walmart-orders] ${tabName} — skipped ${dupCount} duplicates`);
+        let updatedCount = 0;
+        let addedCount = 0;
+        items.forEach(item => {
+          const key = `${item.order_id}||${item.sku}`;
+          if (merged.has(key)) updatedCount++; else addedCount++;
+          merged.set(key, {
+            order_id: item.order_id,
+            date: item.date,
+            status: item.status,
+            order_total: item.order_total,
+            promotion_ids: item.promotion_ids,
+            is_premium_order: item.is_premium_order,
+            promotion_discount: item.promotion_discount,
+            item_price: item.item_price,
+            quantity_ordered: item.quantity_ordered,
+            quantity_shipped: item.quantity_shipped,
+            unit_count: item.unit_count,
+            sku: item.sku,
+            brand: brand.id,
+            last_updated: item.last_updated,
+            fulfillment_type: item.fulfillment_type,
+          });
+        });
 
-        if (newRows.length > 0) {
-          await appendRows(SHEET_ID, tabName, newRows, token2);
-          console.log(`[sync-walmart-orders] ${tabName} — wrote ${newRows.length} rows`);
-        } else {
-          console.log(`[sync-walmart-orders] ${tabName} — 0 new rows`);
-        }
+        const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
+        await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token2);
+        console.log(`[sync-walmart-orders] ${tabName} — ${addedCount} new row(s), ${updatedCount} existing row(s) refreshed, ${outRows.length} total rows written`);
 
-        results.push({ brand: brand.id, rows: newRows.length, skipped: dupCount });
+        results.push({ brand: brand.id, added: addedCount, updated: updatedCount, totalRows: outRows.length });
       } catch (err) {
         console.error(`[sync-walmart-orders] ${tabName} failed:`, err.message);
         results.push({ brand: brand.id, status: 'error', error: err.message });
@@ -252,7 +294,19 @@ function getDateRange(mode, req) {
   const safeBefore = new Date(now.getTime() - 10 * 60 * 1000);
 
   if (mode === 'rolling') {
-    const hours = parseFloat(req?.query?.hours || 2.5);
+    // CHANGED 2026-08-11 per Jaclyn — was defaulting to 2.5 HOURS, which
+    // combined with the old append-only/skip-if-exists write logic (see
+    // the write step below) meant this cron only ever looked at a ~2.3
+    // hour sliver of each day and could never see status changes on
+    // anything outside that window — orders genuinely placed and shipped
+    // within the same day were confirmed sitting in Seller Center while
+    // this cron logged "total orders fetched: 0" for days straight.
+    // Default is now a 30-day rolling window, matching Jaclyn's explicit
+    // ask: catch orders that were missed, AND keep re-checking recent
+    // orders long enough to see them move through Acknowledged → Shipped
+    // → Delivered. ?hours= still overrides this for one-off backfills
+    // that need to reach further back than 30 days.
+    const hours = parseFloat(req?.query?.hours || (24 * 30));
     return {
       startDate: fmt(new Date(now.getTime() - hours * 60 * 60 * 1000)),
       endDate:   fmt(safeBefore),
