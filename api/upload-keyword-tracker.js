@@ -59,15 +59,18 @@ const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
 // UPDATED 2026-08-10 per Jaclyn: the Cowork task now also pulls `category`
 // and `subcategory` on the summary tab (Amazon's own category/subcategory
 // classification for the ASIN — pairs naturally with subcategory_bsr,
-// which needs to know WHICH subcategory that rank is relative to). Added
-// both to SUMMARY_HEADERS so they don't hit the exact same silent-drop
-// bug described above. Field names (`category`, `subcategory`) are
-// Jaclyn's own naming, not yet independently confirmed against a real
-// export — she's sending the actual file once the task finishes. Added a
-// diagnostic log right after parsing (below) that prints the real column
-// names found in the incoming data, specifically so a name mismatch is a
-// 5-second console check instead of another silent-drop incident.
-const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced', 'category', 'subcategory', 'bsr', 'subcategory_bsr', 'review_count', 'rating'];
+// which needs to know WHICH subcategory that rank is relative to).
+//
+// CONFIRMED 2026-08-10 against the real Helium10_KeywordTracker_AllBrands_
+// 2026-08-10.xlsx: both field names are exactly right (`category`,
+// `subcategory`, e.g. "Beauty & Personal Care" / "Face Moisturizers"),
+// and every brand's keyword-detail tab (checked evolis directly) still
+// matches KEYWORD_HEADERS unchanged — no other schema drift this time.
+// SUMMARY_HEADERS below is ordered to match the real file's own column
+// order (category/subcategory come after rating, not before bsr) purely
+// for readability — write correctness doesn't depend on this order
+// either way, since the values are looked up by name, not position.
+const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced', 'bsr', 'subcategory_bsr', 'review_count', 'rating', 'category', 'subcategory'];
 const KEYWORD_HEADERS = ['date', 'asin', 'sku', 'keyword', 'organic_rank', 'sponsored_rank', 'search_volume', 'boosted', 'last_synced'];
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
