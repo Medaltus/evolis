@@ -277,3 +277,4 @@ function parseIntSafe(val) {
 }
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
+ 
