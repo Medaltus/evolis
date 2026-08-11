@@ -424,6 +424,19 @@ table.data-table tbody td{padding:9px 12px;font-size:12px;color:var(--navy);font
    for keyword strategy. Reuses existing .sc-badge/.rank-pill/.free-from-tag
    color tokens throughout rather than inventing a parallel palette. */
 table.perf-compare{width:100%;border-collapse:collapse;}
+/* Added 2026-08-10 per Jaclyn — dulls an out-of-stock product's column.
+   table.perf-compare uses border-collapse:collapse, which does not
+   render border-radius on individual cells reliably across browsers —
+   so this column gets flat grey shading plus a small rounded "OUT OF
+   STOCK" pill in its header, rather than one continuous rounded
+   overlay box (that treatment IS used below for the Product Portfolio
+   cards, which are plain divs and support it cleanly). */
+table.perf-compare th.prodcol-oos, table.perf-compare td.prodcol-oos{background:rgba(120,120,130,.14);}
+table.perf-compare td.prodcol-oos{color:var(--muted)!important;}
+.prodcol-oos-pill{display:inline-block;margin-top:4px;font-size:9px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:8px;background:var(--danger);color:#fff;text-transform:uppercase;}
+.bsr-trend{font-size:10px;font-weight:700;white-space:nowrap;}
+.bsr-trend-improved{color:#1db88a;}
+.bsr-trend-worsened{color:var(--danger);}
 table.perf-compare th{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);}
 table.perf-compare th.prodcol{text-align:center;}
 table.perf-compare td{padding:12px 14px;border-bottom:1px solid var(--border2);font-size:13px;font-weight:700;color:var(--navy);text-align:center;}
@@ -481,7 +494,14 @@ table.perf-compare tr:last-child td{border-bottom:none;}
 .evs-outlook-text{font-size:14.5px;color:var(--navy);line-height:1.7;}
 .evs-outlook-text strong{font-weight:700;}
 
-.pcard-exec-body{padding:18px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:24px;}
+.pcard-exec-body{padding:18px 20px;display:grid;grid-template-columns:1.2fr 1fr;gap:24px;position:relative;}
+/* Added 2026-08-10 per Jaclyn — dulls an out-of-stock product's card
+   body (navy header stays fully visible/legible on purpose — only the
+   white data area below it gets dulled). True rounded overlay, not
+   flat shading — .pcard-exec-body is a plain div (unlike the
+   Performance table above), so border-radius renders correctly here. */
+.pcard-oos-overlay{position:absolute;inset:0;background:rgba(230,230,235,.72);border-radius:0 0 var(--radius) var(--radius);z-index:5;display:flex;align-items:flex-start;justify-content:flex-end;padding:14px;pointer-events:none;}
+.pcard-oos-overlay .prodcol-oos-pill{pointer-events:none;}
 .hero-tag{display:inline-block;font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--bg2);color:var(--navy);border:1px solid var(--border);margin:2px 3px 2px 0;}
 details.inci-toggle{margin:8px 0 14px;}
 details.inci-toggle summary{font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;list-style:none;}
@@ -13063,6 +13083,36 @@ function getProductMaster() {
 // Bundle SKUs cross-reference column has actually been filled in), but
 // works for any brand once that data exists.
 let _bundleProductsPromise = null;
+// OOS status by SKU — added 2026-08-10 per Jaclyn, for visually dulling
+// out-of-stock products on Insights > Products (Performance table +
+// Product Portfolio cards). Reuses the same ppc_strategy tab already
+// read elsewhere on the dashboard (run-ppc-strategy-analysis.js's own
+// is_oos computation, which cross-references real FBA/Warehouse SF
+// inventory) rather than recomputing OOS status independently here.
+let _oosStatusPromise = null;
+function getOosStatusBySku() {
+  if (_oosStatusPromise) return _oosStatusPromise;
+  _oosStatusPromise = (async () => {
+    const map = {};
+    try {
+      const csv = await fetch(ovCsvUrl(INSIGHTS_SHEET_ID, PPC_STRATEGY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+      const rows = parseCsvToRows(csv).filter(r => (r.brand || '').trim().toLowerCase() === INSIGHTS_BRAND_TAB.toLowerCase());
+      const bySku = {};
+      rows.forEach(r => {
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku) return;
+        if (!bySku[sku] || (isValidDateStr(r.date) && (!isValidDateStr(bySku[sku].date) || r.date > bySku[sku].date))) bySku[sku] = r;
+      });
+      Object.keys(bySku).forEach(sku => { map[sku] = bySku[sku].is_oos === 'TRUE'; });
+      console.log('[OOS][qa] resolved OOS status for', Object.keys(map).length, 'SKU(s) —', Object.values(map).filter(Boolean).length, 'currently out of stock.');
+    } catch (e) {
+      console.warn('[OOS] status fetch failed:', e.message);
+    }
+    return map;
+  })();
+  return _oosStatusPromise;
+}
+
 function getBundleProducts() {
   if (_bundleProductsPromise) return _bundleProductsPromise;
   _bundleProductsPromise = (async () => {
@@ -13261,6 +13311,17 @@ function pickKwRowForAsin(kwRows, asin) {
   return matches.reduce((best, r) => (!best || (r.date || '') > (best.date || '')) ? r : best, null);
 }
 
+// Added 2026-08-10 per Jaclyn — for the BSR trend marker on Insights >
+// Products' Performance table. Picks the most recent row STRICTLY
+// BEFORE whatever date pickKwRowForAsin() already picked as "current",
+// so the two together give a real week-over-week (or whatever the
+// actual sync cadence is) comparison, not just "some other row."
+function pickPreviousKwRowForAsin(kwRows, asin, currentDate) {
+  const matches = kwRows.filter(r => (r.asin || '').trim().toUpperCase() === asin && (r.date || '') < currentDate);
+  if (!matches.length) return null;
+  return matches.reduce((best, r) => (!best || r.date > best.date) ? r : best, null);
+}
+
 const ACTIVATOR_PRODUCTS = [
   { sku: 'EVO0001', asin: 'B08BJBM77V' }, // Reverse
   { sku: 'EVO0005', asin: 'B07SG6S4VV' }, // Promote
@@ -13269,6 +13330,32 @@ const ACTIVATOR_PRODUCTS = [
 function setPerfCellText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+// Added 2026-08-10 per Jaclyn, for the BSR trend marker — setPerfCellText
+// uses textContent (deliberately, everywhere else it's used), so this is
+// a separate innerHTML variant rather than changing that function's
+// behavior for its other 20+ existing call sites.
+function setPerfCellHTML(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+// Builds the "▼ 1,234" / "▲ 320" trend marker HTML for a BSR comparison.
+// Lower BSR = better rank, so a DECREASE shows a green down arrow
+// (improved) and an INCREASE shows a red up arrow (worsened) — the
+// arrow direction always matches the number's own direction, not a
+// generic "good/bad" convention, since that's what reads correctly next
+// to a number that's visibly moved up or down.
+function buildBsrTrendHtml(currentBsr, prevRow) {
+  if (!prevRow || !prevRow.bsr) return '';
+  const cur = Number(currentBsr) || 0;
+  const prev = Number(prevRow.bsr) || 0;
+  if (!cur || !prev || cur === prev) return '';
+  const improved = cur < prev;
+  const delta = Math.abs(prev - cur);
+  const arrow = improved ? '▼' : '▲';
+  const cls = improved ? 'bsr-trend-improved' : 'bsr-trend-worsened';
+  return ` <span class="bsr-trend ${cls}" title="${escapeHtmlOrg(prevRow.date || '')}: #${prev.toLocaleString()} → now #${cur.toLocaleString()}">${arrow} ${delta.toLocaleString()}</span>`;
 }
 window.loadActivatorsPerformanceTable = async function() {
   const { year, month } = ovGetLastFullMonth();
@@ -13310,8 +13397,10 @@ window.loadActivatorsPerformanceTable = async function() {
         if (kwRow.subcategory_bsr) {
           bsrText += ` (Sub #${(Number(kwRow.subcategory_bsr) || 0).toLocaleString()})`;
         }
+        const prevKwRow = pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '');
+        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow);
       }
-      setPerfCellText(`perf-act-bsr-${suffix}`, bsrText);
+      setPerfCellHTML(`perf-act-bsr-${suffix}`, bsrText);
 
       const rating = kwRow ? parseFloat(kwRow.rating) : NaN;
       const reviews = kwRow ? parseInt(kwRow.review_count, 10) : NaN;
@@ -13389,13 +13478,14 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
     const { year, month } = ovGetLastFullMonth();
     const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
 
-    const [master, kwCsv, bizCsv, amzCsv, wmtCsv, webCsv] = await Promise.all([
+    const [master, kwCsv, bizCsv, amzCsv, wmtCsv, webCsv, oosBySku] = await Promise.all([
       getProductMaster(),
       fetch(ovCsvUrl(KEYWORD_TRACKER_SUMMARY_SHEET_ID, KEYWORD_TRACKER_SUMMARY_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_ORDER_SYNC_SHEET_ID, OV_ORDER_SYNC_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WMT_ORDERS_SHEET_ID, OV_WMT_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_WEB_ORDERS_SHEET_ID, OV_WEB_ORDERS_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      getOosStatusBySku(),
     ]);
 
     const kwRows  = parseCsvToRows(kwCsv);
@@ -13431,6 +13521,8 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
       if (kwRow && kwRow.bsr) {
         bsrText = '#' + (Number(kwRow.bsr) || 0).toLocaleString();
         if (kwRow.subcategory_bsr) bsrText += ` (Sub #${(Number(kwRow.subcategory_bsr) || 0).toLocaleString()})`;
+        const prevKwRow = pickPreviousKwRowForAsin(kwRows, p.asin, kwRow.date || '');
+        bsrText += buildBsrTrendHtml(kwRow.bsr, prevKwRow);
       }
       rowsData.bsr.push(bsrText);
 
@@ -13464,9 +13556,10 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
       rowsData.conv.push(conv != null ? conv.toFixed(2) + '%' : '—');
     });
 
-    const theadHtml = '<tr><th></th>' + products.map(p =>
-      `<th class="prodcol"><div class="prodcol-name">${escapeHtmlOrg(p.name || p.sku)}</div><div class="prodcol-sku">${escapeHtmlOrg(p.sku)}</div></th>`
-    ).join('') + '</tr>';
+    const theadHtml = '<tr><th></th>' + products.map(p => {
+      const isOos = !!oosBySku[p.sku.toUpperCase()];
+      return `<th class="prodcol${isOos ? ' prodcol-oos' : ''}"><div class="prodcol-name">${escapeHtmlOrg(p.name || p.sku)}</div><div class="prodcol-sku">${escapeHtmlOrg(p.sku)}</div>${isOos ? '<div class="prodcol-oos-pill">Out of Stock</div>' : ''}</th>`;
+    }).join('') + '</tr>';
 
     const rowDefs = [
       ['BSR', 'bsr'], ['Sessions', 'sessions'],
@@ -13474,7 +13567,7 @@ async function renderCategoryPerformanceTable(containerId, categoryLabel) {
       ['Revenue', 'revenue'], ['Conversion', 'conv'], ['Rating', 'rating'],
     ];
     const tbodyHtml = rowDefs.map(([label, key]) =>
-      `<tr><td>${label}</td>${rowsData[key].map(v => `<td>${v}</td>`).join('')}</tr>`
+      `<tr><td>${label}</td>${rowsData[key].map((v, i) => `<td${oosBySku[products[i].sku.toUpperCase()] ? ' class="prodcol-oos"' : ''}>${v}</td>`).join('')}</tr>`
     ).join('');
 
     container.innerHTML = `<div class="card">
@@ -13785,10 +13878,11 @@ async function renderProductPortfolioCards(productTypeKey, productIds) {
   try {
     const gid = COMPETITOR_GID_BY_PRODUCT_TYPE[productTypeKey];
     if (!gid) { console.warn('[Variations] no gid configured for product type', productTypeKey); return; }
-    const [master, csv, itemTypeBySku] = await Promise.all([
+    const [master, csv, itemTypeBySku, oosBySku] = await Promise.all([
       getProductMaster(),
       fetch(ovCsvUrl(SHEET_COMPETITOR_ID, gid) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       getItemTypeBySku(),
+      getOosStatusBySku(),
     ]);
     const rows = parseCsvFull(csv);
     const varByAsin = varParseSection(rows);
@@ -13813,6 +13907,27 @@ async function renderProductPortfolioCards(productTypeKey, productIds) {
       setPerfCellText(`pcard-itemtype-${suffix}`, itemTypeBySku[sku] || '');
       setPerfCellText(`pcard-asin-${suffix}`, entry.asin || '—');
       setPerfCellText(`pcard-price-${suffix}`, entry.price ? '$' + entry.price.toFixed(2) : '—');
+
+      // OOS dulling overlay — added 2026-08-10 per Jaclyn. Traverses from
+      // the name element (nameEl) rather than needing a new ID on the
+      // card body itself, since the 18 pcard-exec-body containers are
+      // static hand-authored HTML with no per-SKU id of their own —
+      // safer than a bulk find-replace across all of them just to add
+      // one. Inserts/removes the overlay div fresh each render rather
+      // than toggling a class, so this is safe to re-run repeatedly
+      // (e.g. on a refresh) without stacking duplicate overlays.
+      const nameEl = document.getElementById(`pcard-name-${suffix}`);
+      const cardBody = nameEl ? nameEl.closest('.pcard-exec')?.querySelector('.pcard-exec-body') : null;
+      if (cardBody) {
+        const existingOverlay = cardBody.querySelector('.pcard-oos-overlay');
+        if (existingOverlay) existingOverlay.remove();
+        if (oosBySku[sku.toUpperCase()]) {
+          const overlay = document.createElement('div');
+          overlay.className = 'pcard-oos-overlay';
+          overlay.innerHTML = '<span class="prodcol-oos-pill">Out of Stock</span>';
+          cardBody.appendChild(overlay);
+        }
+      }
 
       const priceContextEl = document.getElementById(`pcard-pricecontext-${suffix}`);
       if (priceContextEl) priceContextEl.innerHTML = varRenderPriceContext(entry.name || sku, entry.price || 0, topCompetitors);
