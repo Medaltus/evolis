@@ -55,7 +55,19 @@ const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
 //     — NO keyword_sales field exists in the real export at all. The old
 //     KEYWORD_HEADERS included it anyway, which didn't drop anything but
 //     wrote a permanently-blank column every run.
-const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced', 'bsr', 'subcategory_bsr', 'review_count', 'rating'];
+//
+// UPDATED 2026-08-10 per Jaclyn: the Cowork task now also pulls `category`
+// and `subcategory` on the summary tab (Amazon's own category/subcategory
+// classification for the ASIN — pairs naturally with subcategory_bsr,
+// which needs to know WHICH subcategory that rank is relative to). Added
+// both to SUMMARY_HEADERS so they don't hit the exact same silent-drop
+// bug described above. Field names (`category`, `subcategory`) are
+// Jaclyn's own naming, not yet independently confirmed against a real
+// export — she's sending the actual file once the task finishes. Added a
+// diagnostic log right after parsing (below) that prints the real column
+// names found in the incoming data, specifically so a name mismatch is a
+// 5-second console check instead of another silent-drop incident.
+const SUMMARY_HEADERS = ['date', 'brand', 'asin', 'sku', 'total_tracked_keywords', 'top50_organic_count', 'avg_organic_rank', 'boosted_count', 'last_synced', 'category', 'subcategory', 'bsr', 'subcategory_bsr', 'review_count', 'rating'];
 const KEYWORD_HEADERS = ['date', 'asin', 'sku', 'keyword', 'organic_rank', 'sponsored_rank', 'search_volume', 'boosted', 'last_synced'];
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -82,6 +94,13 @@ module.exports = async (req, res) => {
       const sheet = workbook.Sheets['summary'];
       const incoming = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       console.log(`[upload-keyword-tracker] summary — ${incoming.length} incoming rows`);
+      if (incoming.length) {
+        console.log('[upload-keyword-tracker][qa] summary — real column names in this file:', Object.keys(incoming[0]).join(' | '));
+        const missing = SUMMARY_HEADERS.filter(h => !(h in incoming[0]));
+        if (missing.length) {
+          console.warn('[upload-keyword-tracker][qa] summary — SUMMARY_HEADERS expects these columns but they were NOT found in the file (will write as blank for every row):', missing.join(', '));
+        }
+      }
       const token    = await ensureTab(sheetId, 'summary', SUMMARY_HEADERS);
       const existing = await readRows(sheetId, 'summary');
       const key = r => `${r.date}||${(r.brand || '').toLowerCase()}||${(r.asin || '').toUpperCase()}`;
