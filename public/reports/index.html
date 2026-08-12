@@ -5601,6 +5601,23 @@ async function initSns() {
       _amzAdRows = isCsv(adSummaryCsv) ? parseCsv(adSummaryCsv) : [];
       _amzAdOrderRows = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv) : [];
 
+      // ADDED 2026-08-12 per Jaclyn — real incident: Canada (and possibly
+      // UK) orders were coming through the same US SP-API pull, inflating
+      // every KPI/chart/table on this page with non-US marketplace
+      // orders. Filtered here, once, immediately after all 3 row sets are
+      // populated — everything downstream (aggregateMonth, Top Selling
+      // Products, the revenue chart, returns netting) reads from these
+      // same arrays, so nothing else on this page needed its own separate
+      // fix. Applied to returns too, not just sales — a .ca return for an
+      // ASIN already excluded from sales would otherwise incorrectly
+      // subtract units from an ASIN that has zero counted US sales.
+      const validUsAsins = await getValidUsAmazonAsins();
+      const syncBefore = _amzSyncRows.length, histBefore = _amzHistRows.length, returnsBefore = _amzReturnRows.length;
+      _amzSyncRows = _amzSyncRows.filter(r => validUsAsins.has((r.asin || '').trim().toUpperCase()));
+      _amzHistRows = _amzHistRows.filter(r => validUsAsins.has((r.asin || '').trim().toUpperCase()));
+      _amzReturnRows = _amzReturnRows.filter(r => validUsAsins.has((r.asin || '').trim().toUpperCase()));
+      console.log(`[AmazonUSFilter][qa] sync rows ${syncBefore} → ${_amzSyncRows.length}, hist rows ${histBefore} → ${_amzHistRows.length}, return rows ${returnsBefore} → ${_amzReturnRows.length} after excluding non-US-Amazon ASINs.`);
+
       renderAmazonPeriodPills('lastFull');
       renderAmazonPeriod('lastFull');
 
@@ -13436,6 +13453,43 @@ function getOosStatusBySku() {
     return map;
   })();
   return _oosStatusPromise;
+}
+
+// US Amazon ASIN filter — added 2026-08-12 per Jaclyn. Real incident:
+// Canada (and possibly UK) orders were coming through the same US SP-API
+// pull, inflating Amazon Sales page numbers with non-US marketplace
+// orders. Built from Product Short Name's Channel column (col G) rather
+// than anything on the orders sheet itself, since the orders sheet has
+// no marketplace/channel distinction of its own (that gap is exactly
+// what's being added separately in sync-orders-process.js's new
+// marketplace/channel columns — this filter doesn't depend on that
+// still-pending change).
+let _validUsAmazonAsinsPromise = null;
+function getValidUsAmazonAsins() {
+  if (_validUsAmazonAsinsPromise) return _validUsAmazonAsinsPromise;
+  _validUsAmazonAsinsPromise = (async () => {
+    const master = await getProductMaster();
+    const validAsins = new Set();
+    const distinctChannels = new Set();
+    Object.values(master.byAsin).forEach(entry => {
+      const channelRaw = entry.channel || '';
+      const channelNorm = channelRaw.toLowerCase();
+      distinctChannels.add(channelRaw || '(blank)');
+      const isAmazon = channelNorm.includes('amazon');
+      // Deliberately checks for a few distinct non-US markers rather than
+      // just "not exactly 'Amazon'" — safer against a channel value like
+      // "Amazon / Walmart" (still valid US Amazon) being wrongly excluded
+      // by an overly strict equality check.
+      const isNonUs = channelNorm.includes('.ca') || channelNorm.includes('amazon.ca') ||
+                      channelNorm.includes('.uk') || channelNorm.includes('amazon.uk') ||
+                      channelNorm.includes('canada') || channelNorm.includes('united kingdom');
+      if (isAmazon && !isNonUs && entry.asin) validAsins.add(entry.asin.trim().toUpperCase());
+    });
+    console.log('[AmazonUSFilter][qa] distinct Channel values on Product Short Name:', Array.from(distinctChannels).join(' | '));
+    console.log('[AmazonUSFilter][qa]', validAsins.size, 'ASIN(s) classified as valid US Amazon (excluding .ca/.uk/Canada/UK).');
+    return validAsins;
+  })();
+  return _validUsAmazonAsinsPromise;
 }
 
 function getBundleProducts() {
