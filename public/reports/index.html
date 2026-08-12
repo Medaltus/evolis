@@ -1574,8 +1574,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <a href="https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/edit?gid=164358627#gid=164358627" target="_blank" rel="noopener"><span class="sheet-link-icon">🏷️</span>Master SKU List</a>
       </div>
     </div>
-    <div class="page-hd">
+    <div class="page-hd" style="display:flex;align-items:flex-start;justify-content:space-between;">
       <div><div class="page-title">Sales</div><div class="page-sub" id="sales-page-sub">May 1 – May 31, 2026 · Last full month</div></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+        <span class="staging-note" id="sales-report-status">◎ Draft</span>
+        <button class="btn-approve" id="sales-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+      </div>
     </div>
 
     <div class="channel-tabs-row">
@@ -1585,9 +1589,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
         <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span class="staging-note" id="sales-report-status">◎ Draft</span>
-        <button class="btn-approve" id="sales-approve-btn" style="background:var(--green);border-color:var(--green);color:#fff;">✓ Approved &amp; Ready</button>
+      <!-- Shared period-selector row — added 2026-08-12 per Jaclyn, moved
+           here (right-aligned next to the channel tabs) to match Skinuva's
+           layout. Previously each channel (Amazon/Website/Walmart) had its
+           own separate period-pill container inside its own .channel-hdr;
+           those 3 containers are now relocated here as siblings, shown/
+           hidden by showChannel() below based on which channel tab is
+           active (all hidden on Overview, which has no period concept).
+           Their own render functions (renderAmazonPeriodPills etc.) are
+           UNCHANGED — they just find the same container IDs in this new
+           location, so no JS logic needed to change, only where the
+           HTML physically lives. -->
+      <div id="sales-period-row" style="display:none;align-items:center;gap:10px;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
+        <div class="period-pills" id="amazon-period-pills" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+        <div class="period-pills" id="web-period-pills" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+        <div class="period-pills" id="walmart-period-pills" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
       </div>
     </div>
 
@@ -1638,15 +1655,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <div class="channel-page" id="s-amazon">
       <div class="channel-hdr">
         <span id="amazon-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
-      </div>
-      <!-- Period selector — added 2026-08-11 per Jaclyn. Defaults to Last
-           Full Month (today's existing behavior, unchanged). Prior Month
-           gets its own MoM badge (SHEET_ORDERS' 90-day window covers it)
-           but no YoY. Last Year gets no comparison badges at all — see
-           renderAmazonPeriod() for why. -->
-      <div class="period-selector" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
-        <div class="period-pills" id="amazon-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
       </div>
       <div class="kpi-row">
         <div class="kpi-card kpi-card-tall" id="kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
@@ -1699,14 +1707,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <span style="font-size:16px;font-weight:600;color:var(--navy);">WEB — evolisproducts.com</span>
         <span id="web-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
       </div>
-      <!-- Period selector — added 2026-08-11 per Jaclyn, same pattern as
-           Amazon Sales. Website/Walmart both keep enough history on their
-           single orders sheet already, per Jaclyn — no separate historical
-           sheet needed the way Amazon required for Last Year. -->
-      <div class="period-selector" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
-        <div class="period-pills" id="web-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
-      </div>
       <div class="kpi-row">
         <div class="kpi-card kpi-card-tall" id="web-kpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
         <div class="kpi-card kpi-card-tall" id="web-kpi-total-orders"><div class="kpi-label">Total Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
@@ -1753,11 +1753,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="channel-hdr">
         <span style="font-size:16px;font-weight:600;color:var(--navy);">Walmart</span>
         <span id="walmart-hdr-date" style="font-size:11px;color:var(--muted);">📅 Loading…</span>
-      </div>
-      <!-- Period selector — added 2026-08-11 per Jaclyn, same pattern as Amazon/Website. -->
-      <div class="period-selector" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
-        <div class="period-pills" id="walmart-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
       </div>
       <div class="kpi-row">
         <div class="kpi-card kpi-card-tall" id="wkpi-total-units"><div class="kpi-label">Total Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div><div class="kpi-yoy flat"></div></div>
@@ -4806,6 +4801,25 @@ function showChannel(page, channelId, btn) {
     if (channelId === 'ev-bfcm')         window.initBFCMReport();
     if (channelId === 'inv-oos-log')     window.initOosLog();
     if (channelId === 'm-fulfillment-cs') window.initMarketingFulfillmentCS();
+
+    // Added 2026-08-12 per Jaclyn — shows/hides the shared period-selector
+    // row on the Sales page, and swaps which channel's own pill set is
+    // visible within it. Overview has no period concept, so the whole
+    // row stays hidden there. Scoped to page === 'sales' specifically
+    // since showChannel() is shared across every page in this app.
+    if (page === 'sales') {
+      const periodRow = document.getElementById('sales-period-row');
+      if (periodRow) {
+        const isSalesChannelWithPeriod = ['s-amazon', 's-website', 's-walmart'].includes(channelId);
+        periodRow.style.display = isSalesChannelWithPeriod ? 'flex' : 'none';
+        const amazonPills = document.getElementById('amazon-period-pills');
+        const webPills = document.getElementById('web-period-pills');
+        const walmartPills = document.getElementById('walmart-period-pills');
+        if (amazonPills) amazonPills.style.display = channelId === 's-amazon' ? 'flex' : 'none';
+        if (webPills) webPills.style.display = channelId === 's-website' ? 'flex' : 'none';
+        if (walmartPills) walmartPills.style.display = channelId === 's-walmart' ? 'flex' : 'none';
+      }
+    }
 
     // Events page: track which event tab is active so the single
     // Approve button (top-right of the tab menu) knows what to approve.
