@@ -50,9 +50,23 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
-  'Amazon Estimated fees',   // owned by api/cron/fees-estimate.js — preserved here, never computed
-  'Amazon Sale Promotions',  // owned by api/cron/sale-promotions.js — preserved here, never computed
+  'Amazon Estimated fees',   // column P — owned by api/cron/fees-estimate.js — preserved here, never computed
+  'Amazon Sale Promotions',  // column Q — owned by api/cron/sale-promotions.js — preserved here, never computed
+  'marketplace',             // column R — ADDED 2026-08-12 per Jaclyn
+  'channel',                 // column S — ADDED 2026-08-12 per Jaclyn
 ];
+
+// ADDED 2026-08-12 per Jaclyn — IMPORTANT, READ BEFORE DEPLOYING: ensureTab()
+// only writes a header row into a genuinely BLANK tab; it never corrects an
+// existing one (confirmed real-incident behavior, same root cause already
+// hit twice on this codebase — ppc_strategy and Stewardship Summary both
+// silently drifted this exact way). Every one of these ~15 brand tabs
+// already has a live 17-column header (A-Q) — adding marketplace/channel
+// to this array alone does NOT make columns R/S exist on the sheet. Before
+// this runs for real, manually add "marketplace" to R1 and "channel" to S1
+// on EVERY active brand's tab in this sheet, or every field from
+// `marketplace` onward will silently land in the wrong column the same way
+// headline/bullets did on ppc_strategy.
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -156,6 +170,18 @@ module.exports = async (req, res) => {
   });
 
   console.log(`[sync-orders-process] flat file rows: ${rows.length}`);
+  // ADDED 2026-08-12 per Jaclyn — marketplace/channel field names below
+  // (sales-channel, fulfillment-channel) are Amazon's documented flat-file
+  // column names for this report type, NOT yet independently confirmed
+  // against a real response from this specific report. Logs the actual
+  // header list every run so a mismatch is a 5-second console check
+  // instead of another silent-drop incident, same practice already
+  // established elsewhere in this codebase.
+  if (rows.length) {
+    console.log('[sync-orders-process][qa] real TSV header list:', headers.join(' | '));
+    if (!headers.includes('sales-channel')) console.warn('[sync-orders-process][qa] "sales-channel" not found in this report — marketplace column will be blank for every row this run.');
+    if (!headers.includes('fulfillment-channel')) console.warn('[sync-orders-process][qa] "fulfillment-channel" not found in this report — channel column will be blank for every row this run.');
+  }
 
   // ── 5. Per-brand overwrite ───────────────────────────────────────────────
   const nowEst  = toEstIso(new Date());
@@ -209,6 +235,10 @@ module.exports = async (req, res) => {
         const date     = (row['purchase-date'] || '').slice(0, 10);
         const status   = row['order-status'] || '';
         const promoIds = row['promotion-ids'] || '';
+        // ADDED 2026-08-12 per Jaclyn — see the [qa] warning above if either
+        // of these real column names turns out wrong for this report.
+        const marketplace = row['sales-channel'] || '';
+        const channel      = row['fulfillment-channel'] || '';
 
         const existing = existingByKey.get(key);
 
@@ -234,8 +264,10 @@ module.exports = async (req, res) => {
           asin,           // asin
           brand.id,       // brand
           nowEst,         // last_updated (EST)
-          preservedFee,   // Amazon Estimated Fees — untouched by this job
-          preservedPromo, // Amazon Sale Promotions — untouched by this job
+          preservedFee,   // column P, Amazon Estimated Fees — untouched by this job
+          preservedPromo, // column Q, Amazon Sale Promotions — untouched by this job
+          marketplace,    // column R — NEW 2026-08-12
+          channel,        // column S — NEW 2026-08-12
         ];
 
         if (existing) {
