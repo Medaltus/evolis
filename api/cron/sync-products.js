@@ -403,7 +403,19 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     (listing?.summaries?.[0]?.status || []).join(', '),
     salesRanksStr,
     listing?.summaries?.[0]?.itemName || listing?.attributes?.item_name?.[0]?.value || '',
-    listing?.attributes?.item_highlights?.[0]?.value || '', // often blank today — see file header note
+    // CONFIRMED 2026-08-12 via the ?testSku diagnostic endpoint against a
+    // real ASIN (EVO0001/B08BJBM77V) — item_highlights genuinely does not
+    // exist anywhere in the API response (checked listing.attributes,
+    // catalog.attributes, AND sfListing.attributes — absent from all
+    // three, not just blank). Amazon's real equivalent is
+    // title_differentiation: "Clinically tested hair growth serum -
+    // FGF5-blocking formula targets thinning hair and postpartum
+    // shedding in women and men." — verified by Jaclyn against the
+    // actual live listing as matching what Amazon displays as Item
+    // Highlights. Column name in the sheet stays item_highlights
+    // (matches what the dashboard already reads); only the API source
+    // attribute changed.
+    listing?.attributes?.title_differentiation?.[0]?.value || '',
     bulletVal(0), bulletVal(1), bulletVal(2), bulletVal(3), bulletVal(4),
     listing?.attributes?.product_description?.[0]?.value || '',
     listing?.attributes?.generic_keyword?.[0]?.value || '',
