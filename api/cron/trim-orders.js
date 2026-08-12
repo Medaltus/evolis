@@ -1,10 +1,18 @@
 /**
  * api/cron/trim-orders.js
- * Runs daily — removes rows older than 90 days from all brand tabs
+ * Runs daily — removes rows older than 120 days from all brand tabs
  * in the rolling amazon-orders sheet.
  *
+ * CHANGED 2026-08-12 per Jaclyn — was 90 days. Real data check across all
+ * 15 brand tabs confirmed the actual real-data footprint at 90 days is
+ * only ~262K cells total, nowhere close to Google Sheets' 10M cell limit
+ * — plenty of headroom to extend. The extra 30 days is a safety margin
+ * for the Sales page's Prior Month view (needs a full prior calendar
+ * month of data behind whatever "today" is, and 90 days was occasionally
+ * cutting it close depending on the day of month).
+ *
  * Keeps the sheet lean for fast reads while retaining enough history
- * for current month + 2 full prior months (MOM trending).
+ * for current month + 3 full prior months (MOM trending).
  * YOY data lives in sheets.ordersHistorical.
  *
  * Schedule: daily at 3AM UTC ("0 3 * * *")
@@ -25,7 +33,7 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
 ];
 
-const RETENTION_DAYS = 90;
+const RETENTION_DAYS = 120;
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
