@@ -56,6 +56,14 @@ const HEADERS = [
   'channel',                 // column S — ADDED 2026-08-12 per Jaclyn
 ];
 
+// ADDED 2026-08-13 — backstop signal for the skinuva/skinuva-ca channel
+// split below, alongside the report's own sales-channel field. Confirmed
+// via migrate-skinuva-ca.js's cleanup run that a "-CA"/"-CA-SF"/".1-CA"
+// SKU suffix reliably marks Amazon.ca orders, including historical rows
+// written before sales-channel existed on this sheet at all. Same pattern
+// as that migration script, kept identical for consistency.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
 // ADDED 2026-08-12 per Jaclyn — IMPORTANT, READ BEFORE DEPLOYING: ensureTab()
 // only writes a header row into a genuinely BLANK tab; it never corrects an
 // existing one (confirmed real-incident behavior, same root cause already
@@ -218,6 +226,16 @@ module.exports = async (req, res) => {
         if (!sku.startsWith(brand.skuPrefix.toUpperCase()) || promo.includes('vine')) return false;
 
         if (brand.salesChannel) {
+          // SKU-suffix backstop takes priority over the report's own
+          // sales-channel field — see CA_SKU_PATTERN comment above. Does
+          // NOT replace the sales-channel check below it: some Amazon.ca
+          // orders may still use a plain, non-suffixed SKU (e.g.
+          // cross-border fulfillment from the same US inventory pool),
+          // so a SKU that doesn't match this pattern still falls through
+          // to the channel-field check rather than being assumed US.
+          if (CA_SKU_PATTERN.test(sku)) {
+            return brand.salesChannel.toLowerCase() === 'amazon.ca';
+          }
           if (!salesChannelFieldPresent) {
             return brand.salesChannel.toLowerCase() === 'amazon.com';
           }
