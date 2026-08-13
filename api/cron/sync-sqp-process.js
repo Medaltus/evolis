@@ -104,10 +104,15 @@ module.exports = async (req, res) => {
   const FUNCTION_TIME_BUDGET_MS = 4 * 60 * 1000; // leaves margin under a 5-min maxDuration
   const startTime = Date.now();
 
-  const debugBrandFilter = (req.query.brand || '').trim();
+  // ADDED 2026-08-13 — was previously only honored in debug mode. Needed
+  // outside debug mode too so a single brand's real processing outcome
+  // (DONE vs FATAL) can be checked in isolation while testing the
+  // dataEndTime fix in sync-sqp-request.js, without also re-touching
+  // other brands' separate, already-known FATAL batches.
+  const brandFilter = (req.query.brand || '').trim();
 
   for (const brand of activeBrands) {
-    if (debugMode && debugBrandFilter && brand.id.toLowerCase() !== debugBrandFilter.toLowerCase()) continue;
+    if (brandFilter && brand.id.toLowerCase() !== brandFilter.toLowerCase()) continue;
     if (Date.now() - startTime > FUNCTION_TIME_BUDGET_MS) {
       console.log(`[sync-sqp-process] time budget reached — ${brand.id} and any remaining brands will be picked up by the next scheduled run`);
       results.push({ brand: brand.id, status: 'deferred-to-next-run' });
