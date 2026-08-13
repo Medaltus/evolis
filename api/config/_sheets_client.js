@@ -177,6 +177,25 @@ async function ensureTab(sheetId, tabName, headers) {
 }
 
 /**
+ * Write values into an explicit range (e.g. a single column) WITHOUT
+ * clearing or touching anything outside that range — unlike replaceRows,
+ * which always clears A2:ZZ first. Added 2026-08-13 for a targeted,
+ * column-only fix (converting sheets.orders' `date` column from
+ * forced-text to a real date type via valueInputOption=USER_ENTERED)
+ * where touching only column B, and nothing else, is the whole point —
+ * other columns (sku, order_id, promotion_ids) must never risk being
+ * reinterpreted as numbers.
+ */
+async function updateRange(sheetId, range, values, token, valueInputOption = 'RAW') {
+  await sheetsPost(
+    token,
+    `/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=${valueInputOption}`,
+    { values },
+    'PUT'
+  );
+}
+
+/**
  * Append rows to a tab. Rows is an array of arrays.
  */
 /**
@@ -413,4 +432,4 @@ function base64url(str) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-module.exports = { ensureTab, appendRows, replaceRows, readRows, getSheetsToken, touchMeta };
+module.exports = { ensureTab, appendRows, replaceRows, readRows, updateRange, getSheetsToken, touchMeta };
