@@ -276,5 +276,5 @@ function parseIntSafe(val) {
   return Math.round(parseFloat(String(val).replace(/,/g, '')) || 0);
 }
 
-function round2(n) { return Math.round((n || 0) * 100) / 100; }
+function round2(n) { return Math.round((n || 0) * 100) / 100; } 
  
