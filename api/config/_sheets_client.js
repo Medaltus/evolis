@@ -53,6 +53,38 @@ async function getSheetsToken() {
 
 // ── Tab management ────────────────────────────────────────────────────────────
 
+// ensureTab's "does this tab exist" check fetches ALL tab titles for the
+// whole spreadsheet (fields=sheets.properties.title) — that result is
+// identical no matter which tabName you're checking. But every caller was
+// calling ensureTab once per brand tab, so a 17-brand run fires this exact
+// same whole-sheet read 17 times. Confirmed as a major contributor to the
+// 429 RESOURCE_EXHAUSTED on 2026-08-13 (sync-advertising-process ran
+// ensureTab for every brand, twice — once per period — against the
+// default 60 reads/min/service-account quota, which is shared across
+// EVERY cron using this client, not just one). Caching the titles list
+// per sheetId for a short TTL turns 17 reads into 1 for that lookup alone.
+// TTL is deliberately short (not "for the life of the process") since
+// Vercel may reuse a warm lambda across invocations and a stale cache
+// could hide a tab another concurrent run just created.
+const _tabTitleCache = new Map(); // sheetId -> { titles: string[], fetchedAt: number }
+const TAB_TITLE_CACHE_TTL_MS = 30_000;
+
+async function getTabTitles(sheetId, token) {
+  const cached = _tabTitleCache.get(sheetId);
+  if (cached && Date.now() - cached.fetchedAt < TAB_TITLE_CACHE_TTL_MS) {
+    return cached.titles;
+  }
+  const meta = await sheetsGet(token, `/${sheetId}?fields=sheets.properties.title`);
+  const titles = (meta.sheets || []).map(s => s.properties.title);
+  _tabTitleCache.set(sheetId, { titles, fetchedAt: Date.now() });
+  return titles;
+}
+
+function addTabToTitleCache(sheetId, tabName) {
+  const cached = _tabTitleCache.get(sheetId);
+  if (cached && !cached.titles.includes(tabName)) cached.titles.push(tabName);
+}
+
 /**
  * Ensure a tab exists in the sheet. If not, create it and write headers.
  *
@@ -74,9 +106,8 @@ async function getSheetsToken() {
 async function ensureTab(sheetId, tabName, headers) {
   const token = await getSheetsToken();
 
-  // Get existing sheets
-  const meta = await sheetsGet(token, `/${sheetId}?fields=sheets.properties.title`);
-  const titles = (meta.sheets || []).map(s => s.properties.title);
+  // Get existing sheets (cached per sheetId — see getTabTitles above)
+  const titles = await getTabTitles(sheetId, token);
   const exists = titles.some(t => t === tabName);
 
   // 2026-07-16 — diagnostic for the "addSheet says it already exists, but
@@ -104,6 +135,7 @@ async function ensureTab(sheetId, tabName, headers) {
       // Write headers on row 1
       await writeRow(sheetId, tabName, 1, headers, token);
       console.log(`[sheets] created tab "${tabName}" in sheet ${sheetId}`);
+      addTabToTitleCache(sheetId, tabName);
     } catch (err) {
       // 2026-07-16 — self-heal against the exact contradiction above: if
       // Google's own error says this tab already exists, that's ground
@@ -112,6 +144,7 @@ async function ensureTab(sheetId, tabName, headers) {
       // OTHER addSheet failure still throws normally.
       if (/already exists/i.test(err.message)) {
         console.warn(`[sheets] addSheet said "${tabName}" already exists (contradicts the exists-check above — see titles logged) — continuing as if it already existed.`);
+        addTabToTitleCache(sheetId, tabName);
       } else {
         throw err;
       }
@@ -231,7 +264,7 @@ async function touchMeta(sheetId, tabName, status, rowsWritten, token, errorMsg)
 const SHEETS_BASE = 'sheets.googleapis.com';
 const SHEETS_PATH = '/v4/spreadsheets';
 
-function sheetsGet(token, path, retriesLeft = 3) {
+function sheetsGet(token, path, retriesLeft = 4) {
   return new Promise((resolve, reject) => {
     const opts = {
       hostname: SHEETS_BASE,
@@ -264,10 +297,20 @@ function sheetsGet(token, path, retriesLeft = 3) {
           // with no retry at all, since this check only covered 429
           // before. Google's own API docs describe INTERNAL as generally
           // transient and safe to retry, same reasoning as 429.
+          //
+          // CHANGED 2026-08-13: 3 retries topping out at a 6s wait (12s
+          // total) wasn't enough headroom for a fully-drained per-minute
+          // quota to reset — evolis exhausted all 3 retries and hard-
+          // failed on 429, while skinuva's read moments later, given the
+          // same schedule, happened to land after the window rolled over
+          // and recovered. 4 retries reaching a 16s top wait (30s total)
+          // gives a real shot at outlasting a full quota window without
+          // costing more than one function's worth of timeout budget if
+          // several tabs hit this back to back.
           const isRetryable = res.statusCode === 429 || res.statusCode === 500
             || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
           if (isRetryable && retriesLeft > 0) {
-            const waitMs = (4 - retriesLeft) * 2000 + 2000; // 2s, 4s, 6s
+            const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s
             console.warn(`[sheets] retryable error (${res.statusCode}) on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
@@ -288,7 +331,7 @@ function sheetsGet(token, path, retriesLeft = 3) {
   });
 }
 
-function sheetsPost(token, path, body, method = 'POST', retriesLeft = 3) {
+function sheetsPost(token, path, body, method = 'POST', retriesLeft = 4) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const opts = {
@@ -313,7 +356,7 @@ function sheetsPost(token, path, body, method = 'POST', retriesLeft = 3) {
           const isRetryable = res.statusCode === 429 || res.statusCode === 500
             || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
           if (isRetryable && retriesLeft > 0) {
-            const waitMs = (4 - retriesLeft) * 2000 + 2000;
+            const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s — see sheetsGet
             console.warn(`[sheets] retryable error (${res.statusCode}) on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
