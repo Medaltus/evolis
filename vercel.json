@@ -14,6 +14,10 @@
       "schedule": "0 */2 * * *"
     },
     {
+     "path": "/api/cron/sync-90d-units-cache",
+     "schedule": "0 7 * * *"
+   },
+    {
       "path": "/api/cron/sync-orders-process",
       "schedule": "15 */2 * * *"
     },
