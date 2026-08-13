@@ -81,13 +81,19 @@
  * ADDED (2026-08-04): purchased_units_90d now combines Amazon + Walmart
  * for SKUs sold on both channels, per master SKU list column G ("channel":
  * Amazon / Walmart / Amazon / Walmart). Amazon side stays keyed by ASIN as
- * before (fetchBrand90dUnits, sheets.orders). Walmart side is keyed by SKU
- * — no ASIN concept on that marketplace — pulled from a separate per-brand
- * rolling-90-day cache (SHEET_WALMART_ORDERS, fetchBrandWalmart90dUnits),
- * same failsafe pattern: a failed lookup leaves that channel's
- * contribution out rather than blocking the run. SKUs not flagged
- * sellsOnWalmart are completely unaffected — Amazon-only behavior,
+ * before. Walmart side is keyed by SKU — no ASIN concept on that
+ * marketplace. Same failsafe pattern: a failed lookup leaves that
+ * channel's contribution out rather than blocking the run. SKUs not
+ * flagged sellsOnWalmart are completely unaffected — Amazon-only behavior,
  * unchanged.
+ *
+ * CHANGED (2026-08-13): fetchBrand90dUnits/fetchBrandWalmart90dUnits no
+ * longer re-derive these sums live from the full orders/Walmart-orders
+ * history on every 15-minute run — that was re-reading thousands of rows
+ * per brand up to 36x/day for a number that only meaningfully changes
+ * daily. Both now read a small pre-computed cache (UNITS_90D_CACHE_SHEET_ID)
+ * populated once daily by sync-90d-units-cache.js. Same failsafe behavior,
+ * same return shape, just a cheaper, once-a-day-fresh data source.
  */
 
 const { spRequest }                                     = require('../_spauth');
@@ -99,13 +105,13 @@ const { sendCronFailureAlert }                          = require('../_alerts');
 const MASTER_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
 const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand, G=channel (Amazon / Walmart / Amazon / Walmart)
 
-// Walmart 90-day orders cache — per-brand tabs, already maintained as a
-// rolling 90-day window by its own cron (same convention as sheets.orders
-// for Amazon). Headers: order_id, date, status, order_total,
-// promotion_ids, is_premium_order, promotion_discount, item_price,
-// quantity_ordered, quantity_shipped, unit_count, sku, brand, last_updated.
-// Keyed by SKU, not ASIN — Walmart has no ASIN concept.
-const SHEET_WALMART_ORDERS = process.env.SHEET_WALMART_ORDERS || '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
+// CHANGED 2026-08-13 — this file no longer reads Walmart orders (or
+// Amazon orders) directly for the 90-day units figures; see
+// fetchBrand90dUnits()/fetchBrandWalmart90dUnits() below. Both now read
+// UNITS_90D_CACHE_SHEET_ID, populated once daily by the new
+// sync-90d-units-cache.js, instead of re-deriving live from the full
+// rolling-90-day orders history on every 15-minute run.
+const UNITS_90D_CACHE_SHEET_ID = process.env.SHEET_90D_UNITS_CACHE; // must be created + set before deploying — see sync-90d-units-cache.js
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -558,41 +564,47 @@ async function fetchMasterSkuList() {
   return out;
 }
 
-// Sums unit_count per ASIN from the rolling 90-day orders cache
-// (sheets.orders, same tab-per-brand sheet every other cron in this repo
-// uses). That sheet is already maintained as a 90-day rolling window by
-// its own cron, so no date filtering is needed here — just exclude
-// cancelled orders, since a cancelled order was never actually purchased.
-// Called once per brand (not per SKU) and cached by the caller.
+// CHANGED 2026-08-13 — these two functions used to re-read each brand's
+// FULL orders history live, on every single 15-minute run (36x/day). For
+// a brand like skinuva (~7,200 rows) or creme-shop (~6,800 rows), that
+// was a genuinely large read repeated far more often than the underlying
+// number actually changes — this figure only meaningfully shifts day to
+// day, not minute to minute. sync-90d-units-cache.js now does this exact
+// same computation once daily and writes the result to a small
+// pre-computed cache tab; these functions just read that cache instead.
+// Return shape is UNCHANGED ({ [asin]: units } / { [sku]: units }), so
+// every caller of these two functions works exactly as before — only the
+// data source moved, not the interface.
 async function fetchBrand90dUnits(brandTabName) {
-  const rows = await readRows(sheets.orders, brandTabName);
+  const rows = await readRows(UNITS_90D_CACHE_SHEET_ID, brandTabName).catch(err => {
+    console.warn(`[sync-products] ${brandTabName} — 90-day units cache read failed (leaving purchased_units_90d blank this run): ${err.message}`);
+    return [];
+  });
   const map = {};
   (rows || []).forEach(r => {
-    const status = (r.status || '').toLowerCase();
-    if (status === 'cancelled') return;
-    const asin = (r.asin || '').trim().toUpperCase();
-    if (!asin) return;
-    const units = parseInt(r.unit_count, 10) || 0;
-    map[asin] = (map[asin] || 0) + units;
+    if ((r.type || '').toLowerCase() !== 'amazon') return;
+    const key = (r.key || '').trim().toUpperCase();
+    if (!key) return;
+    map[key] = parseInt(r.units_90d, 10) || 0;
   });
   return map;
 }
 
-// Walmart counterpart to fetchBrand90dUnits — same rolling-90-day-cache
-// assumption (no date filtering needed here), same cancelled-order
-// exclusion, but keyed by SKU since Walmart has no ASIN. Only called for
+// Walmart counterpart — same cache tab, filtered to the 'walmart' rows
+// (keyed by SKU, since Walmart has no ASIN concept). Only called for
 // brands that have at least one sellsOnWalmart SKU, and only once per
 // brand per run (cached by the caller), same as the Amazon lookup.
 async function fetchBrandWalmart90dUnits(brandTabName) {
-  const rows = await readRows(SHEET_WALMART_ORDERS, brandTabName);
+  const rows = await readRows(UNITS_90D_CACHE_SHEET_ID, brandTabName).catch(err => {
+    console.warn(`[sync-products] ${brandTabName} — 90-day Walmart units cache read failed (leaving that channel's contribution blank this run): ${err.message}`);
+    return [];
+  });
   const map = {};
   (rows || []).forEach(r => {
-    const status = (r.status || '').toLowerCase();
-    if (status === 'cancelled') return;
-    const sku = (r.sku || '').trim().toUpperCase();
-    if (!sku) return;
-    const units = parseInt(r.unit_count, 10) || 0;
-    map[sku] = (map[sku] || 0) + units;
+    if ((r.type || '').toLowerCase() !== 'walmart') return;
+    const key = (r.key || '').trim().toUpperCase();
+    if (!key) return;
+    map[key] = parseInt(r.units_90d, 10) || 0;
   });
   return map;
 }
