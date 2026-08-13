@@ -260,18 +260,39 @@ module.exports = async (req, res) => {
       const monthMap = {};
 
       for (const [month, rows] of Object.entries(monthRows)) {
+        // Same shared-prefix disambiguation as sync-orders-process.js —
+        // skinuva-ca (config/brands.js) shares skinuva's exact SKU prefix
+        // on purpose. Checked per-month since each month is a separately
+        // downloaded report; a row object only has this key at all if the
+        // TSV header for that download included it (Object.fromEntries
+        // above sets every declared header as a key, even if blank).
+        const salesChannelFieldPresent = rows.length > 0 && Object.prototype.hasOwnProperty.call(rows[0], 'sales-channel');
+
         const brandRows = rows.filter(row => {
           const sku    = (row['sku'] || row['seller-sku'] || '').toUpperCase();
           const status = (row['order-status'] || '').toLowerCase();
           const promo  = (row['promotion-ids'] || '').toLowerCase();
 
-          return (
-            sku.startsWith(brand.skuPrefix.toUpperCase()) &&
-            status !== 'cancelled' &&
-            status !== 'pending'   &&
-            !promo.includes('vine')
-          );
+          if (
+            !sku.startsWith(brand.skuPrefix.toUpperCase()) ||
+            status === 'cancelled' ||
+            status === 'pending'   ||
+            promo.includes('vine')
+          ) return false;
+
+          if (brand.salesChannel) {
+            if (!salesChannelFieldPresent) {
+              return brand.salesChannel.toLowerCase() === 'amazon.com';
+            }
+            const channel = (row['sales-channel'] || '').trim().toLowerCase();
+            if (channel !== brand.salesChannel.toLowerCase()) return false;
+          }
+          return true;
         });
+
+        if (brand.salesChannel && !salesChannelFieldPresent) {
+          console.warn(`[sync-revenue-process] ${brand.id} ${month} — "sales-channel" missing from this report; shared-prefix channel split could not run this pass (US sibling falls back to all shared-prefix rows, .ca sibling gets none this month).`);
+        }
 
         console.log(`[sync-revenue-process] ${brand.id} ${month} — ${brandRows.length} matching rows`);
 
