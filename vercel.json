@@ -102,10 +102,6 @@
       "schedule": "14 8 * * *"
     },
     {
-      "path": "/api/cron/sync-listings",
-      "schedule": "35 8 */2 * *"
-    },
-    {
       "path": "/api/cron/sync-fulfillment-kpis",
       "schedule": "0 21 * * *"
     },
