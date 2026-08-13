@@ -27,6 +27,15 @@ const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
 
 // Must match sync-orders-process.js's HEADERS exactly — same tab, same shape.
+//
+// FIXED 2026-08-13 — same bug as fees-estimate.js, found while chasing a
+// separate date-format issue: this was still the pre-2026-08-12 17-column
+// shape, missing 'marketplace'/'channel'. Since this cron rebuilds
+// workingRows via `HEADERS.map(h => r[h] ?? '')` using this file's own
+// (too-short) HEADERS list, every hourly run that found a row to fill was
+// silently dropping marketplace/channel from every row it touched and
+// wiping those columns on write. See fees-estimate.js's 2026-08-13 comment
+// for the full mechanism — identical here.
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
@@ -34,6 +43,8 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
   'Amazon Estimated fees',
   'Amazon Sale Promotions',
+  'marketplace', // column R — owned by sync-orders-process.js — preserved here, never computed
+  'channel',     // column S — owned by sync-orders-process.js — preserved here, never computed
 ];
 
 // Safety valve only — normal runs won't get anywhere near this.
