@@ -34,6 +34,23 @@ const brandsConfig                         = require('../config/brands');
 const sheets                               = require('../config/sheets');
 
 // Must match sync-orders-process.js's HEADERS exactly — same tab, same shape.
+//
+// FIXED 2026-08-13 — this was still the pre-2026-08-12 17-column shape.
+// sync-orders-process.js added 'marketplace' (col R) and 'channel' (col S)
+// on 2026-08-12; this file was written after that but its HEADERS constant
+// was never updated to match. Effect was two-fold:
+//   1. [sheets] HEADER MISMATCH firing on every brand tab, every run — the
+//      log noise that surfaced this.
+//   2. Real data loss, not just noise: processBrandFees() rebuilds
+//      workingRows via `HEADERS.map(h => r[h] ?? '')` using THIS file's
+//      (too-short) HEADERS list, so marketplace/channel — present in the
+//      row objects readRows actually returns — were silently dropped from
+//      every row this cron touched. replaceRows() then clears A2:ZZ and
+//      writes back only the 17 columns this file knew about, blanking
+//      marketplace/channel for that brand until sync-orders-process next
+//      overwrote it. At a 30-min fees-estimate cadence vs. a 2-hour
+//      orders-process cadence, fees-estimate was winning that race almost
+//      every time.
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
   'promotion_ids', 'is_premium_order', 'promotion_discount',
@@ -41,6 +58,8 @@ const HEADERS = [
   'unit_count', 'sku', 'asin', 'brand', 'last_updated',
   'Amazon Estimated fees',
   'Amazon Sale Promotions',
+  'marketplace', // column R — owned by sync-orders-process.js — preserved here, never computed
+  'channel',     // column S — owned by sync-orders-process.js — preserved here, never computed
 ];
 
 const META_TAB     = '_meta';
