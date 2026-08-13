@@ -480,6 +480,30 @@ function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// FIXED 2026-08-13 — skinuva-ca (config/brands.js) shares "skinuva" as a
+// substring of its own id ('skinuva-ca'.includes('skinuva')), so any
+// master-list row whose brand column contains "skinuva" satisfied BOTH
+// brands' matching conditions below. brands.find() returns the FIRST
+// match in array order, and skinuva is listed before skinuva-ca — so
+// EVERY skinuva-labeled row, including genuinely Canadian ones, was
+// silently attributed to plain skinuva. skinuva-ca was getting zero rows
+// from the master list, meaning this cron never synced its inventory or
+// listing data at all. Same root cause and same fix as the identical bug
+// found in sync-sqp-request.js, sync-orders-process.js, and
+// sync-revenue-process.js earlier — disambiguate by the SKU's own "-CA"
+// suffix before falling back to brand-name matching.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
 async function fetchMasterSkuList() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
   const resp   = await fetch(csvUrl);
@@ -506,17 +530,28 @@ async function fetchMasterSkuList() {
     if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
     if (EXCLUDED_BRAND_NAMES.some(x => brandNorm.includes(x))) continue;
 
-    const matched = brands.find(b =>
+    const nameMatched = brands.find(b =>
       b.active && (
         brandNorm === stripAccents(b.id.toLowerCase()) ||
         brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
         brandNorm.includes(stripAccents(b.id.toLowerCase()))
       )
     );
-    if (!matched) {
+    if (!nameMatched) {
       console.log(`[sync-products] unmatched brand in master sheet: "${rawBrand}" (asin ${asin}) — skipped`);
       continue;
     }
+    // Name matching alone can't distinguish skinuva from skinuva-ca — the
+    // master sheet almost certainly labels both "skinuva" regardless of
+    // marketplace (it's the same company brand), and skinuva-ca's id can
+    // never satisfy brandNorm.includes('skinuva-ca') when brandNorm is
+    // just "skinuva" (a shorter string can't contain a longer one). Instead,
+    // find the real sibling set via shared SKU PREFIX (not name), then
+    // disambiguate those siblings using the SKU's own "-CA" suffix.
+    const siblings = brands.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
 
     out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart });
   }
