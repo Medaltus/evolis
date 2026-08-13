@@ -73,6 +73,22 @@ const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA U
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
+// ADDED 2026-08-13 — the per-brand loop below does 3 real Sheets reads per
+// brand (returns tab, orders tab, revenue tab) with ZERO pacing between
+// brands — the only sleep() in this whole file is inside the report-poll
+// loop, unrelated. With 15 active brands that's ~45 unpaced reads fired
+// back-to-back, tripping Google's "Read requests per minute per user"
+// quota (429 RESOURCE_EXHAUSTED) — same root cause already found and
+// fixed in sync-advertising-process.js and _sheets_client.js's tab-title
+// cache, but this file had no pacing mechanism at all to begin with,
+// unlike that one's (insufficient) 1000ms stagger. 3500ms per brand keeps
+// ~3 reads/iteration under ~50 reads/min with margin for other crons
+// sharing this quota; 15 brands costs ~49s total, comfortably inside the
+// 300s function budget. Starting point, not independently confirmed
+// against Google's actual per-project quota — watch logs for further
+// 429s and adjust if needed.
+const BRAND_READ_STAGGER_MS = 3500;
+
 // Report should be ready after 15 min — short poll per report
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
@@ -225,8 +241,12 @@ module.exports = async (req, res) => {
   // ── Per-brand aggregation & sheet write ────────────────────────────────────
   const targetMonths = jobs.map(j => j.month);
   const results      = [];
+  let brandIndex = 0;
 
   for (const brand of brands.filter(b => b.active)) {
+    if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
+    brandIndex++;
+
     try {
       const brandReturnRows = await fetchReturnsForBrand(brand);
       // Per-brand (not global) — the orders sheet is one tab per brand,
