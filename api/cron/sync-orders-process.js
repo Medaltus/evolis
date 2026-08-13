@@ -279,7 +279,11 @@ module.exports = async (req, res) => {
         }
       }
 
-      await replaceRows(sheets.orders, brand.tabName, HEADERS, workingRows, token);
+      const dateIdx = HEADERS.indexOf('date');
+      workingRows.forEach(row => { row[dateIdx] = normalizeDate(row[dateIdx]); });
+      const cleanedRows = collapseDuplicates(workingRows, HEADERS, brand.id);
+
+      await replaceRows(sheets.orders, brand.tabName, HEADERS, cleanedRows, token);
       console.log(`[sync-orders-process] ${brand.id} — new=${newCount} overwritten=${overwrittenCount}`);
       results.push({ brand: brand.id, status: 'ok', new: newCount, overwritten: overwrittenCount });
     } catch (err) {
@@ -328,6 +332,60 @@ function normalizeRow(r) {
     return obj;
   }
   return r;
+}
+
+// ADDED 2026-08-13 — the 120-day retention bump surfaced rows whose `date`
+// value isn't the clean 10-char YYYY-MM-DD this cron has always written
+// (e.g. "2026-05-14 0:00:00", 19 chars) — something this code's own
+// `.slice(0, 10)` mathematically cannot produce, so these predate the
+// current logic. Re-normalizing on every write this cron touches means the
+// column self-heals over time instead of needing a separate one-time fix
+// for legacy rows specifically. Idempotent on already-clean values.
+function normalizeDate(v) {
+  const s = String(v ?? '');
+  return s.slice(0, 10);
+}
+
+// ADDED 2026-08-13 — confirmed duplicate (order_id, sku) rows in production
+// (dearcloud: 645 pairs / 648 extra rows; creme-shop: 108 pairs; smaller
+// counts elsewhere). Some pairs shared an identical last_updated (a single
+// run wrote the row twice); others had DIFFERENT last_updated timestamps
+// (e.g. one from 2026-07-09, one from today's manual backfill) — meaning
+// existingByKey's lookup didn't find the earlier row on that pass and
+// appended instead of overwriting. Root cause not conclusively identified
+// (no run-level timing data to prove it), so rather than patch one theory,
+// this collapses to one row per (order_id, sku) — keeping the one with the
+// LATEST last_updated — on every single write this cron makes, regardless
+// of how a duplicate got in. Structural safety net, not a one-time fix.
+// Rows with a blank order_id or sku are left untouched (never collapsed
+// together) — same exclusion existingByKey already uses elsewhere in this
+// file, since a blank composite key isn't a meaningful identity to dedupe on.
+function collapseDuplicates(rows, headers, label) {
+  const oidIdx = headers.indexOf('order_id');
+  const skuIdx = headers.indexOf('sku');
+  const luIdx  = headers.indexOf('last_updated');
+
+  const winners = new Map(); // key -> row
+  const untouched = [];
+
+  for (const row of rows) {
+    const oid = row[oidIdx];
+    const sku = row[skuIdx];
+    if (!oid || !sku) { untouched.push(row); continue; }
+
+    const key = `${oid}||${sku}`;
+    const existing = winners.get(key);
+    if (!existing || String(row[luIdx] || '') > String(existing[luIdx] || '')) {
+      winners.set(key, row);
+    }
+  }
+
+  const result = [...untouched, ...winners.values()];
+  const removed = rows.length - result.length;
+  if (removed > 0) {
+    console.warn(`[sync-orders-process] ${label} — collapsed ${removed} duplicate (order_id, sku) row(s) before write`);
+  }
+  return result;
 }
 
 /**
