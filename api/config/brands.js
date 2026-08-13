@@ -60,6 +60,36 @@ module.exports = [
     displayName:     'Skinuva',
     amazonBrandName: 'SKINUVA',
     active:          true,
+    // ADDED 2026-08-13 — skinuva-ca (below) shares this exact SKU prefix,
+    // since it's the same physical products sold through a different
+    // storefront (Amazon.ca), not a separate product line. skuPrefix alone
+    // can no longer disambiguate the two — salesChannel is the tiebreaker.
+    // Every other brand in this file has no salesChannel field and their
+    // matching is completely unaffected; this only matters for brands that
+    // share a prefix. See sync-orders-process.js / sync-revenue-process.js
+    // for where this is actually checked.
+    salesChannel:    'Amazon.com',
+  },
+  {
+    id:              'skinuva-ca',
+    tabName:         'skinuva-ca',
+    skuPrefix:       'SVA',
+    displayName:     'Skinuva (Canada)',
+    amazonBrandName: 'SKINUVA',
+    active:          true,
+    // ADDED 2026-08-13 per Jaclyn — skinuva sells on both Amazon.com and
+    // Amazon.ca under the SAME seller account (confirmed: both FBA and
+    // Merchant-fulfilled Canadian orders were found mixed into skinuva's
+    // regular US data, not just Remote-Fulfillment-with-FBA cross-border
+    // orders, which would be FBA-only — this points to skinuva's account
+    // being enrolled in some form of NA multi-marketplace selling, not
+    // independently confirmed). All requests are still scoped to
+    // SP_MARKETPLACE_ID only (sync-orders-request.js / sync-revenue-
+    // request.js were NOT changed) — Amazon.ca activity already arrives in
+    // that same report via the flat file's `sales-channel` field
+    // ("Amazon.ca" vs "Amazon.com"), which is what this entry's
+    // salesChannel is matched against. No new report request needed.
+    salesChannel:    'Amazon.ca',
   },
   {
     id:              'dearcloud',
@@ -173,6 +203,14 @@ module.exports = [
     displayName:     'PB & Jay',
     amazonBrandName: 'PB & JAY',
     active:          true,
+  },
+  {
+    id:              'cosmette',
+    tabName:         'cosmette',
+    skuPrefix:       'COS',
+    displayName:     'Cosmette',
+    amazonBrandName: 'COSMETTE', // UNCONFIRMED — placeholder guess (uppercase, no accents). This specifically affects sync-subscriptions.js's Replenishment API call (SUBSCRIBER_RETENTION), which silently returns empty data on a wrong casing/accent match, no error — verify the exact Brand Registry string when convenient, doesn't block everything else.
+    active:          true, // CONFIRMED active 2026-08-13 per Jaclyn — Amazon-side SP-API/Ads connection is live.
   },
   {
     id:              'high-on-love',
