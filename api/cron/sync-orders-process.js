@@ -177,6 +177,7 @@ module.exports = async (req, res) => {
   // header list every run so a mismatch is a 5-second console check
   // instead of another silent-drop incident, same practice already
   // established elsewhere in this codebase.
+  const salesChannelFieldPresent = rows.length > 0 && headers.includes('sales-channel');
   if (rows.length) {
     console.log('[sync-orders-process][qa] real TSV header list:', headers.join(' | '));
     if (!headers.includes('sales-channel')) console.warn('[sync-orders-process][qa] "sales-channel" not found in this report — marketplace column will be blank for every row this run.');
@@ -192,11 +193,43 @@ module.exports = async (req, res) => {
       // Brand is determined by SKU prefix — never by Amazon's brand field.
       // We intentionally do NOT filter out cancelled/pending orders here —
       // catching those transitions is the whole point of this rewrite.
+      //
+      // ADDED 2026-08-13 per Jaclyn — skinuva sells on both Amazon.com and
+      // Amazon.ca under one seller account; skinuva-ca (config/brands.js)
+      // shares skinuva's exact SKU prefix on purpose (same physical
+      // products, different storefront), so SKU prefix alone can't tell
+      // them apart. Brands with an explicit `salesChannel` field also
+      // require the flat file's own `sales-channel` column to match —
+      // every other brand has no salesChannel field, so this check is
+      // always skipped for them, zero behavior change.
+      //
+      // FALLBACK: if `sales-channel` is ever absent from a report entirely
+      // (flagged above as not independently confirmed for this report
+      // type), a brand requiring 'Amazon.ca' can never match anything that
+      // run — the .ca tab would just silently get 0 rows, easy to miss.
+      // Rather than let that happen quietly, or double-count by matching
+      // BOTH siblings, the 'Amazon.com' sibling falls back to SKU-prefix-
+      // only matching (pre-split behavior) and the '.ca' sibling gets
+      // nothing, loudly logged — preserves the higher-volume US data
+      // rather than losing everything for that shared prefix.
       const brandRows = rows.filter(row => {
         const sku   = (row['sku'] || row['seller-sku'] || '').toUpperCase();
         const promo = (row['promotion-ids'] || '').toLowerCase();
-        return sku.startsWith(brand.skuPrefix.toUpperCase()) && !promo.includes('vine');
+        if (!sku.startsWith(brand.skuPrefix.toUpperCase()) || promo.includes('vine')) return false;
+
+        if (brand.salesChannel) {
+          if (!salesChannelFieldPresent) {
+            return brand.salesChannel.toLowerCase() === 'amazon.com';
+          }
+          const channel = (row['sales-channel'] || '').trim().toLowerCase();
+          if (channel !== brand.salesChannel.toLowerCase()) return false;
+        }
+        return true;
       });
+
+      if (brand.salesChannel && !salesChannelFieldPresent) {
+        console.warn(`[sync-orders-process] ${brand.id} — "sales-channel" missing from this report; shared-prefix channel split could not run this pass (see salesChannel fallback above).`);
+      }
 
       if (brandRows.length === 0) {
         console.log(`[sync-orders-process] ${brand.id} — 0 rows after filtering`);
