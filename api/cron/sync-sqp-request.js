@@ -194,10 +194,31 @@ module.exports = async (req, res) => {
   const prior    = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const pYear    = prior.getFullYear();
   const pMonth   = pad(prior.getMonth() + 1);
-  const pLastDay = new Date(pYear, prior.getMonth() + 1, 0).getDate();
   const targetMonth = `${pYear}-${pMonth}`;
   const dataStartTime = `${pYear}-${pMonth}-01T00:00:00Z`;
-  const dataEndTime   = `${pYear}-${pMonth}-${pad(pLastDay)}T23:59:59Z`;
+
+  // TESTING 2026-08-13 — every active brand's real (non-debug) run was
+  // going FATAL with Amazon's generic "client error occurred... parameters
+  // are valid and fulfill the requirements of the report type" — a known
+  // symptom of dataStartTime/dataEndTime not aligning to a valid boundary
+  // for the requested reportPeriod (confirmed via Amazon's own docs: "The
+  // dataStartTime and dataEndTime values must correspond to valid first
+  // and last days in the specified reportPeriod... misaligned dates
+  // result in fatal errors"). Previous value was 23:59:59Z on the last
+  // calendar day of the month (an INCLUSIVE end). This tests the
+  // hypothesis that Amazon expects an EXCLUSIVE end instead — midnight of
+  // the 1st of the NEXT month — a common SP-API convention elsewhere.
+  // NOT YET CONFIRMED correct; testing narrowly via ?brand= scoping below
+  // before rolling out broadly, since report-creation quota here is
+  // scarce (see STAGGER_MS / MAX_NEW_REQUESTS_PER_RUN comments below). If
+  // this doesn't resolve the FATAL, the next thing to check is whether
+  // Amazon's actual valid MONTH-period boundaries for this specific
+  // report type follow a retail/fiscal calendar rather than calendar
+  // months at all.
+  const nextMonthStart = new Date(pYear, prior.getMonth() + 1, 1);
+  const nyYear  = nextMonthStart.getFullYear();
+  const nyMonth = pad(nextMonthStart.getMonth() + 1);
+  const dataEndTime = `${nyYear}-${nyMonth}-01T00:00:00Z`;
 
   console.log(`[sync-sqp-request] target month: ${targetMonth} (${dataStartTime} → ${dataEndTime})`);
 
@@ -231,7 +252,12 @@ module.exports = async (req, res) => {
   //   GET /api/cron/sync-sqp-request?debug=true
   //   GET /api/cron/sync-sqp-request?debug=true&brand=eraclea — one brand only
   const debugMode = req.query.debug === 'true';
-  const debugBrandFilter = (req.query.brand || '').trim();
+  // ADDED 2026-08-13 — was previously only honored in debug mode, which
+  // never calls Amazon at all. Report-creation quota here is scarce (see
+  // MAX_NEW_REQUESTS_PER_RUN below), so testing a fix against a single
+  // brand's REAL request — without burning quota across all active
+  // brands — needed this to also work outside debug mode.
+  const brandFilter = (req.query.brand || '').trim();
 
   // Hard cap on NEW report-creation calls in this single invocation.
   // 2 brands succeeded, then 11 hit QuotaExceeded on their FIRST attempt —
@@ -249,7 +275,7 @@ module.exports = async (req, res) => {
   const hardErrors = []; // genuine failures only — quota/cap-reached is expected, self-throttling behavior, not alerted on
 
   for (const brand of activeBrands) {
-    if (debugMode && debugBrandFilter && brand.id.toLowerCase() !== debugBrandFilter.toLowerCase()) continue;
+    if (brandFilter && brand.id.toLowerCase() !== brandFilter.toLowerCase()) continue;
 
     const brandAsins = asinsByBrand.get(brand.id) || [];
     if (!brandAsins.length) {
