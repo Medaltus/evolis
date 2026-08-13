@@ -133,6 +133,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // row's SKU prefix (leading letters, e.g. "EVO0001" → "EVO", "EVO0001-SF"
 // → "EVO", "PBJ0027" → "PBJ") against each active brand's expected prefix.
 // Returns Map<brandId, string[]> (ASINs, deduped).
+// FIXED 2026-08-13 — skinuva-ca (config/brands.js) shares skinuva's exact
+// SKU prefix ('SVA') on purpose, since it's the same physical products
+// sold through a different storefront. The prior version of this
+// function built a plain Map<prefix, brand> — one brand per prefix — so
+// adding skinuva-ca silently overwrote skinuva's entry (whichever brand
+// comes later in brands.js wins), leaving skinuva with ZERO matched
+// ASINs ("no-asins" on every real run). Now builds Map<prefix, brand[]>
+// and disambiguates shared-prefix candidates using the same CA_SKU_PATTERN
+// already validated in sync-orders-process.js / migrate-skinuva-ca.js —
+// confirmed separately that Canadian-storefront SKUs use genuinely
+// distinct ASINs from their US counterparts, not shared ones, so this
+// split is a clean partition, not an approximation.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  // No salesChannel-tagged candidate matched cleanly — prefer the
+  // Amazon.com sibling if present rather than silently dropping the ASIN.
+  return usBrand || candidates[0];
+}
+
 async function getAsinsByBrand() {
   const rows = await readRows(sheets.masterSkuList, MASTER_SKU_TAB);
   if (!rows || !rows.length) {
@@ -148,10 +174,12 @@ async function getAsinsByBrand() {
     console.warn('[sync-sqp-request] Master SKU List rows do not have an ASIN/asin column — actual columns:', Object.keys(sampleRow).join(', '));
   }
 
-  const prefixToBrand = new Map(); // 'EVO' -> brand object
+  const prefixToBrands = new Map(); // 'EVO' -> [brand] (usually one; can be >1 for shared-prefix pairs)
   brands.filter(b => b.active).forEach(b => {
     const prefix = (b.skuPrefix || b.id || '').toUpperCase();
-    if (prefix) prefixToBrand.set(prefix, b);
+    if (!prefix) return;
+    if (!prefixToBrands.has(prefix)) prefixToBrands.set(prefix, []);
+    prefixToBrands.get(prefix).push(b);
   });
 
   const asinsByBrand = new Map(); // brandId -> Set<ASIN>
@@ -164,8 +192,9 @@ async function getAsinsByBrand() {
 
     const prefixMatch = sku.match(/^([A-Z]+)/);
     const prefix = prefixMatch ? prefixMatch[1] : '';
-    const brand = prefixToBrand.get(prefix);
-    if (!brand) { unmatchedCount++; return; }
+    const candidates = prefixToBrands.get(prefix);
+    if (!candidates || !candidates.length) { unmatchedCount++; return; }
+    const brand = resolveBrandForSku(sku, candidates);
 
     if (!asinsByBrand.has(brand.id)) asinsByBrand.set(brand.id, new Set());
     asinsByBrand.get(brand.id).add(asin);
