@@ -194,31 +194,21 @@ module.exports = async (req, res) => {
   const prior    = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const pYear    = prior.getFullYear();
   const pMonth   = pad(prior.getMonth() + 1);
+  const pLastDay = new Date(pYear, prior.getMonth() + 1, 0).getDate();
   const targetMonth = `${pYear}-${pMonth}`;
   const dataStartTime = `${pYear}-${pMonth}-01T00:00:00Z`;
 
-  // TESTING 2026-08-13 — every active brand's real (non-debug) run was
-  // going FATAL with Amazon's generic "client error occurred... parameters
-  // are valid and fulfill the requirements of the report type" — a known
-  // symptom of dataStartTime/dataEndTime not aligning to a valid boundary
-  // for the requested reportPeriod (confirmed via Amazon's own docs: "The
-  // dataStartTime and dataEndTime values must correspond to valid first
-  // and last days in the specified reportPeriod... misaligned dates
-  // result in fatal errors"). Previous value was 23:59:59Z on the last
-  // calendar day of the month (an INCLUSIVE end). This tests the
-  // hypothesis that Amazon expects an EXCLUSIVE end instead — midnight of
-  // the 1st of the NEXT month — a common SP-API convention elsewhere.
-  // NOT YET CONFIRMED correct; testing narrowly via ?brand= scoping below
-  // before rolling out broadly, since report-creation quota here is
-  // scarce (see STAGGER_MS / MAX_NEW_REQUESTS_PER_RUN comments below). If
-  // this doesn't resolve the FATAL, the next thing to check is whether
-  // Amazon's actual valid MONTH-period boundaries for this specific
-  // report type follow a retail/fiscal calendar rather than calendar
-  // months at all.
-  const nextMonthStart = new Date(pYear, prior.getMonth() + 1, 1);
-  const nyYear  = nextMonthStart.getFullYear();
-  const nyMonth = pad(nextMonthStart.getMonth() + 1);
-  const dataEndTime = `${nyYear}-${nyMonth}-01T00:00:00Z`;
+  // FIXED 2026-08-13, take two — the exclusive-end hypothesis tested just
+  // above was WRONG. Amazon's own error was explicit once the request
+  // actually reached that specific validation check: "dataEndTime must be
+  // the last day of a month when reportPeriod=MONTH". Reverted to the
+  // last calendar day, 23:59:59Z — the ORIGINAL shape this file had
+  // before today's testing. The generic "client error occurred... please
+  // double check your parameters" FATAL that started this investigation
+  // was therefore NOT caused by the end-date shape at all — something
+  // else is still wrong. See sync-sqp-request.js's module comment for
+  // what to check next.
+  const dataEndTime = `${pYear}-${pMonth}-${pad(pLastDay)}T23:59:59Z`;
 
   console.log(`[sync-sqp-request] target month: ${targetMonth} (${dataStartTime} → ${dataEndTime})`);
 
