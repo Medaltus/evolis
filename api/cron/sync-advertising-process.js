@@ -42,17 +42,28 @@ const POLL_INTERVAL_MS = 10_000;
 // Google Sheets throttling — this cron does an ensureTab + readRows +
 // replaceRows for every brand tab, twice (curr + prev), across BOTH the
 // ASIN-level write (5a) and summary write (5b) loops below. With 15 active
-// brands that's roughly 60+ per-tab Sheets operations fired back-to-back
-// with zero pacing, which tripped Google's "Read requests per minute per
-// user" quota (429 RESOURCE_EXHAUSTED) on 2026-08-04 for the last few
-// brands processed in the run. Same fix pattern as the stagger already in
-// sync-advertising-request.js for the Amazon Ads API: space the per-tab
-// work out instead of firing it in a tight loop. 1s per tab costs ~60s
-// total across a full run — comfortably inside this function's time
-// budget — and keeps us well under the per-minute ceiling. Starting
-// point, not independently confirmed against Google's actual quota for
-// this project — watch logs for further 429s and increase if needed.
-const SHEET_WRITE_STAGGER_MS = 1000;
+// brands that's roughly 60+ per-tab Sheets operations fired back-to-back.
+// Each "operation" is actually 2 *read* calls (ensureTab's existence check
+// + readRows), so a 1000ms stagger — the original fix attempt — was still
+// pushing ~2 reads/sec = ~120 reads/min against Sheets' default 60
+// "Read requests per minute per user" quota. That undercount is what let
+// the 429 RESOURCE_EXHAUSTED on 2026-08-13 through despite the stagger
+// already being in place (first seen 2026-08-04). Two changes:
+//   1. ensuredTabsThisRun (below) skips the redundant ensureTab existence
+//      check on the second period for a tab we already ensured this run —
+//      headers/tab-existence can't change mid-run, so this is safe and
+//      cuts reads for repeat tabs from 2/iteration to 1.
+//   2. Stagger raised to 2500ms so that even the *first* pass through a
+//      tab (ensureTab + readRows = 2 reads) stays under ~50 reads/min,
+//      leaving headroom for other crons sharing the same Sheets quota.
+// At ~90 iterations total across both loops/periods this adds up to ~3.75
+// min, still inside the 5min function budget seen in the Vercel logs.
+// Not independently confirmed against Google's actual per-project quota —
+// watch logs for further 429s. If they persist, request a quota increase
+// in Google Cloud Console (APIs & Services → Sheets API → Quotas) rather
+// than continuing to stretch the stagger, since other crons hitting the
+// same sheets in the same minute count against this same bucket.
+const SHEET_WRITE_STAGGER_MS = 2500;
 
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
@@ -263,6 +274,20 @@ module.exports = async (req, res) => {
   const cutoff = new Date().getFullYear() - TRIM_YEARS;
   let sheetOpIndex = 0; // shared across both periods and both write loops (5a + 5b) — see SHEET_WRITE_STAGGER_MS
 
+  // Tracks which `${sheetId}::${tabName}` combos have already had ensureTab
+  // called this run. Tab existence/headers can't change between the curr
+  // and prev passes within a single invocation, so the second pass can skip
+  // straight to readRows — halving the read calls for repeat tabs. See
+  // SHEET_WRITE_STAGGER_MS comment above for the quota math this supports.
+  const ensuredTabsThisRun = new Map(); // key -> token, so replaceRows still gets a valid token on the 2nd pass
+  async function ensureTabOnce(sheetId, tabName, headers) {
+    const key = `${sheetId}::${tabName}`;
+    if (ensuredTabsThisRun.has(key)) return ensuredTabsThisRun.get(key);
+    const tok = await ensureTab(sheetId, tabName, headers);
+    ensuredTabsThisRun.set(key, tok);
+    return tok;
+  }
+
   for (const period of periods) {
     const { label, year, month, endDate, asinRows, spRows, sbRows } = period;
     console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length}`);
@@ -299,7 +324,7 @@ module.exports = async (req, res) => {
         sheetOpIndex++;
 
         try {
-          const tok      = await ensureTab(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
+          const tok      = await ensureTabOnce(SHEET_AD_ORDERS, tabName, ASIN_HEADERS);
           const existing = await readRows(SHEET_AD_ORDERS, tabName);
           // Remove rows matching this year/month, then append new ones
           const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
@@ -360,7 +385,7 @@ module.exports = async (req, res) => {
         const cpc  = t.clicks > 0 ? round2(t.spend / t.clicks)                    : 0;
         const newRow = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, ctr, cpc, brand.id, now];
 
-        const tok      = await ensureTab(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
+        const tok      = await ensureTabOnce(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
         const existing = await readRows(SHEET_AD_SUMMARY, brand.tabName);
         // Upsert: remove matching year/month row, append new one
         const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
