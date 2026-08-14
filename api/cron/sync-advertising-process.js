@@ -65,8 +65,30 @@ const POLL_INTERVAL_MS = 10_000;
 // same sheets in the same minute count against this same bucket.
 const SHEET_WRITE_STAGGER_MS = 2500;
 
+// FIXED 2026-08-14 — this list is a hand-maintained duplicate of
+// config/brands.js's active brand list, kept separate (not derived
+// dynamically) because several entries are deliberately hand-tuned to
+// real observed Amazon Ads campaign naming that doesn't match the
+// brand's id/tabName at all ("the creme shop", "pb & jay", "skinside
+// seoul" with a space). A full dynamic derivation from brands.js risked
+// silently breaking those already-correct, non-obvious matches.
+//
+// The cost of keeping it hand-maintained: it silently drifted out of
+// sync TWICE today — missing both 'cosmette' (added to brands.js this
+// morning, meaning every Cosmette ad campaign has been falling into
+// "unmatched campaign" and never syncing at all) and 'skinuva-ca'
+// (meaning any Canada-specific campaign could only ever match plain
+// skinuva, never its own tab). Added best-guess entries for both below —
+// NEITHER has been confirmed against real Amazon Ads campaign names the
+// way every other entry here has; verify against actual campaign titles
+// and correct if wrong. The runtime check right after this list makes
+// sure a THIRD brand added in the future can't repeat this same silent
+// gap — it'll show up loudly in the logs instead.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
+  { name: 'skinuva ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
+  { name: 'skinuva-ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
+  { name: 'skinuva canada', tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
   { name: 'the creme shop', tabName: 'creme-shop'     },
   { name: 'cloud cafe',     tabName: 'cloud-cafe'     },
   { name: 'just bjorn',     tabName: 'just-bjorn'     },
@@ -83,7 +105,19 @@ const CAMPAIGN_BRANDS = [
   { name: 'prohibition',    tabName: 'prohibition'    },
   { name: 'skinside seoul', tabName: 'skinside-seoul' },
   { name: 'skinside-seoul', tabName: 'skinside-seoul' },
+  { name: 'cosmette',       tabName: 'cosmette'       }, // UNCONFIRMED guess — verify against real campaign names
 ].sort((a, b) => b.name.length - a.name.length);
+
+// Loudly flags any active brand this hand-maintained list has fallen out
+// of sync with, so a future brand addition can't repeat today's silent
+// gap. Runs once per invocation, cheap (brands.js is tiny).
+(function checkCampaignBrandsCoverage() {
+  const coveredTabNames = new Set(CAMPAIGN_BRANDS.map(b => b.tabName));
+  const missing = brands.filter(b => b.active && !coveredTabNames.has(b.tabName));
+  if (missing.length > 0) {
+    console.error(`[sync-advertising-process] CAMPAIGN_BRANDS is missing ${missing.length} active brand(s): ${missing.map(b => b.id).join(', ')} — their ad campaigns will fall into "unmatched campaign" and never sync until added to CAMPAIGN_BRANDS in this file.`);
+  }
+})();
 
 // Strips accents/diacritics so "évolis", "ÉVOLIS", and "evolis" all match
 // the same way. Lowercasing alone isn't enough — 'évolis'.includes('evolis')
@@ -93,6 +127,23 @@ const CAMPAIGN_BRANDS = [
 // "unmatched campaign" for the accented variants.
 function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// ADDED 2026-08-14 — shared-SKU-prefix disambiguation (skinuva/skinuva-ca
+// share prefix 'SVA' on purpose). Same pattern used in sync-orders-
+// process.js, sync-revenue-process.js, sync-returns-process.js,
+// sync-sqp-request.js, and sync-products.js — kept identical for
+// consistency across the codebase.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
 }
 
 function identifyBrand(campaignName) {
@@ -252,16 +303,30 @@ module.exports = async (req, res) => {
       csv.trim().split('\n').slice(1).forEach(line => {
         const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
         const asin      = (cols[0] || '').toUpperCase();
+        const sku       = (cols[1] || '').toUpperCase();
         const brandName = (cols[3] || '').toLowerCase().trim();
         if (!asin || !brandName) return;
-        const matched = brands.find(b =>
+        const nameMatched = brands.find(b =>
           b.active && (
             brandName === b.id.toLowerCase() ||
             brandName === b.displayName.toLowerCase() ||
             brandName.includes(b.id.toLowerCase())
           )
         );
-        if (matched) asinBrandMap[asin] = matched.tabName;
+        if (!nameMatched) return;
+        // FIXED 2026-08-14 — same bug as sync-products.js: skinuva-ca
+        // shares "skinuva" as a substring of its own id, so a plain
+        // "skinuva" brand-name label could only ever satisfy skinuva's
+        // OWN condition above (brandNorm.includes('skinuva-ca') is
+        // impossible when brandNorm is just "skinuva" — a shorter string
+        // can't contain a longer one). Disambiguate the real sibling set
+        // by shared SKU PREFIX (not name), then resolve using the SKU's
+        // own "-CA" suffix, same pattern as everywhere else today.
+        const siblings = brands.filter(b =>
+          b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+        );
+        const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
+        asinBrandMap[asin] = matched.tabName;
       });
       console.log(`[sync-advertising-process] ASIN→brand map: ${Object.keys(asinBrandMap).length} entries`);
     }
