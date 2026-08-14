@@ -315,7 +315,18 @@ module.exports = async (req, res) => {
         return (a[2] || '').localeCompare(b[2] || ''); // ASIN, for stable ordering within a month
       });
 
-      await replaceRows(sheets.businessReport, brand.tabName, HEADERS, workingRows, token);
+      // FIXED 2026-08-14 — this was defaulting to valueInputOption=RAW,
+      // meaning every number this cron writes (MONTH, YEAR, SESSIONS,
+      // UNITS_ORDERED, etc.) got stored as forced text, not a real number
+      // — same root cause as the orders sheet's date-apostrophe issue
+      // found earlier today. Discovered because a coworker's manually
+      // entered rows on this exact sheet (real numbers, typed normally)
+      // sat alongside this cron's forced-text rows in the same columns —
+      // harmless for the dashboard's CSV-export reads (everything flattens
+      // to text anyway), but breaks native Sheets sort/filter and any
+      // SUM()/QUERY() formula referencing this sheet directly, since those
+      // typically skip forced-text "numbers" during aggregation.
+      await replaceRows(sheets.businessReport, brand.tabName, HEADERS, workingRows, token, 'USER_ENTERED');
       results.push({ brand: brand.id, status: 'ok', months: brandResults });
 
     } catch (err) {
