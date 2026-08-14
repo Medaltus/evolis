@@ -354,10 +354,22 @@ module.exports = async (req, res) => {
       try {
         const token = await ensureTab(sheetId, tabName, headers);
         const existing = await readRows(sheetId, tabName);
-        // Upsert by year+month(+item_id/search_term where applicable) —
-        // simplest safe key available on all 3 shapes: everything but
-        // last_updated joined together.
-        const keyOf = r => headers.filter(h => h !== 'last_updated').map(h => r[h]).join('||');
+        // FIXED 2026-08-14 — real incident: 'date' was left IN the key
+        // despite the comment saying "everything but last_updated." Both
+        // AD_ORDERS_HEADERS and SEARCH_TERMS_HEADERS include a 'date'
+        // column, but it's set to the day the cron RAN
+        // (nowIso.slice(0,10)), not a stable identifier — same kind of
+        // sync-timestamp metadata as last_updated. Since that value
+        // differs on every run, every re-run generated a brand-new key
+        // for the same year+month+item (or +search_term), producing an
+        // exact duplicate row instead of overwriting the existing one.
+        // Confirmed directly: the Walmart Ads Orders Cache sheet had two
+        // full copies of every July/August row, one dated 2026-08-06 and
+        // one dated 2026-08-10. Excluding 'date' from the key (same as
+        // 'last_updated') fixes this for both affected sheets.
+        // ADVERTISING_HEADERS has no 'date' column at all, so it was
+        // never affected by this specific bug.
+        const keyOf = r => headers.filter(h => h !== 'last_updated' && h !== 'date').map(h => r[h]).join('||');
         const merged = new Map();
         (existing || []).forEach(r => merged.set(keyOf(r), r));
         rows.forEach(r => merged.set(keyOf(r), r));
