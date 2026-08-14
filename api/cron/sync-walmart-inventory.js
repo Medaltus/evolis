@@ -310,7 +310,10 @@ module.exports = async (req, res) => {
       }
 
       const row = buildInventoryRow(item, wfs, productName, today, nowIso);
-      await appendRows(SHEET_ID, item.brandTabName, [row], tabTokens[item.brandTabName]);
+      // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+      // forced-text issue found and fixed elsewhere today. 'date' now
+      // writes as a real date, wfs_on_hand/wfs_available as real numbers.
+      await appendRows(SHEET_ID, item.brandTabName, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
       tabNextRow[item.brandTabName]++;
       processed++;
     } catch (err) {
@@ -379,10 +382,14 @@ function buildInventoryRow(item, wfs, productName, dateStr, nowIso) {
   // blank whenever item.walmartItemId wasn't set — shouldn't happen post
   // 2026-08-04 scoping, but left as a safety fallback rather than assumed
   // impossible.
-  if (wfs?.__error) return [dateStr, item.sku, productName, '', '', nowIso];
+  // FIXED 2026-08-14 — sku protected with a leading apostrophe (Sheets'
+  // own force-text convention under USER_ENTERED) since it can look
+  // numeric and risk reinterpretation or lost leading zeros.
+  const protectedSku = `'${item.sku}`;
+  if (wfs?.__error) return [dateStr, protectedSku, productName, '', '', nowIso];
   const { onHand, available, matchedNodes } = parseWfsShipNode(wfs);
-  if (matchedNodes === 0) return [dateStr, item.sku, productName, 0, 0, nowIso];
-  return [dateStr, item.sku, productName, onHand, available, nowIso];
+  if (matchedNodes === 0) return [dateStr, protectedSku, productName, 0, 0, nowIso];
+  return [dateStr, protectedSku, productName, onHand, available, nowIso];
 }
 
 // ── Walmart auth — copied verbatim from sync-walmart-orders.js (proven working) ──
@@ -484,6 +491,27 @@ function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// ADDED 2026-08-14 — same bug as sync-products.js: skinuva-ca
+// (config/brands.js) shares "skinuva" as a substring of its own id, and
+// the master sheet almost certainly labels both US and CA rows the same
+// ("skinuva") regardless of marketplace — a plain name-based match can
+// only ever resolve to skinuva, never skinuva-ca (a shorter string can't
+// contain a longer one). Likely a no-op in practice here specifically —
+// nothing suggests skinuva-ca sells on Walmart — but applied for
+// consistency with every other brand-matching cron fixed today. Same
+// helper, kept identical for consistency across the codebase.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
 // FIXED 2026-08-04 — real bug found while debugging product_name coming
 // back empty: a naive line.split(',') breaks whenever any field BEFORE
 // the one you actually want contains a comma inside quotes (e.g. a
@@ -560,17 +588,24 @@ async function fetchMasterSkuList() {
       continue;
     }
 
-    const matched = brands.find(b =>
+    const nameMatched = brands.find(b =>
       b.active && (
         brandNorm === stripAccents(b.id.toLowerCase()) ||
         brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
         brandNorm.includes(stripAccents(b.id.toLowerCase()))
       )
     );
-    if (!matched) {
+    if (!nameMatched) {
       console.log(`[sync-walmart-inventory] unmatched brand in master sheet: "${rawBrand}" (sku ${sku}) — skipped`);
       continue;
     }
+    // Name matching alone can't distinguish skinuva from skinuva-ca — see
+    // comment above resolveBrandForSku. Find the real sibling set via
+    // shared SKU PREFIX (not name), then disambiguate by SKU suffix.
+    const siblings = brands.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
 
     out.push({ asin, sku, walmartItemId, brandTabName: matched.tabName });
   }
@@ -586,8 +621,14 @@ async function clearRowsForDate(dateStr) {
       const rows  = await readRows(SHEET_ID, brand.tabName);
       const kept  = rows.filter(r => (r.date || '') !== dateStr);
       if (kept.length !== rows.length) {
-        const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(SHEET_ID, brand.tabName, HEADERS, rowArrays, token);
+        // FIXED 2026-08-14 — same protection as the main write path:
+        // sku re-protected on rewrite, USER_ENTERED so numbers/dates stay
+        // real rather than reverting to forced text on every ?force=true.
+        const rowArrays = kept.map(r => HEADERS.map(h => {
+          const v = r[h] ?? '';
+          return (h === 'sku' && v !== '') ? `'${v}` : v;
+        }));
+        await replaceRows(SHEET_ID, brand.tabName, HEADERS, rowArrays, token, 'USER_ENTERED');
         console.log(`[sync-walmart-inventory] ${brand.id} — cleared ${rows.length - kept.length} existing rows for ${dateStr}`);
       }
     } catch (err) {
