@@ -209,6 +209,23 @@ function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// ADDED 2026-08-14 — shared-SKU-prefix disambiguation (skinuva/skinuva-ca
+// share prefix 'SVA' on purpose). Same pattern used in sync-orders-
+// process.js, sync-revenue-process.js, sync-returns-process.js,
+// sync-sqp-request.js, sync-products.js, and sync-advertising-process.js
+// — kept identical for consistency across the codebase.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
 async function fetchVineByBrand() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
   const resp = await fetch(csvUrl);
@@ -219,19 +236,36 @@ async function fetchVineByBrand() {
   const result = {};
   for (const line of lines) {
     const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+    const sku      = cols[1] || '';
     const rawBrand = (cols[3] || '').trim();
     const rawDate  = (cols[5] || '').trim();
     if (!rawBrand || !rawDate) continue;
 
     const brandNorm = stripAccents(rawBrand.toLowerCase());
-    const matched = brands.find(b =>
+    const nameMatched = brands.find(b =>
       b.active && (
         brandNorm === stripAccents(b.id.toLowerCase()) ||
         brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
         brandNorm.includes(stripAccents(b.id.toLowerCase()))
       )
     );
-    if (!matched) continue;
+    if (!nameMatched) continue;
+    // FIXED 2026-08-14 — same bug as sync-products.js and
+    // sync-advertising-process.js: skinuva-ca shares "skinuva" as a
+    // substring of its own id, so a plain "skinuva" brand-name label in
+    // this master sheet could only ever satisfy skinuva's OWN condition
+    // above — brandNorm.includes('skinuva-ca') is impossible when
+    // brandNorm is just "skinuva" (a shorter string can't contain a
+    // longer one). This one has real dollar consequences: every skinuva
+    // Vine enrollment was being counted (and its $200/month cost
+    // attributed) entirely under plain skinuva, even for genuinely
+    // Canadian-listing enrollments. Disambiguate the real sibling set by
+    // shared SKU PREFIX (not name), then resolve using the SKU's own
+    // "-CA" suffix, same pattern as everywhere else today.
+    const siblings = brands.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
 
     let yy, mm;
     if (/^\d{4,5}$/.test(rawDate)) {
@@ -276,5 +310,4 @@ function parseIntSafe(val) {
   return Math.round(parseFloat(String(val).replace(/,/g, '')) || 0);
 }
 
-function round2(n) { return Math.round((n || 0) * 100) / 100; } 
- 
+function round2(n) { return Math.round((n || 0) * 100) / 100; }
