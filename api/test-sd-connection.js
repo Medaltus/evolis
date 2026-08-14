@@ -72,25 +72,32 @@ module.exports = async (req, res) => {
         configuration: {
           adProduct: 'SPONSORED_DISPLAY',
           groupBy: ['advertiser'],
-          columns: ['campaignName', 'advertisedAsin', 'impressions', 'clicks', 'cost', 'purchases', 'sales', 'viewImpressions', 'viewAttributedSales14d'],
-          reportTypeId: 'sdAdvertisedProduct', // CONFIRMED real by Amazon's own team
+          // CONFIRMED real column names — Amazon's own 400 error on the
+          // first attempt included the full valid-columns list, which is
+          // how these were verified. 'advertisedAsin' doesn't exist for
+          // SD — the real name is 'promotedAsin' (+ 'promotedSku'),
+          // chosen to mirror spAdvertisedProduct's shape as closely as
+          // possible for easier merging into the existing pipeline later.
+          columns: ['campaignName', 'campaignId', 'adGroupName', 'promotedAsin', 'promotedSku', 'impressions', 'clicks', 'cost', 'purchases', 'sales', 'unitsSold'],
+          reportTypeId: 'sdAdvertisedProduct', // CONFIRMED real by Amazon's own team AND by this successful column validation
           timeUnit: 'SUMMARY',
           format: 'GZIP_JSON',
         },
       });
 
-      // UNCONFIRMED report type name — 'sdTargeting' is a guess following
-      // Amazon's naming pattern (SD has no keyword report, per the header
-      // comment above; targeting is its closest equivalent). If this
-      // fails, that's useful information too — check the error body.
+      // reportTypeId 'sdTargeting' CONFIRMED real (Amazon's error was only
+      // about the 'targetingType' column, not the report type itself).
+      // 'targetingType' doesn't exist — targetingText/targetingExpression
+      // are the real targeting-identity columns, confirmed from the same
+      // allowed-values list.
       const targetingReportId = await requestReport(token, profileId, {
         name: `test_sd_targeting_${endDate}`,
         startDate, endDate,
         configuration: {
           adProduct: 'SPONSORED_DISPLAY',
           groupBy: ['targeting'],
-          columns: ['campaignName', 'targetingText', 'targetingType', 'impressions', 'clicks', 'cost', 'purchases', 'sales'],
-          reportTypeId: 'sdTargeting', // UNCONFIRMED — best guess, see header comment
+          columns: ['campaignName', 'campaignId', 'adGroupName', 'targetingText', 'targetingExpression', 'impressions', 'clicks', 'cost', 'purchases', 'sales', 'unitsSold'],
+          reportTypeId: 'sdTargeting',
           timeUnit: 'SUMMARY',
           format: 'GZIP_JSON',
         },
