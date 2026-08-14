@@ -102,25 +102,55 @@ async function buildItemIdToBrandMap() {
   const map = {};
   for (const line of lines) {
     const cols = parseCsvLine(line);
+    const sku = (cols[1] || '').trim();
     const rawBrand = (cols[3] || '').trim();
     const walmartItemId = (cols[8] || '').trim();
     if (!walmartItemId) continue;
 
     const brandNorm = stripAccents(rawBrand.toLowerCase());
-    const matched = brands.find(b =>
+    const nameMatched = brands.find(b =>
       b.active && (
         brandNorm === stripAccents(b.id.toLowerCase()) ||
         brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
         brandNorm.includes(stripAccents(b.id.toLowerCase()))
       )
     );
-    if (matched) map[walmartItemId] = { brandTabName: matched.tabName, brandId: matched.id };
+    if (!nameMatched) continue;
+    // Name matching alone can't distinguish skinuva from skinuva-ca — see
+    // comment above resolveBrandForSku. Disambiguate via the row's own
+    // SKU suffix, even though item_id (not sku) is this map's actual key.
+    const siblings = brands.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
+    map[walmartItemId] = { brandTabName: matched.tabName, brandId: matched.id };
   }
   return map;
 }
 
 function stripAccents(str) {
   return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// ADDED 2026-08-14 — same bug as sync-products.js / sync-walmart-inventory.js:
+// skinuva-ca shares "skinuva" as a substring of its own id, and the
+// master sheet almost certainly labels both US and CA rows the same
+// regardless of marketplace — a plain name match can only ever resolve
+// to skinuva. This map is keyed by item_id (Walmart's own opaque ID, no
+// "-CA" convention of its own), but the SKU is available in the same
+// source row (cols[1]) — used here purely as a disambiguation SIGNAL,
+// not as the map's key. Likely a no-op in practice (nothing suggests
+// skinuva-ca sells on Walmart), applied for consistency.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
 }
 
 // FIXED 2026-08-06 — real incident: the schema I confirmed live listed
@@ -348,7 +378,14 @@ module.exports = async (req, res) => {
   });
 
   // ── Write all 3 sheets ────────────────────────────────────────────────
-  async function writeSheet(sheetId, headers, rowsByBrand, label) {
+  // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+  // forced-text issue found and fixed elsewhere today. textColumns lets
+  // each of the 3 header sets specify its own ID-like columns that must
+  // stay exact text (item_id can look numeric; search_term/keyword are
+  // free text that could coincidentally look numeric too, e.g. someone
+  // searching a UPC) — everything else in the row gets real number/date
+  // treatment under USER_ENTERED.
+  async function writeSheet(sheetId, headers, rowsByBrand, label, textColumns = []) {
     const results = [];
     for (const [tabName, rows] of Object.entries(rowsByBrand)) {
       try {
@@ -389,8 +426,12 @@ module.exports = async (req, res) => {
           return am - bm;
         });
 
-        const outRows = sortedRows.map(r => headers.map(h => r[h] ?? ''));
-        await replaceRows(sheetId, tabName, headers, outRows, token);
+        const textColSet = new Set(textColumns);
+        const outRows = sortedRows.map(r => headers.map(h => {
+          const v = r[h] ?? '';
+          return (textColSet.has(h) && v !== '') ? `'${v}` : v;
+        }));
+        await replaceRows(sheetId, tabName, headers, outRows, token, 'USER_ENTERED');
         results.push({ brand: tabName, status: 'ok', incomingRows: rows.length, totalRows: outRows.length });
       } catch (err) {
         console.error(`[upload-walmart-ads] ${label} ${tabName} failed:`, err.message);
@@ -400,9 +441,9 @@ module.exports = async (req, res) => {
     return results;
   }
 
-  const adOrdersResults   = await writeSheet(SHEET_AD_ORDERS, AD_ORDERS_HEADERS, adOrdersByBrand, 'ad-orders');
-  const advertisingResults = await writeSheet(SHEET_ADVERTISING, ADVERTISING_HEADERS, advertisingByBrand, 'advertising');
-  const searchTermsResults = await writeSheet(SHEET_SEARCH_TERMS, SEARCH_TERMS_HEADERS, searchTermsByBrand, 'search-terms');
+  const adOrdersResults   = await writeSheet(SHEET_AD_ORDERS, AD_ORDERS_HEADERS, adOrdersByBrand, 'ad-orders', ['item_id']);
+  const advertisingResults = await writeSheet(SHEET_ADVERTISING, ADVERTISING_HEADERS, advertisingByBrand, 'advertising'); // no ID-like columns — plain USER_ENTERED is safe
+  const searchTermsResults = await writeSheet(SHEET_SEARCH_TERMS, SEARCH_TERMS_HEADERS, searchTermsByBrand, 'search-terms', ['search_term', 'keyword']);
 
   res.status(200).json({
     ok: true,
