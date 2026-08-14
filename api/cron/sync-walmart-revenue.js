@@ -237,7 +237,13 @@ module.exports = async (req, res) => {
         ];
       });
 
-      await replaceRows(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS, newRows, tok);
+      // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+      // forced-text issue found and fixed on the orders sheet and
+      // Business Report earlier today. No ID-like columns in
+      // REVENUE_HEADERS (nothing resembling order_id/item_id), so a
+      // blanket USER_ENTERED is safe here without needing per-column
+      // text protection.
+      await replaceRows(REVENUE_SHEET_ID, brand.tabName, REVENUE_HEADERS, newRows, tok, 'USER_ENTERED');
       console.log(`[sync-walmart-revenue] ${brand.id} — ${updatedCount} months updated, ${newRows.length} total rows written`);
       results.push({ brand: brand.id, monthsUpdated: updatedCount, totalRows: newRows.length });
 
