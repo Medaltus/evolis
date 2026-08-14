@@ -75,10 +75,21 @@ const LABELS = [
   { label: 'sb_prev', adType: 'SB' },
 ];
 
-// Same brand-matching list as sync-advertising-process.js, kept in sync
-// intentionally — if that list changes, update both places.
+// FIXED 2026-08-14 — this file's own comment already flagged the risk:
+// "kept in sync intentionally — if that list changes, update both
+// places." It hadn't been. Same fix already applied to
+// sync-advertising-process.js's copy of this list: added cosmette
+// (confirmed real campaign names all start with "Cosmette - ") and
+// best-guess skinuva-ca entries (UNCONFIRMED — no Canada ads exist yet
+// per Jaclyn, so these are harmless placeholders until that launches;
+// verify against real campaign names once it does). The coverage check
+// right after this list makes sure a future brand addition can't repeat
+// this same silent gap a third time.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
+  { name: 'skinuva ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
+  { name: 'skinuva-ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
+  { name: 'skinuva canada', tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
   { name: 'the creme shop', tabName: 'creme-shop'     },
   { name: 'cloud cafe',     tabName: 'cloud-cafe'     },
   { name: 'just bjorn',     tabName: 'just-bjorn'     },
@@ -95,7 +106,21 @@ const CAMPAIGN_BRANDS = [
   { name: 'prohibition',    tabName: 'prohibition'    },
   { name: 'skinside seoul', tabName: 'skinside-seoul' },
   { name: 'skinside-seoul', tabName: 'skinside-seoul' },
+  { name: 'cosmette',       tabName: 'cosmette'       },
 ].sort((a, b) => b.name.length - a.name.length);
+
+// Loudly flags any active brand this hand-maintained list has fallen out
+// of sync with, so a future brand addition can't repeat today's silent
+// gap. Runs once per invocation, cheap (brands.js is tiny). Requires
+// config/brands.js — added here since this file didn't import it before.
+const brands = require('../config/brands');
+(function checkCampaignBrandsCoverage() {
+  const coveredTabNames = new Set(CAMPAIGN_BRANDS.map(b => b.tabName));
+  const missing = brands.filter(b => b.active && !coveredTabNames.has(b.tabName));
+  if (missing.length > 0) {
+    console.error(`[sync-ad-search-terms-process] CAMPAIGN_BRANDS is missing ${missing.length} active brand(s): ${missing.map(b => b.id).join(', ')} — their search term data will fall into "unmatched campaign" and never sync until added to CAMPAIGN_BRANDS in this file.`);
+  }
+})();
 
 // Strips accents/diacritics so "évolis", "ÉVOLIS", and "evolis" all match
 // the same way. Lowercasing alone isn't enough — 'évolis'.includes('evolis')
