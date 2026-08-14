@@ -23,15 +23,23 @@
  *      from skinuva, appended to skinuva-ca) with all their existing data
  *      intact, fees/promos included.
  *
- * Identification is by SKU pattern, NOT the marketplace/sales-channel
- * columns — those only exist on rows written after 2026-08-12, so most
- * historical CA orders predate them and would show blank either way.
- * Confirmed pattern from a live sample: SVA0001-CA-SF, SVA0004-CA-SF,
- * SVA0001.1-CA, SVA0003-CA-SF, SVA0010-CA-SF. CA_SKU_PATTERN matches
- * "-CA" immediately followed by "-", ".", or end-of-string, to reduce
- * false-positive risk vs. a bare substring match. Every matched SKU is
- * printed in dry-run output — visually confirm the full list looks right
- * (no unrelated SKU accidentally matching) before running for real.
+ * Identification uses TWO independent signals, matching sync-orders-
+ * process.js's own live filter (updated 2026-08-14 — the first version
+ * of this script only checked the first signal and missed a real,
+ * confirmed-in-production category of rows as a result):
+ *   a) SKU pattern — "-CA"/"-CA-SF"/".1-CA" suffix. CA_SKU_PATTERN matches
+ *      "-CA" immediately followed by "-", ".", or end-of-string.
+ *   b) marketplace column — literal "amazon.ca". Catches orders sold
+ *      through Amazon.ca but fulfilled using a PLAIN, non-suffixed SKU
+ *      (e.g. cross-border fulfillment sharing the same US inventory/SKU —
+ *      consistent with Remote Fulfillment with FBA). Confirmed live:
+ *      order 702-8529886-87, sku "SVA0001" (no CA suffix at all),
+ *      marketplace explicitly "amazon.ca". Only rows written after
+ *      2026-08-12 have this column populated at all — older rows must
+ *      rely on signal (a) alone.
+ * Every matched SKU is printed in dry-run output, split by which signal
+ * caught it — visually confirm the full list looks right before running
+ * for real.
  *
  * Manual:
  *   GET /api/cron/migrate-skinuva-ca?dryRun=true   — report only, no writes
@@ -79,17 +87,34 @@ module.exports = async (req, res) => {
     const keptUsRows       = [];
     const orphansMoved     = [];
     const matchedSkus      = new Set();
+    const matchedByMarketplaceOnly = new Set(); // rows caught ONLY by marketplace field, not SKU pattern — worth a closer look
     let duplicatesRemoved  = 0;
     let feesCarriedForward = 0;
 
     usRows.forEach(r => {
       const sku = r.sku || '';
-      if (!CA_SKU_PATTERN.test(sku)) {
+      // FIXED 2026-08-14 — this only ever checked the SKU suffix pattern,
+      // missing a second real category: orders genuinely sold through
+      // Amazon.ca but using a PLAIN, non-suffixed SKU (e.g. cross-border
+      // fulfillment sharing the same US inventory/SKU — consistent with
+      // Remote Fulfillment with FBA). Confirmed live in production:
+      // order 702-8529886-87, sku "SVA0001" (no -CA suffix at all),
+      // marketplace column explicitly "amazon.ca" — invisible to the
+      // SKU-pattern check alone. sync-orders-process.js's LIVE filter
+      // already checks both signals (SKU pattern first, falls back to
+      // the marketplace/sales-channel field) — this one-time migration
+      // script just hadn't caught up to match that same dual-signal logic.
+      const isCaByPattern = CA_SKU_PATTERN.test(sku);
+      const isCaByMarketplace = (r.marketplace || '').trim().toLowerCase() === 'amazon.ca';
+      if (!isCaByPattern && !isCaByMarketplace) {
         keptUsRows.push(r);
         return;
       }
 
       matchedSkus.add(sku);
+      if (isCaByMarketplace && !isCaByPattern) {
+        matchedByMarketplaceOnly.add(`${sku} (order ${r.order_id})`);
+      }
       const key = `${r.order_id}||${r.sku}`;
       const existingCaRow = caRowsByKey.get(key);
 
@@ -129,6 +154,7 @@ module.exports = async (req, res) => {
         feesCarriedForwardFromDuplicates: feesCarriedForward,
       },
       matchedSkus: [...matchedSkus].sort(),
+      matchedByMarketplaceFieldOnly: [...matchedByMarketplaceOnly].sort(), // plain SKU, no CA suffix — caught via marketplace column instead
     };
 
     if (!dryRun) {
