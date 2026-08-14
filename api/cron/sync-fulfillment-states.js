@@ -8,6 +8,19 @@
  * an accumulating history (matches the original states-refresh.js
  * reference cron's own behavior).
  *
+ * FIXED 2026-08-14 — three changes:
+ *   1. Skips any brand with a null storeId (e.g. skinuva-ca's current
+ *      placeholder entry in _fulfillment_brands.js) before making any
+ *      ShipStation API call — same reasoning as the other two
+ *      fulfillment crons' identical fix today.
+ *   2. replaceRows now specifies valueInputOption=USER_ENTERED (was
+ *      defaulting to RAW) so 'orders' writes as a real number instead of
+ *      forced text.
+ *   3. 'state' (2-letter US state code) is protected with a leading
+ *      apostrophe as cheap defensive insurance — no confirmed risk, but
+ *      costs nothing given today's Shopify-revenue formatting lesson,
+ *      and this cron writes to this sheet unconditionally every run.
+ *
  * Columns: state, orders, refreshed_at, range
  *
  * Manual:
@@ -38,6 +51,13 @@ module.exports = async (req, res) => {
   const results = [];
 
   for (const brand of FULFILLMENT_BRANDS) {
+    // ADDED 2026-08-14 — see file header. Never build a ShipStation call
+    // for a brand with no confirmed store yet.
+    if (!brand.storeId) {
+      results.push({ brand: brand.id, status: 'skipped', reason: 'no storeId configured yet' });
+      continue;
+    }
+
     try {
       const byState = {};
       let page = 1, fetched = 0, total = null;
@@ -69,10 +89,10 @@ module.exports = async (req, res) => {
         await sleep(400);
       }
 
-      const rows = Object.entries(byState).sort((a, b) => b[1] - a[1]).map(([state, orders]) => [state, orders, refreshedAt, range]);
+      const rows = Object.entries(byState).sort((a, b) => b[1] - a[1]).map(([state, orders]) => [`'${state}`, orders, refreshedAt, range]);
 
       const token = await ensureTab(sheets.fulfillmentStates, brand.tabName, HEADERS);
-      await replaceRows(sheets.fulfillmentStates, brand.tabName, HEADERS, rows, token);
+      await replaceRows(sheets.fulfillmentStates, brand.tabName, HEADERS, rows, token, 'USER_ENTERED');
 
       console.log(`[sync-fulfillment-states] ${brand.id} — ${fetched} orders, ${Object.keys(byState).length} states`);
       results.push({ brand: brand.id, total: fetched, states: Object.keys(byState).length });
