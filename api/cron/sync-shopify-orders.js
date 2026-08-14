@@ -236,8 +236,19 @@ module.exports = async (req, res) => {
     existingByKey.set(key, item); // overwrite if present, insert if not
   });
 
-  const outputRows = Array.from(existingByKey.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-  await replaceRows(SHEET_ID, TAB_NAME, HEADERS, outputRows, token);
+  // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+  // forced-text issue found and fixed across several other files today.
+  // order_id/sku/shopify_variant_id/shopify_product_id/shopify_item_id
+  // are protected with a leading apostrophe (Sheets' own force-text
+  // convention under USER_ENTERED) — the Shopify GIDs in particular are
+  // long numeric-looking IDs at real risk of scientific-notation
+  // conversion or precision loss if treated as real numbers.
+  const TEXT_PROTECTED_COLS = new Set(['order_id', 'sku', 'shopify_variant_id', 'shopify_product_id', 'shopify_item_id']);
+  const outputRows = Array.from(existingByKey.values()).map(r => HEADERS.map(h => {
+    const v = r[h] ?? '';
+    return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+  }));
+  await replaceRows(SHEET_ID, TAB_NAME, HEADERS, outputRows, token, 'USER_ENTERED');
   console.log(`[sync-shopify-orders] ${newCount} new rows, ${updatedCount} existing rows refreshed, ${outputRows.length} total`);
 
   return res.status(200).json({
