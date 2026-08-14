@@ -124,7 +124,25 @@ module.exports = async (req, res) => {
 
       let deductionsApplied = 0;
       const deductionDetails = [];
+      // CORRECTED 2026-08-14, second pass — per Jaclyn: a single Vine
+      // ENROLLMENT allocates up to 30 UNITS (not 1) — each of up to 30
+      // Vine reviewers claims exactly 1 unit, and claims trickle in over
+      // up to 60 days. Capping at 1 unit (the previous fix) was ALSO
+      // wrong — it would silently under-correct any enrollment where
+      // more than 1 reviewer had already claimed by report time, which
+      // is the normal case. The real constraint is a CUMULATIVE budget of
+      // 30 units total, ever, per ASIN's single enrollment — tracked here
+      // per ASIN across however many months this run touches, so the
+      // total deducted for one ASIN can never exceed 30 even if claims
+      // land across 2-3 separate months in the same run.
+      const remainingVineBudgetByAsin = new Map(); // asin -> units still available to deduct this run (starts at 30)
 
+      // NOTE: relies on rawRows being in ascending (year, month) order so
+      // earlier months are processed before later ones, and the budget is
+      // drawn down in chronological order. Holds today because
+      // sync-business-report-process.js explicitly sorts by
+      // (year, month, asin) before every write — if that sort is ever
+      // removed, this would need to sort rawRows itself first.
       const outRows = (rawRows || []).map(r => {
         const asin = (r.ASIN || '').toUpperCase();
         const y = parseInt(r.YEAR, 10);
@@ -138,27 +156,50 @@ module.exports = async (req, res) => {
 
         if (asin && month) {
           const vineInfo = vineInfoByAsin.get(asin);
-          const eligibleForVine = vineInfo?.enrollmentMonth && [vineInfo.enrollmentMonth, addOneMonth(vineInfo.enrollmentMonth)].includes(month);
+          // WIDENED 2026-08-14 — was [enrollment, +1 month], now
+          // [enrollment, +1, +2] to cover the full ~60-day claim window
+          // Jaclyn described. Combined with this cron running daily
+          // against a rolling 2-month target_months window, this
+          // correctly catches the whole trickle-in period as long as the
+          // cron doesn't go an extended stretch without running — see
+          // this file's header comment for the month-by-month timeline
+          // that confirms this.
+          const eligibleForVine = vineInfo?.enrollmentMonth && [
+            vineInfo.enrollmentMonth,
+            addOneMonth(vineInfo.enrollmentMonth),
+            addOneMonth(addOneMonth(vineInfo.enrollmentMonth)),
+          ].includes(month);
 
           if (eligibleForVine) {
-            const orderUnits = orderUnitsByAsinMonth.get(`${asin}||${month}`) ?? 0;
-            const delta = rawUnits - orderUnits;
-            // Only trust a POSITIVE delta (business report shows MORE units
-            // than the Vine-clean orders sheet) as genuine Vine
-            // contamination. A zero or negative delta means this month's
-            // numbers already agree (or the orders sheet just hasn't
-            // caught up yet) — nothing to correct, don't guess.
-            if (delta > 0) {
-              vineUnitsDeducted = delta;
-              vineSalesDeducted = round2(vineInfo.price * delta);
-              deductionsApplied++;
-              if (debugMode) {
-                deductionDetails.push({
-                  asin, sku: r.SKU || '', month,
-                  enrollmentMonth: vineInfo.enrollmentMonth,
-                  rawUnits, orderUnits, delta,
-                  price: vineInfo.price, salesDeducted: vineSalesDeducted,
-                });
+            if (!remainingVineBudgetByAsin.has(asin)) remainingVineBudgetByAsin.set(asin, 30);
+            const remainingBudget = remainingVineBudgetByAsin.get(asin);
+
+            if (remainingBudget > 0) {
+              const orderUnits = orderUnitsByAsinMonth.get(`${asin}||${month}`) ?? 0;
+              const delta = rawUnits - orderUnits;
+              if (delta > 0) {
+                // Deduct whatever this month's delta claims, but never
+                // more than what's left of this ASIN's 30-unit budget —
+                // protects against trusting an implausibly large delta
+                // (e.g. an unrelated orders-sheet data gap) as if it were
+                // all Vine, the same failure mode that produced the
+                // 24-30 unit over-deductions caught in testing.
+                const unitsThisMonth = Math.min(delta, remainingBudget);
+                vineUnitsDeducted = unitsThisMonth;
+                vineSalesDeducted = round2(vineInfo.price * unitsThisMonth);
+                remainingVineBudgetByAsin.set(asin, remainingBudget - unitsThisMonth);
+                deductionsApplied++;
+                if (debugMode) {
+                  deductionDetails.push({
+                    asin, sku: r.SKU || '', month,
+                    enrollmentMonth: vineInfo.enrollmentMonth,
+                    rawUnits, orderUnits, delta,
+                    unitsDeducted: unitsThisMonth,
+                    remainingBudgetAfter: remainingBudget - unitsThisMonth,
+                    price: vineInfo.price, salesDeducted: vineSalesDeducted,
+                    note: delta > unitsThisMonth ? `delta was ${delta}, only ${unitsThisMonth} deducted — remainder of this ASIN's 30-unit Vine budget already used up in an earlier month this run, OR delta itself exceeds what Vine could ever explain` : undefined,
+                  });
+                }
               }
             }
           }
