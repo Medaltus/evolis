@@ -97,7 +97,7 @@
  */
 
 const { spRequest }                                     = require('../_spauth');
-const { ensureTab, readRows, replaceRows, appendRows }  = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, updateRange } = require('../config/_sheets_client');
 const brands                                            = require('../config/brands');
 const sheets                                            = require('../config/sheets');
 const { sendCronFailureAlert }                          = require('../_alerts');
@@ -179,6 +179,19 @@ module.exports = async (req, res) => {
   }
 
   const force = req.query.force === 'true';
+  // ADDED 2026-08-14 — total SKU volume across all brands grew enough
+  // (Cosmette + skinuva-ca added today, dearcloud/creme-shop already
+  // large) that splitting into two scheduled invocations, each covering
+  // half the brands (config/brands.js's productsSyncGroup field), keeps
+  // each run comfortably within its time budget. Every _meta key below is
+  // namespaced by group so two groups running on overlapping schedules
+  // can NEVER stomp on each other's cursor/completion state — critical,
+  // since they'd otherwise both read/write the exact same
+  // products_log_cursor key and corrupt each other's progress tracking.
+  // Omitting ?group= entirely still works exactly as before (all brands,
+  // unsuffixed meta keys) — useful for manual/debug/backfill runs.
+  const group = (req.query.group || '').trim().toUpperCase() || null;
+  const metaKey = base => group ? `${base}_group${group}` : base;
 
   let meta;
   try {
@@ -188,23 +201,32 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
+  // Brands belonging to this run's group (or every active brand, if no
+  // group was specified) — used both to scope ?force=true's clear step
+  // and to filter the master SKU list below.
+  const scopedBrands = brands.filter(b => b.active && (!group || b.productsSyncGroup === group));
+  if (group && scopedBrands.length === 0) {
+    return res.status(400).json({ error: `No active brand has productsSyncGroup="${group}" — check config/brands.js` });
+  }
+
   let cursor = 0;
   if (force) {
-    // Remove any rows already written for TODAY (across all brand tabs)
-    // before reprocessing — this is an "overwrite today" operation, not a
-    // duplicate-creating re-append. Every other day's history is untouched.
+    // Remove any rows already written for TODAY (across this run's scoped
+    // brands only — a group-scoped force run must never touch the OTHER
+    // group's brands) before reprocessing. Every other day's history is
+    // untouched.
     try {
-      await clearRowsForDate(today);
+      await clearRowsForDate(today, scopedBrands);
     } catch (err) {
       await sendCronFailureAlert('sync-products', err.message, { Stage: "clearing today's rows for ?force=true" });
       return res.status(500).json({ error: 'Failed to clear today\'s existing rows before forced re-run', detail: err.message });
     }
-    console.log(`[sync-products] force=true — cleared today's (${today}) existing rows, restarting from cursor 0`);
-  } else if (meta.products_log_date === today) {
-    if (meta.products_log_complete === 'true') {
-      return res.status(200).json({ message: `Already completed for ${today}. Pass ?force=true to overwrite today's rows and reprocess (e.g. after a column/logic change).` });
+    console.log(`[sync-products] force=true${group ? ` (group ${group})` : ''} — cleared today's (${today}) existing rows, restarting from cursor 0`);
+  } else if (meta[metaKey('products_log_date')] === today) {
+    if (meta[metaKey('products_log_complete')] === 'true') {
+      return res.status(200).json({ message: `Already completed for ${today}${group ? ` (group ${group})` : ''}. Pass ?force=true to overwrite today's rows and reprocess (e.g. after a column/logic change).` });
     }
-    cursor = parseInt(meta.products_log_cursor || '0', 10) || 0;
+    cursor = parseInt(meta[metaKey('products_log_cursor')] || '0', 10) || 0;
   }
   // else: new day — cursor resets to 0, starting a fresh daily log
 
@@ -214,6 +236,11 @@ module.exports = async (req, res) => {
   } catch (err) {
     await sendCronFailureAlert('sync-products', err.message, { Stage: 'fetching master SKU list' });
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
+  }
+
+  if (group) {
+    const scopedTabNames = new Set(scopedBrands.map(b => b.tabName));
+    masterList = masterList.filter(item => scopedTabNames.has(item.brandTabName));
   }
 
   const totalCount = masterList.length;
@@ -287,7 +314,23 @@ module.exports = async (req, res) => {
 
       const row = await buildProductRow(item, today, nowIso, rowNumber, units90d);
 
-      await appendRows(sheets.products, item.brandTabName, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
+      // FIXED 2026-08-14 — this used to call appendRows(), which under the
+      // hood uses Google's values:append endpoint with
+      // insertDataOption=INSERT_ROWS. That endpoint lets SHEETS decide
+      // where the row actually lands — but the formulas in buildProductRow
+      // (total_quantity, days_of_inventory, qty_on_hand) hardcode this
+      // file's OWN `rowNumber` counter, computed once per brand and just
+      // incremented in memory. Those two numbers were never guaranteed to
+      // match — if Sheets' own table-detection ever placed a row somewhere
+      // other than exactly where this file assumed (a stray blank row, a
+      // formatting quirk, anything), the formulas would silently reference
+      // the WRONG row and compute garbage with no error thrown. Writing to
+      // an EXPLICIT range instead removes the ambiguity entirely: the row
+      // number embedded in the formula strings IS the literal range being
+      // written to, always, by construction — not two systems that are
+      // merely supposed to agree.
+      const range = `${item.brandTabName}!A${rowNumber}:${COL_QTY_ON_HAND}${rowNumber}`;
+      await updateRange(sheets.products, range, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
       tabNextRow[item.brandTabName]++;
       processed++;
     } catch (err) {
@@ -300,9 +343,9 @@ module.exports = async (req, res) => {
   const complete = i >= masterList.length;
   try {
     await writeMeta({
-      products_log_date:     today,
-      products_log_cursor:   String(i),
-      products_log_complete: complete ? 'true' : 'false',
+      [metaKey('products_log_date')]:     today,
+      [metaKey('products_log_cursor')]:   String(i),
+      [metaKey('products_log_complete')]: complete ? 'true' : 'false',
     });
   } catch (err) {
     console.warn('[sync-products] failed to update _meta:', err.message);
@@ -310,19 +353,20 @@ module.exports = async (req, res) => {
     // can't tell where today's pass left off. Given the whole reason this
     // schedule was redesigned was a silent cursor problem, a failure here
     // gets an alert every time, not just a log line.
-    await sendCronFailureAlert('sync-products', err.message, { Stage: 'persisting cursor to _meta', Cursor: String(i), 'Total SKUs': String(totalCount) });
+    await sendCronFailureAlert('sync-products', err.message, { Stage: 'persisting cursor to _meta', Group: group || '(none)', Cursor: String(i), 'Total SKUs': String(totalCount) });
   }
 
   if (failedSkus.length > 0) {
     await sendCronFailureAlert(
       'sync-products',
       failedSkus.slice(0, 20).join('\n') + (failedSkus.length > 20 ? `\n...and ${failedSkus.length - 20} more` : ''),
-      { 'SKUs failed this run': String(failedSkus.length) }
+      { 'SKUs failed this run': String(failedSkus.length), Group: group || '(none)' }
     );
   }
 
   res.status(200).json({
     date: today,
+    group: group || null,
     processedThisRun: processed,
     cursor: i,
     totalCount,
@@ -609,11 +653,14 @@ async function fetchBrandWalmart90dUnits(brandTabName) {
   return map;
 }
 
-// Removes every row matching `dateStr` from every active brand's tab,
-// leaving all other dates' history untouched. Used by ?force=true to
-// support "overwrite today" without duplicating rows or losing history.
-async function clearRowsForDate(dateStr) {
-  for (const brand of brands.filter(b => b.active)) {
+// Removes every row matching `dateStr` from every brand tab in `brandList`
+// (defaults to every active brand), leaving all other dates' history
+// untouched. Used by ?force=true to support "overwrite today" without
+// duplicating rows or losing history. ADDED 2026-08-14: accepts an
+// explicit brand list so a group-scoped ?force=true run only clears that
+// group's brands, never the other group's.
+async function clearRowsForDate(dateStr, brandList = brands.filter(b => b.active)) {
+  for (const brand of brandList) {
     try {
       const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
       const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA'); // preserve formula text, not computed values
