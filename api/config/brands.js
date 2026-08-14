@@ -47,6 +47,7 @@
 module.exports = [
   {
     id:              'evolis',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'evolis',
     skuPrefix:       'EVO',
     displayName:     'Évolis',
@@ -55,6 +56,7 @@ module.exports = [
   },
   {
     id:              'skinuva',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'skinuva',
     skuPrefix:       'SVA',
     displayName:     'Skinuva',
@@ -72,6 +74,7 @@ module.exports = [
   },
   {
     id:              'skinuva-ca',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'skinuva-ca',
     skuPrefix:       'SVA',
     displayName:     'Skinuva (Canada)',
@@ -93,6 +96,7 @@ module.exports = [
   },
   {
     id:              'dearcloud',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'dearcloud',
     skuPrefix:       'DEC',
     displayName:     'dearcloud',
@@ -101,6 +105,7 @@ module.exports = [
   },
   {
     id:              'creme-shop',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'creme-shop',
     skuPrefix:       'CRE',
     displayName:     'The Crème Shop',
@@ -109,6 +114,7 @@ module.exports = [
   },
   {
     id:              'cloud-cafe',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'cloud-cafe',
     skuPrefix:       'CLC',
     displayName:     'Cloud Cafe',
@@ -117,6 +123,7 @@ module.exports = [
   },
   {
     id:              'miguard',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'miguard',
     skuPrefix:       'MIG',
     displayName:     'MiGuard',
@@ -125,6 +132,7 @@ module.exports = [
   },
   {
     id:              'cimeosil',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'cimeosil',
     skuPrefix:       'CIM',
     displayName:     'Cimeosil',
@@ -142,6 +150,7 @@ module.exports = [
   },
   {
     id:              'just-bjorn',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'just-bjorn',
     skuPrefix:       'JBJ',
     displayName:     'Just Bjorn',
@@ -150,6 +159,7 @@ module.exports = [
   },
   {
     id:              'amala',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'amala',
     skuPrefix:       'ALA',
     displayName:     'Amala',
@@ -158,6 +168,7 @@ module.exports = [
   },
   {
     id:              'collagelee',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'collagelee',
     skuPrefix:       'COL',
     displayName:     'Collagelee',
@@ -166,6 +177,7 @@ module.exports = [
   },
   {
     id:              'hillside',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'hillside',
     skuPrefix:       'HIL',
     displayName:     'Hillside',
@@ -174,6 +186,7 @@ module.exports = [
   },
   {
     id:              'prohibition',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'prohibition',
     skuPrefix:       'PRB',
     displayName:     'Prohibition',
@@ -182,6 +195,7 @@ module.exports = [
   },
   {
     id:              'eraclea',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'eraclea',
     skuPrefix:       'ERA',
     displayName:     'Eraclea',
@@ -190,6 +204,7 @@ module.exports = [
   },
   {
     id:              'skinside-seoul',
+    productsSyncGroup: 'B', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'skinside-seoul',
     skuPrefix:       'SSS',
     displayName:     'skinside SEOUL',
@@ -198,6 +213,7 @@ module.exports = [
   },
   {
     id:              'pbj',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'pbj',
     skuPrefix:       'PBJ',
     displayName:     'PB & Jay',
@@ -206,6 +222,7 @@ module.exports = [
   },
   {
     id:              'cosmette',
+    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
     tabName:         'cosmette',
     skuPrefix:       'COS',
     displayName:     'Cosmette',
