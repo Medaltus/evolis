@@ -76,9 +76,27 @@ const HEADERS = [
   'return_status', 'event_tag', 'return_date', 'brand', 'last_updated',
 ];
 
+// ADDED 2026-08-14 — same fix as sync-walmart-orders.js: skinuva-ca
+// shares skinuva's exact SKU prefix ('SVA') on purpose, and no
+// marketplace/channel field exists anywhere in Walmart's data model to
+// fall back on — the SKU's own "-CA" suffix is the only signal available.
+// Likely a no-op in practice (nothing suggests skinuva-ca has any
+// Walmart presence), but costs nothing to apply defensively for
+// consistency with every other brand-matching cron fixed today.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
 function identifyBrand(sku) {
   const upper = (sku || '').toUpperCase();
-  return brands.find(b => b.active && upper.startsWith(b.skuPrefix.toUpperCase())) || null;
+  const candidates = brands.filter(b => b.active && upper.startsWith(b.skuPrefix.toUpperCase()));
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const isCa = CA_SKU_PATTERN.test(upper);
+  if (isCa) {
+    const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+    if (caBrand) return caBrand;
+  }
+  return candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com') || candidates[0];
 }
 
 module.exports = async (req, res) => {
@@ -184,7 +202,14 @@ module.exports = async (req, res) => {
     }
 
     const results = [];
+    // ADDED 2026-08-14 — same quota-pacing fix applied across every other
+    // per-brand loop today.
+    let brandIndex = 0;
+
     for (const [tabName, { brand, items }] of Object.entries(byBrand)) {
+      if (brandIndex > 0) await sleep(3500);
+      brandIndex++;
+
       try {
         const token2 = await ensureTab(sheets.walmartReturns, tabName, HEADERS);
         const existingRows = await readRows(sheets.walmartReturns, tabName);
@@ -192,17 +217,24 @@ module.exports = async (req, res) => {
           existingRows.map(r => `${r.return_order_id}||${r.sku}`).filter(k => k !== '||')
         );
 
+        // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+        // forced-text issue found and fixed elsewhere today. quantity/
+        // refund_amount now write as real numbers. return_order_id/
+        // order_id/sku are protected with a leading apostrophe (Sheets'
+        // own force-text convention under USER_ENTERED) since these can
+        // look numeric and risk reinterpretation or lost leading zeros.
+        const protect = v => (v !== '' && v != null) ? `'${v}` : v;
         const newRows = items
           .filter(item => !existingKeys.has(`${item.return_order_id}||${item.sku}`))
           .map(item => [
-            item.return_order_id, item.order_id, item.sku, item.quantity,
+            protect(item.return_order_id), protect(item.order_id), protect(item.sku), item.quantity,
             item.refund_amount, item.return_status, item.event_tag,
             item.return_date, brand.id, item.last_updated,
           ]);
 
         const dupCount = items.length - newRows.length;
         if (newRows.length > 0) {
-          await appendRows(sheets.walmartReturns, tabName, newRows, token2);
+          await appendRows(sheets.walmartReturns, tabName, newRows, token2, 'USER_ENTERED');
           console.log(`[sync-walmart-returns] ${tabName} — wrote ${newRows.length} rows (${dupCount} duplicates skipped)`);
         }
         results.push({ brand: brand.id, rows: newRows.length, skipped: dupCount });
@@ -368,3 +400,4 @@ function wmRequest(method, path, token) {
 }
 
 const round2 = n => Math.round((n || 0) * 100) / 100;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
