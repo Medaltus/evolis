@@ -18,6 +18,13 @@
  *
  * The ad_backfill=true flag in _meta tells sync-advertising-process to
  * append rows rather than replace, so historical months aren't overwritten.
+ * LIMITATION, not yet relevant (2026-08-14): discoverProfileId() below
+ * only ever looks for a countryCode==='US' Amazon Ads profile. skinuva-ca
+ * doesn't have ads set up yet (per Jaclyn), so this is correct for
+ * everything backfillable today — but whenever Canadian ads DO launch,
+ * this tool has no way to reach a Canadian ad profile at all and will
+ * need a real update then (likely a ?marketplace= param or similar),
+ * not a speculative guess added now for a profile that doesn't exist yet.
  */
 
 const { getAdToken }                      = require('../_spauth');
@@ -78,6 +85,13 @@ module.exports = async (req, res) => {
 
     let summaryReportId = null;
     try {
+      // ADDED 2026-08-14 — small pacing gap before the second report
+      // request. Not fixing an observed failure — the existing 429-retry
+      // logic already handles genuine throttling — but every other file
+      // in this codebase that fires sequential API calls paces them
+      // proactively rather than relying solely on reactive retry, and
+      // there's no reason for this one to be the exception.
+      await sleep(1200);
       summaryReportId = await requestReportWithRetry(token, profileId, 'spCampaigns', 'SPONSORED_PRODUCTS',
         { startDate, endDate },
         ['campaign'],
