@@ -40,7 +40,7 @@
  *     → returns real column names + first 5 rows of each report, raw
  */
 
-const { getAdToken } = require('../_spauth');
+const { getAdToken } = require('./_spauth');
 const https          = require('https');
 
 const AD_API_HOST = 'advertising-api.amazon.com';
