@@ -19,6 +19,16 @@
  * use it first, same as before, since the join logic is still real
  * business logic worth eyeballing against live data before trusting.
  *
+ * FIXED 2026-08-14 — two changes:
+ *   1. Skips any brand with a null storeId (e.g. skinuva-ca's current
+ *      placeholder entry in _fulfillment_brands.js) before making any
+ *      ShipStation API call — same reasoning as
+ *      sync-fulfillment-daily-shipments.js's identical fix.
+ *   2. replaceRows now specifies valueInputOption=USER_ENTERED (was
+ *      defaulting to RAW) so 'value' writes as a real number instead of
+ *      forced text. 'metric'/'brand' are plain text labels, unaffected
+ *      either way.
+ *
  * Sheet: SHEET_FULFILLMENT_DAILY_SHIPMENTS, tab "_kpis".
  * Columns: metric, brand, value, updated_at
  *
@@ -60,6 +70,13 @@ module.exports = async (req, res) => {
   const nowIso = new Date().toISOString();
 
   for (const brand of FULFILLMENT_BRANDS) {
+    // ADDED 2026-08-14 — see file header. Never build a ShipStation call
+    // for a brand with no confirmed store yet.
+    if (!brand.storeId) {
+      if (debug) debugOut.push({ brand: brand.id, status: 'skipped', reason: 'no storeId configured yet' });
+      continue;
+    }
+
     try {
       const shippedCount30d = await countShipments(brand.storeId, fmt(d30), fmt(now));
       const shipments7d = await fetchAllShipments(brand.storeId, fmt(d7), fmt(now));
@@ -100,11 +117,6 @@ module.exports = async (req, res) => {
       await sleep(300);
     } catch (err) {
       console.error(`[sync-fulfillment-kpis] ${brand.id} failed:`, err.message);
-      // Previously only recorded when debug=true — meaning a per-brand
-      // failure in a real scheduled run left that brand's rows silently
-      // missing from _kpis with no record anywhere except a Vercel log
-      // line nobody was watching. Tracking failedBrands unconditionally now
-      // so a real run still surfaces it.
       failedBrands.push({ brand: brand.id, error: err.message });
       if (debug) debugOut.push({ brand: brand.id, error: err.message });
     }
@@ -128,7 +140,7 @@ module.exports = async (req, res) => {
 
   try {
     const token = await ensureTab(sheets.fulfillmentDailyShipments, KPI_TAB, HEADERS);
-    await replaceRows(sheets.fulfillmentDailyShipments, KPI_TAB, HEADERS, rows, token);
+    await replaceRows(sheets.fulfillmentDailyShipments, KPI_TAB, HEADERS, rows, token, 'USER_ENTERED');
     console.log(`[sync-fulfillment-kpis] wrote ${rows.length} rows across ${FULFILLMENT_BRANDS.length} brands`);
     res.status(200).json({ rowsWritten: rows.length, brands: FULFILLMENT_BRANDS.map(b => b.id) });
   } catch (err) {
