@@ -11,7 +11,7 @@
  * more reliable, since it's filtered server-side by ShipStation itself
  * rather than fetched-then-filtered).
  *
- * ONLY these 8 brands are here — NOT the full 15+HighOnLove brand list
+ * ONLY these brands are here — NOT the full 15+HighOnLove brand list
  * used elsewhere in this project (config/brands.js). Cross-referencing
  * the full GET /stores response against every brand name turned up no
  * store at all for dearcloud, creme-shop, cloud-cafe, cimeosil, amala,
@@ -19,6 +19,24 @@
  * certainly Amazon-FBA-only, with no separate DTC shipping running
  * through ShipStation. There's nothing for this page to show for them,
  * so no empty placeholder tabs were created for them here.
+ *
+ * cosmette: confirmed 2026-08-14 per Jaclyn — no fulfillment through
+ * ShipStation today, may start later. Deliberately left OUT of this list
+ * for now (unlike skinuva-ca below) since there's no current or planned
+ * near-term need — add it the same way as skinuva-ca, below, whenever
+ * that changes.
+ *
+ * skinuva-ca: added 2026-08-14 per Jaclyn — no confirmed ShipStation
+ * store today (added to config/brands.js on 2026-08-14, after this
+ * file's 2026-07-20 store cross-reference, so it was never actually
+ * checked the way the 8 excluded brands above were). storeId is
+ * deliberately `null` as a placeholder in case international shipping
+ * starts — NEVER used directly in a ShipStation API call. All three
+ * fulfillment crons explicitly skip any brand with a null storeId before
+ * building any API request, so this entry existing here has zero effect
+ * until a real storeId is filled in. When that happens: replace `null`
+ * below with the real numeric storeId (same format as every other entry)
+ * and no other code changes are needed anywhere.
  *
  * HighOnLove specifically: storeId 86711 is the manual ShipStation store
  * named "HighonLove Website" — NOT storeId 95134 (a Shopify store also
@@ -29,14 +47,15 @@
  */
 
 const FULFILLMENT_BRANDS = [
-  { id: 'eraclea',     tabName: 'eraclea',     storeId: 95243 },
-  { id: 'evolis',      tabName: 'evolis',      storeId: 82698 },
+  { id: 'eraclea',      tabName: 'eraclea',      storeId: 95243 },
+  { id: 'evolis',       tabName: 'evolis',       storeId: 82698 },
   { id: 'high-on-love', tabName: 'high-on-love', storeId: 86711 },
-  { id: 'hillside',    tabName: 'hillside',    storeId: 86113 },
-  { id: 'just-bjorn',  tabName: 'just-bjorn',  storeId: 85892 },
-  { id: 'miguard',     tabName: 'miguard',     storeId: 81823 },
-  { id: 'prohibition', tabName: 'prohibition', storeId: 86492 },
-  { id: 'skinuva',     tabName: 'skinuva',     storeId: 68797 },
+  { id: 'hillside',     tabName: 'hillside',     storeId: 86113 },
+  { id: 'just-bjorn',   tabName: 'just-bjorn',   storeId: 85892 },
+  { id: 'miguard',      tabName: 'miguard',      storeId: 81823 },
+  { id: 'prohibition',  tabName: 'prohibition',  storeId: 86492 },
+  { id: 'skinuva',      tabName: 'skinuva',      storeId: 68797 },
+  { id: 'skinuva-ca',   tabName: 'skinuva-ca',   storeId: null }, // placeholder — see file header. Never used in an API call until filled in.
 ];
 
 module.exports = { FULFILLMENT_BRANDS };
