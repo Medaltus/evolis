@@ -4,7 +4,7 @@
  * a direct &storeId= filter on /shipments (see _fulfillment_brands.js
  * for why this is simpler and more reliable than SKU matching).
  *
- * Sheet: SHEET_FULFILLMENT_DAILY_SHIPMENTS, one tab per brand (the 8
+ * Sheet: SHEET_FULFILLMENT_DAILY_SHIPMENTS, one tab per brand (the
  * confirmed brands in _fulfillment_brands.js only).
  * Columns: date, orders_shipped, last_updated
  *
@@ -22,6 +22,18 @@
  * writes everything accumulated so far and reports exactly which
  * brand/date combos didn't finish, so a second call can pick up cleanly
  * rather than silently losing partial progress.
+ *
+ * FIXED 2026-08-14 — two changes:
+ *   1. Skips any brand with a null storeId (e.g. skinuva-ca's current
+ *      placeholder entry in _fulfillment_brands.js) BEFORE building any
+ *      ShipStation API call — a null storeId string-interpolated into a
+ *      query param could either error out or, worse, be silently
+ *      ignored by the API and return unfiltered data across every store.
+ *   2. replaceRows now specifies valueInputOption=USER_ENTERED (was
+ *      defaulting to RAW) so 'date' and 'orders_shipped' write as real
+ *      dates/numbers instead of forced text — same fix applied across
+ *      several other files today. No ID-like columns here, so no
+ *      per-column text protection is needed.
  *
  * Manual / single-day backfill:
  *   GET /api/cron/sync-fulfillment-daily-shipments?date=YYYY-MM-DD
@@ -88,6 +100,13 @@ module.exports = async (req, res) => {
     for (const brand of FULFILLMENT_BRANDS) {
       if (Date.now() - startTime > TIME_BUDGET_MS) { timedOut = true; break; }
 
+      // ADDED 2026-08-14 — see file header. Never build a ShipStation
+      // call for a brand with no confirmed store yet.
+      if (!brand.storeId) {
+        results.push({ brand: brand.id, status: 'skipped', reason: 'no storeId configured yet' });
+        continue;
+      }
+
       try {
         const token = await ensureTab(sheets.fulfillmentDailyShipments, brand.tabName, HEADERS);
         const existing = await readRows(sheets.fulfillmentDailyShipments, brand.tabName);
@@ -110,7 +129,7 @@ module.exports = async (req, res) => {
           await sleep(300);
         }
 
-        await replaceRows(sheets.fulfillmentDailyShipments, brand.tabName, HEADERS, rows, token);
+        await replaceRows(sheets.fulfillmentDailyShipments, brand.tabName, HEADERS, rows, token, 'USER_ENTERED');
         if (brandTimedOut) brandResult.note = 'Time budget hit mid-brand — re-run the same call to pick up remaining dates for this brand.';
         results.push(brandResult);
       } catch (err) {
