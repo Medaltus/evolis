@@ -59,9 +59,33 @@ brands.filter(b => b.active).forEach(b => {
   SKU_PREFIX_MAP[b.skuPrefix.toUpperCase()] = b;
 });
 
+// ADDED 2026-08-14 — skinuva-ca (config/brands.js) shares skinuva's exact
+// SKU prefix ('SVA') on purpose. Unlike the Amazon crons, there is NO
+// marketplace/channel field anywhere in Walmart's order data model to
+// fall back on (confirmed — searched this whole file, only WM_HOST
+// matches "marketplace" as a substring) — the SKU's own "-CA" suffix is
+// the only signal available here. This is likely a no-op in practice —
+// nothing so far suggests skinuva-ca has any Walmart presence at all —
+// but costs nothing to apply defensively and keeps this file consistent
+// with every other brand-matching cron fixed today, in case that ever
+// changes.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
 function identifyBrand(sku) {
   const upper = (sku || '').toUpperCase();
-  return brands.find(b => b.active && upper.startsWith(b.skuPrefix.toUpperCase())) || null;
+  const candidates = brands.filter(b => b.active && upper.startsWith(b.skuPrefix.toUpperCase()));
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const isCa = CA_SKU_PATTERN.test(upper);
+  if (isCa) {
+    const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+    if (caBrand) return caBrand;
+  }
+  // No CA suffix, or no matching sibling found — default to the
+  // Amazon.com-labeled sibling (or just the first candidate if neither
+  // is explicitly labeled), same fallback convention used everywhere else.
+  return candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com') || candidates[0];
 }
 
 module.exports = async (req, res) => {
@@ -204,8 +228,16 @@ module.exports = async (req, res) => {
     }
 
     const results = [];
+    // ADDED 2026-08-14 — same fix as sync-walmart-revenue.js and several
+    // Amazon-side crons today: this loop does ensureTab+readRows+
+    // replaceRows per brand with zero pacing between brands — same
+    // quota-risk pattern already found and fixed elsewhere.
+    let brandIndex = 0;
 
     for (const [tabName, { brand, items }] of Object.entries(byBrand)) {
+      if (brandIndex > 0) await sleep(3500);
+      brandIndex++;
+
       try {
         const token2       = await ensureTab(SHEET_ID, tabName, HEADERS);
         const existingRows = await readRows(SHEET_ID, tabName);
@@ -257,8 +289,22 @@ module.exports = async (req, res) => {
           });
         });
 
-        const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token2);
+        // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+        // forced-text issue found and fixed on the orders sheet and
+        // Business Report earlier today. Real numbers (item_price,
+        // quantity_ordered, etc.) now write as real numbers, and 'date'
+        // as a real date. order_id/sku are protected with a leading
+        // apostrophe (Google Sheets' own force-text convention under
+        // USER_ENTERED — the apostrophe itself is stripped, only the
+        // text-typed value is stored) since Walmart order IDs and some
+        // SKUs can look numeric and risk being reinterpreted or losing
+        // leading zeros otherwise.
+        const TEXT_PROTECTED_COLS = new Set(['order_id', 'sku']);
+        const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => {
+          const v = r[h] ?? '';
+          return TEXT_PROTECTED_COLS.has(h) && v !== '' ? `'${v}` : v;
+        }));
+        await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token2, 'USER_ENTERED');
         console.log(`[sync-walmart-orders] ${tabName} — ${addedCount} new row(s), ${updatedCount} existing row(s) refreshed, ${outRows.length} total rows written`);
 
         results.push({ brand: brand.id, added: addedCount, updated: updatedCount, totalRows: outRows.length });
@@ -412,3 +458,4 @@ function wmRequest(method, path, token) {
 }
 
 const round2 = n => Math.round(n * 100) / 100;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
