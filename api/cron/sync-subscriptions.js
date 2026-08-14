@@ -371,8 +371,30 @@ function extractMetricSeries(resp, metricKey) {
     .filter(v => !isNaN(v.year));
 }
 
-// Same ASIN→brand lookup sync-advertising-process.js uses, kept in sync
-// intentionally — if that mapping logic ever changes, update both places.
+// FIXED 2026-08-14 — this file's own comment already flagged the risk:
+// "kept in sync intentionally — if that mapping logic ever changes,
+// update both places." sync-advertising-process.js's copy of this exact
+// logic was fixed earlier today for the same bug: skinuva-ca shares
+// "skinuva" as a substring of its own id, so any master-list row whose
+// brand column contains "skinuva" satisfied BOTH brands' name conditions,
+// and brands.find() returning the first match meant every skinuva-ca ASIN
+// was silently folded into plain skinuva instead. Consequences here are
+// worse than a missing brand: skinuva's active_subscriptions/
+// retention_90_day would be INFLATED with Canadian subscriber counts
+// (not just skinuva-ca getting zero ASINs and being skipped). Same fix,
+// same helper, kept identical for consistency across the codebase.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
 async function fetchAsinBrandMap() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${PRODUCT_SHEET_ID}/export?format=csv&gid=${PRODUCT_SHEET_GID}`;
   const resp   = await fetch(csvUrl);
@@ -382,16 +404,22 @@ async function fetchAsinBrandMap() {
   csv.trim().split('\n').slice(1).forEach(line => {
     const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
     const asin      = (cols[0] || '').toUpperCase();
+    const sku       = cols[1] || '';
     const brandName = (cols[3] || '').toLowerCase().trim();
     if (!asin || !brandName) return;
-    const matched = brands.find(b =>
+    const nameMatched = brands.find(b =>
       b.active && (
         brandName === b.id.toLowerCase() ||
         brandName === b.displayName?.toLowerCase() ||
         brandName.includes(b.id.toLowerCase())
       )
     );
-    if (matched) map[asin] = matched.tabName;
+    if (!nameMatched) return;
+    const siblings = brands.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
+    map[asin] = matched.tabName;
   });
   return map;
 }
