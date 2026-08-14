@@ -38,7 +38,40 @@ const COL = {
   qtyShipped:    'quantity-shipped',
   sku:           'sku',
   asin:          'asin',
+  salesChannel:  'sales-channel', // ADDED 2026-08-14 — see shared-prefix disambiguation below
 };
+
+// ADDED 2026-08-14 — skinuva-ca shares skinuva's exact SKU prefix ('SVA')
+// on purpose (same physical products, sold through a different
+// storefront). Before this, EVERY brand's loop below independently
+// filtered `allRows` by its own skuPrefix — completely correct for every
+// brand with a unique prefix (a multi-brand order legitimately produces
+// one row per brand it touches), but for skinuva/skinuva-ca specifically
+// it meant every SVA-prefixed line item matched BOTH brands' filters
+// independently, writing the exact same order into BOTH tabs. Same
+// two-stage disambiguation (SKU suffix first, sales-channel field
+// fallback) already used in sync-orders-process.js — only applied when a
+// brand actually has a salesChannel field AND an active sibling sharing
+// its prefix, so every other brand's loop is completely untouched.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function lineMatchesBrand(brand, sku, salesChannelValue) {
+  if (!brand.salesChannel) return true; // no shared-prefix sibling — normal case, unaffected
+  const siblings = brands.filter(b => b.active && b.skuPrefix === brand.skuPrefix && b.salesChannel);
+  if (siblings.length <= 1) return true; // brand has salesChannel set but no actual sibling active right now
+
+  if (CA_SKU_PATTERN.test(sku)) {
+    return brand.salesChannel.toLowerCase() === 'amazon.ca';
+  }
+  const channel = (salesChannelValue || '').trim().toLowerCase();
+  if (channel) {
+    return channel === brand.salesChannel.toLowerCase();
+  }
+  // No sales-channel field on this row at all — fall back to the
+  // Amazon.com sibling only, same fallback sync-orders-process.js uses,
+  // so an order never silently vanishes from both tabs.
+  return brand.salesChannel.toLowerCase() === 'amazon.com';
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -116,6 +149,7 @@ module.exports = async (req, res) => {
       for (const row of allRows) {
         const sku = get(row, COL.sku);
         if (!sku.toUpperCase().startsWith(brand.skuPrefix.toUpperCase())) continue;
+        if (!lineMatchesBrand(brand, sku, get(row, COL.salesChannel))) continue;
 
         const orderId = get(row, COL.orderId);
         if (!orderId) continue;
