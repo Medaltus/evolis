@@ -26,6 +26,10 @@
       "schedule": "8,23,38,53 2-4,14-19 * * *"
     },
     {
+     "path": "/api/cron/clean-business-report-vine",
+     "schedule": "30 5 * * *"
+   },
+    {
       "path": "/api/cron/sync-sqp-request",
       "schedule": "7 0 8 * *"
     },
