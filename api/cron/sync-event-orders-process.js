@@ -33,6 +33,9 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'sku', 'asin', 'brand', 'last_updated', 'year',
+  'marketplace', // ADDED 2026-08-14 per Jaclyn — visibility into which
+  'channel',     // storefront an order came from, given skinuva's CA
+                 // orders were found mislabeled as plain skinuva here too
 ];
 
 const META_TAB     = '_meta_events';
@@ -40,6 +43,43 @@ const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
+
+// ADDED 2026-08-14 — skinuva-ca (config/brands.js) shares skinuva's exact
+// SKU prefix ('SVA') on purpose (same physical products, sold through a
+// different storefront). Before this fix, matchedBrand below used plain
+// `activeBrands.find(b => sku.startsWith(b.skuPrefix))` — the exact same
+// bug already found and fixed in the main sync-orders-process.js: since
+// skinuva is listed before skinuva-ca in brands.js, EVERY SVA-prefixed
+// order during ANY event (Prime Day, Black Friday, etc.) was silently
+// attributed to plain skinuva, including genuinely Canadian ones. Same
+// two-stage fix as everywhere else: SKU suffix pattern first, then the
+// report's own sales-channel field, with the same Amazon.com-default
+// fallback if that field is ever missing — confirmed present on this
+// report type (GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL, same
+// as the main orders sync).
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function matchBrandForRow(sku, salesChannelValue, activeBrands) {
+  const candidates = activeBrands.filter(b => sku.startsWith(b.skuPrefix.toUpperCase()));
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  // Shared-prefix pair (e.g. skinuva/skinuva-ca) — disambiguate.
+  const isCa = CA_SKU_PATTERN.test(sku);
+  if (isCa) {
+    const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+    if (caBrand) return caBrand;
+  }
+  const channel = (salesChannelValue || '').trim().toLowerCase();
+  if (channel) {
+    const channelMatch = candidates.find(b => (b.salesChannel || '').toLowerCase() === channel);
+    if (channelMatch) return channelMatch;
+  }
+  // No channel data at all, or SKU suffix ambiguous — default to whichever
+  // candidate is the Amazon.com sibling, same fallback used everywhere
+  // else, so an order never silently vanishes rather than misattributing.
+  return candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com') || candidates[0];
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -123,7 +163,7 @@ module.exports = async (req, res) => {
       continue;
     }
 
-    // ── Tag each row with its brand (SKU prefix), exclude Vine ─────────
+    // ── Tag each row with its brand (SKU prefix + channel disambiguation), exclude Vine ─────────
     const activeBrands = brands.filter(b => b.active);
     const outRows = [];
     for (const row of rows) {
@@ -131,7 +171,7 @@ module.exports = async (req, res) => {
       const promo = (row['promotion-ids'] || '').toLowerCase();
       if (promo.includes('vine')) continue;
 
-      const matchedBrand = activeBrands.find(b => sku.startsWith(b.skuPrefix.toUpperCase()));
+      const matchedBrand = matchBrandForRow(sku, row['sales-channel'], activeBrands);
       const orderId = row['amazon-order-id'] || row['order-id'] || '';
       if (!orderId) continue;
 
@@ -155,6 +195,8 @@ module.exports = async (req, res) => {
         matchedBrand ? matchedBrand.id : 'unknown',
         nowEst,
         year,
+        row['sales-channel'] || '',
+        row['fulfillment-channel'] || '',
       ]);
     }
 
