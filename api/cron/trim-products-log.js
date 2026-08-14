@@ -22,6 +22,15 @@ const { sendCronFailureAlert } = require('../_alerts');
 
 const RETENTION_DAYS = 730; // 2 years
 
+// FIXED 2026-08-14 — same class of bug found and fixed today in
+// trim-orders.js, fees-estimate.js, and sale-promotions.js: this HEADERS
+// list was missing the three most recent columns sync-products.js added
+// ('purchased_units_90d', 'days_of_inventory', 'qty_on_hand'). Since the
+// write here only fires once rows actually age past the 2-year retention
+// window, this one likely hasn't triggered yet in practice — sync-
+// products.js is a relatively young addition — but would have silently
+// wiped those three columns across the entire tab the first time a trim
+// actually ran. Fixed proactively before that happens.
 const HEADERS = [
   'date', 'sku', 'asin',
   'fulfillable_quantity', 'reserved_quantity', 'inbound_working_quantity',
@@ -31,6 +40,7 @@ const HEADERS = [
   'bullet_1', 'bullet_2', 'bullet_3', 'bullet_4', 'bullet_5',
   'description', 'backend_keywords', 'ingredients', 'item_type_keyword',
   'offers', 'issues', 'last_synced',
+  'purchased_units_90d', 'days_of_inventory', 'qty_on_hand',
 ];
 
 module.exports = async (req, res) => {
