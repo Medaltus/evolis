@@ -56,8 +56,9 @@
  * or this fix has no visible effect. Not done as part of this file.
  *
  * Manual:
- *   GET /api/cron/clean-business-report-vine?dryRun=true   — report only
- *   GET /api/cron/clean-business-report-vine                — actually write
+ *   GET /api/cron/clean-business-report-vine?dryRun=true             — report only
+ *   GET /api/cron/clean-business-report-vine?dryRun=true&debug=true   — report + exact ASIN/month/amount for every deduction
+ *   GET /api/cron/clean-business-report-vine                          — actually write
  *   Authorization: Bearer <CRON_SECRET>
  */
 
@@ -83,6 +84,7 @@ module.exports = async (req, res) => {
   }
 
   const dryRun = req.query.dryRun === 'true';
+  const debugMode = req.query.debug === 'true';
 
   let targetMonths;
   try {
@@ -121,6 +123,7 @@ module.exports = async (req, res) => {
       const orderUnitsByAsinMonth = await fetchOrderUnitsByAsinMonth(brand.tabName, targetMonths);
 
       let deductionsApplied = 0;
+      const deductionDetails = [];
 
       const outRows = (rawRows || []).map(r => {
         const asin = (r.ASIN || '').toUpperCase();
@@ -149,6 +152,14 @@ module.exports = async (req, res) => {
               vineUnitsDeducted = delta;
               vineSalesDeducted = round2(vineInfo.price * delta);
               deductionsApplied++;
+              if (debugMode) {
+                deductionDetails.push({
+                  asin, sku: r.SKU || '', month,
+                  enrollmentMonth: vineInfo.enrollmentMonth,
+                  rawUnits, orderUnits, delta,
+                  price: vineInfo.price, salesDeducted: vineSalesDeducted,
+                });
+              }
             }
           }
         }
@@ -168,7 +179,10 @@ module.exports = async (req, res) => {
         await replaceRows(sheets.businessReport, brand.tabName, HEADERS, outRows, token, 'USER_ENTERED');
       }
 
-      results.push({ brand: brand.id, status: 'ok', totalRows: outRows.length, deductionsApplied });
+      results.push({
+        brand: brand.id, status: 'ok', totalRows: outRows.length, deductionsApplied,
+        ...(debugMode ? { deductionDetails } : {}),
+      });
       console.log(`[clean-business-report-vine] ${brand.id} — ${deductionsApplied} Vine deduction(s) applied across ${targetMonths.join(', ')}`);
     } catch (err) {
       console.error(`[clean-business-report-vine] ${brand.id} failed:`, err.message);
