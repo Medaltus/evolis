@@ -33,11 +33,9 @@
  *
  * REQUIRES a `returns` entry in config/sheets.js pointing at
  * process.env.SHEET_RETURNS, the same shape as the existing `orders` entry.
- * ALSO REQUIRES an `orders` entry in config/sheets.js pointing at the
- * sync-orders workbook — UNCONFIRMED whether this property is actually
- * named `sheets.orders` (config/sheets.js wasn't available while writing
- * this); if the real property name differs, update the one reference to
- * `sheets.orders` below accordingly.
+ * `sheets.orders` (used below for order_date resolution) is confirmed
+ * correct — used successfully across sync-orders-process.js,
+ * sync-revenue-process.js, fees-estimate.js, and others.
  */
 
 const zlib = require('zlib');
@@ -60,6 +58,25 @@ const HEADERS = [
 
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
 const REPORT_POLL_INTERVAL_MS = 4_000;
+
+// ADDED 2026-08-14 — same fix as sync-revenue-process.js: the per-brand
+// loop below does multiple real Sheets reads per brand (returns tab,
+// orders tab for order_date lookup, and — see channel disambiguation
+// below — potentially a second orders tab for shared-prefix brands) with
+// zero pacing between brands. Same root cause already found and fixed
+// elsewhere (429 RESOURCE_EXHAUSTED on Sheets' per-minute read quota).
+const BRAND_READ_STAGGER_MS = 3500;
+
+// ADDED 2026-08-14 — skinuva-ca (config/brands.js) shares skinuva's exact
+// SKU prefix on purpose (same physical products, sold through Amazon.ca
+// instead of Amazon.com). SKU prefix alone can't tell a shared-prefix
+// pair's returns apart, and this returns report has no documented
+// marketplace/channel field at all to split on directly. Instead:
+// cross-reference each return's order_id against sync-orders-process.js's
+// ALREADY-SPLIT output — skinuva vs skinuva-ca are separate tabs on
+// sheets.orders, so an order_id appearing in exactly one sibling's orders
+// tab reliably tells us which storefront a return belongs to.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
 
 // Builds an order_id → order_date lookup from this brand's tab on the
 // sync-orders sheet. Only sync-orders is read (NOT Historical Cache) — see
@@ -183,11 +200,46 @@ module.exports = async (req, res) => {
   const nowEst  = toEstIso(new Date());
   const results = [];
 
+  // ADDED 2026-08-14 — for shared-prefix brands (skinuva/skinuva-ca),
+  // fetch each sibling's orders tab ONCE up front, before the main loop,
+  // since disambiguating skinuva's OWN returns requires knowing about
+  // skinuva-ca's orders too (and vice versa). Reused below both for the
+  // channel membership check AND as this brand's own order_date lookup —
+  // no duplicate read of the same sheet for brands that need both.
+  const channelBrands = brands.filter(b => b.active && b.salesChannel);
+  const orderDateMapsByBrand = {};
+  const channelOrderIdSets = {};
+  for (const brand of channelBrands) {
+    orderDateMapsByBrand[brand.id] = await buildOrderDateMap(brand);
+    channelOrderIdSets[brand.id] = new Set(Object.keys(orderDateMapsByBrand[brand.id]));
+  }
+
+  let brandIndex = 0;
+
   for (const brand of brands.filter(b => b.active)) {
+    if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
+    brandIndex++;
+
     try {
       const brandRows = rawRows.filter(row => {
         const sku = (row['sku'] || '').toUpperCase();
-        return sku.startsWith(brand.skuPrefix.toUpperCase());
+        if (!sku.startsWith(brand.skuPrefix.toUpperCase())) return false;
+
+        if (brand.salesChannel) {
+          const orderId  = row['order-id'] || '';
+          const siblings = channelBrands.filter(b => b.skuPrefix === brand.skuPrefix);
+          const inThisBrand  = channelOrderIdSets[brand.id]?.has(orderId);
+          const inAnySibling = siblings.some(s => channelOrderIdSets[s.id]?.has(orderId));
+
+          if (inThisBrand) return true;
+          if (inAnySibling) return false; // belongs to a different sibling
+          // order_id not found in ANY sibling's orders tab (aged past that
+          // sheet's retention window, a genuine data gap, or the read
+          // above failed) — default to the Amazon.com sibling rather
+          // than silently dropping the return from both tabs.
+          return brand.salesChannel.toLowerCase() === 'amazon.com';
+        }
+        return true;
       });
 
       if (brandRows.length === 0) {
@@ -200,7 +252,10 @@ module.exports = async (req, res) => {
       const token            = await ensureTab(sheets.returns, tabName, HEADERS);
       const existingRowsRaw  = await readRows(sheets.returns, tabName);
       const existingRowsObj  = (existingRowsRaw || []).map(normalizeRow);
-      const orderDateMap     = await buildOrderDateMap(brand);
+      // Reuse the pre-fetched map for shared-prefix brands (already read
+      // above, before the main loop) rather than reading sheets.orders
+      // for this brand a second time.
+      const orderDateMap     = orderDateMapsByBrand[brand.id] || await buildOrderDateMap(brand);
 
       const existingByKey = new Map();
       existingRowsObj.forEach((r, idx) => {
