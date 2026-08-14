@@ -55,6 +55,14 @@ const REVENUE_HEADERS = [
   'WFS UNITS', 'FBM UNITS', 'Last Updated',
 ];
 
+// ADDED 2026-08-14 — same fix as sync-revenue-process.js and
+// sync-returns-process.js: this loop does up to 5 real Sheets calls per
+// brand (orders read, returns read, ensureTab, revenue read, revenue
+// write) with zero pacing between brands. Same root cause already found
+// and fixed elsewhere today (429 RESOURCE_EXHAUSTED on Sheets' per-minute
+// read quota).
+const BRAND_READ_STAGGER_MS = 3500;
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -97,8 +105,12 @@ module.exports = async (req, res) => {
 
   const activeBrands = brands.filter(b => b.active);
   const results = [];
+  let brandIndex = 0;
 
   for (const brand of activeBrands) {
+    if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
+    brandIndex++;
+
     try {
       // ── 1. Read rolling orders for this brand ─────────────────────────────
       let orderRows = [];
@@ -293,6 +305,8 @@ function normalizeDate(val) {
   }
   return val;
 }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
  * Returns EST wall-time formatted as ISO-8601.
