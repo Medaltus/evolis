@@ -161,8 +161,11 @@ module.exports = async (req, res) => {
         return HEADERS.map(h => r[h] ?? '');
       });
 
+      // Same fix as sync-business-report-process.js — USER_ENTERED so the
+      // new VINE_* / *_CLEAN columns are stored as real numbers, not
+      // forced text, consistent with the rest of this sheet.
       if (!dryRun) {
-        await replaceRows(sheets.businessReport, brand.tabName, HEADERS, outRows, token);
+        await replaceRows(sheets.businessReport, brand.tabName, HEADERS, outRows, token, 'USER_ENTERED');
       }
 
       results.push({ brand: brand.id, status: 'ok', totalRows: outRows.length, deductionsApplied });
