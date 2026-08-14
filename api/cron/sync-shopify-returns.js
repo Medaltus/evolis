@@ -183,15 +183,24 @@ module.exports = async (req, res) => {
     existingRows.map(r => `${r.order_id}||${r.sku}||${r.refund_id}`).filter(k => k !== '||')
   );
 
+  // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+  // forced-text issue found and fixed elsewhere today. quantity/
+  // refund_amount now write as real numbers, refund_date as a real date.
+  // order_id/refund_id/sku protected with a leading apostrophe (Sheets'
+  // own force-text convention under USER_ENTERED).
+  const TEXT_PROTECTED_COLS = new Set(['order_id', 'refund_id', 'sku']);
   const newRows = returnRows
     .filter(r => !existingKeys.has(`${r.order_id}||${r.sku}||${r.refund_id}`))
-    .map(r => HEADERS.map(h => r[h] ?? ''));
+    .map(r => HEADERS.map(h => {
+      const v = r[h] ?? '';
+      return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+    }));
 
   const dupCount = returnRows.length - newRows.length;
   if (dupCount > 0) console.log(`[sync-shopify-returns] skipped ${dupCount} duplicate order+sku+refund rows`);
 
   if (newRows.length > 0) {
-    await appendRows(SHEET_ID, TAB_NAME, newRows, token);
+    await appendRows(SHEET_ID, TAB_NAME, newRows, token, 'USER_ENTERED');
     console.log(`[sync-shopify-returns] wrote ${newRows.length} rows`);
   }
 
