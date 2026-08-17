@@ -39,7 +39,16 @@
  * approach used elsewhere today, given more brands are expected to be
  * onboarded through this same pipeline over time.
  *
- * UPSERT KEY — there is no review ID or reviewer ID anywhere in the
+ * FIXED 2026-08-14, second pass — this file also had no way to attribute
+ * High On Love's reviews at all: it's deliberately excluded from
+ * config/brands.js (separate Amazon seller account — see
+ * _fulfillment_brands.js and upload-h10-reviews.js for the same
+ * exclusion and reasoning), and this file's matching only ever checked
+ * that shared registry. Confirmed 2026-08-14 per Jaclyn: SKU prefix
+ * 'HOL'. Added the same way upload-h10-reviews.js already handles this
+ * exact situation — an explicit extra entry, merged into the candidate
+ * pool alongside brands.js, not a change to the shared registry itself.
+ *
  * source data, so this uses a composite of sku + date + reviewer_name +
  * review_title. Not bulletproof (two genuinely different reviews from
  * the same reviewer, same day, with an identical title, would collide
@@ -85,6 +94,18 @@ const XLSX = require('xlsx');
 const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
 const brands = require('./config/brands');
 
+// ADDED 2026-08-14 — HighOnLove is deliberately NOT in config/brands.js
+// (separate Amazon seller account — same reasoning documented in
+// _fulfillment_brands.js and upload-h10-reviews.js, which already solves
+// this exact problem for itself by appending HighOnLove alongside the
+// brands.js-derived list). Confirmed 2026-08-14 per Jaclyn: SKU prefix
+// 'HOL'. Without this, every HighOnLove review would land in
+// unmatchedSkus and never get written anywhere — confirmed as a real gap
+// before Lindsay's brands were onboarded through this pipeline.
+const EXTRA_BRANDS_NOT_IN_REGISTRY = [
+  { id: 'high-on-love', tabName: 'high-on-love', skuPrefix: 'HOL', active: true },
+];
+
 const SHEET_ID = process.env.SHEET_AMAZON_REVIEWS;
 
 const HEADERS = [
@@ -108,7 +129,8 @@ function resolveBrandForSku(sku, candidates) {
 }
 
 function matchBrandForSku(sku) {
-  const candidates = brands.filter(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
+  const candidates = [...brands, ...EXTRA_BRANDS_NOT_IN_REGISTRY]
+    .filter(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
   if (candidates.length === 0) return null;
   return resolveBrandForSku(sku, candidates);
 }
