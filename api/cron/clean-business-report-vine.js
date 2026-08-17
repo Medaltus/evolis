@@ -109,8 +109,23 @@ module.exports = async (req, res) => {
   }
 
   const results = [];
+  // FIXED 2026-08-14, second pass — a real miss: this loop does up to 4
+  // Sheets calls per brand (ensureTab, business report read, the internal
+  // orders-sheet read inside fetchOrderUnitsByAsinMonth, and the final
+  // write) across every active brand with zero pacing between them. Same
+  // 429 RESOURCE_EXHAUSTED quota pattern already found and fixed in
+  // several other files today (sync-revenue-process.js,
+  // sync-returns-process.js, sync-walmart-revenue.js, etc.) — this file
+  // should have gotten the same fix when it was built, not after a real
+  // production failure (confirmed: evolis hit exactly this 429 in
+  // production).
+  const BRAND_READ_STAGGER_MS = 3500;
+  let brandIndex = 0;
 
   for (const brand of brands.filter(b => b.active)) {
+    if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
+    brandIndex++;
+
     try {
       const token   = await ensureTab(sheets.businessReport, brand.tabName, HEADERS);
       const rawRows = await readRows(sheets.businessReport, brand.tabName);
@@ -244,6 +259,7 @@ module.exports = async (req, res) => {
 };
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function addOneMonth(yyyyMm) {
   const [y, m] = yyyyMm.split('-').map(n => parseInt(n, 10));
