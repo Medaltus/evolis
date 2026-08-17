@@ -428,14 +428,27 @@ async function fetchMasterSkuList() {
   const csv = await resp.text();
   const lines = csv.trim().split('\n').slice(1);
 
+  // FIXED 2026-08-18 per Jaclyn — this cron was pulling reconciliation
+  // data (Amazon + Core lookups) for virtual bundle SKUs (e.g.
+  // EVO-AA-DUO, VMP_EVO0015_2_PK), which never hold real standalone
+  // inventory on either side — those API calls were entirely wasted.
+  // Column J ("SKU Type") on the master list distinguishes real,
+  // standalone products ("CATALOG") from virtual bundles ("BUNDLE") —
+  // only CATALOG rows are reconciled now.
+  let skippedBundles = 0;
   const out = [];
   for (const line of lines) {
     const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
-    const sku = cols[1] || '';
-    const name = cols[2] || '';
+    const sku      = cols[1] || '';
+    const name     = cols[2] || '';
     const rawBrand = cols[3] || '';
+    const skuType  = (cols[9] || '').trim().toUpperCase();
     if (!sku) continue;
+    if (skuType === 'BUNDLE') { skippedBundles++; continue; }
     out.push({ sku, name, rawBrand });
+  }
+  if (skippedBundles > 0) {
+    console.log(`[inventory-reconciliation] skipped ${skippedBundles} BUNDLE-type SKU(s) — no real standalone inventory to reconcile for these`);
   }
   return out;
 }
