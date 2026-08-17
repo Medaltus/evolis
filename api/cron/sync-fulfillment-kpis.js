@@ -72,7 +72,15 @@ module.exports = async (req, res) => {
   for (const brand of FULFILLMENT_BRANDS) {
     // ADDED 2026-08-14 — see file header. Never build a ShipStation call
     // for a brand with no confirmed store yet.
-    if (!brand.storeId) {
+    // FIXED 2026-08-14, second pass — the first version of this guard
+    // (`if (!brand.storeId)`) failed in production for skinuva-ca with a
+    // real ShipStation 400: "The value 'null' is not valid for
+    // Nullable`1" — meaning storeId had somehow become the STRING "null"
+    // rather than the actual JS null value. !"null" is false (non-empty
+    // strings are truthy), so the old guard let it straight through into
+    // the URL. This version catches both forms, so it can never matter
+    // exactly how a missing storeId got typed.
+    if (!brand.storeId || brand.storeId === 'null') {
       if (debug) debugOut.push({ brand: brand.id, status: 'skipped', reason: 'no storeId configured yet' });
       continue;
     }
