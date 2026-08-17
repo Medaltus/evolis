@@ -53,7 +53,11 @@ module.exports = async (req, res) => {
   for (const brand of FULFILLMENT_BRANDS) {
     // ADDED 2026-08-14 — see file header. Never build a ShipStation call
     // for a brand with no confirmed store yet.
-    if (!brand.storeId) {
+    // FIXED 2026-08-14, second pass — see sync-fulfillment-kpis.js for
+    // the full explanation: !"null" (string) is false, so the original
+    // guard could be bypassed if storeId ended up as a string rather
+    // than the actual JS null value. This catches both forms.
+    if (!brand.storeId || brand.storeId === 'null') {
       results.push({ brand: brand.id, status: 'skipped', reason: 'no storeId configured yet' });
       continue;
     }
