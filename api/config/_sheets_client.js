@@ -177,6 +177,55 @@ async function ensureTab(sheetId, tabName, headers) {
 }
 
 /**
+ * Grows a tab's actual GRID row count (not just its data) if minRows
+ * exceeds what the grid currently has. ADDED 2026-08-14 after a real
+ * production failure: sync-products.js's row-position fix (switching
+ * from appendRows to an explicit updateRange write, so the row number in
+ * a formula string always matches the literal row being written to — see
+ * that file's own comment) traded away something appendRows did for
+ * free — values:append with insertDataOption=INSERT_ROWS auto-grows a
+ * sheet's grid as needed, but a plain values.update PUT to an explicit
+ * range does NOT. Once creme-shop's accumulated daily-snapshot rows
+ * passed its grid's actual row count (10776), every subsequent write
+ * failed outright with a 400 ("Range ... exceeds grid limits") — not a
+ * quota issue, not a bad row number, just a grid that was never told to
+ * get bigger.
+ *
+ * Grows with a generous buffer (not exactly enough for 1 row) so this
+ * doesn't need to run again on the very next row — cheap insurance
+ * against needing frequent grid-resize calls for a fast-growing tab.
+ * Callers should call this ONCE per tab per run (e.g. right after
+ * establishing that tab's next-row counter), not before every single row.
+ */
+async function ensureRowCapacity(sheetId, tabName, minRows, token) {
+  const meta = await sheetsGet(token, `/${sheetId}?fields=sheets.properties`);
+  const tab = (meta.sheets || []).find(s => s.properties?.title === tabName);
+  if (!tab) {
+    console.warn(`[sheets] ensureRowCapacity — tab "${tabName}" not found in sheet ${sheetId}, skipping grid-size check`);
+    return;
+  }
+
+  const currentRows = tab.properties.gridProperties?.rowCount || 0;
+  if (minRows <= currentRows) return; // already big enough, nothing to do
+
+  const GROWTH_BUFFER = 2000;
+  const newRowCount = minRows + GROWTH_BUFFER;
+
+  await sheetsPost(token, `/${sheetId}:batchUpdate`, {
+    requests: [{
+      updateSheetProperties: {
+        properties: {
+          sheetId: tab.properties.sheetId, // the TAB's internal numeric id, not the spreadsheet id
+          gridProperties: { rowCount: newRowCount },
+        },
+        fields: 'gridProperties.rowCount',
+      },
+    }],
+  });
+  console.log(`[sheets] grew "${tabName}" in sheet ${sheetId} from ${currentRows} to ${newRowCount} rows (needed at least ${minRows})`);
+}
+
+/**
  * Write values into an explicit range (e.g. a single column) WITHOUT
  * clearing or touching anything outside that range — unlike replaceRows,
  * which always clears A2:ZZ first. Added 2026-08-13 for a targeted,
@@ -443,4 +492,4 @@ function base64url(str) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-module.exports = { ensureTab, appendRows, replaceRows, readRows, updateRange, getSheetsToken, touchMeta };
+module.exports = { ensureTab, appendRows, replaceRows, readRows, updateRange, ensureRowCapacity, getSheetsToken, touchMeta };
