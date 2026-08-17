@@ -97,7 +97,7 @@
  */
 
 const { spRequest }                                     = require('../_spauth');
-const { ensureTab, readRows, replaceRows, updateRange } = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, updateRange, ensureRowCapacity } = require('../config/_sheets_client');
 const brands                                            = require('../config/brands');
 const sheets                                            = require('../config/sheets');
 const { sendCronFailureAlert }                          = require('../_alerts');
@@ -265,6 +265,17 @@ module.exports = async (req, res) => {
         tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, HEADERS);
         const existingRows = await readRows(sheets.products, item.brandTabName);
         tabNextRow[item.brandTabName] = existingRows.length + 2; // +1 for header row, +1 to move past the last existing row
+
+        // ADDED 2026-08-14 — real production failure: creme-shop's grid
+        // (10776 rows) was smaller than the row this run needed to write
+        // to, and the explicit-range write this file uses (see the
+        // updateRange call below, and its own comment on why) can't
+        // auto-grow a sheet's grid the way appendRows used to — every
+        // write past the grid's current size failed outright with a 400
+        // "exceeds grid limits". Growing once per brand per run, here,
+        // with a generous buffer (see ensureRowCapacity), means this
+        // should only rarely need to fire at all going forward.
+        await ensureRowCapacity(sheets.products, item.brandTabName, tabNextRow[item.brandTabName], tabTokens[item.brandTabName]);
       }
 
       // FAILSAFE: 90-day units lookup is fetched once per brand and never
