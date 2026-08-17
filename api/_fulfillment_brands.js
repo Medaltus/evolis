@@ -22,21 +22,16 @@
  *
  * cosmette: confirmed 2026-08-14 per Jaclyn — no fulfillment through
  * ShipStation today, may start later. Deliberately left OUT of this list
- * for now (unlike skinuva-ca below) since there's no current or planned
- * near-term need — add it the same way as skinuva-ca, below, whenever
- * that changes.
+ * for now — add it the same way as the 8 brands above (id, tabName,
+ * real storeId) whenever that changes.
  *
- * skinuva-ca: added 2026-08-14 per Jaclyn — no confirmed ShipStation
- * store today (added to config/brands.js on 2026-08-14, after this
- * file's 2026-07-20 store cross-reference, so it was never actually
- * checked the way the 8 excluded brands above were). storeId is
- * deliberately `null` as a placeholder in case international shipping
- * starts — NEVER used directly in a ShipStation API call. All three
- * fulfillment crons explicitly skip any brand with a null storeId before
- * building any API request, so this entry existing here has zero effect
- * until a real storeId is filled in. When that happens: replace `null`
- * below with the real numeric storeId (same format as every other entry)
- * and no other code changes are needed anywhere.
+ * skinuva-ca: added to config/brands.js on 2026-08-14, but NOT tracked
+ * here — per Jaclyn 2026-08-14, not being tracked in fulfillment yet.
+ * (Briefly added as a storeId:null placeholder earlier the same day,
+ * then removed at Jaclyn's request in favor of just leaving it out
+ * entirely until it's actually needed — same treatment as cosmette
+ * above.) Add it the same way as the 8 brands above whenever that
+ * changes.
  *
  * HighOnLove specifically: storeId 86711 is the manual ShipStation store
  * named "HighonLove Website" — NOT storeId 95134 (a Shopify store also
@@ -55,7 +50,6 @@ const FULFILLMENT_BRANDS = [
   { id: 'miguard',      tabName: 'miguard',      storeId: 81823 },
   { id: 'prohibition',  tabName: 'prohibition',  storeId: 86492 },
   { id: 'skinuva',      tabName: 'skinuva',      storeId: 68797 },
-  { id: 'skinuva-ca',   tabName: 'skinuva-ca',   storeId: null }, // placeholder — see file header. Never used in an API call until filled in.
 ];
 
 module.exports = { FULFILLMENT_BRANDS };
