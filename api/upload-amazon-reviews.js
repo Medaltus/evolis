@@ -25,6 +25,20 @@
  * sync-returns-process.js / sync-revenue-process.js. Unmatched SKU
  * prefixes are reported back in the response, never silently dropped.
  *
+ * FIXED 2026-08-14 — this file predates skinuva-ca (added to
+ * config/brands.js on 2026-08-14), and its brand-matching was a plain
+ * `brands.find(b => sku.startsWith(b.skuPrefix))` — the exact same
+ * shared-SKU-prefix collision bug already found and fixed today across
+ * sync-products.js, sync-advertising-process.js, sync-subscriptions.js,
+ * and others: skinuva-ca shares skinuva's exact 'SVA' prefix on purpose.
+ * Not currently affecting anything live — no review-scraping automation
+ * exists yet for skinuva or skinuva-ca specifically (confirmed with
+ * Jaclyn: this pipeline currently only runs for evolis and
+ * skinside-seoul, both of which have unique prefixes) — but fixed
+ * proactively now, matching the same "close it before it becomes live"
+ * approach used elsewhere today, given more brands are expected to be
+ * onboarded through this same pipeline over time.
+ *
  * UPSERT KEY — there is no review ID or reviewer ID anywhere in the
  * source data, so this uses a composite of sku + date + reviewer_name +
  * review_title. Not bulletproof (two genuinely different reviews from
@@ -38,10 +52,8 @@
  * re-uploaded on a later date just refreshes its date_logged and any
  * other field, never creates a duplicate row.
  *
- * Sheet: SHEET_AMAZON_REVIEWS (env var — sheet does not exist yet, needs
- * to be created and its ID set before this can run for real). One tab
- * per brand, auto-created on first run — same convention as every other
- * multi-brand sheet in this repo.
+ * Sheet: SHEET_AMAZON_REVIEWS. One tab per brand, auto-created on first
+ * run — same convention as every other multi-brand sheet in this repo.
  *
  * Body: { filename, contentBase64 }
  *   No sheetId in the body (unlike upload-keyword-tracker.js) — there's
@@ -81,6 +93,26 @@ const HEADERS = [
   'date_logged', 'last_synced',
 ];
 
+// ADDED 2026-08-14 — see file header. Same two-stage disambiguation
+// helper used across every other file fixed today for this exact issue.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
+function matchBrandForSku(sku) {
+  const candidates = brands.filter(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
+  if (candidates.length === 0) return null;
+  return resolveBrandForSku(sku, candidates);
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -116,7 +148,7 @@ module.exports = async (req, res) => {
   rows.forEach(r => {
     const sku = String(r['SKU'] || '').trim().toUpperCase();
     if (!sku) return;
-    const matched = brands.find(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
+    const matched = matchBrandForSku(sku);
     if (!matched) { unmatchedSkus.add(sku); return; }
     (rowsByBrandTab[matched.tabName] = rowsByBrandTab[matched.tabName] || []).push(r);
   });
@@ -162,8 +194,18 @@ module.exports = async (req, res) => {
         });
       });
 
-      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-      await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token);
+      // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
+      // forced-text issue found and fixed across several other files
+      // today. star_rating now writes as a real number, date/date_logged
+      // as real dates. sku/asin protected with a leading apostrophe
+      // (Sheets' own force-text convention under USER_ENTERED) since
+      // both can look numeric-ish and shouldn't risk reinterpretation.
+      const TEXT_PROTECTED_COLS = new Set(['sku', 'asin']);
+      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => {
+        const v = r[h] ?? '';
+        return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+      }));
+      await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token, 'USER_ENTERED');
 
       console.log(`[upload-amazon-reviews] ${tabName} — ${brandRows.length} incoming rows, ${outRows.length} total rows after merge`);
       results.push({ brand: tabName, status: 'ok', incomingRows: brandRows.length, totalRows: outRows.length });
