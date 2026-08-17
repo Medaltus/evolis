@@ -326,8 +326,17 @@ function sheetsGet(token, path, retriesLeft = 4) {
           // gives a real shot at outlasting a full quota window without
           // costing more than one function's worth of timeout budget if
           // several tabs hit this back to back.
-          const isRetryable = res.statusCode === 429 || res.statusCode === 500
-            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
+          // CHANGED 2026-08-14 — added 503/UNAVAILABLE after two separate
+          // crons (sale-promotions, sync-walmart-inventory) both hard-
+          // failed on a real Google-side 503 with zero retry, since this
+          // check only covered 429/500 before. 503 is a standard,
+          // well-established transient condition (Google's own API
+          // client libraries universally treat it as safe to retry) —
+          // same class of reasoning already applied to 429 and 500/
+          // INTERNAL above, just never extended to cover this specific
+          // status code until it actually happened in production.
+          const isRetryable = res.statusCode === 429 || res.statusCode === 500 || res.statusCode === 503
+            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL' || parsed?.error?.status === 'UNAVAILABLE';
           if (isRetryable && retriesLeft > 0) {
             const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s
             console.warn(`[sheets] retryable error (${res.statusCode}) on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
@@ -372,8 +381,10 @@ function sheetsPost(token, path, body, method = 'POST', retriesLeft = 4) {
         catch (e) { return reject(new Error(`Sheets POST parse error (${res.statusCode}): ${d.slice(0, 200)}`)); }
 
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          const isRetryable = res.statusCode === 429 || res.statusCode === 500
-            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL';
+          // CHANGED 2026-08-14 — see sheetsGet's identical fix above for
+          // the full explanation.
+          const isRetryable = res.statusCode === 429 || res.statusCode === 500 || res.statusCode === 503
+            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL' || parsed?.error?.status === 'UNAVAILABLE';
           if (isRetryable && retriesLeft > 0) {
             const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s — see sheetsGet
             console.warn(`[sheets] retryable error (${res.statusCode}) on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
