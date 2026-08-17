@@ -100,8 +100,23 @@ const HEADERS = [
 // Exact Cin7 location strings — confirmed 2026-07-21 against the real
 // export. Anything else in the report (Consignment-specific locations,
 // other warehouses) is irrelevant to this cron and never read.
+//
+// FIXED 2026-08-17 — 'fba' was 'Amazon Warehouse USA - FBA' (no hyphen
+// between "Warehouse" and "USA"). Confirmed against a real Core export
+// dated 2026-08-16 that the actual location string is now
+// 'Amazon Warehouse - USA - FBA' (with the hyphen) — Core evidently
+// renamed this location sometime after the original 2026-07-21
+// confirmation. Since this cron does an exact string match with no
+// fallback, every row silently read as zero for core_qty_on_hand_fba /
+// core_allocated_fba / core_available_fba, for every brand, with no
+// error thrown — the other three locations (sf, fbaCa, walmart) were
+// unaffected and confirmed still exactly correct against the same
+// export before this fix. Real evidence: evolis alone had 7 SKUs with
+// genuine nonzero FBA stock in Core (e.g. EVO0001=4, EVO0008=14,
+// EVO0018=43) that were all showing as 0 in the reconciliation output
+// before this fix.
 const LOCATIONS = {
-  fba:      'Amazon Warehouse USA - FBA',
+  fba:      'Amazon Warehouse - USA - FBA',
   sf:       'Medaltus Warehouse',
   fbaCa:    'Amazon - Canada (Newderm)',
   walmart:  'Walmart Fulfillment Centers (WFN)',
