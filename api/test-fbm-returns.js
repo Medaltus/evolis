@@ -52,10 +52,12 @@ module.exports = async (req, res) => {
     if (step === 'request') {
       const now = new Date();
       const safeBefore = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
-      // Short, recent window — this diagnostic just needs to see the
-      // shape of the data, not a full real sync range. Report supports
-      // up to 60 days per Amazon's own docs; 14 is plenty here.
-      const start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
+      // WIDENED 2026-08-18 — 14 days only produced 2 total return records
+      // (both Cimeosil, both confirmed absent from the existing FBA
+      // returns sheet). Widening to this report's full documented max
+      // (60 days) for a larger confirmatory sample before committing to
+      // real production ingestion.
+      const start = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
 
       const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
         reportType:     'GET_XML_RETURNS_DATA_BY_RETURN_DATE',
