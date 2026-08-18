@@ -172,9 +172,18 @@ module.exports = async (req, res) => {
       .filter(k => k !== '||')
   );
 
+  // FIXED 2026-08-18 — was defaulting to valueInputOption=RAW, same
+  // forced-text issue found and fixed across many other files this
+  // review. impressions/clicks/spend/conversions/revenue/acos now write
+  // as real numbers. campaign_name protected with a leading apostrophe
+  // (Sheets' own force-text convention under USER_ENTERED) as cheap
+  // defensive insurance — low risk in practice, but costs nothing.
   const rowsToWrite = newLineItems
     .filter(r => !existingKeys.has(`${r.date}||${r.campaign_name}`))
-    .map(r => ADS_HEADERS.map(h => r[h] ?? ''));
+    .map(r => ADS_HEADERS.map(h => {
+      const v = r[h] ?? '';
+      return (h === 'campaign_name' && v !== '') ? `'${v}` : v;
+    }));
 
   const dupCount = newLineItems.length - rowsToWrite.length;
   if (dupCount > 0) {
@@ -182,7 +191,7 @@ module.exports = async (req, res) => {
   }
 
   if (rowsToWrite.length > 0) {
-    await appendRows(SHEET_ID, ADS_TAB, rowsToWrite, token);
+    await appendRows(SHEET_ID, ADS_TAB, rowsToWrite, token, 'USER_ENTERED');
     console.log(`[sync-google-ads] wrote ${rowsToWrite.length} rows`);
   } else {
     console.log('[sync-google-ads] 0 new rows (all duplicates)');
@@ -194,7 +203,10 @@ module.exports = async (req, res) => {
   // new per-product query should never take that down with it.
   let shoppingResult = { new: 0, updated: 0, totalRows: 0, error: null };
   try {
-    shoppingResult = await syncShoppingPerformance(accessToken, startDate, endDate, nowEst);
+    // ADDED 2026-08-18 — orderRows was already fetched above for the
+    // campaign-level ACOS lookup; pass it through instead of re-reading
+    // the same tab a second time inside syncShoppingPerformance.
+    shoppingResult = await syncShoppingPerformance(accessToken, startDate, endDate, nowEst, orderRows);
   } catch (err) {
     console.error('[sync-google-ads] shopping performance sync failed:', err.message);
     await sendCronFailureAlert('sync-google-ads', err.message, { Stage: 'Shopping performance view (non-fatal)' });
@@ -215,7 +227,7 @@ module.exports = async (req, res) => {
 // ── Shopping performance (per-product) sync ───────────────────────────────────
 // item_id here matches shopify_item_id from sync-shopify-orders.js exactly —
 // join on that string, no transformation needed on either side.
-async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) {
+async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst, orderRows) {
   const gaqlDate = startDate === endDate
     ? `segments.date = '${startDate}'`
     : `segments.date >= '${startDate}' AND segments.date <= '${endDate}'`;
@@ -247,9 +259,10 @@ async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) 
   // 2026-07-28); any item_id with at least one order carrying that field
   // resolves to a real SKU. Anything with zero orders so far (advertised,
   // never purchased) stays blank — genuinely unresolvable yet, not a bug.
-  const orderRows = await readRows(SHEET_ID, ORDERS_TAB).catch(() => []);
+  // orderRows passed in from the caller — already fetched once for the
+  // campaign-level ACOS lookup, no need to read the same tab again.
   const skuByItemId = new Map();
-  orderRows.forEach(r => {
+  (orderRows || []).forEach(r => {
     const itemId = r.shopify_item_id;
     if (itemId && r.sku && !skuByItemId.has(itemId)) skuByItemId.set(itemId, r.sku);
   });
@@ -294,8 +307,16 @@ async function syncShoppingPerformance(accessToken, startDate, endDate, nowEst) 
     existingByKey.set(key, item);
   });
 
-  const outputRows = Array.from(existingByKey.values()).map(r => SHOPPING_HEADERS.map(h => r[h] ?? ''));
-  await replaceRows(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS, outputRows, token);
+  // FIXED 2026-08-18 — same fix as the ads tab write above. sku
+  // protected defensively; item_id is inherently safe as text (its
+  // "shopify_us_" prefix guarantees it can never be misread as a
+  // number), but protected too for consistency.
+  const TEXT_PROTECTED_COLS = new Set(['item_id', 'sku']);
+  const outputRows = Array.from(existingByKey.values()).map(r => SHOPPING_HEADERS.map(h => {
+    const v = r[h] ?? '';
+    return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+  }));
+  await replaceRows(SHEET_ID, SHOPPING_TAB, SHOPPING_HEADERS, outputRows, token, 'USER_ENTERED');
   console.log(`[sync-google-ads] shopping: ${newCount} new, ${updatedCount} refreshed, ${outputRows.length} total`);
 
   return { new: newCount, updated: updatedCount, totalRows: outputRows.length, error: null };
@@ -346,13 +367,35 @@ async function googleAdsSearch(accessToken, query) {
 
 // ── Date range ────────────────────────────────────────────────────────────────
 
+// FIXED 2026-08-18 — was computing "yesterday"/"day" via the server's
+// local time (UTC in Vercel), same class of issue found and fixed in
+// _ss.js's shared date helpers. Confirmed the regular 7:15 UTC schedule
+// was NOT actually affected (that time falls safely after Eastern's own
+// midnight rollover at 4:00 UTC) — but a MANUAL run in the evening ET
+// would compute the wrong "yesterday" relative to what someone in
+// Eastern time actually means. Anchored to Eastern for consistency and
+// to remove that edge case, same pattern as _ss.js.
+function easternDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return { year: parseInt(p.year, 10), month: parseInt(p.month, 10), day: parseInt(p.day, 10) };
+}
+
+function easternAnchor(date = new Date()) {
+  const { year, month, day } = easternDateParts(date);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
 function getDateRange(mode, req) {
-  const now = new Date();
   const pad = n => String(n).padStart(2, '0');
 
   if (mode === 'yesterday') {
-    const d = new Date(now); d.setDate(d.getDate() - 1);
-    const y = d.getFullYear(), m = pad(d.getMonth() + 1), day = pad(d.getDate());
+    const d = easternAnchor();
+    d.setUTCDate(d.getUTCDate() - 1);
+    const y = d.getUTCFullYear(), m = pad(d.getUTCMonth() + 1), day = pad(d.getUTCDate());
     return { startDate: `${y}-${m}-${day}`, endDate: `${y}-${m}-${day}` };
   }
 
@@ -364,8 +407,8 @@ function getDateRange(mode, req) {
   }
 
   if (mode === 'day') {
-    const y = now.getUTCFullYear(), m = pad(now.getUTCMonth() + 1), d = pad(now.getUTCDate());
-    return { startDate: `${y}-${m}-${d}`, endDate: `${y}-${m}-${d}` };
+    const { year, month, day } = easternDateParts();
+    return { startDate: `${year}-${pad(month)}-${pad(day)}`, endDate: `${year}-${pad(month)}-${pad(day)}` };
   }
 
   throw new Error(`Unknown mode: ${mode}`);
