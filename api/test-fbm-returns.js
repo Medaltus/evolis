@@ -98,12 +98,48 @@ module.exports = async (req, res) => {
     const tagMatches = xmlText.match(/<([a-zA-Z][\w-]*)[ >]/g) || [];
     const distinctTagNames = [...new Set(tagMatches.map(t => t.replace(/[<> ]/g, '')))].sort();
 
+    // ADDED 2026-08-18 — a single 4000-char preview only ever showed 2
+    // sample records, not enough to confidently check for FBA/FBM overlap
+    // against the existing FBA returns sheet (per Jaclyn, only 2 known
+    // order IDs weren't enough to conclude either way, especially since
+    // the FBA sheet only tracks partnered brands, not the whole seller
+    // account). This does a rough, regex-based split of every
+    // <return_details>...</return_details> block (NOT a real XML parse —
+    // still just enough to extract a handful of full candidate records,
+    // same "look before building the real parser" spirit as the preview
+    // above) and surfaces every one whose merchant_sku matches a known
+    // active brand prefix, so there's more than 2 order IDs to check.
+    const brands = require('./config/brands');
+    const activeBrandPrefixes = brands.filter(b => b.active).map(b => b.skuPrefix.toUpperCase());
+
+    const returnBlocks = xmlText.match(/<return_details>[\s\S]*?<\/return_details>/g) || [];
+    const candidates = [];
+    for (const block of returnBlocks) {
+      const skuMatch    = block.match(/<merchant_sku>(.*?)<\/merchant_sku>/);
+      const orderMatch  = block.match(/<order_id>(.*?)<\/order_id>/);
+      const refundMatch = block.match(/<refund_amount>(.*?)<\/refund_amount>/);
+      const dateMatch   = block.match(/<return_request_date>(.*?)<\/return_request_date>/);
+      if (!skuMatch || !orderMatch) continue;
+      const sku = skuMatch[1].toUpperCase();
+      const matchedPrefix = activeBrandPrefixes.find(p => sku.startsWith(p));
+      if (matchedPrefix) {
+        candidates.push({
+          orderId: orderMatch[1],
+          sku,
+          matchedBrandPrefix: matchedPrefix,
+          refundAmount: refundMatch ? refundMatch[1] : null,
+          returnRequestDate: dateMatch ? dateMatch[1] : null,
+        });
+      }
+    }
+
     return res.status(200).json({
       status: 'DONE',
       byteLength: xmlText.length,
+      totalReturnRecordsInReport: returnBlocks.length,
       distinctTagNames,
-      rawXmlPreview: xmlText.slice(0, 4000),
-      note: 'rawXmlPreview is truncated to 4000 characters — if real return rows exist further in, ask for a specific tag to search for instead of a longer dump.',
+      trackedBrandCandidates: candidates,
+      note: `Found ${candidates.length} return record(s) matching a tracked brand's SKU prefix out of ${returnBlocks.length} total records in this report (most records are likely for brands you don't track at all — expected, given this covers the whole seller account). Check each orderId in trackedBrandCandidates against the existing FBA returns sheet — if ANY of these already exist there, this report includes FBA returns and overlaps with the existing cron; if NONE do, it's cleanly FBM-only.`,
     });
   } catch (err) {
     console.error('[test-fbm-returns] fatal:', err.message);
