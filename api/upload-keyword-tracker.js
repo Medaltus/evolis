@@ -110,8 +110,19 @@ module.exports = async (req, res) => {
       const merged = new Map();
       (existing || []).forEach(r => merged.set(key(r), r));
       incoming.forEach(r => merged.set(key(r), r));
-      const outRows = Array.from(merged.values()).map(r => SUMMARY_HEADERS.map(h => r[h] ?? ''));
-      await replaceRows(sheetId, 'summary', SUMMARY_HEADERS, outRows, token);
+      // FIXED 2026-08-19 — was defaulting to valueInputOption=RAW, same
+      // forced-text issue found and fixed across many other files in
+      // this project. Numeric columns (total_tracked_keywords,
+      // avg_organic_rank, bsr, review_count, rating, etc.) now write as
+      // real numbers instead of text. asin/sku protected with a leading
+      // apostrophe as cheap defensive insurance, same pattern used
+      // everywhere else in this project.
+      const TEXT_PROTECTED_COLS = new Set(['asin', 'sku']);
+      const outRows = Array.from(merged.values()).map(r => SUMMARY_HEADERS.map(h => {
+        const v = r[h] ?? '';
+        return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+      }));
+      await replaceRows(sheetId, 'summary', SUMMARY_HEADERS, outRows, token, 'USER_ENTERED');
       results.push({ tab: 'summary', status: 'ok', incomingRows: incoming.length, totalRows: outRows.length });
     } catch (err) {
       console.error('[upload-keyword-tracker] summary tab failed:', err.message);
@@ -135,8 +146,13 @@ module.exports = async (req, res) => {
       const merged = new Map();
       (existing || []).forEach(r => merged.set(key(r), r));
       incoming.forEach(r => merged.set(key(r), r));
-      const outRows = Array.from(merged.values()).map(r => KEYWORD_HEADERS.map(h => r[h] ?? ''));
-      await replaceRows(sheetId, sheetName, KEYWORD_HEADERS, outRows, token);
+      // FIXED 2026-08-19 — same fix as the summary tab above.
+      const TEXT_PROTECTED_COLS = new Set(['asin', 'sku']);
+      const outRows = Array.from(merged.values()).map(r => KEYWORD_HEADERS.map(h => {
+        const v = r[h] ?? '';
+        return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+      }));
+      await replaceRows(sheetId, sheetName, KEYWORD_HEADERS, outRows, token, 'USER_ENTERED');
       results.push({ tab: sheetName, status: 'ok', incomingRows: incoming.length, totalRows: outRows.length });
     } catch (err) {
       console.error(`[upload-keyword-tracker] ${sheetName} tab failed:`, err.message);
