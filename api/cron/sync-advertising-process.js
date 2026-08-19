@@ -36,6 +36,28 @@ const ASIN_HEADERS = [
   'acos', 'brand', 'last_updated', 'date',
 ];
 
+// ADDED 2026-08-19 — raw per-campaign rows (SP + SB + SD, pre-aggregation)
+// for whichever brands are actively being reconciled against an outside
+// source (e.g. a coworker's independent Amazon Ads API pull). The
+// per-brand SUMMARY_HEADERS tab only stores the final monthly total —
+// useful for the dashboard, useless for finding WHICH campaign accounts
+// for a spend/sales gap between two pipelines that both claim to use
+// spCampaigns/sbCampaigns/sdCampaigns. This tab keeps the same
+// campaign_name join key both sides already agree on, so a gap shows up
+// directly as a campaign present on one side and missing (or different)
+// on the other, instead of requiring a fresh manual pull every time.
+// Scoped to an allowlist rather than all active brands — writing every
+// campaign row for all ~18 brands every run would meaningfully add to
+// the Sheets write load flagged in the SHEET_WRITE_STAGGER_MS comment
+// below. Add a brand's tabName here when it needs this kind of
+// reconciliation; remove it once resolved.
+const CAMPAIGN_DETAIL_TAB     = '_campaign_detail';
+const CAMPAIGN_DETAIL_BRANDS  = ['skinuva', 'skinuva-ca'];
+const DETAIL_HEADERS = [
+  'year', 'month', 'period', 'ad_type', 'campaign_name', 'brand',
+  'impressions', 'clicks', 'spend', 'sales', 'units', 'last_updated',
+];
+
 const POLL_TIMEOUT_MS  = 240_000;
 const POLL_INTERVAL_MS = 10_000;
 
@@ -478,15 +500,17 @@ module.exports = async (req, res) => {
     // entirely, rather than relying on an unverified assumption that the
     // ASIN-level report already captures every dollar.
     const allCampaignRows = [
-      ...spRows,
+      ...spRows.map(r => ({ ...r, _adType: 'SP' })),
       ...sbRows.map(r => ({
         ...r,
+        _adType:             'SB',
         spend:               r.cost      || r.spend      || 0,
         sales14d:            r.sales     || r.sales14d    || 0,
         unitsSoldClicks14d:  r.purchases || r.purchases14d || 0,
       })),
       ...(sdCampRows || []).map(r => ({
         ...r,
+        _adType:             'SD',
         spend:               r.cost      || 0,
         sales14d:            r.sales     || 0,
         unitsSoldClicks14d:  r.unitsSold || 0,
@@ -494,6 +518,7 @@ module.exports = async (req, res) => {
     ];
 
     const brandTotals = {};
+    const campaignDetailRows = []; // raw per-campaign rows for CAMPAIGN_DETAIL_BRANDS — see DETAIL_HEADERS comment above
     allCampaignRows.forEach(r => {
       const tabName = identifyBrand(r.campaignName);
       if (!tabName) {
@@ -506,6 +531,15 @@ module.exports = async (req, res) => {
       brandTotals[tabName].spend       += r.spend              || 0;
       brandTotals[tabName].sales       += r.sales14d           || 0;
       brandTotals[tabName].adUnits     += r.unitsSoldClicks14d || 0;
+
+      if (CAMPAIGN_DETAIL_BRANDS.includes(tabName)) {
+        campaignDetailRows.push([
+          year, month, label, r._adType, r.campaignName || '', tabName,
+          r.impressions || 0, r.clicks || 0,
+          round2(r.spend || 0), round2(r.sales14d || 0), r.unitsSoldClicks14d || 0,
+          now,
+        ]);
+      }
     });
 
     for (const brand of brands.filter(b => b.active)) {
@@ -533,6 +567,29 @@ module.exports = async (req, res) => {
       } catch (err) {
         console.error(`[sync-advertising-process] ${label} ${brand.id} failed:`, err.message);
         allResults.push({ period: label, brand: brand.id, status: 'error', error: err.message });
+      }
+    }
+
+    // ── 5c. Write raw campaign-level detail for CAMPAIGN_DETAIL_BRANDS ────
+    // Same upsert shape as 5's summary write: drop existing rows for this
+    // year/month, append the freshly computed set. Re-running a period
+    // (e.g. a retry) replaces rather than duplicates its campaign rows.
+    if (campaignDetailRows.length > 0) {
+      if (sheetOpIndex > 0) await sleep(SHEET_WRITE_STAGGER_MS);
+      sheetOpIndex++;
+      try {
+        const tok      = await ensureTabOnce(SHEET_AD_SUMMARY, CAMPAIGN_DETAIL_TAB, DETAIL_HEADERS);
+        const existing = await readRows(SHEET_AD_SUMMARY, CAMPAIGN_DETAIL_TAB);
+        const kept = existing.filter(r => !(parseInt(r.year, 10) === year && parseInt(r.month, 10) === month));
+        const allRows = [
+          ...kept.map(r => [r.year, r.month, r.period, r.ad_type, r.campaign_name, r.brand, r.impressions, r.clicks, r.spend, r.sales, r.units, r.last_updated]),
+          ...campaignDetailRows,
+        ];
+        await replaceRows(SHEET_AD_SUMMARY, CAMPAIGN_DETAIL_TAB, DETAIL_HEADERS, allRows, tok);
+        console.log(`[sync-advertising-process] ${label}: wrote ${campaignDetailRows.length} campaign-detail rows`);
+      } catch (err) {
+        console.error(`[sync-advertising-process] ${label} campaign-detail write failed:`, err.message);
+        allResults.push({ period: label, brand: 'campaign-detail', stage: 'campaign-detail-write', status: 'error', error: err.message });
       }
     }
   }
