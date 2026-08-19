@@ -87,9 +87,6 @@ const LABELS = [
 // this same silent gap a third time.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
-  { name: 'skinuva ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
-  { name: 'skinuva-ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
-  { name: 'skinuva canada', tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
   { name: 'the creme shop', tabName: 'creme-shop'     },
   { name: 'cloud cafe',     tabName: 'cloud-cafe'     },
   { name: 'just bjorn',     tabName: 'just-bjorn'     },
@@ -113,9 +110,12 @@ const CAMPAIGN_BRANDS = [
 // of sync with, so a future brand addition can't repeat today's silent
 // gap. Runs once per invocation, cheap (brands.js is tiny). Requires
 // config/brands.js — added here since this file didn't import it before.
+// skinuva-ca is handled via the explicit special case in identifyBrand()
+// below (see that function's comment), not a CAMPAIGN_BRANDS entry — so
+// it's excluded here too, to avoid a false "missing" warning every run.
 const brands = require('../config/brands');
 (function checkCampaignBrandsCoverage() {
-  const coveredTabNames = new Set(CAMPAIGN_BRANDS.map(b => b.tabName));
+  const coveredTabNames = new Set([...CAMPAIGN_BRANDS.map(b => b.tabName), 'skinuva-ca']);
   const missing = brands.filter(b => b.active && !coveredTabNames.has(b.tabName));
   if (missing.length > 0) {
     console.error(`[sync-ad-search-terms-process] CAMPAIGN_BRANDS is missing ${missing.length} active brand(s): ${missing.map(b => b.id).join(', ')} — their search term data will fall into "unmatched campaign" and never sync until added to CAMPAIGN_BRANDS in this file.`);
@@ -129,8 +129,17 @@ function stripAccents(str) {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// FIXED 2026-08-19 — see sync-advertising-process.js's identical fix for
+// the full explanation. The three guessed skinuva-ca variants were
+// confirmed WRONG against real Canadian campaign data (test-ca-ad-
+// campaigns.js): real names look like "Skinuva - SP - Scar - Auto -
+// CANADA 7.26" — "CANADA" and "Skinuva" are never adjacent. This checks
+// for both words appearing anywhere in the name instead, as an explicit
+// override before the generic CAMPAIGN_BRANDS list, kept identical to
+// sync-advertising-process.js's own version of this same fix.
 function identifyBrand(campaignName) {
   const normalized = stripAccents((campaignName || '').toLowerCase());
+  if (normalized.includes('skinuva') && normalized.includes('canada')) return 'skinuva-ca';
   const match = CAMPAIGN_BRANDS.find(b => normalized.includes(b.name));
   return match ? match.tabName : null;
 }
