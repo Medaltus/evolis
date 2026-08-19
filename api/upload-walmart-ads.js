@@ -231,7 +231,9 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read master SKU list for brand resolution', detail: err.message });
   }
 
-  const nowIso = new Date().toISOString();
+  // FIXED 2026-08-19 per Jaclyn — same fix as upload-amazon-reviews.js;
+  // see that file for the full explanation.
+  const nowIso = toEstIso(new Date());
   const unmatchedItemIds = new Set();
 
   // ── 1. Ad Orders — one row per item per month, brand-resolved ───────────
@@ -454,3 +456,15 @@ module.exports = async (req, res) => {
     ...(unmatchedItemIds.size ? { unmatchedItemIds: Array.from(unmatchedItemIds) } : {}),
   });
 };
+
+// Same helper already proven in sync-fbm-returns-process.js /
+// sync-returns-process.js / upload-amazon-reviews.js — see
+// upload-amazon-reviews.js for the full explanation.
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
