@@ -142,8 +142,22 @@ module.exports = async (req, res) => {
     const merged = new Map();
     (existing || []).forEach(r => merged.set(key(r), r));
     incoming.forEach(r => merged.set(key(r), r));
-    const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => r[h] ?? ''));
-    await replaceRows(sheetId, TAB_NAME, HEADERS, outRows, token);
+    // FIXED 2026-08-19 — was defaulting to valueInputOption=RAW, same
+    // forced-text issue found and fixed across many other files in this
+    // project. date/bundles_sold/total_sales now write as real
+    // dates/numbers. bundle_asin protected with a leading apostrophe
+    // (Sheets' own force-text convention under USER_ENTERED) as cheap
+    // defensive insurance, same as every other ASIN-like column
+    // elsewhere in this project. Note this is unrelated to the
+    // SheetJS-serial-number bug already fixed above — that was about the
+    // CSV *parsing* step misreading a date string, not about how a
+    // correctly-parsed string then gets written to Sheets.
+    const TEXT_PROTECTED_COLS = new Set(['bundle_asin']);
+    const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => {
+      const v = r[h] ?? '';
+      return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+    }));
+    await replaceRows(sheetId, TAB_NAME, HEADERS, outRows, token, 'USER_ENTERED');
     return res.status(200).json({ status: 'ok', tab: TAB_NAME, incomingRows: incoming.length, totalRows: outRows.length });
   } catch (err) {
     console.error('[upload-bundle-report] sheet write failed:', err.message);
