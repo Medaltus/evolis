@@ -163,7 +163,12 @@ module.exports = async (req, res) => {
 
   if (!rows.length) return res.status(400).json({ error: 'No rows found in uploaded file' });
 
-  const nowIso = new Date().toISOString();
+  // FIXED 2026-08-19 per Jaclyn — new Date().toISOString() is always
+  // UTC, making last_synced confusing to read against Eastern-time
+  // activity. Same toEstIso() helper already proven working in
+  // sync-fbm-returns-process.js / sync-returns-process.js earlier this
+  // project — reused here rather than inventing a new approach.
+  const nowIso = toEstIso(new Date());
   const unmatchedSkus = new Set();
   const rowsByBrandTab = {};
 
@@ -244,3 +249,18 @@ module.exports = async (req, res) => {
     ...(unmatchedSkus.size ? { unmatchedSkus: Array.from(unmatchedSkus) } : {}),
   });
 };
+
+// Same helper already proven in sync-fbm-returns-process.js /
+// sync-returns-process.js — formats Eastern wall-clock time as an
+// ISO-shaped string ending in "Z", so it displays consistently with
+// every other Eastern-anchored timestamp in this project rather than
+// UTC. Not a literal UTC timestamp despite the "Z" suffix — a deliberate,
+// consistent convention already established elsewhere in this codebase.
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
