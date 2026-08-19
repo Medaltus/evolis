@@ -81,7 +81,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'SHEET_WALMART_INVENTORY env var not set' });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toEstIso(new Date()).slice(0, 10); // FIXED 2026-08-19, was UTC-based; this date is used as a snapshot-cursor key by other files' "latest date" lookups, so this shifts which calendar date (Eastern, not UTC) a given run's rows get stamped with
 
   // ── Diagnostic-only test mode — INVENTORY ───────────────────────────────
   // Same pattern as sync-products.js's ?testSku= — verifies the raw
@@ -243,7 +243,7 @@ module.exports = async (req, res) => {
 
   const totalCount = masterList.length;
   const startTime  = Date.now();
-  const nowIso     = new Date().toISOString();
+  const nowIso     = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
 
   let processed = 0;
   let i = cursor;
@@ -657,7 +657,7 @@ async function readMeta() {
 
 async function writeMeta(updates) {
   const token = await ensureTab(SHEET_ID, META_TAB, META_HEADERS);
-  const nowIso = new Date().toISOString();
+  const nowIso = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
   const existing = await readRows(SHEET_ID, META_TAB);
   const map = {};
   (existing || []).forEach(r => { if (r.KEY) map[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
@@ -666,3 +666,18 @@ async function writeMeta(updates) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Same helper already proven in sync-fbm-returns-process.js /
+// sync-returns-process.js — formats Eastern wall-clock time as an
+// ISO-shaped string ending in "Z", so it displays consistently with
+// every other Eastern-anchored timestamp in this project rather than
+// UTC. Not a literal UTC timestamp despite the "Z" suffix — a
+// deliberate, consistent convention used throughout this codebase.
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
