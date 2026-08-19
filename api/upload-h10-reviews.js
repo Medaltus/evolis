@@ -44,6 +44,15 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // FIXED 2026-08-19 — this endpoint had no authentication check at all,
+  // confirmed while reviewing it directly (already flagged as suspicious
+  // in upload-amazon-reviews.js's own comments, but never actually fixed
+  // here until now). Every other upload-*.js endpoint in this project
+  // requires this same Bearer CRON_SECRET check; this one writes to real
+  // Customer Service data and had no protection whatsoever.
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { filename, contentBase64 } = req.body || {};
@@ -117,7 +126,17 @@ module.exports = async function handler(req, res) {
         }
       }
 
-      await replaceRows(sheets.customerService, tabName, HEADERS, sheetRows, token);
+      // FIXED 2026-08-19 — was defaulting to valueInputOption=RAW. This
+      // matters more here than in most files: every run reads back and
+      // rewrites the ENTIRE row, including the compliance_cases_* /
+      // last_updated_on columns this file explicitly promises never to
+      // touch (per file header, "preserve the other owner's columns").
+      // Under RAW, a manually-typed number in those columns would get
+      // silently rewritten as forced text on every single run — the
+      // displayed value looks unchanged, but the cell's real type
+      // quietly degrades each time. year/month/reviews_requested also
+      // now correctly write as real numbers instead of text.
+      await replaceRows(sheets.customerService, tabName, HEADERS, sheetRows, token, 'USER_ENTERED');
       results.push({ brand: tabName, status: 'ok', updated, added });
     } catch (err) {
       console.error(`[upload-h10-reviews] ${tabName} failed:`, err.message);
