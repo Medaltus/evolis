@@ -54,6 +54,14 @@ const HEADERS = [
   'quantity', 'fulfillment_center_id', 'detailed_disposition', 'reason',
   'status', 'license_plate_number', 'customer_comments', 'brand', 'last_updated',
   'order_date', // column P — see file header for how/why this is resolved
+  // ADDED 2026-08-18 — shared with the new FBM returns cron
+  // (sync-fbm-returns-process.js), which writes to these SAME per-brand
+  // tabs. fulfillment_channel is always 'FBA' here (see candidate object
+  // below); refund_amount/amazon_rma_id/resolution are always blank for
+  // FBA rows — this report has no dollar field at all (a known,
+  // documented limitation predating this change) and no RMA-id/
+  // resolution concept the way the FBM report does.
+  'fulfillment_channel', 'refund_amount', 'amazon_rma_id', 'resolution',
 ];
 
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
@@ -283,6 +291,11 @@ module.exports = async (req, res) => {
           license_plate_number:   row['license-plate-number'] || '',
           customer_comments:      row['customer-comments'] || '',
           brand:                  brand.id,
+          // ADDED 2026-08-18 — this cron is FBA-only; refund_amount/
+          // amazon_rma_id/resolution intentionally left unset (default
+          // to blank via the HEADERS.map fallback below) since none of
+          // those exist in this report at all.
+          fulfillment_channel:    'FBA',
         };
         const key = returnKey(candidate);
         if (!key) return; // no order_id+sku at all — skip, can't dedupe safely
@@ -308,7 +321,23 @@ module.exports = async (req, res) => {
         }
       });
 
-      await replaceRows(sheets.returns, tabName, HEADERS, workingRows, token);
+      // FIXED 2026-08-18 — was defaulting to valueInputOption=RAW. Fixed
+      // now specifically BECAUSE this tab is about to be shared with the
+      // new sync-fbm-returns-process.js cron, which writes real numbers
+      // via USER_ENTERED — leaving this one on RAW would recreate the
+      // exact "mixed types in the same column" problem already found and
+      // fixed elsewhere in this project (quantity/refund_amount would be
+      // real numbers for FBM rows but forced text for FBA rows in the
+      // same column). fnsku/license_plate_number protected defensively
+      // (not confirmed numeric-risk, but costs nothing); order_id/sku/
+      // asin left unprotected — confirmed non-numeric-looking from real
+      // sample data (hyphenated order IDs, letter-prefixed ASINs/SKUs).
+      const TEXT_PROTECTED_COLS = new Set(['fnsku', 'license_plate_number']);
+      const protectedRows = workingRows.map(row => HEADERS.map((h, i) => {
+        const v = row[i] ?? '';
+        return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+      }));
+      await replaceRows(sheets.returns, tabName, HEADERS, protectedRows, token, 'USER_ENTERED');
       console.log(`[sync-returns-process] ${brand.id} — new:${added} updated:${updated} unchanged:${unchanged}`);
       results.push({ brand: brand.id, status: 'ok', new: added, updated, unchanged });
     } catch (err) {
