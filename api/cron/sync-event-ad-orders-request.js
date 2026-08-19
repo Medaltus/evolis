@@ -3,18 +3,36 @@
  * Step 1 of 2 — for each of 4 fixed target tabs (Big Spring Sale, Prime Day,
  * Prime Big Deal Days, Black Friday and Cyber Monday), looks up that
  * event's date range from the Events tab (SHEET_MASTER_SKU_LIST, "Events"
- * tab — same source sync-event-orders-request.js uses) and requests ONE
- * spAdvertisedProduct (ASIN-level ad performance) report per matched
- * event, scoped to exactly that event's start/end dates.
+ * tab — same source sync-event-orders-request.js uses) and requests TWO
+ * ASIN-level ad performance reports per matched event, scoped to exactly
+ * that event's start/end dates:
+ *   - spAdvertisedProduct (Sponsored Products)
+ *   - sdAdvertisedProduct (Sponsored Display) — ADDED 2026-08-19
  *
- * DAILY GRANULARITY: requests each event's report with timeUnit=DAILY, so
- * every row carries a real per-day date within the event window — one row
- * per ASIN per day, not one summary row per ASIN for the whole event.
- * (Earlier version of this file used SUMMARY granularity specifically to
- * avoid needing a date column at all, by scoping each request to the
- * event's exact window — that's still how sync-event-orders-request.js
- * works, but this file switched to DAILY on 2026-07-16 so downstream
- * sheets have an actual purchase_date column to work with.)
+ * SPONSORED BRANDS DELIBERATELY NOT INCLUDED — this writes to
+ * SHEET_AD_ORDERS, which is ASIN-level. SB has no ASIN-level report at
+ * all (it promotes the brand storefront, not individual products) — the
+ * same asymmetry already confirmed for the regular daily advertising
+ * pipeline (sync-advertising-process.js). If event-scoped SB tracking is
+ * ever wanted, it would need a separate, CAMPAIGN-level piece mirroring
+ * SHEET_ADVERTISING, not an addition here.
+ *
+ * SPONSORED DISPLAY DAILY GRANULARITY — UNVERIFIED, FLAGGED: SD's
+ * 'date' column for DAILY timeUnit has never been directly confirmed
+ * the way spAdvertisedProduct's was (test-sd-connection.js only ever
+ * tested SD with timeUnit=SUMMARY, no date column requested). Requesting
+ * it here on the same precedent as SP's DAILY variant, since SD's other
+ * confirmed columns have consistently mirrored SP's structure so far —
+ * but this is a reasonable extrapolation, not a confirmed fact. The
+ * existing ?debug=true mode in sync-event-ad-orders-process.js has been
+ * extended to surface SD's first raw row too, specifically so this can
+ * be checked against real data before trusting it in the real write path
+ * — same safety net the SP side already used for its own date column.
+ *
+ * DAILY GRANULARITY (both report types): requests each event's reports
+ * with timeUnit=DAILY, so every row carries a real per-day date within
+ * the event window — one row per ASIN per day, not one summary row per
+ * ASIN for the whole event.
  *
  * Matching logic, meta tab naming, and the ?tab= single-event filter are
  * identical to sync-event-orders-request.js — see that file for the full
@@ -23,7 +41,10 @@
  *
  * Stores reportIds in SHEET_AD_ORDERS's `_meta_events` tab (this sheet's
  * own meta tab — separate from the orders sheet's `_meta_events`, since
- * these are two different sheets).
+ * these are two different sheets). Keys are now report-type-scoped
+ * (report_id_sp_<tab>, report_id_sd_<tab>) rather than the single
+ * report_id_<tab> used before this change, to hold two report IDs per
+ * event tab instead of one.
  *
  * Manual, one event at a time (recommended given data volume):
  *   GET /api/cron/sync-event-ad-orders-request?tab=Prime%20Day
@@ -46,6 +67,26 @@ const TARGET_TABS = [
   { tabName: 'Prime Big Deal Days',           keywords: ['prime big deal days', 'big deal days'] },
   { tabName: 'Black Friday and Cyber Monday', keywords: ['black friday', 'cyber monday'] },
 ];
+
+// Both report types share the same shape apart from reportTypeId/adProduct
+// and their promoted-item column names — requested together per event via
+// requestBothReports() below, rather than duplicating this twice inline.
+async function requestBothReports(token, profileId, startDate, endDate, tabName) {
+  const spReportId = await requestReportWithRetry(
+    token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
+    { startDate, endDate }, ['advertiser'],
+    ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+    `${tabName} (SP)`
+  );
+  // ADDED 2026-08-19 — see file header for the unverified 'date' column caveat.
+  const sdReportId = await requestReportWithRetry(
+    token, profileId, 'sdAdvertisedProduct', 'SPONSORED_DISPLAY',
+    { startDate, endDate }, ['advertiser'],
+    ['date', 'campaignName', 'campaignId', 'adGroupName', 'promotedAsin', 'promotedSku', 'impressions', 'clicks', 'cost', 'purchases', 'sales', 'unitsSold'],
+    `${tabName} (SD)`
+  );
+  return { spReportId, sdReportId };
+}
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -74,35 +115,30 @@ module.exports = async (req, res) => {
 
     const overrideEndRaw = `${req.query.endDate}T23:59:59Z`;
     const overrideEnd = overrideEndRaw > safeBefore ? safeBefore.slice(0, 10) : req.query.endDate;
+    const tabName = req.query.outTab;
 
-    const reportId = await requestReportWithRetry(
-      overrideToken, overrideProfileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
-      { startDate: req.query.startDate, endDate: overrideEnd },
-      ['advertiser'],
-      ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
-      req.query.outTab
-    );
-    if (!reportId) return res.status(500).json({ error: 'No reportId returned for override request' });
+    const { spReportId, sdReportId } = await requestBothReports(overrideToken, overrideProfileId, req.query.startDate, overrideEnd, tabName);
+    if (!spReportId && !sdReportId) return res.status(500).json({ error: 'Both report requests failed for override' });
 
     try {
-      const tabName = req.query.outTab;
       const metaToken = await ensureTab(sheets.adOrders, META_TAB, META_HEADERS);
       const rawMeta   = await readRows(sheets.adOrders, META_TAB);
       const metaMap2  = {};
       (rawMeta || []).forEach(r => { if (r.KEY) metaMap2[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
 
-      metaMap2[`report_id_${tabName}`] = [`report_id_${tabName}`, reportId, ts];
-      metaMap2[`processed_${tabName}`] = [`processed_${tabName}`, 'false', ts];
+      metaMap2[`report_id_sp_${tabName}`] = [`report_id_sp_${tabName}`, spReportId || '', ts];
+      metaMap2[`report_id_sd_${tabName}`] = [`report_id_sd_${tabName}`, sdReportId || '', ts];
+      metaMap2[`processed_${tabName}`]    = [`processed_${tabName}`, 'false', ts];
       const existingTargets = ((metaMap2['target_tabs'] || [])[1] || '').split(',').filter(Boolean);
       metaMap2['target_tabs']  = ['target_tabs', Array.from(new Set([...existingTargets, tabName])).join(','), ts];
       metaMap2['ad_profile_id'] = ['ad_profile_id', String(overrideProfileId), ts];
 
       await replaceRows(sheets.adOrders, META_TAB, META_HEADERS, Object.values(metaMap2), metaToken);
     } catch (err) {
-      return res.status(500).json({ error: 'Failed to write meta for override', detail: err.message, reportId });
+      return res.status(500).json({ error: 'Failed to write meta for override', detail: err.message, spReportId, sdReportId });
     }
 
-    return res.status(200).json({ mode: 'manual_override', outTab: req.query.outTab, reportId, start: req.query.startDate, end: overrideEnd });
+    return res.status(200).json({ mode: 'manual_override', outTab: tabName, spReportId, sdReportId, start: req.query.startDate, end: overrideEnd });
   }
 
   // ── 1. Read Events tab, apply optional ?tab= filter ─────────────────────
@@ -149,7 +185,7 @@ module.exports = async (req, res) => {
   if (skipped.length) console.log('[sync-event-ad-orders-request] skipped:', JSON.stringify(skipped));
   if (!matched.length) return res.status(200).json({ message: 'No target tabs matched a valid event with real dates', skipped });
 
-  // ── 2. Request one spAdvertisedProduct report per matched event ────────
+  // ── 2. Request SP + SD reports per matched event ────────────────────────
   let token, profileId;
   try {
     token     = await getAdToken();
@@ -158,19 +194,14 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to auth/discover ad profile', detail: err.message });
   }
 
-  const reportIds = {};
+  const reportIdsByTab = {};
   for (const m of matched) {
-    const reportId = await requestReportWithRetry(
-      token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
-      { startDate: m.startDate, endDate: m.endDate },
-      ['advertiser'],
-      ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
-      m.tabName
-    );
-    if (reportId) reportIds[m.tabName] = reportId;
+    const { spReportId, sdReportId } = await requestBothReports(token, profileId, m.startDate, m.endDate, m.tabName);
+    reportIdsByTab[m.tabName] = { spReportId, sdReportId };
   }
 
-  if (!Object.keys(reportIds).length) return res.status(500).json({ error: 'All report requests failed', matched, skipped });
+  const anySucceeded = Object.values(reportIdsByTab).some(r => r.spReportId || r.sdReportId);
+  if (!anySucceeded) return res.status(500).json({ error: 'All report requests failed', matched, skipped });
 
   // ── 3. Write meta (accumulates across separate single-event calls) ─────
   try {
@@ -180,22 +211,24 @@ module.exports = async (req, res) => {
     (rawMeta || []).forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
 
     for (const m of matched) {
-      if (!reportIds[m.tabName]) continue;
-      metaMap[`report_id_${m.tabName}`] = [`report_id_${m.tabName}`, reportIds[m.tabName], ts];
-      metaMap[`processed_${m.tabName}`] = [`processed_${m.tabName}`, 'false', ts];
+      const { spReportId, sdReportId } = reportIdsByTab[m.tabName] || {};
+      if (!spReportId && !sdReportId) continue;
+      metaMap[`report_id_sp_${m.tabName}`] = [`report_id_sp_${m.tabName}`, spReportId || '', ts];
+      metaMap[`report_id_sd_${m.tabName}`] = [`report_id_sd_${m.tabName}`, sdReportId || '', ts];
+      metaMap[`processed_${m.tabName}`]    = [`processed_${m.tabName}`, 'false', ts];
     }
     const existingTargets = ((metaMap['target_tabs'] || [])[1] || '').split(',').filter(Boolean);
-    const newTargets = matched.filter(m => reportIds[m.tabName]).map(m => m.tabName);
+    const newTargets = matched.filter(m => reportIdsByTab[m.tabName]?.spReportId || reportIdsByTab[m.tabName]?.sdReportId).map(m => m.tabName);
     const allTargets = Array.from(new Set([...existingTargets, ...newTargets]));
     metaMap['target_tabs']  = ['target_tabs', allTargets.join(','), ts];
     metaMap['ad_profile_id'] = ['ad_profile_id', String(profileId), ts];
 
     await replaceRows(sheets.adOrders, META_TAB, META_HEADERS, Object.values(metaMap), metaToken);
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to write meta', detail: err.message, reportIds });
+    return res.status(500).json({ error: 'Failed to write meta', detail: err.message, reportIdsByTab });
   }
 
-  res.status(200).json({ reportIds, matched, skipped });
+  res.status(200).json({ reportIdsByTab, matched, skipped });
 };
 
 // ── Helpers (auth/retry logic copied from sync-advertising-request.js) ────
