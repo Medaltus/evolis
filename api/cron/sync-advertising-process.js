@@ -173,9 +173,13 @@ module.exports = async (req, res) => {
   const asinCurrId = meta['ad_report_id_asin_curr'];
   const spCurrId   = meta['ad_report_id_sp_curr'];
   const sbCurrId   = meta['ad_report_id_sb_curr'];
+  const sdCurrId   = meta['ad_report_id_sd_curr']; // ADDED 2026-08-19 — Sponsored Display, ASIN-level
+  const sdCampCurrId = meta['ad_report_id_sdcamp_curr']; // ADDED 2026-08-19 — Sponsored Display, dedicated campaign-level
   const asinPrevId = meta['ad_report_id_asin_prev'];
   const spPrevId   = meta['ad_report_id_sp_prev'];
   const sbPrevId   = meta['ad_report_id_sb_prev'];
+  const sdPrevId   = meta['ad_report_id_sd_prev']; // ADDED 2026-08-19 — Sponsored Display, ASIN-level
+  const sdCampPrevId = meta['ad_report_id_sdcamp_prev']; // ADDED 2026-08-19 — Sponsored Display, dedicated campaign-level
   const profileId  = meta['ad_profile_id'];
   const endDateCurr = meta['ad_end_date_curr'];
   const endDatePrev = meta['ad_end_date_prev'];
@@ -234,31 +238,39 @@ module.exports = async (req, res) => {
 
   // ── 2. Poll + download all reports ────────────────────────────────────────
   // Handle both new multi-report format and legacy single-report format
-  let asinCurrRows = [], spCurrRows = [], sbCurrRows = [];
-  let asinPrevRows = [], spPrevRows = [], sbPrevRows = [];
+  let asinCurrRows = [], spCurrRows = [], sbCurrRows = [], sdCurrRows = [], sdCampCurrRows = [];
+  let asinPrevRows = [], spPrevRows = [], sbPrevRows = [], sdPrevRows = [], sdCampPrevRows = [];
   let legacyAsinRows = [], legacySummaryRows = [];
 
   if (hasNewIds) {
     console.log(`[sync-advertising-process] processing new-format reports`);
     const results = await Promise.all([
-      asinCurrId ? pollAndDownload(asinCurrId, token, profileId) : Promise.resolve([]),
-      spCurrId   ? pollAndDownload(spCurrId,   token, profileId) : Promise.resolve([]),
-      sbCurrId   ? pollAndDownload(sbCurrId,   token, profileId) : Promise.resolve([]),
-      asinPrevId ? pollAndDownload(asinPrevId, token, profileId) : Promise.resolve([]),
-      spPrevId   ? pollAndDownload(spPrevId,   token, profileId) : Promise.resolve([]),
-      sbPrevId   ? pollAndDownload(sbPrevId,   token, profileId) : Promise.resolve([]),
+      asinCurrId   ? pollAndDownload(asinCurrId,   token, profileId) : Promise.resolve([]),
+      spCurrId     ? pollAndDownload(spCurrId,     token, profileId) : Promise.resolve([]),
+      sbCurrId     ? pollAndDownload(sbCurrId,     token, profileId) : Promise.resolve([]),
+      sdCurrId     ? pollAndDownload(sdCurrId,     token, profileId) : Promise.resolve([]),
+      sdCampCurrId ? pollAndDownload(sdCampCurrId, token, profileId) : Promise.resolve([]),
+      asinPrevId   ? pollAndDownload(asinPrevId,   token, profileId) : Promise.resolve([]),
+      spPrevId     ? pollAndDownload(spPrevId,     token, profileId) : Promise.resolve([]),
+      sbPrevId     ? pollAndDownload(sbPrevId,     token, profileId) : Promise.resolve([]),
+      sdPrevId     ? pollAndDownload(sdPrevId,     token, profileId) : Promise.resolve([]),
+      sdCampPrevId ? pollAndDownload(sdCampPrevId, token, profileId) : Promise.resolve([]),
     ]);
-    [asinCurrRows, spCurrRows, sbCurrRows, asinPrevRows, spPrevRows, sbPrevRows] = results;
+    [asinCurrRows, spCurrRows, sbCurrRows, sdCurrRows, sdCampCurrRows, asinPrevRows, spPrevRows, sbPrevRows, sdPrevRows, sdCampPrevRows] = results;
 
     // If any curr or prev campaign report is still pending, retry later
     if (spCurrRows === null || spPrevRows === null) {
       return res.status(202).json({ message: 'Reports not ready yet — will retry next run' });
     }
-    // Treat null as empty (non-critical reports e.g. SB may fail gracefully)
-    asinCurrRows = asinCurrRows || [];
-    sbCurrRows   = sbCurrRows   || [];
-    asinPrevRows = asinPrevRows || [];
-    sbPrevRows   = sbPrevRows   || [];
+    // Treat null as empty (non-critical reports e.g. SB/SD may fail gracefully)
+    asinCurrRows   = asinCurrRows   || [];
+    sbCurrRows     = sbCurrRows     || [];
+    sdCurrRows     = sdCurrRows     || [];
+    sdCampCurrRows = sdCampCurrRows || []; // ADDED 2026-08-19
+    asinPrevRows   = asinPrevRows   || [];
+    sbPrevRows     = sbPrevRows     || [];
+    sdPrevRows     = sdPrevRows     || [];
+    sdCampPrevRows = sdCampPrevRows || []; // ADDED 2026-08-19
 
   } else {
     // Legacy path — single period
@@ -284,11 +296,11 @@ module.exports = async (req, res) => {
 
   const periods = hasNewIds
     ? [
-        { label: 'curr', asinRows: asinCurrRows, spRows: spCurrRows, sbRows: sbCurrRows, endDate: endDateCurr, ...yearMonthFromEndDate(endDateCurr) },
-        { label: 'prev', asinRows: asinPrevRows, spRows: spPrevRows, sbRows: sbPrevRows, endDate: endDatePrev, ...yearMonthFromEndDate(endDatePrev) },
+        { label: 'curr', asinRows: asinCurrRows, spRows: spCurrRows, sbRows: sbCurrRows, sdRows: sdCurrRows, sdCampRows: sdCampCurrRows, endDate: endDateCurr, ...yearMonthFromEndDate(endDateCurr) },
+        { label: 'prev', asinRows: asinPrevRows, spRows: spPrevRows, sbRows: sbPrevRows, sdRows: sdPrevRows, sdCampRows: sdCampPrevRows, endDate: endDatePrev, ...yearMonthFromEndDate(endDatePrev) },
       ]
     : [
-        { label: 'legacy', asinRows: legacyAsinRows, spRows: legacySummaryRows, sbRows: [], endDate: legacyEndDate, ...yearMonthFromEndDate(legacyEndDate) },
+        { label: 'legacy', asinRows: legacyAsinRows, spRows: legacySummaryRows, sbRows: [], sdRows: [], sdCampRows: [], endDate: legacyEndDate, ...yearMonthFromEndDate(legacyEndDate) },
       ];
 
   // ── 4. Build ASIN → brand map ──────────────────────────────────────────────
@@ -354,16 +366,36 @@ module.exports = async (req, res) => {
   }
 
   for (const period of periods) {
-    const { label, year, month, endDate, asinRows, spRows, sbRows } = period;
-    console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length}`);
+    const { label, year, month, endDate, asinRows, spRows, sbRows, sdRows, sdCampRows } = period;
+    console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length} sd=${(sdRows || []).length} sdcamp=${(sdCampRows || []).length}`);
 
-    // ── 5a. Write ASIN-level data (SP only) ──────────────────────────────────
-    if (asinRows.length > 0) {
+    // ── 5a. Write ASIN-level data (SP + SD — SB has no ASIN-level report) ────
+    // ADDED 2026-08-19 — SD's real column names (confirmed via
+    // test-sd-connection.js against actual returned data, not guessed)
+    // differ from SP's: promotedAsin/cost/sales/unitsSold vs SP's
+    // advertisedAsin/spend/sales14d/unitsSoldClicks14d. Normalized into a
+    // single common shape here before aggregating, rather than forcing
+    // SD's field names to match SP's or duplicating the aggregation loop.
+    const normalizedAsinRows = [
+      ...asinRows.map(r => ({
+        asin:  (r.advertisedAsin || '').trim().toUpperCase(),
+        units: r.unitsSoldClicks14d || 0,
+        spend: r.spend || 0,
+        sales: r.sales14d || 0,
+      })),
+      ...(sdRows || []).map(r => ({
+        asin:  (r.promotedAsin || '').trim().toUpperCase(),
+        units: r.unitsSold || 0,
+        spend: r.cost || 0,
+        sales: r.sales || 0,
+      })),
+    ];
+
+    if (normalizedAsinRows.length > 0) {
       const byBrand = { 'asin-data': [] };
-      asinRows.forEach(r => {
-        const asin    = (r.advertisedAsin || '').trim().toUpperCase();
-        if (!asin) return;
-        const tabName = asinBrandMap[asin] || 'asin-data';
+      normalizedAsinRows.forEach(r => {
+        if (!r.asin) return;
+        const tabName = asinBrandMap[r.asin] || 'asin-data';
         if (!byBrand[tabName]) byBrand[tabName] = [];
         byBrand[tabName].push(r);
       });
@@ -372,12 +404,11 @@ module.exports = async (req, res) => {
         if (tabRows.length === 0) continue;
         const asinMap = {};
         tabRows.forEach(r => {
-          const asin = (r.advertisedAsin || '').trim().toUpperCase();
-          if (!asin) return;
-          if (!asinMap[asin]) asinMap[asin] = { adUnits: 0, spend: 0, sales: 0 };
-          asinMap[asin].adUnits += r.unitsSoldClicks14d || 0;
-          asinMap[asin].spend   += r.spend              || 0;
-          asinMap[asin].sales   += r.sales14d            || 0;
+          if (!r.asin) return;
+          if (!asinMap[r.asin]) asinMap[r.asin] = { adUnits: 0, spend: 0, sales: 0 };
+          asinMap[r.asin].adUnits += r.units;
+          asinMap[r.asin].spend   += r.spend;
+          asinMap[r.asin].sales   += r.sales;
         });
         const brandLabel = tabName === 'asin-data' ? 'unmatched' : tabName;
         const newRows = Object.entries(asinMap).map(([asin, agg]) => {
@@ -413,6 +444,21 @@ module.exports = async (req, res) => {
     // reads — previously only `spend` was remapped and `purchases14d` (which
     // was never actually SB's field name) was used instead of `purchases`,
     // so SB sales and units were both silently counted as 0 in every total.
+    //
+    // FIXED 2026-08-19 — an earlier version of this derived SD's
+    // campaign-level totals by aggregating its ASIN-level rows (sdRows)
+    // by campaignName. Per Jaclyn: the priority is capturing 100% of
+    // spend/sales, even where the ASIN-level breakdown is incomplete —
+    // deriving campaign totals FROM the ASIN-level report risked
+    // silently missing any spend/sales Amazon's attribution never tied
+    // to a specific promoted product. Confirmed via test-sd-campaigns.js
+    // (2026-08-19, accepted outright with zero column corrections
+    // needed) that 'sdCampaigns' is a genuine, DEDICATED campaign-level
+    // report — the same way spCampaigns/sbCampaigns already work
+    // independently of their own ASIN-level counterparts. Using this
+    // real report instead of a derived sum removes the completeness risk
+    // entirely, rather than relying on an unverified assumption that the
+    // ASIN-level report already captures every dollar.
     const allCampaignRows = [
       ...spRows,
       ...sbRows.map(r => ({
@@ -420,6 +466,12 @@ module.exports = async (req, res) => {
         spend:               r.cost      || r.spend      || 0,
         sales14d:            r.sales     || r.sales14d    || 0,
         unitsSoldClicks14d:  r.purchases || r.purchases14d || 0,
+      })),
+      ...(sdCampRows || []).map(r => ({
+        ...r,
+        spend:               r.cost      || 0,
+        sales14d:            r.sales     || 0,
+        unitsSoldClicks14d:  r.unitsSold || 0,
       })),
     ];
 
