@@ -144,7 +144,7 @@ module.exports = async (req, res) => {
   const targetDate = (req.query && req.query.targetDate) || '';
   const dryRun = String((req.query && req.query.dryRun) || '').toLowerCase() === 'true';
 
-  const nowIso = new Date().toISOString();
+  const nowIso = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
   const todayEt = getTodayEasternDateString();
 
   console.log(`[inventory-reconciliation] run start ${nowIso} — today (ET): ${todayEt}${dryRun ? ' [DRY RUN]' : ''}`);
@@ -604,4 +604,19 @@ async function downloadFile(fileId) {
   if (!res.ok) throw new Error(`Drive file download failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+// Same helper already proven in sync-fbm-returns-process.js /
+// sync-returns-process.js — formats Eastern wall-clock time as an
+// ISO-shaped string ending in "Z", so it displays consistently with
+// every other Eastern-anchored timestamp in this project rather than
+// UTC. Not a literal UTC timestamp despite the "Z" suffix — a
+// deliberate, consistent convention used throughout this codebase.
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
 }
