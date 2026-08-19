@@ -110,6 +110,28 @@ async function buildOrderDateMap(brand) {
   return map;
 }
 
+// ADDED 2026-08-19 — this brand's own set of ASINs, from its Products
+// Cache tab (sheets.products), most recent snapshot date only. Same
+// pattern already proven correct in sync-business-report-process.js and
+// sync-event-ad-orders-process.js. Used as the PRIMARY disambiguation
+// signal for shared-prefix brands — see the main handler for why this
+// is stronger than the order-id cross-reference alone.
+async function buildAsinSet(brand) {
+  const set = new Set();
+  try {
+    const rows = await readRows(sheets.products, brand.tabName);
+    if (!rows || !rows.length) return set;
+    const latestDate = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    rows.filter(r => r.date === latestDate).forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (asin) set.add(asin);
+    });
+  } catch (err) {
+    console.warn(`[sync-returns-process] ${brand.id} — failed to read Products Cache for ASIN set (falling back to order-id cross-reference only this run):`, err.message);
+  }
+  return set;
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -222,6 +244,27 @@ module.exports = async (req, res) => {
     channelOrderIdSets[brand.id] = new Set(Object.keys(orderDateMapsByBrand[brand.id]));
   }
 
+  // FIXED 2026-08-19 per Jaclyn — the order-id cross-reference above was
+  // still letting skinuva-ca's tab show duplicates of skinuva's US
+  // returns. ASIN is a STRONGER signal than order-id cross-referencing
+  // and was sitting unused in the returns report data this whole time:
+  // Amazon assigns genuinely distinct ASINs per marketplace listing, so
+  // skinuva and skinuva-ca's ASINs never overlap at all — unlike a SKU's
+  // "-CA" suffix, which isn't always consistently applied (a real
+  // stale-SKU case was already found earlier where a genuinely-Canadian
+  // order reported a plain, non-"-CA" SKU). Same proven pattern already
+  // used successfully in sync-business-report-process.js and
+  // sync-event-ad-orders-process.js: build each sibling's own ASIN set
+  // from its Products Cache tab (sheets.products), most recent snapshot
+  // date only, and use ASIN membership as the PRIMARY disambiguation
+  // signal — falling back to the order-id cross-reference above only
+  // when an ASIN isn't found in either sibling's catalog at all (e.g. a
+  // very new item not yet synced to Products Cache).
+  const asinSetsByBrand = {};
+  for (const brand of channelBrands) {
+    asinSetsByBrand[brand.id] = await buildAsinSet(brand);
+  }
+
   let brandIndex = 0;
 
   for (const brand of brands.filter(b => b.active)) {
@@ -234,17 +277,27 @@ module.exports = async (req, res) => {
         if (!sku.startsWith(brand.skuPrefix.toUpperCase())) return false;
 
         if (brand.salesChannel) {
+          const asin     = (row['asin'] || '').toUpperCase();
           const orderId  = row['order-id'] || '';
           const siblings = channelBrands.filter(b => b.skuPrefix === brand.skuPrefix);
+
+          // Primary signal: ASIN membership in this brand's own catalog.
+          const inThisBrandByAsin  = asin && asinSetsByBrand[brand.id]?.has(asin);
+          const inSiblingByAsin    = asin && siblings.some(s => s.id !== brand.id && asinSetsByBrand[s.id]?.has(asin));
+          if (inThisBrandByAsin) return true;
+          if (inSiblingByAsin) return false; // definitively belongs to a different sibling
+
+          // Fallback signal: order-id cross-reference (unchanged from
+          // the original fix) — only reached when the ASIN isn't found
+          // in EITHER sibling's catalog at all.
           const inThisBrand  = channelOrderIdSets[brand.id]?.has(orderId);
           const inAnySibling = siblings.some(s => channelOrderIdSets[s.id]?.has(orderId));
 
           if (inThisBrand) return true;
           if (inAnySibling) return false; // belongs to a different sibling
-          // order_id not found in ANY sibling's orders tab (aged past that
-          // sheet's retention window, a genuine data gap, or the read
-          // above failed) — default to the Amazon.com sibling rather
-          // than silently dropping the return from both tabs.
+          // Neither ASIN nor order_id resolved this — default to the
+          // Amazon.com sibling rather than silently dropping the return
+          // from both tabs.
           return brand.salesChannel.toLowerCase() === 'amazon.com';
         }
         return true;
