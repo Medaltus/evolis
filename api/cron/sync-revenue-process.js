@@ -347,30 +347,60 @@ module.exports = async (req, res) => {
         const grossRevenue  = round2(Object.values(orderData).reduce((s, o) => s + o.revenue, 0));
         const grossUnits    = Object.values(orderData).reduce((s, o) => s + o.units, 0);
         const grossFbaUnits = Object.values(orderData).reduce((s, o) => s + o.fbaUnits, 0);
-        const fbmUnits      = Object.values(orderData).reduce((s, o) => s + o.fbmUnits, 0); // never netted — see file header, this returns feed is FBA-only
+        const fbmUnits      = Object.values(orderData).reduce((s, o) => s + o.fbmUnits, 0); // gross — netted against real FBM returns further below (fbmUnitsNetted)
 
         // Returns dated (by return_date) in THIS target month, for THIS
         // brand — same "net this month's real activity" convention as
         // the Overview page, not "returns tied to an order placed this
         // month" (a return can be dated well after its original sale).
+        // FIXED 2026-08-19 -- until today, SHEET_RETURNS only ever
+        // contained FBA returns (the FBA Customer Returns report has no
+        // FBM visibility at all -- see file header section 2). A new,
+        // separate FBM returns pipeline (sync-fbm-returns-process.js)
+        // now writes into these SAME per-brand tabs, tagged
+        // fulfillment_channel: 'FBA' or 'FBM' -- meaning this file's old
+        // assumption that "everything here is FBA" no longer holds, and
+        // treating FBM rows as if they were FBA (as the old code here
+        // would have, unmodified) would have double-counted them against
+        // the wrong unit bucket. Older rows written before this tagging
+        // existed have a blank fulfillment_channel -- treated as FBA
+        // here, same as explained to Jaclyn when the field was first
+        // added (every FBM row always explicitly says so; blank means
+        // FBA by elimination).
+        //
+        // FBA returns still have no real dollar figure (section 1 in the
+        // file header -- genuinely unchanged, Amazon's FBA returns
+        // report still has no price field), so they keep using the
+        // existing ESTIMATED price via estimateReturnImpact(). FBM
+        // returns now have a REAL refund_amount from Amazon directly --
+        // no estimation needed or wanted, sumRealReturnImpact() uses it
+        // as-is.
         const monthReturns = brandReturnRows.filter(r => (r.return_date || '').slice(0, 7) === targetMonth);
-        const { returnedUnits, returnedRevenue, unmatchedPriceCount } = estimateReturnImpact(monthReturns, priceLookup);
+        const monthReturnsFba = monthReturns.filter(r => (r.fulfillment_channel || 'FBA') === 'FBA');
+        const monthReturnsFbm = monthReturns.filter(r => r.fulfillment_channel === 'FBM');
+
+        const { returnedUnits: returnedUnitsFba, returnedRevenue: returnedRevenueFba, unmatchedPriceCount } = estimateReturnImpact(monthReturnsFba, priceLookup);
+        const { returnedUnits: returnedUnitsFbm, returnedRevenue: returnedRevenueFbm } = sumRealReturnImpact(monthReturnsFbm);
+
+        const returnedUnits   = returnedUnitsFba + returnedUnitsFbm;
+        const returnedRevenue = round2(returnedRevenueFba + returnedRevenueFbm);
 
         const revenue   = Math.max(0, round2(grossRevenue - returnedRevenue));
         const unitsSold = Math.max(0, grossUnits - returnedUnits);
-        const fbaUnits  = Math.max(0, grossFbaUnits - returnedUnits); // FBA-only feed — all returned units come off FBA, never FBM
+        const fbaUnits  = Math.max(0, grossFbaUnits - returnedUnitsFba); // only FBA-tagged returns come off FBA units
+        const fbmUnitsNetted = Math.max(0, fbmUnits - returnedUnitsFbm); // NEW -- FBM returns now netted against FBM units, previously never possible
 
         if (returnedUnits > 0) {
-          console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — netted ${returnedUnits} returned units (\u2248$${returnedRevenue.toFixed(2)} estimated) against gross revenue=${grossRevenue} units=${grossUnits}`);
+          console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} -- netted ${returnedUnitsFba} FBA (~$${returnedRevenueFba.toFixed(2)} estimated) + ${returnedUnitsFbm} FBM (real $${returnedRevenueFbm.toFixed(2)}) returned units against gross revenue=${grossRevenue} units=${grossUnits}`);
         }
         if (unmatchedPriceCount > 0) {
-          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — ${unmatchedPriceCount} returned line item(s) had no price data on the Amazon orders sheet; their dollar impact was NOT estimated (left at $0), only their unit count was netted`);
+          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} -- ${unmatchedPriceCount} returned FBA line item(s) had no price data on the Amazon orders sheet; their dollar impact was NOT estimated (left at $0), only their unit count was netted`);
         }
         if (grossRevenue - returnedRevenue < 0 || grossUnits - returnedUnits < 0) {
-          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} — returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
+          console.warn(`[sync-revenue-process] ${brand.id} ${targetMonth} -- returns this month exceeded gross this month; floored at 0 rather than writing a negative value`);
         }
 
-        console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} — orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnits}`);
+        console.log(`[sync-revenue-process] ${brand.id} ${targetMonth} -- orders=${orders} revenue=${revenue} units=${unitsSold} fba=${fbaUnits} fbm=${fbmUnitsNetted}`);
 
         // Column H (Last Updated) — added 2026-08-05 per Jaclyn, matching a
         // column that already existed on the real sheet but wasn't in this
@@ -381,7 +411,7 @@ module.exports = async (req, res) => {
         // any pre-existing values in this column might already be in — if
         // older rows show a different date format than new ones going
         // forward, that's why.
-        const newRow = [tMonthNum, tYearNum, revenue, orders, unitsSold, fbaUnits, fbmUnits, ts];
+        const newRow = [tMonthNum, tYearNum, revenue, orders, unitsSold, fbaUnits, fbmUnitsNetted, ts];
 
         const idx = workingRows.findIndex(r =>
           parseInt(r[0], 10) === tMonthNum &&
@@ -552,6 +582,31 @@ function estimateReturnImpact(returnRows, priceLookup) {
   });
 
   return { returnedUnits, returnedRevenue, unmatchedPriceCount };
+}
+
+// ADDED 2026-08-19 — companion to estimateReturnImpact() above, but for
+// FBM returns specifically, which (unlike FBA returns) carry a genuine
+// refund_amount from Amazon directly. No price lookup, no estimation —
+// this just sums what Amazon actually says was refunded. See file header
+// for the full explanation of why FBA and FBM returns need two different
+// functions here rather than one shared one.
+function sumRealReturnImpact(returnRows) {
+  let returnedUnits = 0, returnedRevenue = 0;
+
+  returnRows.forEach(r => {
+    const qty = parseInt(r.quantity, 10) || 0;
+    if (!qty) return;
+    returnedUnits += qty;
+
+    const refund = parseFloat(r.refund_amount);
+    if (!isNaN(refund)) returnedRevenue = round2(returnedRevenue + refund);
+    // A missing/non-numeric refund_amount is left at $0 for that line
+    // item, not guessed at — same "don't estimate further" principle
+    // estimateReturnImpact() already uses for FBA returns with no price
+    // match.
+  });
+
+  return { returnedUnits, returnedRevenue };
 }
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
