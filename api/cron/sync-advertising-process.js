@@ -86,9 +86,6 @@ const SHEET_WRITE_STAGGER_MS = 2500;
 // gap — it'll show up loudly in the logs instead.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
-  { name: 'skinuva ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
-  { name: 'skinuva-ca',     tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
-  { name: 'skinuva canada', tabName: 'skinuva-ca'     }, // UNCONFIRMED guess — verify against real campaign names
   { name: 'the creme shop', tabName: 'creme-shop'     },
   { name: 'cloud cafe',     tabName: 'cloud-cafe'     },
   { name: 'just bjorn',     tabName: 'just-bjorn'     },
@@ -111,8 +108,11 @@ const CAMPAIGN_BRANDS = [
 // Loudly flags any active brand this hand-maintained list has fallen out
 // of sync with, so a future brand addition can't repeat today's silent
 // gap. Runs once per invocation, cheap (brands.js is tiny).
+// skinuva-ca is handled via the explicit special case in identifyBrand()
+// below, not a CAMPAIGN_BRANDS entry (see that function's comment) — so
+// it's excluded here too, to avoid a false "missing" warning every run.
 (function checkCampaignBrandsCoverage() {
-  const coveredTabNames = new Set(CAMPAIGN_BRANDS.map(b => b.tabName));
+  const coveredTabNames = new Set([...CAMPAIGN_BRANDS.map(b => b.tabName), 'skinuva-ca']);
   const missing = brands.filter(b => b.active && !coveredTabNames.has(b.tabName));
   if (missing.length > 0) {
     console.error(`[sync-advertising-process] CAMPAIGN_BRANDS is missing ${missing.length} active brand(s): ${missing.map(b => b.id).join(', ')} — their ad campaigns will fall into "unmatched campaign" and never sync until added to CAMPAIGN_BRANDS in this file.`);
@@ -146,8 +146,26 @@ function resolveBrandForSku(sku, candidates) {
   return usBrand || candidates[0];
 }
 
+// FIXED 2026-08-19 — the three guessed skinuva-ca campaign name variants
+// ("skinuva ca", "skinuva-ca", "skinuva canada") were confirmed WRONG
+// against real Canadian campaign data once CA ads actually launched
+// (test-ca-ad-campaigns.js): real names look like "Skinuva - SP - Scar -
+// Auto - CANADA 7.26" — "CANADA" sits at the END, separated from
+// "Skinuva" by several other segments (ad type, category, targeting
+// mode), never adjacent. None of the guessed variants are contiguous
+// substrings of this, so they never matched anything — meanwhile the
+// plain "skinuva" entry DOES trivially match (it's a substring of the
+// whole name), meaning real Canadian ad spend/sales were being silently
+// attributed to skinuva US this whole time. This checks for "skinuva"
+// AND "canada" appearing ANYWHERE in the name (not contiguous) — a
+// combined check the simple CAMPAIGN_BRANDS substring-list design can't
+// express on its own, so it runs as an explicit override BEFORE that
+// list, the same way Skinuva already needed other special-case handling
+// elsewhere in this project (P-/S-/I- SKU prefixes, marketing-material
+// name matching in sync-cin7-consignment-inventory.js).
 function identifyBrand(campaignName) {
   const normalized = stripAccents((campaignName || '').toLowerCase());
+  if (normalized.includes('skinuva') && normalized.includes('canada')) return 'skinuva-ca';
   const match = CAMPAIGN_BRANDS.find(b => normalized.includes(b.name));
   return match ? match.tabName : null;
 }
