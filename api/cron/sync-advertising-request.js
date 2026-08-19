@@ -3,23 +3,52 @@
  * Step 1 of 2 — requests Amazon Advertising reports and stores report IDs in _meta tab.
  * Runs at 3:00 AM UTC daily.
  *
- * Fires 6 report requests per run:
+ * Fires 10 report requests per run:
  *   Current month MTD (1st of this month → yesterday):
  *     1. spAdvertisedProduct  — ASIN-level SP ad units
  *     2. spCampaigns          — SP campaign-level brand summary
  *     3. sbCampaigns          — SB campaign-level brand summary
+ *     4. sdAdvertisedProduct  — ASIN-level SD ad units (ADDED 2026-08-19)
+ *     5. sdCampaigns          — SD campaign-level brand summary (ADDED 2026-08-19)
  *   Last full calendar month (1st → last day of prev month):
- *     4. spAdvertisedProduct  — ASIN-level SP ad units
- *     5. spCampaigns          — SP campaign-level brand summary
- *     6. sbCampaigns          — SB campaign-level brand summary
+ *     6. spAdvertisedProduct  — ASIN-level SP ad units
+ *     7. spCampaigns          — SP campaign-level brand summary
+ *     8. sbCampaigns          — SB campaign-level brand summary
+ *     9. sdAdvertisedProduct  — ASIN-level SD ad units (ADDED 2026-08-19)
+ *     10. sdCampaigns         — SD campaign-level brand summary (ADDED 2026-08-19)
+ *
+ * SPONSORED DISPLAY — added 2026-08-19, in two parts:
+ *   sdAdvertisedProduct: confirmed real via test-sd-connection.js against
+ *     actual returned data. Feeds SHEET_AD_ORDERS' ASIN-level breakdown.
+ *   sdCampaigns: confirmed real via test-sd-campaigns.js (2026-08-19,
+ *     accepted the request outright with zero column corrections needed)
+ *     — a genuine, DEDICATED campaign-level summary report, the same way
+ *     spCampaigns/sbCampaigns work independently of their ASIN-level
+ *     counterparts. Per Jaclyn: the priority is capturing 100% of SD
+ *     spend/sales, even where the ASIN breakdown is incomplete — a
+ *     derived-from-ASIN-level campaign total risked silently missing
+ *     spend/sales that Amazon's attribution never tied to a specific
+ *     promoted product. Using this dedicated report for
+ *     SHEET_ADVERTISING removes that risk entirely, rather than relying
+ *     on an assumption that the ASIN-level report already captures
+ *     every dollar.
+ *
+ * Neither SD request is required for the run to succeed — see the
+ * curr/prev success checks below, unchanged from before this addition.
+ * SD is additive; a failure there shouldn't block SP/SB, which remain
+ * the core, required data.
  *
  * Stores report IDs in SHEET_ADVERTISING → _meta tab:
  *   ad_report_id_asin_curr     — SP ASIN report, current month
  *   ad_report_id_sp_curr       — SP campaign report, current month
  *   ad_report_id_sb_curr       — SB campaign report, current month
+ *   ad_report_id_sd_curr       — SD ASIN report, current month
+ *   ad_report_id_sdcamp_curr   — SD campaign report, current month
  *   ad_report_id_asin_prev     — SP ASIN report, last full month
  *   ad_report_id_sp_prev       — SP campaign report, last full month
  *   ad_report_id_sb_prev       — SB campaign report, last full month
+ *   ad_report_id_sd_prev       — SD ASIN report, last full month
+ *   ad_report_id_sdcamp_prev   — SD campaign report, last full month
  *   ad_report_status           — REQUESTED | PROCESSED
  *   ad_start_date_curr / ad_end_date_curr
  *   ad_start_date_prev / ad_end_date_prev
@@ -54,20 +83,25 @@ module.exports = async (req, res) => {
     const profileId = await discoverProfileId(token);
     console.log(`[sync-advertising-request] using profileId=${profileId}`);
 
-    // ── Request all 6 reports, staggered ──────────────────────────────────────
-    // Previously fired all 6 in the exact same instant via Promise.allSettled —
-    // that's a self-inflicted burst against Amazon's reporting queue. Amazon's
-    // own docs say these limits are dynamic/queue-based, but there's no reason
-    // to make our own six requests compete with each other for the same instant.
-    // A ~1.5s stagger costs ~9s total (this function has a 300s budget) and
-    // removes that self-inflicted collision risk entirely.
+    // ── Request all 8 reports, staggered ──────────────────────────────────────
+    // Previously fired all 6 (now 8) in the exact same instant via
+    // Promise.allSettled — that's a self-inflicted burst against Amazon's
+    // reporting queue. Amazon's own docs say these limits are
+    // dynamic/queue-based, but there's no reason to make our own requests
+    // compete with each other for the same instant. A ~1.5s stagger costs
+    // ~12s total (this function has a 300s budget) and removes that
+    // self-inflicted collision risk entirely.
     const reportJobs = [
       () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_curr'),
       () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_curr'),
       () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    curr, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_curr'),
+      () => requestReportWithRetry(token, profileId, 'sdAdvertisedProduct', 'SPONSORED_DISPLAY',  curr, ['advertiser'], ['campaignName','campaignId','adGroupName','promotedAsin','promotedSku','impressions','clicks','cost','purchases','sales','unitsSold'], 'sd_curr'),
+      () => requestReportWithRetry(token, profileId, 'sdCampaigns',         'SPONSORED_DISPLAY',  curr, ['campaign'],   ['campaignName','campaignId','impressions','clicks','cost','purchases','sales','unitsSold'], 'sdcamp_curr'),
       () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_prev'),
       () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_prev'),
       () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    prev, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_prev'),
+      () => requestReportWithRetry(token, profileId, 'sdAdvertisedProduct', 'SPONSORED_DISPLAY',  prev, ['advertiser'], ['campaignName','campaignId','adGroupName','promotedAsin','promotedSku','impressions','clicks','cost','purchases','sales','unitsSold'], 'sd_prev'),
+      () => requestReportWithRetry(token, profileId, 'sdCampaigns',         'SPONSORED_DISPLAY',  prev, ['campaign'],   ['campaignName','campaignId','impressions','clicks','cost','purchases','sales','unitsSold'], 'sdcamp_prev'),
     ];
 
     const STAGGER_MS = 1500;
@@ -76,9 +110,12 @@ module.exports = async (req, res) => {
       if (i > 0) await sleep(STAGGER_MS);
       results.push(await reportJobs[i]());
     }
-    const [asinCurrId, spCurrId, sbCurrId, asinPrevId, spPrevId, sbPrevId] = results;
+    const [asinCurrId, spCurrId, sbCurrId, sdCurrId, sdCampCurrId, asinPrevId, spPrevId, sbPrevId, sdPrevId, sdCampPrevId] = results;
 
-    // Require at least one curr and one prev report to succeed
+    // Require at least one curr and one prev report to succeed — SD is
+    // intentionally NOT part of this check (see file header). A missing
+    // SD report just means SD data doesn't refresh this run; it doesn't
+    // block SP/SB, which remain the required core data.
     if (!spCurrId && !sbCurrId) return res.status(500).json({ error: 'All current month report requests failed' });
     if (!spPrevId && !sbPrevId) return res.status(500).json({ error: 'All previous month report requests failed' });
 
@@ -87,9 +124,13 @@ module.exports = async (req, res) => {
       ['ad_report_id_asin_curr', asinCurrId || '', now],
       ['ad_report_id_sp_curr',   spCurrId   || '', now],
       ['ad_report_id_sb_curr',   sbCurrId   || '', now],
+      ['ad_report_id_sd_curr',   sdCurrId   || '', now],
+      ['ad_report_id_sdcamp_curr', sdCampCurrId || '', now],
       ['ad_report_id_asin_prev', asinPrevId || '', now],
       ['ad_report_id_sp_prev',   spPrevId   || '', now],
       ['ad_report_id_sb_prev',   sbPrevId   || '', now],
+      ['ad_report_id_sd_prev',   sdPrevId   || '', now],
+      ['ad_report_id_sdcamp_prev', sdCampPrevId || '', now],
       ['ad_report_status',       'REQUESTED',      now],
       ['ad_start_date_curr',     curr.startDate,   now],
       ['ad_end_date_curr',       curr.endDate,     now],
@@ -107,8 +148,8 @@ module.exports = async (req, res) => {
     await replaceRows(SHEET_AD_SUMMARY, META_TAB, META_HEADERS, Object.values(metaMap), token2);
 
     return res.status(200).json({
-      curr: { asinReportId: asinCurrId, spReportId: spCurrId, sbReportId: sbCurrId, ...curr },
-      prev: { asinReportId: asinPrevId, spReportId: spPrevId, sbReportId: sbPrevId, ...prev },
+      curr: { asinReportId: asinCurrId, spReportId: spCurrId, sbReportId: sbCurrId, sdReportId: sdCurrId, sdCampaignReportId: sdCampCurrId, ...curr },
+      prev: { asinReportId: asinPrevId, spReportId: spPrevId, sbReportId: sbPrevId, sdReportId: sdPrevId, sdCampaignReportId: sdCampPrevId, ...prev },
       note: 'Run sync-advertising-process in 10-15 minutes',
     });
 
