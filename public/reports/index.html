@@ -135,6 +135,10 @@ nav > .nav-btn:not(.active):hover{color:#fff;}
 
 /* ── KPI row ── */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:22px;}
+/* Added 2026-08-12 per Jaclyn — caps the Blended Performance row at
+   exactly 6 cards per row (11 KPIs wraps to 6+5) rather than modifying
+   the shared .kpi-row class used by every other KPI row on this dashboard. */
+#ppc-blended-kpi-row{grid-template-columns:repeat(6,1fr);}
 .kpi-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px 20px;height:116px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-start;}
 /* Added 2026-08-11 per Jaclyn — scoped to cards showing BOTH MoM and YoY
    badges (currently just Total Units / Total Orders on Amazon Sales),
@@ -4180,6 +4184,36 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
       <div class="ppc-alert">
         <span class="ppc-alert-icon">📊</span>
         <div id="ppc-context-takeaway">Loading…</div>
+      </div>
+
+      <!-- Blended Performance — All Channels — added 2026-08-12 per Jaclyn.
+           11 cross-channel KPIs, MTD/Last Full Month toggle. Deliberately
+           does NOT include the territory-split (US/CA/UK) logic built for
+           Skinuva's Amazon Sales page — that's unrelated to this feature. -->
+      <div class="ppc-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+          <div class="ppc-card-title" style="margin-bottom:0;">Blended Performance — All Channels</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Period</span>
+            <div class="period-pills" id="ppc-blended-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+          </div>
+        </div>
+        <div class="kpi-row" id="ppc-blended-kpi-row">
+          <div class="kpi-card" id="pb-kpi-ad-spend"><div class="kpi-label">Ad Spend</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-ad-sales"><div class="kpi-label">Ad Sales</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-acos"><div class="kpi-label">ACOS</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-total-sales"><div class="kpi-label">Total Sales</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-tacos"><div class="kpi-label">TACOS</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-impressions"><div class="kpi-label">Impressions</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-clicks"><div class="kpi-label">Clicks</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-ctr"><div class="kpi-label">CTR</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-cpc"><div class="kpi-label">CPC</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-orders"><div class="kpi-label">Orders</div><div class="kpi-value">—</div></div>
+          <div class="kpi-card" id="pb-kpi-aov"><div class="kpi-label">AOV</div><div class="kpi-value">—</div></div>
+        </div>
+        <div class="ppc-note" style="margin-top:12px;">
+          ℹ Ad Spend/Ad Sales/Impressions/Clicks summed across Amazon + Walmart + Website's own ad platforms. Total Sales/Orders are all-channel, organic + ads combined, using each channel's own order-validity rules (Amazon: excludes cancelled/pending + Vine; Walmart: excludes cancelled/canceled; Website: excludes refunded/cancelled/canceled). ACOS/TACOS/CTR/CPC/AOV are recomputed from the summed totals, not averaged from each channel's own percentage — averaging percentages directly would be mathematically wrong. CVR is intentionally omitted — none of the three ad summary sheets have an orders/purchases column, only ad units, so there's no real conversion-rate denominator to compute from a proxy would be misleading.
+        </div>
       </div>
 
       <div class="ppc-card">
@@ -14753,6 +14787,200 @@ window.renderReviewsTab = renderReviewsTab;
 const PPC_SEARCH_TERMS_SHEET_ID = '1N1OwnBLJ_KUZrz1kq5itQO9qKG0KaXhMmY6FFfdBo3o';
 const PPC_SEARCH_TERMS_GID      = '1865714213'; // evolis tab
 
+// ═══════════════════════════════════════════════════════════════════
+// BLENDED PERFORMANCE — ALL CHANNELS — added 2026-08-12 per Jaclyn.
+// 11 cross-channel KPIs (Ad Spend, Ad Sales, ACOS, Total Sales, TACOS,
+// Impressions, Clicks, CTR, CPC, Orders, AOV) with a Month to Date /
+// Last Full Month toggle. CVR deliberately omitted — none of the 3 ad
+// summary sheets have an orders/purchases column, only ad units, so
+// there's no real conversion-rate denominator; a clicks-based proxy
+// would be misleading.
+//
+// Sheet IDs below are duplicated from the Amazon/Walmart/Website Sales
+// pages rather than reused directly — those constants live inside
+// separate, non-exported IIFEs and aren't accessible from this shared
+// PPC scope. Keep in sync if any of these ever change on the Sales
+// pages themselves.
+// ═══════════════════════════════════════════════════════════════════
+const PB_SYNC_SHEET_ID       = '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok';
+const PB_SYNC_GID            = '1163928587';
+const PB_WALMART_SHEET_ID    = '1oIZDxN0vSf4nRvE_K95lsNyBWQd4Ef2aARm0RUtvE0Y';
+const PB_WALMART_GID         = '1844526926';
+const PB_SHOPIFY_SHEET_ID    = '1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw';
+const PB_SHOPIFY_ORDERS_GID  = '597852778';
+const PB_AD_SUMMARY_SHEET_ID = '13cN301QZxkEGy6-8LfdzB8zmsHhUKwZqz6lsXKUJcnI';
+const PB_AD_SUMMARY_GID      = '2032256212';
+const PB_SHOPIFY_ADS_GID     = '219707263';
+// UNCONFIRMED 2026-08-12 — first-ever fetch of this sheet in this
+// codebase. It's existed only as a human-facing link ("Walmart
+// Advertising") in the Source Sheets dropdown; no JS function has read
+// it before now. Field names below (spend/impressions/clicks) are a
+// best guess matching Amazon's naming convention — check the [qa]
+// console log for this sheet's real header row once this is live.
+const PB_WALMART_ADS_SHEET_ID = '1H1mAYxu8udO7vuCPGs8u0iVzHaRh0wbHb4PyIka4pUU';
+const PB_WALMART_ADS_GID      = '844750080';
+
+const PB_PERIOD_LABELS = { mtd: 'Month to Date', lastFull: 'Last Full Month' };
+
+function pbRenderPeriodPills(activeKey) {
+  const container = document.getElementById('ppc-blended-period-pills');
+  if (!container) return;
+  container.innerHTML = Object.entries(PB_PERIOD_LABELS).map(([key, label]) =>
+    `<button class="period-pill${key === activeKey ? ' active' : ''}" data-period="${key}" onclick="window.__pbSelectPeriod('${key}')">${label}</button>`
+  ).join('');
+}
+window.__pbSelectPeriod = function (key) {
+  pbRenderPeriodPills(key);
+  ppcLoadBlendedPerformance(key);
+};
+
+function pbBuildPeriodConfig(key) {
+  const now = new Date();
+  let lfYear = now.getFullYear();
+  let lfMonth = now.getMonth(); // 0-indexed = last month's 1-indexed value
+  if (lfMonth === 0) { lfMonth = 12; lfYear--; }
+
+  if (key === 'mtd') {
+    return { year: now.getFullYear(), month: now.getMonth() + 1, isPartial: true, throughDay: now.getDate() };
+  }
+  return { year: lfYear, month: lfMonth, isPartial: false, throughDay: null };
+}
+
+// Duplicates the Amazon/Walmart/Website Sales pages' own CURRENT
+// order-validity rules exactly (confirmed 2026-08-12 by reading each
+// page's real live function — Website's actual rule turned out simpler
+// than an earlier written spec described: no fulfillment-status or
+// "voided" check exists in this codebase's real isValidRow, only
+// financial_status/status). These Sales-page functions live inside
+// separate, non-exported IIFEs and can't be called from here directly —
+// if any Sales page's own rule changes, this needs updating to match.
+function pbIsValidAmazonRow(r) {
+  const status = (r.status || '').toLowerCase().trim();
+  if (status === 'cancelled' || status === 'pending') return false;
+  if ((r.promotion_ids || '').toLowerCase().includes('vine')) return false;
+  return true;
+}
+function pbIsValidWalmartRow(r) {
+  const status = (r.status || '').toLowerCase().trim();
+  return status !== 'cancelled' && status !== 'canceled';
+}
+function pbIsValidWebsiteRow(r) {
+  const status = (r.financial_status || r.status || '').toLowerCase();
+  return status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
+}
+
+// Sums item_price per unique order_id first, then sums those per-order
+// totals — matches every channel's own aggregation method already used
+// on their Sales pages, avoids double-counting multi-item orders.
+function pbAggregateOrders(rows, isValidFn, year, month, throughDay) {
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
+  const filtered = rows.filter(r => {
+    if (!isValidFn(r)) return false;
+    const d = (r.date || '').trim();
+    if (d.substring(0, 7) !== prefix) return false;
+    if (throughDay) {
+      const day = parseInt(d.substring(8, 10), 10);
+      return day > 0 && day <= throughDay;
+    }
+    return true;
+  });
+  const orderTotals = {};
+  filtered.forEach(r => {
+    if (!r.order_id) return;
+    orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + (parseFloat(String(r.item_price || 0).replace(/[$,]/g, '')) || 0);
+  });
+  const orderIds = Object.keys(orderTotals);
+  const totalSales = Object.values(orderTotals).reduce((s, v) => s + v, 0);
+  return { totalSales, totalOrders: orderIds.length };
+}
+
+// Ad summary sheets are already pre-aggregated to one row per month per
+// channel — just match year/month, no day-level filtering needed.
+function pbFindAdRow(rows, year, month) {
+  return rows.find(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month) || null;
+}
+
+async function ppcLoadBlendedPerformance(periodKey) {
+  const cfg = pbBuildPeriodConfig(periodKey || 'lastFull');
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    const v = el ? el.querySelector('.kpi-value') : null;
+    if (v) v.textContent = val;
+  };
+
+  try {
+    const [amzCsv, wmtCsv, webCsv, amzAdCsv, wmtAdCsv, webAdCsv] = await Promise.all([
+      fetch(ovCsvUrl(PB_SYNC_SHEET_ID, PB_SYNC_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(PB_WALMART_SHEET_ID, PB_WALMART_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(PB_SHOPIFY_SHEET_ID, PB_SHOPIFY_ORDERS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(PB_AD_SUMMARY_SHEET_ID, PB_AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(PB_WALMART_ADS_SHEET_ID, PB_WALMART_ADS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(PB_SHOPIFY_SHEET_ID, PB_SHOPIFY_ADS_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+
+    const amzRows   = parseCsvToRows(amzCsv);
+    const wmtRows   = parseCsvToRows(wmtCsv);
+    const webRows   = parseCsvToRows(webCsv);
+    const amzAdRows = parseCsvToRows(amzAdCsv);
+    const wmtAdRows = parseCsvToRows(wmtAdCsv);
+    const webAdRows = parseCsvToRows(webAdCsv);
+
+    // Diagnostic — confirm real field names before trusting the guesses
+    // below, same practice already established across this codebase.
+    // Walmart's especially worth checking — this is that sheet's first
+    // ever fetch in this dashboard.
+    console.log('[BlendedPerf][qa] Amazon ad summary sample row:', JSON.stringify(amzAdRows[0] || {}));
+    console.log('[BlendedPerf][qa] Walmart ad summary (UNCONFIRMED, first use) sample row:', JSON.stringify(wmtAdRows[0] || {}));
+    console.log('[BlendedPerf][qa] Website ad summary sample row:', JSON.stringify(webAdRows[0] || {}));
+
+    // Orders — day-level, each channel's own real validity rule
+    const amzOrders = pbAggregateOrders(amzRows, pbIsValidAmazonRow, cfg.year, cfg.month, cfg.throughDay);
+    const wmtOrders = pbAggregateOrders(wmtRows, pbIsValidWalmartRow, cfg.year, cfg.month, cfg.throughDay);
+    const webOrders = pbAggregateOrders(webRows, pbIsValidWebsiteRow, cfg.year, cfg.month, cfg.throughDay);
+
+    const totalSales  = amzOrders.totalSales + wmtOrders.totalSales + webOrders.totalSales;
+    const totalOrders = amzOrders.totalOrders + wmtOrders.totalOrders + webOrders.totalOrders;
+
+    // Ads — month-level, pre-aggregated one row per channel per month
+    const amzAd = pbFindAdRow(amzAdRows, cfg.year, cfg.month) || {};
+    const wmtAd = pbFindAdRow(wmtAdRows, cfg.year, cfg.month) || {};
+    const webAd = pbFindAdRow(webAdRows, cfg.year, cfg.month) || {};
+
+    const numOr0 = v => parseFloat(String(v || '0').replace(/[$,]/g, '')) || 0;
+
+    const adSpend     = numOr0(amzAd.spend) + numOr0(wmtAd.spend) + numOr0(webAd.spend);
+    const adSales     = numOr0(amzAd.sales) + numOr0(wmtAd.sales) + numOr0(webAd.sales);
+    const impressions = numOr0(amzAd.impressions) + numOr0(wmtAd.impressions) + numOr0(webAd.impressions);
+    const clicks      = numOr0(amzAd.clicks) + numOr0(wmtAd.clicks) + numOr0(webAd.clicks);
+
+    // Recomputed from summed totals, not averaged from each channel's
+    // own percentage — averaging 3 ACOS percentages directly would be
+    // mathematically wrong (weights every channel equally regardless of
+    // its actual spend/sales volume).
+    const acos  = adSales > 0 ? (adSpend / adSales * 100) : 0;
+    const tacos = totalSales > 0 ? (adSpend / totalSales * 100) : 0;
+    const ctr   = impressions > 0 ? (clicks / impressions * 100) : 0;
+    const cpc   = clicks > 0 ? (adSpend / clicks) : 0;
+    const aov   = totalOrders > 0 ? (totalSales / totalOrders) : 0;
+
+    setVal('pb-kpi-ad-spend',    '$' + adSpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setVal('pb-kpi-ad-sales',    '$' + adSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setVal('pb-kpi-acos',        acos.toFixed(1) + '%');
+    setVal('pb-kpi-total-sales', '$' + totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setVal('pb-kpi-tacos',       tacos.toFixed(1) + '%');
+    setVal('pb-kpi-impressions', Math.round(impressions).toLocaleString());
+    setVal('pb-kpi-clicks',      Math.round(clicks).toLocaleString());
+    setVal('pb-kpi-ctr',         ctr.toFixed(2) + '%');
+    setVal('pb-kpi-cpc',         '$' + cpc.toFixed(2));
+    setVal('pb-kpi-orders',      totalOrders.toLocaleString());
+    setVal('pb-kpi-aov',         '$' + aov.toFixed(2));
+
+  } catch (err) {
+    console.warn('[BlendedPerf] failed:', err.message);
+  }
+}
+
 function ppcRenderPanel(elId, items, rowFn) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -15266,6 +15494,8 @@ async function ppcLoadStrategyByProduct() {
 window.ppcLoadStrategyByProduct = ppcLoadStrategyByProduct;
 
 window.initPpcPage = async function() {
+  pbRenderPeriodPills('lastFull');
+  await ppcLoadBlendedPerformance('lastFull');
   await ppcLoadSearchTermPanels();
   await ppcLoadProductPerformance();
   await ppcLoadKeywordCoverage();
