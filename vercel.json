@@ -14,9 +14,9 @@
       "schedule": "0 */2 * * *"
     },
     {
-     "path": "/api/cron/sync-90d-units-cache",
-     "schedule": "0 7 * * *"
-   },
+      "path": "/api/cron/sync-90d-units-cache",
+      "schedule": "0 7 * * *"
+    },
     {
       "path": "/api/cron/sync-orders-process",
       "schedule": "15 */2 * * *"
@@ -26,16 +26,12 @@
       "schedule": "8,23,38,53 2-4,14-19 * * *"
     },
     {
-     "path": "/api/cron/clean-business-report-vine",
-     "schedule": "30 5 * * *"
-   },
-    {
       "path": "/api/cron/sync-sqp-request",
-      "schedule": "7 0 8 * *"
+      "schedule": "7 0 8-20 * *"
     },
     {
       "path": "/api/cron/sync-sqp-process",
-      "schedule": "12 0 8 * *"
+      "schedule": "12 0 8-20 * *"
     },
     {
       "path": "/api/cron/sync-walmart-revenue",
@@ -74,6 +70,10 @@
       "schedule": "50 5 * * *"
     },
     {
+      "path": "/api/cron/clean-business-report-vine",
+      "schedule": "50 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-walmart-orders",
       "schedule": "12 6 * * *"
     },
@@ -90,12 +90,20 @@
       "schedule": "35 6 * * *"
     },
     {
-      "path": "/api/cron/sync-shopify-orders?mode=rolling30",
+      "path": "/api/cron/sync-fbm-returns-request",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-fbm-returns-process",
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/sync-shopify-orders?mode=rolling30",
+      "schedule": "5 7 * * *"
+    },
+    {
       "path": "/api/cron/sync-shopify-revenue",
-      "schedule": "7 7 * * *"
+      "schedule": "12 7 * * *"
     },
     {
       "path": "/api/cron/sync-google-ads",
@@ -138,12 +146,20 @@
       "schedule": "12 3 * * *"
     },
     {
+      "path": "/api/cron/sync-advertising-request-ca",
+      "schedule": "20 3 * * *"
+    },
+    {
       "path": "/api/cron/sync-advertising-process",
-      "schedule": "15 3 * * *"
+      "schedule": "15 4 * * *"
     },
     {
       "path": "/api/cron/sync-ad-search-terms-process",
-      "schedule": "25 3 * * *"
+      "schedule": "25 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-advertising-process-ca",
+      "schedule": "35 4 * * *"
     },
     {
       "path": "/api/cron/sync-subscriptions",
@@ -193,6 +209,15 @@
     },
     "api/cron/sync-returns-request.js": {
       "maxDuration": 30
+    },
+    "api/cron/sync-fbm-returns-request.js": {
+      "maxDuration": 30
+    },
+    "api/cron/sync-advertising-request-ca.js": {
+      "maxDuration": 60
+    },
+    "api/cron/sync-advertising-process-ca.js": {
+      "maxDuration": 300
     },
     "api/cron/sync-newderm-inventory-reconciliation.js": {
       "maxDuration": 900
