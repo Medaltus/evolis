@@ -24,6 +24,20 @@ const HEADERS = [
   'promotion_ids', 'is_premium_order', 'promotion_discount',
   'item_price', 'quantity_ordered', 'quantity_shipped',
   'unit_count', 'skus', 'asin', 'brand', 'last_updated',
+  'selling_account', // ADDED 2026-08-21 per Jaclyn. Hardcoded 'Newderm' for
+                      // every row this cron writes — see sync-orders-process.js's
+                      // HEADERS comment for the full reasoning. Distinguishes
+                      // these rows from Cosmette's manually-added historical
+                      // rows (a different, pre-partnership selling account)
+                      // sitting in the same sheet — those keep whatever value
+                      // Jaclyn sets herself. WORTH KNOWING: if this backfill is
+                      // ever re-run for the exact historical month Cosmette's
+                      // manual rows belong to, replaceMonth() below would
+                      // remove them (it clears every existing row in the
+                      // target year/month before writing fresh data) — not a
+                      // risk in normal use, since backfill only moves forward
+                      // in time, but worth avoiding a re-run against that
+                      // specific historical month.
 ];
 
 // Flat file TSV column names
@@ -203,6 +217,7 @@ module.exports = async (req, res) => {
         [...o.skus].join(', '),
         [...o.asins].join(', '),
         brand.id, syncTime,
+        'Newderm', // selling_account — hardcoded, see HEADERS comment above
       ]);
 
       console.log(`[backfill] ${brand.id} — ${sheetRows.length} orders`);
