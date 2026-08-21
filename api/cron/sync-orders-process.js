@@ -54,6 +54,17 @@ const HEADERS = [
   'Amazon Sale Promotions',  // column Q — owned by api/cron/sale-promotions.js — preserved here, never computed
   'marketplace',             // column R — ADDED 2026-08-12 per Jaclyn
   'channel',                 // column S — ADDED 2026-08-12 per Jaclyn
+  'selling_account',         // column T — ADDED 2026-08-21 per Jaclyn. Hardcoded 'Newderm'
+                              // for every row this cron writes — SP-API credentials are
+                              // tied to one specific seller account by design, so there's
+                              // no need to look up a seller-id field from the report at
+                              // all; every row THIS cron ever produces is, by definition,
+                              // from the same known account. Exists to distinguish these
+                              // rows from Cosmette's manually-added historical rows (a
+                              // different, pre-partnership selling account) sitting in the
+                              // same sheet — those keep whatever value Jaclyn sets for them
+                              // herself, preserved here the same way Amazon Estimated
+                              // Fees / Sale Promotions already are, never overwritten.
 ];
 
 // ADDED 2026-08-13 — backstop signal for the skinuva/skinuva-ca channel
@@ -319,6 +330,10 @@ module.exports = async (req, res) => {
           preservedPromo, // column Q, Amazon Sale Promotions — untouched by this job
           marketplace,    // column R — NEW 2026-08-12
           channel,        // column S — NEW 2026-08-12
+          'Newderm',      // column T, selling_account — NEW 2026-08-21. Hardcoded, not
+                          // read from the report — the SP-API credentials themselves are
+                          // scoped to this one account, so every row this cron produces
+                          // is always Newderm by definition.
         ];
 
         if (existing) {
