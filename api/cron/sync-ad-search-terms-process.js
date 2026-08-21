@@ -79,12 +79,17 @@ const LABELS = [
 // "kept in sync intentionally — if that list changes, update both
 // places." It hadn't been. Same fix already applied to
 // sync-advertising-process.js's copy of this list: added cosmette
-// (confirmed real campaign names all start with "Cosmette - ") and
-// best-guess skinuva-ca entries (UNCONFIRMED — no Canada ads exist yet
-// per Jaclyn, so these are harmless placeholders until that launches;
-// verify against real campaign names once it does). The coverage check
-// right after this list makes sure a future brand addition can't repeat
-// this same silent gap a third time.
+// (CONFIRMED 2026-08-21 against real campaign names, "Cosmette -
+// SP - Auto - ...", screenshot from Jaclyn — 6 real campaigns, all
+// matching). skinuva-ca's three guessed campaign-name variants
+// ("skinuva ca", "skinuva-ca", "skinuva canada") were confirmed WRONG
+// once real Canada ads launched (2026-08-19) — real names look like
+// "Skinuva - SP - Scar - Auto - CANADA 7.26", never matching any of
+// those three guesses. Removed from this list entirely and replaced
+// with an explicit special-case check in identifyBrand() below,
+// confirmed working against real data. The coverage check right after
+// this list makes sure a future brand addition can't repeat this same
+// silent gap a third time.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
   { name: 'the creme shop', tabName: 'creme-shop'     },
