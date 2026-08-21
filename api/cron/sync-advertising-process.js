@@ -74,16 +74,24 @@ const SHEET_WRITE_STAGGER_MS = 2500;
 // silently breaking those already-correct, non-obvious matches.
 //
 // The cost of keeping it hand-maintained: it silently drifted out of
-// sync TWICE today — missing both 'cosmette' (added to brands.js this
-// morning, meaning every Cosmette ad campaign has been falling into
-// "unmatched campaign" and never syncing at all) and 'skinuva-ca'
-// (meaning any Canada-specific campaign could only ever match plain
-// skinuva, never its own tab). Added best-guess entries for both below —
-// NEITHER has been confirmed against real Amazon Ads campaign names the
-// way every other entry here has; verify against actual campaign titles
-// and correct if wrong. The runtime check right after this list makes
-// sure a THIRD brand added in the future can't repeat this same silent
-// gap — it'll show up loudly in the logs instead.
+// sync TWICE on 2026-08-14 — missing both 'cosmette' (added to
+// brands.js that morning, meaning every Cosmette ad campaign had been
+// falling into "unmatched campaign" and never syncing at all) and
+// 'skinuva-ca' (meaning any Canada-specific campaign could only ever
+// match plain skinuva, never its own tab). Both are now resolved:
+//   - cosmette: added to this list directly, CONFIRMED 2026-08-21
+//     against real campaign names ("Cosmette - SP - Auto - ...",
+//     screenshot from Jaclyn — 6 real campaigns, all matching).
+//   - skinuva-ca: the three guessed campaign-name variants first added
+//     here ("skinuva ca", "skinuva-ca", "skinuva canada") were confirmed
+//     WRONG once real Canada ads actually launched (2026-08-19) — real
+//     names look like "Skinuva - SP - Scar - Auto - CANADA 7.26", never
+//     matching any of those three guesses. Removed from this list
+//     entirely and replaced with an explicit special-case check in
+//     identifyBrand() below, confirmed working against real data.
+// The runtime check right after this list makes sure a future brand
+// addition can't repeat this same silent gap — it'll show up loudly in
+// the logs instead.
 const CAMPAIGN_BRANDS = [
   { name: 'skinuva',        tabName: 'skinuva'        },
   { name: 'the creme shop', tabName: 'creme-shop'     },
@@ -102,7 +110,7 @@ const CAMPAIGN_BRANDS = [
   { name: 'prohibition',    tabName: 'prohibition'    },
   { name: 'skinside seoul', tabName: 'skinside-seoul' },
   { name: 'skinside-seoul', tabName: 'skinside-seoul' },
-  { name: 'cosmette',       tabName: 'cosmette'       }, // UNCONFIRMED guess — verify against real campaign names
+  { name: 'cosmette',       tabName: 'cosmette'       }, // CONFIRMED 2026-08-21 — real campaigns are "Cosmette - SP - Auto - ..." (6 campaigns, screenshot from Jaclyn)
 ].sort((a, b) => b.name.length - a.name.length);
 
 // Loudly flags any active brand this hand-maintained list has fallen out
