@@ -28,6 +28,7 @@
  * SHEET_NEWDERM_INVENTORY            Regular (non-consignment) inventory reconciliation report — marketplace vs Cin7 Core by location, one tab per brand, pre-built 2-row merged headers (data starts row 3) — sync-newderm-inventory-reconciliation.js
  * SHEET_WALMART_RETURNS              Walmart return orders (dedicated Returns API, GET /v3/returns — separate from the regular orders sync), one tab per brand — sync-walmart-returns.js
  * SHEET_REPORT_INSIGHTS               Editable report content for the internal dashboard (Executive Summary, Key Insights, Opportunity cards, per-event summaries) + approval status, one {brand}/{brand}_events tab pair per brand — write-report-insights.js. NOT the same sheet as SHEET_INSIGHTS above (that's an older, unrelated "brand insights / monthly takeaways" sheet).
+ * SHEET_AD_SEARCH_TERMS                Real per-keyword search-term ad performance (search_term, keyword, clicks, cost, purchases, sales), one tab per brand — sync-ad-search-terms-process.js. ADDED 2026-08-21 — run-analysis.js's PPC section was reading sheets.advertising (a monthly campaign-level aggregate with no search_term/keyword columns at all) for per-term data; this is the actual sheet that has it. NOT the same sheet as SHEET_ADVERTISING above.
  */
 
 module.exports = {
@@ -55,4 +56,5 @@ module.exports = {
   productInventory:          process.env.SHEET_PRODUCT_INVENTORY,
   newdermInventory:          process.env.SHEET_NEWDERM_INVENTORY,
   walmartReturns:            process.env.SHEET_WALMART_RETURNS,
+  adSearchTerms:             process.env.SHEET_AD_SEARCH_TERMS,
 };
