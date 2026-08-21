@@ -119,6 +119,15 @@ const COL = {
 // We read the most recent row and build a rank lookup: keyword → rank
 
 // ─── audit sheet headers (must match write-listing-audit.js) ────────────────
+// ADDED 2026-08-21 — recommendation, listing_age_days, prior_suggestion_notes
+// added at the VERY END, not interspersed. The row-write below is
+// positional (HEADERS.map-style construction, not keyed by header name),
+// so inserting anywhere else would shift every existing row's data into
+// the wrong columns. If évolis's audit sheet already has data, this is
+// safe as an additive change — but the live header row itself needs this
+// same 3-column addition made manually before the next real run (same
+// "ensureTab never rewrites an existing header row" limitation already
+// hit elsewhere in this project).
 const AUDIT_HEADERS = [
   'date', 'sku', 'sku_name', 'action',
   'title_notes', 'title_rewrite',
@@ -127,7 +136,8 @@ const AUDIT_HEADERS = [
   'bullet_1_rewrite', 'bullet_2_rewrite', 'bullet_3_rewrite', 'bullet_4_rewrite', 'bullet_5_rewrite',
   'desc_notes', 'desc_rewrite',
   'backend_notes', 'backend_rewrite',
-  'skip_reason', 'audited_at'
+  'skip_reason', 'audited_at',
+  'recommendation', 'listing_age_days', 'prior_suggestion_notes'
 ];
 
 // ─── Keyword priority tiers — added 2026-07-27 per Jaclyn ───────────────────
@@ -149,6 +159,17 @@ const CLOSE_TO_PAGE1_MAX = 100;
 // competitive to win. Adjustable — 30 days was chosen as "long enough to
 // rule out normal indexing lag," not because of any specific data point.
 const LONG_TENURE_DAYS = 30;
+
+// Capability 5 (2026-08-21) — if the CURRENT listing content (see
+// computeListingContentAgeDays above) has been in place for fewer than
+// this many days, default to recommending no changes at all (HOLD_STEADY)
+// unless there's a genuine compliance violation — a very recent rewrite
+// hasn't had time to show its real ranking effect yet, and suggesting
+// another rewrite on top of it risks never letting any single version
+// run long enough to actually be evaluated. Compliance violations always
+// still get flagged regardless of age. Adjustable — 21 days is a
+// starting point, not derived from a specific data point either.
+const LISTING_AGE_HOLD_STEADY_DAYS = 21;
 
 function normTerm(s) { return String(s || '').trim().toLowerCase(); }
 
@@ -236,7 +257,54 @@ function computeKeywordTenureDays(sku, keyword, allRawRowsForSku) {
   return consecutiveDays;
 }
 
-// Tier 3 — "this keyword has been in the listing a long time and still
+// Capability 4 (2026-08-21) — variant of buildKwTrackerLookup above,
+// scoped to the closest tracker snapshot ON OR BEFORE a specific target
+// date, rather than always the most recent one. Used to reconstruct
+// "what was this keyword's rank at the time of the prior audit" for the
+// prior-suggestion-effectiveness comparison below.
+function buildKwTrackerLookupAtDate(kwTrackerRows, sku, targetDate) {
+  const rowsForSku = kwTrackerRows.filter(r => (r.sku || '').trim() === sku);
+  if (!rowsForSku.length) return {};
+  const datesOnOrBefore = rowsForSku.map(r => r.date || '').filter(d => d && d <= targetDate);
+  if (!datesOnOrBefore.length) return {}; // no tracker data existed yet at that time
+  const closestDate = datesOnOrBefore.reduce((max, d) => d > max ? d : max, '');
+  const map = {};
+  rowsForSku.forEach(r => {
+    if ((r.date || '') !== closestDate) return;
+    const kw = normTerm(r.keyword);
+    if (!kw) return;
+    map[kw] = { rank: parseRankValue(r.organic_rank), volume: parseInt(r.search_volume, 10) || null };
+  });
+  return map;
+}
+
+// Capability 4 (2026-08-21) — compares each target keyword's rank AT THE
+// TIME of this SKU's most recent PRIOR audit against its rank NOW, to
+// show whether previous suggestions actually moved the needle. Only
+// looks at the single most recent prior audit, not a full chain of
+// every audit ever run — deliberately conservative, since chaining
+// multiple audits together risks attributing a rank change to the wrong
+// one of several intervening suggestions.
+function buildPriorSuggestionEffectiveness(sku, priorAuditRow, targetKeywords, kwTrackerRows, currentKwTrackerLookup) {
+  if (!priorAuditRow) return null; // no prior audit exists for this SKU at all
+  const priorDate = (priorAuditRow.audited_at || priorAuditRow.date || '').slice(0, 10);
+  if (!priorDate) return null;
+
+  const priorLookup = buildKwTrackerLookupAtDate(kwTrackerRows, sku, priorDate);
+  const changes = [];
+  targetKeywords.forEach(kw => {
+    const key = normTerm(kw);
+    const priorEntry = priorLookup[key];
+    const currentEntry = currentKwTrackerLookup[key];
+    const priorRank = priorEntry ? priorEntry.rank : null;
+    const currentRank = currentEntry ? currentEntry.rank : null;
+    if (priorRank === null && currentRank === null) return; // no data either time
+    changes.push({ keyword: kw, priorRank, currentRank });
+  });
+  return { priorDate, changes };
+}
+
+
 // isn't ranking, maybe it's too competitive." Per Jaclyn 2026-07-27:
 // "consider as a question in the insight that there is another keyword
 // with less search volume but might be more attainable." Suggests a
@@ -262,6 +330,42 @@ function buildTier3Reconsiderations(otherKeywords, sku, allRawRowsForSku, reachK
     });
   });
   return out;
+}
+
+// Capability 3 (2026-08-21) — listing content age. Different from
+// computeKeywordTenureDays above, which tracks ONE keyword's presence —
+// this walks back through the SAME daily snapshots comparing the WHOLE
+// listing's combined title+bullets+description text as a single block,
+// to find how many days the CURRENT version has been unchanged. Same
+// gap-detection caution as computeKeywordTenureDays (a real gap in
+// snapshots — more than 3 days between consecutive dated rows — stops
+// the count rather than assuming stability across missing data). Used
+// by the hold-steady recommendation (capability 5) below.
+function computeListingContentAgeDays(sku, allRawRowsForSku) {
+  const datedRows = allRawRowsForSku
+    .filter(row => (row[COL.sku] || '').trim() === sku)
+    .map(row => ({
+      date: (row[COL.date] || '').trim(),
+      text: normTerm([row[COL.title], row[COL.bullet_1], row[COL.bullet_2], row[COL.bullet_3], row[COL.bullet_4], row[COL.bullet_5], row[COL.description]].join('|')),
+    }))
+    .filter(r => r.date)
+    .sort((a, b) => b.date.localeCompare(a.date)); // most recent first
+
+  if (!datedRows.length) return null; // no snapshots at all for this SKU
+
+  const currentText = datedRows[0].text;
+  let ageDays = 0;
+  let lastDate = datedRows[0].date;
+
+  for (let i = 1; i < datedRows.length; i++) {
+    const gapDays = Math.round((new Date(lastDate) - new Date(datedRows[i].date)) / (24 * 60 * 60 * 1000));
+    if (gapDays > 3) break; // real gap in snapshots, not confirmed continuous — stop counting
+    if (datedRows[i].text !== currentText) break; // content genuinely changed here
+    ageDays = Math.round((new Date(datedRows[0].date) - new Date(datedRows[i].date)) / (24 * 60 * 60 * 1000));
+    lastDate = datedRows[i].date;
+  }
+
+  return ageDays;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -305,6 +409,7 @@ function parseDelimited(text) {
     'BULLET_1_REWRITE', 'BULLET_2_REWRITE', 'BULLET_3_REWRITE', 'BULLET_4_REWRITE', 'BULLET_5_REWRITE',
     'DESC_NOTES', 'DESC_REWRITE',
     'BACKEND_NOTES', 'BACKEND_REWRITE',
+    'RECOMMENDATION',
   ];
 
   const result = {};
@@ -326,6 +431,15 @@ function parseDelimited(text) {
     }
   }
 
+  // Capability 5 (2026-08-21) — validate/normalize RECOMMENDATION rather
+  // than trust it blindly; the prompt asks for exactly HOLD_STEADY or
+  // PROCEED, but defaults safely to PROCEED (the pre-existing behavior)
+  // if Claude's response doesn't cleanly match either — a parsing hiccup
+  // here should never silently suppress a real audit's rewrites by
+  // defaulting the other way.
+  const rawRecommendation = (result['RECOMMENDATION'] || '').trim().toUpperCase();
+  const recommendation = rawRecommendation === 'HOLD_STEADY' ? 'HOLD_STEADY' : 'PROCEED';
+
   return {
     title_notes:      result['TITLE_NOTES']      || '',
     title_rewrite:    result['TITLE_REWRITE']    || '',
@@ -341,6 +455,7 @@ function parseDelimited(text) {
     desc_rewrite:     result['DESC_REWRITE']     || '',
     backend_notes:    result['BACKEND_NOTES']    || '',
     backend_rewrite:  result['BACKEND_REWRITE']  || '',
+    recommendation,
   };
 }
 
@@ -554,6 +669,33 @@ module.exports = async function handler(req, res) {
     console.warn('[listing-audit] keyword tracker fetch error:', e.message);
   }
 
+  // ── 1c. Audit sheet's own past rows — capability 4 (2026-08-21), prior
+  // audit effectiveness. Fetched once for the whole brand, same pattern
+  // as kwTrackerRows above, filtered per-SKU inside the main loop. Read
+  // BEFORE ensureAuditHeaders() runs below, so a fresh header-write (the
+  // very first run ever for this brand) can't be misread as "prior audit
+  // data" for itself. Uses `brand` directly rather than auditTabName
+  // (declared just below) — they're the same value, no need to wait.
+  let priorAuditRows = [];
+  try {
+    const auditReadUrl = `https://sheets.googleapis.com/v4/spreadsheets/${auditSheetId}/values/${encodeURIComponent(brand + '!A2:W')}?majorDimension=ROWS`;
+    const auditReadRes = await fetch(auditReadUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (auditReadRes.ok) {
+      const auditReadData = await auditReadRes.json();
+      const rawAuditRows = auditReadData.values || [];
+      priorAuditRows = rawAuditRows.map(row => {
+        const obj = {};
+        AUDIT_HEADERS.forEach((h, idx) => { obj[h] = row[idx] || ''; });
+        return obj;
+      }).filter(r => r.sku && r.action === 'audit_run'); // skip error rows — no real suggestions to compare against
+      console.log(`[listing-audit] prior audit rows: ${priorAuditRows.length} loaded for ${brand}`);
+    } else {
+      console.warn(`[listing-audit] could not read prior audit rows (${auditReadRes.status}) — prior-effectiveness comparison will be skipped this run, not blocking the audit itself`);
+    }
+  } catch (e) {
+    console.warn('[listing-audit] prior audit rows fetch error:', e.message);
+  }
+
   // ── 2. Ensure audit sheet has headers ────────────────────────────────────
   const auditTabName = brand; // tab is named after the brand, e.g. "evolis"
   await ensureAuditHeaders(auditSheetId, auditTabName, token);
@@ -591,6 +733,8 @@ KEYWORD COVERAGE RULES — priority order matters, read the tiers below carefull
 - In BACKEND_NOTES: flag any Tier 1 or Tier 2 keyword missing from every field. In BACKEND_REWRITE: ensure Tier 1 and Tier 2 keywords not already in title/bullets/item highlights are in the backend.
 - In BULLETS_NOTES: flag the highest-priority keyword gaps by tier order (Tier 1 gaps first, then Tier 2), with specific placement recommendations respecting the field-priority order given above.
 
+HOLD-STEADY RULE (capability 5, 2026-08-21): the user prompt below will tell you how many days the current listing content has been unchanged. If that is fewer than ${LISTING_AGE_HOLD_STEADY_DAYS} days, default your RECOMMENDATION to HOLD_STEADY — a rewrite this recent has not had time to show its real ranking effect yet. Still perform the full audit and still note any real findings in the NOTES fields, but recommend PROCEED only if you find a genuine compliance violation (drug claims, missing required disclaimers, banned language, size/format violations, etc.) that needs fixing regardless of how recently the listing changed. A keyword-coverage gap or a stylistic improvement alone is NOT sufficient reason to override HOLD_STEADY.
+
 BULLET FORMATTING RULES (apply to all bullet rewrites):
 - Every bullet must open with an ALL-CAPS phrase (3-6 words) followed by a colon, then sentence-case detail. Example: "CLINICALLY TESTED HAIR GROWTH SERUM: In 3 independent studies, 95% of users reported visibly thicker hair."
 - Flag any bullet that does NOT follow this ALL-CAPS header: detail format as a violation.
@@ -613,6 +757,7 @@ DESC_NOTES: [violations found in description, or "No violations" if clean. Max 3
 DESC_REWRITE: [compliant rewrite of description, max 400 chars, plain sentences no bullets. Empty string if travel SKU.]
 BACKEND_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
 BACKEND_REWRITE: [compliant backend keywords, max 200 chars, spaces only no commas.]
+RECOMMENDATION: [HOLD_STEADY or PROCEED — see HOLD-STEADY RULE above. Must be exactly one of these two words, nothing else.]
 
 Write nothing else. No preamble. No explanation after the last line. Start immediately with TITLE_NOTES:`;
 
@@ -620,6 +765,24 @@ Write nothing else. No preamble. No explanation after the last line. Start immed
     const sku  = (row[COL.sku]  || '').trim();
     const name = (row[COL.name] || '').trim();
     const travel = isTravel(row);
+
+    // Capability 3 (2026-08-21) — how long has the current listing
+    // content been unchanged. null if no snapshot history exists yet.
+    const listingAgeDays = computeListingContentAgeDays(sku, allRawRows);
+
+    // Capability 4 (2026-08-21) — this SKU's single most recent prior
+    // audit row, if one exists. Used below (non-travel SKUs only, same
+    // scope as the keyword-tier system) to compare keyword ranks then vs
+    // now.
+    const priorAuditRowsForSku = priorAuditRows.filter(r => (r.sku || '').trim() === sku);
+    const priorAuditRow = priorAuditRowsForSku.length
+      ? priorAuditRowsForSku.reduce((latest, r) => {
+          const rDate = r.audited_at || r.date || '';
+          const latestDate = latest ? (latest.audited_at || latest.date || '') : '';
+          return rDate > latestDate ? r : latest;
+        }, null)
+      : null;
+    let priorSuggestionNotes = ''; // built below inside the non-travel branch, if a prior audit exists
 
     try {
       const title     = san(row[COL.title], 400);
@@ -633,6 +796,14 @@ Write nothing else. No preamble. No explanation after the last line. Start immed
       const backend      = san(row[COL.backend_keywords], 300);
       const ingredients  = san(row[COL.ingredients], 600);
 
+      // Capability 5 (2026-08-21) — tells Claude how old the current
+      // content is, so it can apply the HOLD-STEADY RULE from the system
+      // prompt above. Shared across both travel and non-travel prompts,
+      // computed once here rather than duplicated in each branch.
+      const listingAgeContext = listingAgeDays !== null
+        ? `\nLISTING AGE: current content has been unchanged for ${listingAgeDays} day(s).`
+        : '\nLISTING AGE: unknown (no snapshot history available for this SKU yet).';
+
       let userPrompt;
       if (travel) {
         userPrompt = `Audit this TRAVEL SIZE SKU. For travel SKUs only check title and item highlights. Set BULLETS_NOTES and BULLETS_REWRITE to empty string.
@@ -641,7 +812,7 @@ SKU: ${sku}
 Name: ${name} [TRAVEL SIZE]
 Title: ${title}
 Item Highlights: ${ih}
-Backend: ${backend}`;
+Backend: ${backend}${listingAgeContext}`;
       } else {
         // Pass sibling SKU names for cross-catalog bullet alignment
         const siblings = rows
@@ -666,6 +837,24 @@ Backend: ${backend}`;
 
           const fmt = e => `${e.keyword}${e.rank !== null ? ` (rank #${e.rank}` : ' (not ranking'}${e.volume !== null ? `, ${e.volume}/mo)` : ')'}`;
 
+          // Capability 4 (2026-08-21) — prior audit effectiveness. Only
+          // computed for non-travel SKUs, same scope restriction already
+          // in place for the rest of the keyword-tier system.
+          const priorEffectiveness = buildPriorSuggestionEffectiveness(sku, priorAuditRow, allTargetKeywords, kwTrackerRows, kwTrackerLookup);
+          let priorEffectivenessSection = '';
+          if (priorEffectiveness && priorEffectiveness.changes.length) {
+            const changeLines = priorEffectiveness.changes.map(c => {
+              const priorStr = c.priorRank !== null ? `#${c.priorRank}` : 'not ranking';
+              const currentStr = c.currentRank !== null ? `#${c.currentRank}` : 'not ranking';
+              return `"${c.keyword}" ${priorStr} -> ${currentStr}`;
+            });
+            priorEffectivenessSection = `
+
+PRIOR AUDIT EFFECTIVENESS (last audited ${priorEffectiveness.priorDate} — did previous suggestions move rank?):
+${changeLines.join('; ')}`;
+            priorSuggestionNotes = changeLines.join('; ').slice(0, 500);
+          }
+
           kwContext = `
 TIER 1 — PROTECT (already ranking page 1 — DO NOT let a rewrite remove or weaken these; this is the highest priority, above adding anything new):
 ${tier1Protect.length ? tier1Protect.map(fmt).join(', ') : 'None currently on page 1 for this SKU.'}
@@ -674,7 +863,7 @@ TIER 2 — PUSH (rank ${PAGE1_RANK_CUTOFF + 1}-${CLOSE_TO_PAGE1_MAX}, sorted by 
 ${tier2Push.length ? tier2Push.map(fmt).join(', ') : 'None in this range currently.'}
 ${tier3.length ? `
 TIER 3 — RECONSIDER (already in the listing ${LONG_TENURE_DAYS}+ consecutive days per daily listing snapshots, still not ranking at all — raise as a QUESTION, not a directive: is this keyword too competitive to win, and would a lower-volume alternative be more attainable?):
-${tier3.map(t => `"${t.keyword}"${t.volume !== null ? ` (${t.volume}/mo)` : ''} — in listing ${t.tenure_days} days, no rank${t.suggested_alternative ? `. Consider substituting: "${t.suggested_alternative}"` : ''}`).join('; ')}` : ''}
+${tier3.map(t => `"${t.keyword}"${t.volume !== null ? ` (${t.volume}/mo)` : ''} — in listing ${t.tenure_days} days, no rank${t.suggested_alternative ? `. Consider substituting: "${t.suggested_alternative}"` : ''}`).join('; ')}` : ''}${priorEffectivenessSection}
 
 FIELD PRIORITY FOR PLACEMENT (highest SEO weight to lowest): Title > Item Highlights > Bullets > Product Description > Backend Keywords. When a Tier 1 or Tier 2 keyword is missing, place it in the HIGHEST-weight field it can compliantly fit in that's currently missing it — do not default to backend just because there's room there.`;
         } else if (Object.keys(kwRankings).length > 0) {
@@ -713,7 +902,7 @@ Bullet 4: ${b4}
 Bullet 5: ${b5}
 Description (excerpt): ${desc}
 Backend: ${backend}
-Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}`;
+Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}${listingAgeContext}`;
       }
 
       // Call Claude — retry once on 429
@@ -781,7 +970,10 @@ Ingredients: ${ingredients || 'NOT AVAILABLE'}${kwContext}`;
         parsed.backend_notes,
         parsed.backend_rewrite,
         '',   // skip_reason
-        now   // audited_at
+        now,  // audited_at
+        parsed.recommendation,                              // capability 5
+        listingAgeDays !== null ? listingAgeDays : '',       // capability 3
+        priorSuggestionNotes                                 // capability 4
       ]);
 
       console.log(`[listing-audit] ✓ ${sku}`);
@@ -822,13 +1014,16 @@ function buildErrorRow(date, sku, name, errorMsg, now) {
   return [
     date, sku, name, 'error',
     errorMsg.slice(0, 300), '', '', '', '', '', '', '', '', '', '', '', '', '',
-    '', now
+    '', now,
+    '', '', ''   // recommendation, listing_age_days, prior_suggestion_notes — blank on error rows
   ];
 }
 
 async function ensureAuditHeaders(sheetId, tabName, token) {
+  // ADDED 2026-08-21 — widened from A1:T1 to A1:W1 to cover the 3 new
+  // trailing columns (was 20 columns, now 23).
   const checkRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:T1')}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A1:W1')}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!checkRes.ok) return;
@@ -849,7 +1044,8 @@ async function ensureAuditHeaders(sheetId, tabName, token) {
           'bullet_1_rewrite', 'bullet_2_rewrite', 'bullet_3_rewrite', 'bullet_4_rewrite', 'bullet_5_rewrite',
           'desc_notes', 'desc_rewrite',
           'backend_notes', 'backend_rewrite',
-          'skip_reason', 'audited_at'
+          'skip_reason', 'audited_at',
+          'recommendation', 'listing_age_days', 'prior_suggestion_notes'
         ]]
       })
     }
