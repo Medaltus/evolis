@@ -675,7 +675,16 @@ async function runAnalysisForBrand(brand, apiKey) {
     readRows(KEYWORD_TRACKER_SHEET_ID, brand.tabName).catch(() => []),
     readRows(sheets.businessReport, brand.tabName).catch(() => []),
     readRows(sheets.searchQueryPerformance, brand.tabName).catch(() => []),
-    readRows(sheets.advertising, brand.tabName).catch(() => []),
+    // FIXED 2026-08-21 — this used to read sheets.advertising, a monthly
+    // campaign-level aggregate with no search_term/keyword columns at
+    // all. ppcRows feeds aggregatePpcByTerm() and the PPC section's own
+    // prompt (ppcTrimmed below), both of which need real per-term data —
+    // sheets.adSearchTerms (SHEET_AD_SEARCH_TERMS) is the sheet that
+    // actually has it. sheets.advertising itself is untouched elsewhere
+    // in this file; it was just never the right source for this
+    // specific variable. Confirmed via the same fix already made and
+    // tested on Cosmette's dashboard.
+    readRows(sheets.adSearchTerms, brand.tabName).catch(() => []),
     readRows(sheets.adOrders, brand.tabName).catch(() => []),
     readRows(sheets.listingAudit, brand.tabName).catch(() => []),
     readRows(sheets.insights, brand.tabName).catch(() => []),
