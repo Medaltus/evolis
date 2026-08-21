@@ -17533,13 +17533,38 @@ async function runListingAudit() {
     const groupList = Object.entries(groups);
     console.log('[listing-audit] Groups:', groupList.map(([k,v]) => k + '(' + v.length + ')').join(', '));
 
-    // ── Step 2: Run one API call per group ────────────────────────────────────
+    // ADDED 2026-08-21 — split any type-group larger than 5 SKUs into
+    // sub-batches of at most 5. A single API call auditing too many SKUs
+    // risks hitting Vercel's 300s function timeout partway through
+    // (confirmed on Cosmette's dashboard, which had no grouping at all
+    // and hit this at 15 SKUs in one call). This keeps the existing
+    // type-based grouping intact — SKUs within the same product type
+    // still get audited together for coherent AI context, just chunked
+    // into smaller batches when a single type has more than 5.
+    const MAX_SKUS_PER_BATCH = 5;
+    const batchList = [];
+    for (const [groupKey, skuList] of groupList) {
+      if (skuList.length <= MAX_SKUS_PER_BATCH) {
+        batchList.push([groupKey, skuList]);
+      } else {
+        const chunks = [];
+        for (let i = 0; i < skuList.length; i += MAX_SKUS_PER_BATCH) {
+          chunks.push(skuList.slice(i, i + MAX_SKUS_PER_BATCH));
+        }
+        chunks.forEach((chunk, idx) => {
+          batchList.push([`${groupKey} (${idx + 1}/${chunks.length})`, chunk]);
+        });
+      }
+    }
+    console.log('[listing-audit] Batches after 5-SKU split:', batchList.map(([k,v]) => k + '(' + v.length + ')').join(', '));
+
+    // ── Step 2: Run one API call per batch ────────────────────────────────────
     let totalSkus = 0;
     let failedGroups = [];
 
-    for (let i = 0; i < groupList.length; i++) {
-      const [groupKey, skuList] = groupList[i];
-      st.textContent = '▶ Auditing ' + groupKey + ' (' + (i+1) + '/' + groupList.length + ') — ' + skuList.length + ' SKUs…';
+    for (let i = 0; i < batchList.length; i++) {
+      const [groupKey, skuList] = batchList[i];
+      st.textContent = '▶ Auditing ' + groupKey + ' (' + (i+1) + '/' + batchList.length + ') — ' + skuList.length + ' SKUs…';
 
       try {
         const res = await fetch('/api/run-listing-audit', {
