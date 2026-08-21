@@ -24,7 +24,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Évolis — Internal Dashboard · Medaltus</title>
-<!-- PLACEHOLDER — replace data-clerk-publishable-key with Évolis's real Clerk publishable key -->
+<!-- This key is the shared Medaltus Clerk account's real publishable key, used
+     identically across every brand dashboard — NOT a placeholder needing a
+     brand-specific value. Per-brand distinction happens via the email-domain
+     check in the auth JS below, not via a different key per brand. -->
 <script async crossorigin="anonymous"
   data-clerk-publishable-key="pk_live_Y2xlcmsucmVwb3J0cy5tZWRhbHR1cy5jb20k"
   src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
@@ -106,6 +109,12 @@ nav > .nav-btn:not(.active):hover{color:#fff;}
 .topbar-title{font-size:14px;font-weight:600;color:var(--navy);letter-spacing:-.2px;}
 .topbar-right{display:flex;align-items:center;gap:10px;}
 .topbar-date{font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 10px;}
+/* ── Clerk user button — ADDED 2026-08-21, ported from Cosmette's dashboard ── */
+#clerk-user .cl-userButtonBox{display:flex;align-items:center;}
+#clerk-user .cl-avatarBox{width:30px;height:30px;}
+.topbar-user-btn{display:flex;align-items:center;gap:8px;background:none;border:1px solid var(--border);border-radius:20px;padding:5px 12px 5px 6px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--navy);transition:all .13s;}
+.topbar-user-btn:hover{border-color:var(--navy);background:var(--bg);}
+.topbar-user-avatar{width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .staging-pill{display:flex;align-items:center;gap:5px;background:rgba(200,125,47,0.12);border:1px solid rgba(200,125,47,0.25);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:600;color:var(--warn);letter-spacing:.04em;text-transform:uppercase;}
 .staging-pill::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--warn);animation:pulse 1.8s infinite;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
@@ -1212,6 +1221,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <span class="staging-pill" style="display:none;">Staging</span>
       <span class="topbar-date" id="topbar-date" style="display:none;">📅 May 1 – May 31, 2026</span>
       <span class="confidential-badge" style="display:none;">Confidential</span>
+      <div id="clerk-user"></div>
     </div>
   </div>
 
@@ -20328,37 +20338,88 @@ async function loadHomeTotalSkus() {
 }
 document.addEventListener('DOMContentLoaded', loadHomeTotalSkus);
 
+// ═══════════════════════════════════════════════════════════════════
 // CLERK AUTH — internal-section gating only, NOT a page-wide gate.
-// Org-membership check, matching Cosmette's own getOrganizationMemberships()
-// pattern — confirmed 2026-07-22 that this Clerk account uses per-org
-// invites, not a plain email-domain check, so membership in Évolis's own
-// org (not just having a @medaltus.com email) is what actually gates
-// internal access.
-// Unlike Cosmette's dashboard (which requires sign-in to see ANYTHING),
-// this dashboard is internal-first: non-org-member users can see
-// everything except the internal-only nav section, which stays hidden
-// by default (see inline style on #nav-internal-section) and is only
-// revealed here if the signed-in user belongs to Évolis's org.
-// If Clerk fails to load, isn't signed in, or membership check fails, the
-// safe fallback is simply "internal section stays hidden" — never a
-// broken or blank page.
-const EVOLIS_ORG_ID = 'org_3GrUGVaCu0kSFTjiYl8V743UQue';
-
+//
+// CHANGED 2026-08-21 (Jaclyn) — was org-membership based
+// (getOrganizationMemberships() + a hardcoded EVOLIS_ORG_ID), matching
+// Cosmette's original approach. Switched to match Cosmette's NEWER
+// pattern instead: gate check is by EMAIL DOMAIN, not org membership —
+// per Jaclyn, clients don't have @medaltus.com addresses, so "signed in
+// AND email ends with @medaltus.com" is what actually distinguishes
+// Medaltus staff from the client, and org membership doesn't reliably
+// separate the two (same reliability problem that prompted Cosmette's
+// own switch away from org-membership checking). This dashboard remains
+// internal-first — the page itself is public, only #nav-internal-section
+// is gated — that part is unchanged.
+//
+// Also added: a visible signed-in user button (avatar + name, dropdown
+// with sign-out) — évolis previously had no way for a signed-in user to
+// see who they were or sign out at all. Ported directly from Cosmette's
+// dashboard, unchanged.
+//
+// If Clerk fails to load, isn't signed in, or the email check fails,
+// the safe fallback is simply "internal section stays hidden" — never
+// a broken or blank page.
+// ═══════════════════════════════════════════════════════════════════
+const STAFF_EMAIL_DOMAIN = '@medaltus.com';
+const SIGN_IN_URL        = 'https://reports.medaltus.com';
 window.addEventListener('load', async () => {
   try {
     if (!window.Clerk) return; // Clerk script failed to load — stay on safe default
     await window.Clerk.load();
     const user = window.Clerk.user;
-    if (!user) return; // not signed in — safe default (internal hidden)
-
-    const memberships = await window.Clerk.user.getOrganizationMemberships();
-    const hasAccess = memberships.data.some(m => m.organization.id === EVOLIS_ORG_ID);
-
-    if (hasAccess) {
-      const internalNav = document.getElementById('nav-internal-section');
+    if (!user) return; // not signed in — safe default (internal section hidden)
+    const email = user.primaryEmailAddress?.emailAddress || '';
+    const isStaff = email.toLowerCase().endsWith(STAFF_EMAIL_DOMAIN);
+    if (isStaff) {
+      const internalNav   = document.getElementById('nav-internal-section');
       const internalBadge = document.getElementById('sb-internal-badge');
-      if (internalNav) internalNav.style.display = '';
+      if (internalNav)   internalNav.style.display = '';
       if (internalBadge) internalBadge.style.display = '';
+    }
+    // Render the user button (sign-out) regardless of staff/client status —
+    // anyone signed in should be able to see who they are and sign out.
+    const userEl = document.getElementById('clerk-user');
+    if (userEl) {
+      // Build a simple user button with sign-out
+      const firstName = user.firstName || '';
+      const lastName  = user.lastName  || '';
+      const initials  = ((firstName[0] || '') + (lastName[0] || '')).toUpperCase() || '?';
+      const email     = user.primaryEmailAddress?.emailAddress || '';
+      userEl.innerHTML = `
+        <div style="position:relative;">
+          <button class="topbar-user-btn" onclick="document.getElementById('clerk-dropdown').classList.toggle('open')">
+            <span class="topbar-user-avatar">${initials}</span>
+            <span>${firstName || email}</span>
+          </button>
+          <div id="clerk-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,31,96,.10);padding:8px;min-width:180px;z-index:1000;">
+            <div style="padding:8px 10px 10px;border-bottom:1px solid var(--border2);margin-bottom:6px;">
+              <div style="font-size:12px;font-weight:600;color:var(--navy);">${firstName} ${lastName}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${email}</div>
+            </div>
+            <button onclick="window.Clerk.signOut().then(()=>window.location.href='${SIGN_IN_URL}')"
+              style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;background:none;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12px;color:var(--navy);font-family:var(--font);text-align:left;"
+              onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='none'">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/>
+              </svg>
+              Sign out
+            </button>
+          </div>
+        </div>`;
+      // Close dropdown on outside click
+      document.addEventListener('click', e => {
+        const dd = document.getElementById('clerk-dropdown');
+        if (dd && !userEl.contains(e.target)) dd.style.display = 'none';
+      });
+      document.getElementById('clerk-dropdown').addEventListener('click', () => {});
+      // Toggle display properly
+      userEl.querySelector('.topbar-user-btn').addEventListener('click', () => {
+        const dd = document.getElementById('clerk-dropdown');
+        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+      });
+      userEl.querySelector('.topbar-user-btn').setAttribute('onclick', '');
     }
   } catch (err) {
     console.warn('[Clerk] Auth check failed, internal section stays hidden:', err);
