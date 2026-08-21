@@ -123,7 +123,7 @@ const COL = {
 // added at the VERY END, not interspersed. The row-write below is
 // positional (HEADERS.map-style construction, not keyed by header name),
 // so inserting anywhere else would shift every existing row's data into
-// the wrong columns. If évolis's audit sheet already has data, this is
+// the wrong columns. If a brand's audit sheet already has data, this is
 // safe as an additive change — but the live header row itself needs this
 // same 3-column addition made manually before the next real run (same
 // "ensureTab never rewrites an existing header row" limitation already
