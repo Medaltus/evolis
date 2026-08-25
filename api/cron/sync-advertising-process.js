@@ -396,18 +396,29 @@ module.exports = async (req, res) => {
     console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length} sd=${(sdRows || []).length} sdcamp=${(sdCampRows || []).length}`);
 
     // ── 5a. Write ASIN-level data (SP + SD — SB has no ASIN-level report) ────
+    // CHANGED 2026-08-25 per Jaclyn — SP now reads the 7-day attribution
+    // fields (sales7d, unitsSoldClicks7d) instead of 14-day. See the
+    // "SP ATTRIBUTION WINDOW" note in sync-advertising-request.js's file
+    // header for the reconciliation test that motivated this: 14-day was
+    // confirmed to be the cause of this dashboard running ~$1,825/month
+    // above both Helium 10 and Amazon's own console for Skinuva, with
+    // spend/clicks/impressions matching almost exactly in both windows —
+    // only the attribution-dependent sales/units figures moved. Internal
+    // field names below (`units`/`spend`/`sales`) are already window-
+    // agnostic, so nothing downstream of this block needed to change.
+    //
     // ADDED 2026-08-19 — SD's real column names (confirmed via
     // test-sd-connection.js against actual returned data, not guessed)
     // differ from SP's: promotedAsin/cost/sales/unitsSold vs SP's
-    // advertisedAsin/spend/sales14d/unitsSoldClicks14d. Normalized into a
+    // advertisedAsin/spend/sales7d/unitsSoldClicks7d. Normalized into a
     // single common shape here before aggregating, rather than forcing
     // SD's field names to match SP's or duplicating the aggregation loop.
     const normalizedAsinRows = [
       ...asinRows.map(r => ({
         asin:  (r.advertisedAsin || '').trim().toUpperCase(),
-        units: r.unitsSoldClicks14d || 0,
+        units: r.unitsSoldClicks7d || 0,
         spend: r.spend || 0,
-        sales: r.sales14d || 0,
+        sales: r.sales7d || 0,
       })),
       ...(sdRows || []).map(r => ({
         asin:  (r.promotedAsin || '').trim().toUpperCase(),
@@ -461,11 +472,23 @@ module.exports = async (req, res) => {
     }
 
     // ── 5b. Merge SP + SB campaign rows, aggregate per brand ─────────────────
+    // CHANGED 2026-08-25 per Jaclyn — SP campaign rows now carry sales7d /
+    // unitsSoldClicks7d (see sync-advertising-request.js's file header for
+    // the reconciliation test behind this). Remapped into the SAME
+    // sales14d/unitsSoldClicks14d key names the aggregation below already
+    // reads for SB and SD, purely so one shared aggregation loop can keep
+    // working unchanged for all three ad types — those two key names are
+    // now a slight misnomer (they hold 7-day SP data, not 14-day), kept
+    // only for internal consistency with the rest of this function. Not
+    // exposed anywhere outside this file: SUMMARY_HEADERS/ASIN_HEADERS
+    // (the actual sheet column names) were always window-agnostic
+    // ('sales', 'ad_units'), so nothing downstream of this file changes.
+    //
     // SB and SP use different column names for the same concepts — SB has no
-    // "14d attribution window" suffix the way SP does. Confirmed against
-    // Amazon's real sbCampaigns schema (2026-07-09):
-    //   SP: spend, sales14d, unitsSoldClicks14d
-    //   SB: cost,  sales,    purchases
+    // day-window suffix the way SP does. Confirmed against Amazon's real
+    // sbCampaigns schema (2026-07-09):
+    //   SP: spend, sales7d, unitsSoldClicks7d
+    //   SB: cost,  sales,   purchases
     // Remap all three SB fields to the SP-shaped keys the aggregation below
     // reads — previously only `spend` was remapped and `purchases14d` (which
     // was never actually SB's field name) was used instead of `purchases`,
@@ -486,7 +509,11 @@ module.exports = async (req, res) => {
     // entirely, rather than relying on an unverified assumption that the
     // ASIN-level report already captures every dollar.
     const allCampaignRows = [
-      ...spRows,
+      ...spRows.map(r => ({
+        ...r,
+        sales14d:           r.sales7d           || 0,
+        unitsSoldClicks14d: r.unitsSoldClicks7d || 0,
+      })),
       ...sbRows.map(r => ({
         ...r,
         spend:               r.cost      || r.spend      || 0,
