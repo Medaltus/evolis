@@ -5,17 +5,34 @@
  *
  * Fires 10 report requests per run:
  *   Current month MTD (1st of this month → yesterday):
- *     1. spAdvertisedProduct  — ASIN-level SP ad units
- *     2. spCampaigns          — SP campaign-level brand summary
+ *     1. spAdvertisedProduct  — ASIN-level SP ad units (7-day attribution)
+ *     2. spCampaigns          — SP campaign-level brand summary (7-day attribution)
  *     3. sbCampaigns          — SB campaign-level brand summary
  *     4. sdAdvertisedProduct  — ASIN-level SD ad units (ADDED 2026-08-19)
  *     5. sdCampaigns          — SD campaign-level brand summary (ADDED 2026-08-19)
  *   Last full calendar month (1st → last day of prev month):
- *     6. spAdvertisedProduct  — ASIN-level SP ad units
- *     7. spCampaigns          — SP campaign-level brand summary
+ *     6. spAdvertisedProduct  — ASIN-level SP ad units (7-day attribution)
+ *     7. spCampaigns          — SP campaign-level brand summary (7-day attribution)
  *     8. sbCampaigns          — SB campaign-level brand summary
  *     9. sdAdvertisedProduct  — ASIN-level SD ad units (ADDED 2026-08-19)
  *     10. sdCampaigns         — SD campaign-level brand summary (ADDED 2026-08-19)
+ *
+ * SP ATTRIBUTION WINDOW — CHANGED 2026-08-25 per Jaclyn, 14-day → 7-day.
+ *   Both spAdvertisedProduct and spCampaigns previously requested the
+ *   14-day attribution columns (sales14d, unitsSoldClicks14d,
+ *   purchases14d). Confirmed via a direct side-by-side pull (Skinuva,
+ *   July 2026) that the 14-day window was the actual cause of this
+ *   dashboard's sales figure running ~$1,825 above both Helium 10's
+ *   Analytics total and Amazon's own console for the same period —
+ *   spend/impressions/clicks all matched H10 almost exactly (those
+ *   aren't attribution-dependent), only sales/units were off, and
+ *   swapping just the SP fields to 7-day columns took the gap from
+ *   ~$1,825 to ~$90 (isolated to SP+SD, SB held constant on both sides
+ *   since it has no day-window field either way). See
+ *   test-7d-vs-14d-skinuva.js (one-off terminal diagnostic, not part of
+ *   the deployed crons) for the script that ran that comparison, and
+ *   sync-advertising-process.js for where the corresponding field names
+ *   are read.
  *
  * SPONSORED DISPLAY — added 2026-08-19, in two parts:
  *   sdAdvertisedProduct: confirmed real via test-sd-connection.js against
@@ -31,7 +48,9 @@
  *     promoted product. Using this dedicated report for
  *     SHEET_ADVERTISING removes that risk entirely, rather than relying
  *     on an assumption that the ASIN-level report already captures
- *     every dollar.
+ *     every dollar. SD's own columns (cost/sales/unitsSold) have no
+ *     day-window variant at all, so they're unaffected by the SP change
+ *     above.
  *
  * Neither SD request is required for the run to succeed — see the
  * curr/prev success checks below, unchanged from before this addition.
@@ -92,13 +111,13 @@ module.exports = async (req, res) => {
     // ~12s total (this function has a 300s budget) and removes that
     // self-inflicted collision risk entirely.
     const reportJobs = [
-      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_curr'),
-      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_curr'),
+      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', curr, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases7d','unitsSoldClicks7d','sales7d'], 'asin_curr'),
+      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', curr, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases7d','sales7d','unitsSoldClicks7d'], 'sp_curr'),
       () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    curr, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_curr'),
       () => requestReportWithRetry(token, profileId, 'sdAdvertisedProduct', 'SPONSORED_DISPLAY',  curr, ['advertiser'], ['campaignName','campaignId','adGroupName','promotedAsin','promotedSku','impressions','clicks','cost','purchases','sales','unitsSold'], 'sd_curr'),
       () => requestReportWithRetry(token, profileId, 'sdCampaigns',         'SPONSORED_DISPLAY',  curr, ['campaign'],   ['campaignName','campaignId','impressions','clicks','cost','purchases','sales','unitsSold'], 'sdcamp_curr'),
-      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases14d','unitsSoldClicks14d','sales14d'], 'asin_prev'),
-      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases14d','sales14d','unitsSoldClicks14d'], 'sp_prev'),
+      () => requestReportWithRetry(token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS', prev, ['advertiser'], ['advertisedAsin','impressions','clicks','spend','purchases7d','unitsSoldClicks7d','sales7d'], 'asin_prev'),
+      () => requestReportWithRetry(token, profileId, 'spCampaigns',         'SPONSORED_PRODUCTS', prev, ['campaign'],   ['campaignName','impressions','clicks','spend','purchases7d','sales7d','unitsSoldClicks7d'], 'sp_prev'),
       () => requestReportWithRetry(token, profileId, 'sbCampaigns',        'SPONSORED_BRANDS',    prev, ['campaign'],   ['campaignName','impressions','clicks','cost','purchases','sales'], 'sb_prev'),
       () => requestReportWithRetry(token, profileId, 'sdAdvertisedProduct', 'SPONSORED_DISPLAY',  prev, ['advertiser'], ['campaignName','campaignId','adGroupName','promotedAsin','promotedSku','impressions','clicks','cost','purchases','sales','unitsSold'], 'sd_prev'),
       () => requestReportWithRetry(token, profileId, 'sdCampaigns',         'SPONSORED_DISPLAY',  prev, ['campaign'],   ['campaignName','campaignId','impressions','clicks','cost','purchases','sales','unitsSold'], 'sdcamp_prev'),
