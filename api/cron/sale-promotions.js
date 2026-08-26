@@ -45,6 +45,14 @@ const HEADERS = [
   'Amazon Sale Promotions',
   'marketplace', // column R — owned by sync-orders-process.js — preserved here, never computed
   'channel',     // column S — owned by sync-orders-process.js — preserved here, never computed
+  'selling_account', // column T — ADDED 2026-08-26, same exact bug as
+                      // fees-estimate.js's identical fix (and the same
+                      // class of bug this file's own 2026-08-13 comment
+                      // already describes once): sync-orders-process.js
+                      // added this column on 2026-08-21 and this file's
+                      // HEADERS constant was never updated to match.
+                      // Owned by sync-orders-process.js — preserved
+                      // here, never computed.
 ];
 
 // Safety valve only — normal runs won't get anywhere near this.
