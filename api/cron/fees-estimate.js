@@ -60,6 +60,13 @@ const HEADERS = [
   'Amazon Sale Promotions',
   'marketplace', // column R — owned by sync-orders-process.js — preserved here, never computed
   'channel',     // column S — owned by sync-orders-process.js — preserved here, never computed
+  'selling_account', // column T — ADDED 2026-08-26 — same exact bug as
+                      // the FIXED 2026-08-13 note above: sync-orders-
+                      // process.js added this column on 2026-08-21 and
+                      // this file's HEADERS constant was never updated
+                      // to match, silently dropping it from every row
+                      // this cron touched. Owned by sync-orders-
+                      // process.js — preserved here, never computed.
 ];
 
 const META_TAB     = '_meta';
