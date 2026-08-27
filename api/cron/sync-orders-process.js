@@ -281,11 +281,32 @@ module.exports = async (req, res) => {
       // rewrites the full tab — there's no row-level patch available).
       const workingRows = existingRowsObj.map(r => HEADERS.map(h => r[h] ?? ''));
 
-      let newCount = 0, overwrittenCount = 0;
+      let newCount = 0, overwrittenCount = 0, skippedNonStandardCount = 0;
+
+      // FIXED 2026-08-27 per Jaclyn — confirmed via direct investigation
+      // (clicking through an order_id landed on a Removal Order page) and
+      // independently confirmed on an Amazon seller forum: order IDs with
+      // a non-numeric prefix like "S01-" are NOT real customer orders —
+      // they're removal/liquidation or MCF-related records that Amazon's
+      // own orders report includes alongside genuine sales. These showed
+      // $0 item_price/order_total but a real quantity_ordered (1), which
+      // silently inflates unit-sold counts everywhere a dashboard sums
+      // quantity_ordered/unit_count without also checking for a real
+      // price — revenue itself was unaffected (price is $0), but units
+      // weren't. Standard Amazon retail order IDs always follow
+      // XXX-XXXXXXX-XXXXXXX (3 digits, 7 digits, 7 digits, all numeric) —
+      // anything that doesn't match this shape is skipped here, before it
+      // ever reaches the sheet, rather than filtered downstream on every
+      // dashboard that reads this data.
+      const STANDARD_ORDER_ID_PATTERN = /^\d{3}-\d{7}-\d{7}$/;
 
       for (const row of brandRows) {
         const orderId = row['amazon-order-id'] || row['order-id'] || '';
         if (!orderId) continue;
+        if (!STANDARD_ORDER_ID_PATTERN.test(orderId)) {
+          skippedNonStandardCount++;
+          continue;
+        }
 
         const sku      = row['sku'] || row['seller-sku'] || '';
         const key      = `${orderId}||${sku}`;
@@ -350,8 +371,8 @@ module.exports = async (req, res) => {
       const cleanedRows = collapseDuplicates(workingRows, HEADERS, brand.id);
 
       await replaceRows(sheets.orders, brand.tabName, HEADERS, cleanedRows, token);
-      console.log(`[sync-orders-process] ${brand.id} — new=${newCount} overwritten=${overwrittenCount}`);
-      results.push({ brand: brand.id, status: 'ok', new: newCount, overwritten: overwrittenCount });
+      console.log(`[sync-orders-process] ${brand.id} — new=${newCount} overwritten=${overwrittenCount} skippedNonStandardOrderId=${skippedNonStandardCount}`);
+      results.push({ brand: brand.id, status: 'ok', new: newCount, overwritten: overwrittenCount, skippedNonStandardOrderId: skippedNonStandardCount });
     } catch (err) {
       console.error(`[sync-orders-process] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
