@@ -155,10 +155,19 @@ module.exports = async (req, res) => {
   const results  = [];
   const syncTime = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
 
+  // FIXED 2026-08-27 per Jaclyn — same fix as sync-orders-process.js; see
+  // that file's identical comment for the full reasoning. Order IDs with
+  // a non-numeric prefix like "S01-" are removal/liquidation or MCF
+  // records, not real customer orders, and would otherwise silently
+  // inflate unit-sold counts in the historical sheet the same way they
+  // did in the rolling 120-day sheet.
+  const STANDARD_ORDER_ID_PATTERN = /^\d{3}-\d{7}-\d{7}$/;
+
   for (const brand of brands.filter(b => b.active)) {
     try {
       // Group line items by order, filter to this brand's SKU prefix
       const orderMap = {};
+      let skippedNonStandardCount = 0;
 
       for (const row of allRows) {
         const sku = get(row, COL.sku);
@@ -167,6 +176,7 @@ module.exports = async (req, res) => {
 
         const orderId = get(row, COL.orderId);
         if (!orderId) continue;
+        if (!STANDARD_ORDER_ID_PATTERN.test(orderId)) { skippedNonStandardCount++; continue; }
 
         if (!orderMap[orderId]) {
           orderMap[orderId] = {
@@ -228,7 +238,7 @@ module.exports = async (req, res) => {
         await pruneOldMonths(sheets.ordersHistorical, brand.tabName, token, 18);
       }
 
-      results.push({ brand: brand.id, status: 'ok', rows: sheetRows.length, year, month });
+      results.push({ brand: brand.id, status: 'ok', rows: sheetRows.length, year, month, skippedNonStandardOrderId: skippedNonStandardCount });
     } catch (err) {
       console.error(`[backfill] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
