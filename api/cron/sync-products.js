@@ -248,16 +248,17 @@ module.exports = async (req, res) => {
   const nowIso      = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
 
   let processed = 0;
+  let skippedAlreadyWritten = 0; // FIXED 2026-08-31 -- see note below
   let i = cursor;
   const tabTokens = {};
   const tabNextRow = {};       // brandTabName -> next row number to write to
+  const writtenTodaySets = {}; // brandTabName -> Set of SKUs already written for `today` -- FIXED 2026-08-31
   const brand90dMaps = {};     // brandTabName -> { [asin]: unitsSoldLast90d } — see fetchBrand90dUnits
   const walmart90dMaps = {};   // brandTabName -> { [sku]: unitsSoldLast90d }  — see fetchBrandWalmart90dUnits, only populated for sellsOnWalmart SKUs
   const failedSkus = [];
 
   for (; i < masterList.length; i++) {
     if (Date.now() - startTime > TIME_BUDGET_MS) break;
-    if (i > cursor) await sleep(INTER_SKU_DELAY_MS);
 
     const item = masterList[i];
     try {
@@ -265,6 +266,28 @@ module.exports = async (req, res) => {
         tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, HEADERS);
         const existingRows = await readRows(sheets.products, item.brandTabName);
         tabNextRow[item.brandTabName] = existingRows.length + 2; // +1 for header row, +1 to move past the last existing row
+
+        // FIXED 2026-08-31 — real incident, traced to 2026-08-04: the
+        // cursor (which masterList INDEX to resume from) and tabNextRow
+        // (which SHEET ROW to write to) are two independent counters.
+        // This only stays correct if masterList is perfectly identical —
+        // same order, same items — across every run within the same
+        // day. A mid-day code deploy (this file's own 2026-08-04 change,
+        // adding Walmart channel detection) can change what
+        // fetchMasterSkuList() returns or how it's ordered, meaning a
+        // later run's cursor no longer points to "everything after what
+        // was already written." Confirmed live: creme-shop had 1,233
+        // duplicate (date, sku) pairs (1,478 excess rows) concentrated
+        // on exactly 2026-08-04, which silently helped push the tab past
+        // its grid's row limit. Rather than trust the cursor index
+        // alone, this set makes the write step itself idempotent: any
+        // SKU already written for TODAY specifically gets skipped
+        // outright, regardless of what the cursor says, so a masterList
+        // shift mid-day can no longer cause a duplicate write even if
+        // the cursor math itself goes out of sync.
+        writtenTodaySets[item.brandTabName] = new Set(
+          existingRows.filter(r => (r.date || '') === today).map(r => (r.sku || '').trim().toUpperCase())
+        );
 
         // ADDED 2026-08-14 — real production failure: creme-shop's grid
         // (10776 rows) was smaller than the row this run needed to write
@@ -277,6 +300,22 @@ module.exports = async (req, res) => {
         // should only rarely need to fire at all going forward.
         await ensureRowCapacity(sheets.products, item.brandTabName, tabNextRow[item.brandTabName], tabTokens[item.brandTabName]);
       }
+
+      // Skip outright if this exact SKU already has a row for today —
+      // see the FIXED 2026-08-31 note above. No API calls, no write,
+      // just move on; this SKU is already correctly represented in
+      // today's log from an earlier run. Deliberately checked BEFORE the
+      // inter-SKU sleep below — a skipped SKU makes zero SP-API calls,
+      // so there's nothing to rate-limit for it. A run resuming from a
+      // stale cursor pointing at already-written SKUs no longer wastes
+      // its whole time budget sleeping for skips it was going to make
+      // anyway.
+      if (writtenTodaySets[item.brandTabName]?.has(item.sku.toUpperCase())) {
+        skippedAlreadyWritten++;
+        continue;
+      }
+
+      if (i > cursor) await sleep(INTER_SKU_DELAY_MS);
 
       // FAILSAFE: 90-day units lookup is fetched once per brand and never
       // throws out of this block — if it fails, that brand's SKUs just get
@@ -379,6 +418,7 @@ module.exports = async (req, res) => {
     date: today,
     group: group || null,
     processedThisRun: processed,
+    skippedAlreadyWritten,
     cursor: i,
     totalCount,
     complete,
