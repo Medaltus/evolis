@@ -626,6 +626,17 @@ async function fetchMasterSkuList() {
     const rawChannel     = (cols[6] || '').trim();
     const channelNorm    = stripAccents(rawChannel.toLowerCase());
     const sellsOnWalmart = channelNorm.includes('walmart');
+    // Column H — Status. ADDED 2026-08-31 per Jaclyn — this cron
+    // previously had no status filter at all: every row on the master
+    // list with a valid ASIN+SKU and a matching active brand got synced
+    // daily, regardless of whether the product was actually still live.
+    // A discontinued/deleted SKU still sitting on the master list would
+    // get a real row every single day, indefinitely — real, unnecessary
+    // row growth directly contributing to the same grid-size pressure
+    // that hit creme-shop. Case-insensitive comparison since sheet data
+    // entry isn't always perfectly consistent.
+    const rawStatus = (cols[7] || '').trim();
+    if (rawStatus.toUpperCase() !== 'LIVE') continue;
 
     if (!asin || !sku) continue;
     if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
