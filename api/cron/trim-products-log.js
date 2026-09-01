@@ -20,7 +20,25 @@ const brands = require('../config/brands');
 const sheets = require('../config/sheets');
 const { sendCronFailureAlert } = require('../_alerts');
 
-const RETENTION_DAYS = 730; // 2 years
+const RETENTION_DAYS = 395; // 13 months (365 + 30)
+// CHANGED 2026-09-01 per Jaclyn — was 730 days (2 years). Real math worked
+// through with Jaclyn: 850 live SKUs (confirmed against the master SKU
+// list) x 30 columns x 730 days = 18,615,000 cells — nearly double
+// Google's 10M cell ceiling for the WHOLE spreadsheet (shared across every
+// brand's tab, not per-tab), not just a creme-shop-specific problem.
+// WORTH KNOWING: 395 days is actually ~72,500 cells OVER the 10M limit at
+// the current 850-SKU count (850 x 30 x 395 = 10,072,500) — the exact
+// cutoff that fits safely is 392 days. Set to 395 anyway per Jaclyn's
+// explicit instruction, not decided unilaterally here; in practice this
+// is close enough that normal SKU turnover (not every SKU stays live the
+// full window) will likely keep the real count under 10M most of the
+// time, but this is genuinely right at the edge, not comfortably under
+// it — worth monitoring if brand/SKU count grows. Historical
+// out-of-stock periods and listing-copy changes that would otherwise be
+// lost when a row ages out are now separately preserved indefinitely by
+// sync-oos-history.js and sync-listing-change-log.js (added the same
+// day) — see those files. Jaclyn may drop this further to 365 days (12
+// months) now that those two logs exist to cover the gap.
 
 // FIXED 2026-08-14 — same class of bug found and fixed today in
 // trim-orders.js, fees-estimate.js, and sale-promotions.js: this HEADERS
