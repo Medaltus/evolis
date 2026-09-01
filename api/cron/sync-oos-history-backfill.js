@@ -123,11 +123,20 @@ module.exports = async (req, res) => {
       }
 
       // Group every historical row by date, keyed by SKU within each date.
+      // Rows with a malformed date (anything not YYYY-MM-DD -- e.g. a
+      // stray cell reference like "A1" leaking in from a header row)
+      // are skipped rather than included: a garbage value that sorts
+      // after real dates would get mistaken for the range's last date,
+      // which would wrongly exempt the TRUE last date from the
+      // discontinued-check and instead subject it to a bogus one.
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
       const rowsByDate = new Map(); // date -> Map(sku -> row)
+      let badDateRows = 0;
       productRows.forEach(r => {
         const date = (r.date || '').trim();
         const sku = (r.sku || '').trim();
         if (!date || !sku) return;
+        if (!DATE_RE.test(date)) { badDateRows++; return; }
         if (!rowsByDate.has(date)) rowsByDate.set(date, new Map());
         rowsByDate.get(date).set(sku, r);
       });
@@ -211,7 +220,7 @@ module.exports = async (req, res) => {
         await replaceRows(sheets.oosHistory, brand.tabName, HEADERS, outRows, token);
       }
 
-      console.log(`[sync-oos-history-backfill] ${brand.id} -- window=${truncatedStart}..${windowEnd} started=${started} continued=${continued} closed=${closed} closedDiscontinued=${closedDiscontinued} stillOpen=${finalOpenRows.length}${dryRun ? ' (DRY RUN)' : ''}`);
+      console.log(`[sync-oos-history-backfill] ${brand.id} -- window=${truncatedStart}..${windowEnd} started=${started} continued=${continued} closed=${closed} closedDiscontinued=${closedDiscontinued} stillOpen=${finalOpenRows.length} badDateRows=${badDateRows}${dryRun ? ' (DRY RUN)' : ''}`);
       results.push({
         brand: brand.id,
         status: dryRun ? 'dry_run' : 'ok',
@@ -220,6 +229,7 @@ module.exports = async (req, res) => {
         started, continued, closed, closedDiscontinued,
         stillOpen: finalOpenRows.length,
         totalRows: outRows.length,
+        badDateRows,
       });
     } catch (err) {
       console.error(`[sync-oos-history-backfill] ${brand.id} failed:`, err.message);
