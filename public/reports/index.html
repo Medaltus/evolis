@@ -12844,6 +12844,12 @@ const OV_SUMMARY_SHEET_ID        = '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0
 const OV_SUMMARY_GID             = '1762221100';  // evolis tab
 const OV_PRODUCTS_CACHE_SHEET_ID = '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s';
 const OV_PRODUCTS_CACHE_GID      = '1672819862';  // evolis tab
+// Out-of-Stock history — sync-oos-history.js. One row per incident:
+// brand, sku, asin, type, start_date, end_date, status, last_updated.
+// Added 2026-09-01, replacing the OOS Log tab's prior client-side
+// streak derivation from OV_PRODUCTS_CACHE (see loadOosLog below).
+const OV_OOS_HISTORY_SHEET_ID    = '1lbvdt8qcSRItrkWGjWnaJHcoBhjY275b1M6fM5_dKAM';
+const OV_OOS_HISTORY_GID         = '1494905008';  // evolis tab
 // Consignment Inventory sheet — ShipStation-sourced brands (miguard,
 // prohibition, high-on-love) have real tabs today. Évolis's own
 // consignment inventory is on Cin7 Core, not yet built (email-based
@@ -16115,73 +16121,121 @@ window.initInventoryPage = async function() {
 
 // ═══════════════════════════════════════════════════════════════════
 // OUT-OF-STOCK LOG — Option 2 (grouped by SKU), lazy-loaded on first
-// visit to that tab, not on initial page load. This needs the FULL
-// daily history per SKU (not just the latest date, which is all the
-// Snapshot tab needs), so it's a separate, heavier fetch — keeping it
-// lazy is what keeps the Snapshot tab's initial load fast.
+// visit to that tab, not on initial page load.
 //
-// A day counts as OOS when Available (total_quantity) = 0. Consecutive
-// OOS days group into one incident. Missing daily-log rows (the cron
-// didn't run that day) are skipped over rather than treated as a break
-// in the streak — there's no data contradicting continuity, so the
-// streak is assumed to continue through the gap. A row that exists but
-// has a blank/unparseable total_quantity is treated as "unknown, not
-// OOS" — same reasoning, we don't have evidence either way so we don't
-// claim OOS without it.
+// CHANGED 2026-09-01 per Jaclyn: now reads pre-computed incidents
+// straight from the sync-oos-history.js cache sheet (one row per
+// incident — brand, sku, asin, type, start_date, end_date, status,
+// last_updated) instead of re-deriving OOS streaks client-side from
+// daily OV_PRODUCTS_CACHE snapshots. The cron now owns the
+// streak-grouping logic (consecutive-day grouping, gap handling,
+// etc.); this function's job is just to group the cron's own rows by
+// SKU and render them.
+//
+// `type` distinguishes "out of FBA" vs "out of all inventory" per the
+// cron — shown as a tag on each period row, formatted from whatever
+// literal value the cron writes rather than mapped to fixed labels,
+// since that exact string hasn't been confirmed against real output.
+// `status` decides ongoing vs resolved: treated as ongoing if it
+// contains "ongoing" (case-insensitive), OR — as a fallback if the
+// cron's status string turns out to be spelled differently — if
+// status is blank/unrecognized AND end_date is also blank.
+//
+// NOTE: sync-oos-history.js's field definitions were flagged in the
+// original build session as reasoned from first principles rather
+// than confirmed against this dashboard's own separate "[OOS]" point-
+// in-time logic — worth spot-checking this log against a known recent
+// incident once it's live.
 // ═══════════════════════════════════════════════════════════════════
 
 let _oosLogLoaded = false;
+
+// Local SKU -> product name lookup for this tab only, matching the
+// same master-sheet pattern used elsewhere on this dashboard (see
+// loadSkuNameMap in the Inventory page code) — the new OOS history
+// sheet carries sku/asin but no product name, so this fills the
+// "SKU · Name" label the tab has always shown.
+const OOS_PRODUCT_NAMES_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+const OOS_PRODUCT_NAMES_GID      = '164358627';
+let _oosSkuNameMap = null; // cached after first load
+
+async function loadOosSkuNameMap() {
+  if (_oosSkuNameMap) return _oosSkuNameMap;
+  const map = {};
+  try {
+    const csv = await fetch(ovCsvUrl(OOS_PRODUCT_NAMES_SHEET_ID, OOS_PRODUCT_NAMES_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
+    const all = parseCsvFull(csv);
+    // Positional columns (not header-name matched) — col B (index 1) =
+    // SKU, col C (index 2) = Product Short Name, same indices as the
+    // Inventory page's own proven-working loadSkuNameMap.
+    for (let i = 1; i < all.length; i++) {
+      const cols = all[i];
+      const sku  = (cols[1] || '').trim().toUpperCase().replace(/-SF$/i, '');
+      const name = (cols[2] || '').trim();
+      if (sku && name) map[sku] = name;
+    }
+  } catch (e) {
+    console.warn('[OOS Log] SKU name lookup failed:', e.message);
+  }
+  _oosSkuNameMap = map;
+  return map;
+}
+
+function oosFormatType(type) {
+  const t = (type || '').trim();
+  if (!t) return '';
+  return t.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 async function loadOosLog() {
   const body = document.getElementById('oos-log-body');
   if (!body) return;
   try {
-    const csv = await fetch(ovCsvUrl(OV_PRODUCTS_CACHE_SHEET_ID, OV_PRODUCTS_CACHE_GID)).then(r => r.ok ? r.text() : '').catch(() => '');
-    const rows = parseCsvToRows(csv);
-    if (!rows.length) { body.innerHTML = '<div class="ppc-card" style="color:var(--muted);">No data</div>'; return; }
+    const [csv, skuNames] = await Promise.all([
+      fetch(ovCsvUrl(OV_OOS_HISTORY_SHEET_ID, OV_OOS_HISTORY_GID)).then(r => r.ok ? r.text() : '').catch(() => ''),
+      loadOosSkuNameMap(),
+    ]);
+    const rawRows = parseCsvToRows(csv);
+    if (!rawRows.length) { body.innerHTML = '<div class="ppc-card" style="color:var(--muted);">No data</div>'; return; }
 
-    const todayStr = rows.reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+    // Defensive brand filter — this sheet is architected one tab per
+    // brand (this gid is évolis's own tab) but rows also carry their
+    // own brand column, so filter on it when present rather than
+    // assume every row already in the tab is safely scoped.
+    const rows = rawRows.filter(r => !r.brand || r.brand.trim().toLowerCase() === 'evolis');
 
-    // Group by SKU, sort each group's rows by date ascending
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dayCount = (start, end) => Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+
+    // Group by SKU — each CSV row is already one full incident (the
+    // cron owns start/end/status), so no streak derivation needed here.
     const bySku = {};
     rows.forEach(r => {
-      const sku = (r.sku || '').trim();
-      if (!sku) return;
-      if (!bySku[sku]) bySku[sku] = { name: r.name || sku, rows: [] };
-      bySku[sku].rows.push(r);
-      if (r.name) bySku[sku].name = r.name; // keep the most recently seen name
+      const sku = (r.sku || '').trim().toUpperCase();
+      if (!sku || !r.start_date) return;
+      const statusRaw = (r.status || '').trim().toLowerCase();
+      const ongoing = statusRaw.includes('ongoing') || (!statusRaw && !r.end_date);
+      // "As of" date for an ongoing incident's day count: the cron's own
+      // last_updated (most recent day it confirmed the SKU still OOS),
+      // falling back to today if that's missing.
+      const asOf = ongoing ? ((r.last_updated || '').slice(0, 10) || todayStr) : r.end_date;
+      if (!asOf) return;
+
+      if (!bySku[sku]) bySku[sku] = { name: skuNames[sku] || sku, asin: r.asin || '', periods: [] };
+      bySku[sku].periods.push({
+        start: r.start_date,
+        end: ongoing ? null : r.end_date,
+        ongoing,
+        type: oosFormatType(r.type),
+        days: dayCount(r.start_date, asOf),
+      });
     });
 
-    const skuLogs = [];
-    Object.entries(bySku).forEach(([sku, data]) => {
-      const sorted = [...data.rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-      const periods = [];
-      let streakStart = null, streakLastDate = null;
-
-      sorted.forEach(r => {
-        const avail = r.total_quantity === '' || r.total_quantity === null || r.total_quantity === undefined
-          ? NaN : parseFloat(r.total_quantity);
-        const isOos = avail === 0;
-
-        if (isOos) {
-          if (!streakStart) streakStart = r.date;
-          streakLastDate = r.date;
-        } else if (streakStart) {
-          periods.push({ start: streakStart, end: streakLastDate, ongoing: false });
-          streakStart = null; streakLastDate = null;
-        }
-      });
-      if (streakStart) periods.push({ start: streakStart, end: streakLastDate, ongoing: streakLastDate === todayStr });
-
-      if (!periods.length) return; // never OOS — not part of this log
-
-      const dayCount = (start, end) => Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
-      periods.forEach(p => { p.days = dayCount(p.start, p.ongoing ? todayStr : p.end); });
-
+    const skuLogs = Object.entries(bySku).map(([sku, data]) => {
+      const periods = data.periods.sort((a, b) => b.start.localeCompare(a.start));
       const totalDays = periods.reduce((s, p) => s + p.days, 0);
       const isOngoing = periods.some(p => p.ongoing);
-
-      skuLogs.push({ sku, name: data.name, periods: periods.reverse(), totalDays, isOngoing });
+      return { sku, name: data.name, periods, totalDays, isOngoing };
     });
 
     // Ongoing (worst first by days) surface above fully-resolved history
@@ -16211,7 +16265,7 @@ async function loadOosLog() {
           </div>
         </div>
         <div class="oos-sku-periods">
-          ${log.periods.map(p => `<div class="oos-period-row"><span>${p.start} → ${p.ongoing ? 'today' : p.end}</span><span>${p.days} day${p.days === 1 ? '' : 's'}${p.ongoing ? ' <span class="oos-pill ongoing" style="margin-left:6px;">Ongoing</span>' : ''}</span></div>`).join('')}
+          ${log.periods.map(p => `<div class="oos-period-row"><span>${p.start} → ${p.ongoing ? 'today' : p.end}${p.type ? ` <span class="oos-pill resolved" style="margin-left:6px;">${p.type}</span>` : ''}</span><span>${p.days} day${p.days === 1 ? '' : 's'}${p.ongoing ? ' <span class="oos-pill ongoing" style="margin-left:6px;">Ongoing</span>' : ''}</span></div>`).join('')}
         </div>
       </div>
     `).join('');
