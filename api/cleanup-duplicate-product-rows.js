@@ -1,24 +1,26 @@
 /**
  * api/cleanup-duplicate-product-rows.js
- * ONE-OFF, manually-triggered cleanup — removes duplicate (date, sku)
- * rows from SHEET_PRODUCTS, across every active brand's tab.
  *
- * Root cause (see sync-products.js's 2026-08-31 fix): the resumable
- * cursor (which masterList INDEX to resume from) and the sheet write
- * position (which ROW to write to) are two independent counters that
- * only stay in sync if masterList is identical — same order, same
- * items — across every run within a day. A mid-day code deploy (or a
- * master-sheet edit) can break that assumption, causing some SKUs to
- * get reprocessed and duplicated for the same date. Confirmed live on
- * creme-shop: 1,233 duplicate (date, sku) pairs, 1,478 excess rows,
- * concentrated on 2026-08-04 — the exact date a mid-day deploy happened.
- * sync-products.js itself was fixed the same day to make the write step
- * idempotent going forward. This script is the one-time cleanup for
- * whatever duplicates already exist from before that fix.
+ * REPURPOSED 2026-08-31 per Jaclyn — this file previously cleaned up
+ * duplicate (date, sku) rows caused by the resumable-cursor bug fixed
+ * the same day in sync-products.js (see that file's own 2026-08-31
+ * comment for the full story). That cleanup already ran successfully.
+ * Filename kept as-is deliberately (reusing the already-deployed Vercel
+ * route rather than standing up a new one) — the contents below no
+ * longer have anything to do with duplicates.
  *
- * For each duplicate (date, sku) group, keeps the row with the most
- * recent last_synced timestamp (the freshest data) and removes the
- * rest. Rows with no duplicates are always kept untouched.
+ * NEW PURPOSE — ONE-OFF, manually-triggered cleanup that removes
+ * SHEET_PRODUCTS rows for SKUs that are NOT currently marked "LIVE"
+ * (master SKU list, column H — "Status"). sync-products.js was fixed
+ * the same day to stop SYNCING non-LIVE SKUs going forward (see that
+ * file's own "ADDED 2026-08-31" comment), but that fix is forward-only —
+ * it doesn't retroactively remove rows already written for SKUs that
+ * have since been discontinued/deleted. This script is that one-time
+ * backfill cleanup, and reuses the EXACT SAME master-list fetch, brand-
+ * matching, and status-filtering logic sync-products.js uses — not a
+ * simplified reimplementation — so this script's definition of "live"
+ * can never quietly disagree with what the sync cron itself considers
+ * live.
  *
  * Writes nothing until dryRun=false is explicitly passed — defaults to
  * a safe preview.
@@ -27,17 +29,22 @@
  *   GET /api/cleanup-duplicate-product-rows?dryRun=true
  *   Authorization: Bearer <CRON_SECRET>
  *   &brand=creme-shop   — restrict to one brand (omit to check every active brand)
- *   &dryRun=false       — actually remove the duplicate rows (default true, preview only)
+ *   &dryRun=false       — actually remove rows for non-LIVE SKUs (default true, preview only)
  */
 
 const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
 const brandsConfig                         = require('./config/brands');
 const sheets                               = require('./config/sheets');
 
+const MASTER_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand, G=channel, H=status
+
+const EXCLUDED_BRAND_NAMES = ['high on love']; // different seller account entirely — same exclusion sync-products.js uses
+
 // Must match sync-products.js's real, current header shape exactly —
-// duplicated here deliberately rather than imported, matching how every
-// other one-off cleanup script in this project keeps its own explicit
-// HEADERS constant instead of trying to share one.
+// duplicated here deliberately, matching how every other one-off
+// cleanup script in this project keeps its own explicit HEADERS
+// constant instead of trying to share one.
 const HEADERS = [
   'date', 'sku', 'asin',
   'fulfillable_quantity', 'reserved_quantity', 'inbound_working_quantity',
@@ -50,6 +57,71 @@ const HEADERS = [
   'purchased_units_90d', 'days_of_inventory', 'qty_on_hand',
 ];
 
+// Same disambiguation helper sync-products.js uses — copied verbatim,
+// not reinvented, so skinuva-ca vs skinuva (and any future brand sharing
+// a SKU prefix) resolves identically here as it does in the real sync.
+const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
+
+function stripAccents(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveBrandForSku(sku, candidates) {
+  if (candidates.length === 1) return candidates[0];
+  const isCa    = CA_SKU_PATTERN.test(sku);
+  const caBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.ca');
+  const usBrand = candidates.find(b => (b.salesChannel || '').toLowerCase() === 'amazon.com');
+  if (isCa && caBrand) return caBrand;
+  if (!isCa && usBrand) return usBrand;
+  return usBrand || candidates[0];
+}
+
+// Same parsing + filtering as sync-products.js's fetchMasterSkuList(),
+// but returns a Set of currently-LIVE SKUs per brand tab, rather than
+// the full item list that cron needs for its own sync work.
+async function fetchLiveSkusByBrand() {
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
+  const resp   = await fetch(csvUrl);
+  if (!resp.ok) throw new Error(`Failed to fetch master SKU list: ${resp.status}`);
+  const csv   = await resp.text();
+  const lines = csv.trim().split('\n').slice(1);
+
+  const liveSkusByBrand = {}; // brandTabName -> Set of live SKUs (uppercased)
+
+  for (const line of lines) {
+    const cols     = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+    const asin     = cols[0] || '';
+    const sku      = cols[1] || '';
+    const rawBrand = (cols[3] || '').trim();
+    const brandNorm = stripAccents(rawBrand.toLowerCase());
+    const rawStatus = (cols[7] || '').trim();
+
+    if (rawStatus.toUpperCase() !== 'LIVE') continue;
+    if (!asin || !sku) continue;
+    if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
+    if (EXCLUDED_BRAND_NAMES.some(x => brandNorm.includes(x))) continue;
+
+    const nameMatched = brandsConfig.find(b =>
+      b.active && (
+        brandNorm === stripAccents(b.id.toLowerCase()) ||
+        brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
+        brandNorm.includes(stripAccents(b.id.toLowerCase()))
+      )
+    );
+    if (!nameMatched) continue;
+
+    const siblings = brandsConfig.filter(b =>
+      b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
+    );
+    const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
+
+    if (!liveSkusByBrand[matched.tabName]) liveSkusByBrand[matched.tabName] = new Set();
+    liveSkusByBrand[matched.tabName].add(sku.trim().toUpperCase());
+  }
+
+  return liveSkusByBrand;
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -58,56 +130,49 @@ module.exports = async (req, res) => {
 
   const dryRun    = req.query.dryRun !== 'false'; // default true — safe preview
   const onlyBrand = req.query.brand || null;
-  const activeBrands = brandsConfig.filter(b => b.active && (!onlyBrand || b.id === onlyBrand));
 
+  let liveSkusByBrand;
+  try {
+    liveSkusByBrand = await fetchLiveSkusByBrand();
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch master SKU list', detail: err.message });
+  }
+
+  const activeBrands = brandsConfig.filter(b => b.active && (!onlyBrand || b.id === onlyBrand));
   const results = [];
 
   for (const brand of activeBrands) {
     try {
+      const liveSkus = liveSkusByBrand[brand.tabName] || new Set();
+      if (liveSkus.size === 0) {
+        // Genuinely no LIVE SKUs found for this brand on the master list
+        // at all — almost certainly a brand-matching or master-list
+        // problem, not "this brand has zero live products." Refusing to
+        // touch this brand's tab rather than risk wiping it entirely on
+        // a false signal.
+        results.push({ brand: brand.id, status: 'skipped', reason: 'zero LIVE SKUs found on master list for this brand — refusing to risk wiping the whole tab' });
+        continue;
+      }
+
       const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
       const existingRows = await readRows(sheets.products, brand.tabName);
 
       if (!existingRows || existingRows.length === 0) {
-        results.push({ brand: brand.id, status: 'ok', totalRows: 0, duplicateGroups: 0, removed: 0 });
+        results.push({ brand: brand.id, status: 'ok', totalRows: 0, removed: 0 });
         continue;
       }
 
-      // Group rows by (date, sku). Rows with no date or no sku are left
-      // completely untouched either way — not this cleanup's concern,
-      // and grouping them together under a blank key would risk
-      // treating unrelated rows as duplicates of each other.
-      const groups = new Map();
-      const untouched = [];
-      existingRows.forEach(r => {
-        const date = (r.date || '').trim();
-        const sku  = (r.sku  || '').trim().toUpperCase();
-        if (!date || !sku) { untouched.push(r); return; }
-        const key = `${date}||${sku}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(r);
-      });
-
-      const kept = [...untouched];
-      let duplicateGroups = 0;
+      const kept = [];
+      const removedSkus = new Set();
       let removedCount = 0;
-      const sampleRemovals = [];
 
-      groups.forEach((rowsForKey, key) => {
-        if (rowsForKey.length === 1) {
-          kept.push(rowsForKey[0]);
-          return;
-        }
-        duplicateGroups++;
-        // Keep the row with the most recent last_synced timestamp —
-        // freshest data wins. String comparison is safe here since
-        // last_synced is written in ISO-shaped YYYY-MM-DDTHH:MM:SS
-        // format throughout this project (see toEstIso()).
-        const sorted = [...rowsForKey].sort((a, b) => (b.last_synced || '').localeCompare(a.last_synced || ''));
-        kept.push(sorted[0]);
-        const removed = sorted.slice(1);
-        removedCount += removed.length;
-        if (sampleRemovals.length < 20) {
-          sampleRemovals.push({ key, kept: sorted[0].last_synced, removedCount: removed.length, removedTimestamps: removed.map(r => r.last_synced) });
+      existingRows.forEach(r => {
+        const sku = (r.sku || '').trim().toUpperCase();
+        if (!sku || liveSkus.has(sku)) {
+          kept.push(r); // no SKU at all (leave untouched) or genuinely live
+        } else {
+          removedCount++;
+          removedSkus.add(sku);
         }
       });
 
@@ -116,17 +181,17 @@ module.exports = async (req, res) => {
         await replaceRows(sheets.products, brand.tabName, HEADERS, outRows, token);
       }
 
-      console.log(`[cleanup-duplicate-product-rows] ${brand.id} — ${duplicateGroups} duplicate group(s), ${removedCount} row(s) removed of ${existingRows.length} total${dryRun ? ' [DRY RUN — nothing written]' : ''}`);
+      console.log(`[cleanup-non-live-product-rows] ${brand.id} — ${removedCount} row(s) removed across ${removedSkus.size} non-LIVE SKU(s), of ${existingRows.length} total${dryRun ? ' [DRY RUN — nothing written]' : ''}`);
       results.push({
         brand: brand.id,
         status: 'ok',
         totalRows: existingRows.length,
-        duplicateGroups,
         removed: removedCount,
-        sampleRemovals,
+        distinctNonLiveSkus: removedSkus.size,
+        sampleNonLiveSkus: Array.from(removedSkus).slice(0, 20),
       });
     } catch (err) {
-      console.error(`[cleanup-duplicate-product-rows] ${brand.id} failed:`, err.message);
+      console.error(`[cleanup-non-live-product-rows] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
     }
   }
