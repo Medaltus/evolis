@@ -29,6 +29,8 @@
  * SHEET_WALMART_RETURNS              Walmart return orders (dedicated Returns API, GET /v3/returns — separate from the regular orders sync), one tab per brand — sync-walmart-returns.js
  * SHEET_REPORT_INSIGHTS               Editable report content for the internal dashboard (Executive Summary, Key Insights, Opportunity cards, per-event summaries) + approval status, one {brand}/{brand}_events tab pair per brand — write-report-insights.js. NOT the same sheet as SHEET_INSIGHTS above (that's an older, unrelated "brand insights / monthly takeaways" sheet).
  * SHEET_AD_SEARCH_TERMS                Real per-keyword search-term ad performance (search_term, keyword, clicks, cost, purchases, sales), one tab per brand — sync-ad-search-terms-process.js. ADDED 2026-08-21 — run-analysis.js's PPC section was reading sheets.advertising (a monthly campaign-level aggregate with no search_term/keyword columns at all) for per-term data; this is the actual sheet that has it. NOT the same sheet as SHEET_ADVERTISING above.
+ * SHEET_OOS_HISTORY                    Out-of-stock period history per SKU/brand (start date, end date, split "out of FBA" vs "out of all inventory") — sync-oos-history.js. Preserves history that SHEET_PRODUCTS' shorter retention window would otherwise lose. NOT YET DEPLOYED as of 2026-09-01 — needs env var + vercel.json schedule.
+ * SHEET_LISTING_CHANGE_LOG             Day-over-day listing content change log — compares today vs. yesterday's SHEET_PRODUCTS snapshot per SKU across 12 listing fields (title, bullets, description, backend keywords, offers/price, ingredients, item_type_keyword), one row per changed field — sync-listing-change-log.js. NOT YET DEPLOYED as of 2026-09-01 — needs env var + vercel.json schedule.
  */
 
 module.exports = {
@@ -57,4 +59,6 @@ module.exports = {
   newdermInventory:          process.env.SHEET_NEWDERM_INVENTORY,
   walmartReturns:            process.env.SHEET_WALMART_RETURNS,
   adSearchTerms:             process.env.SHEET_AD_SEARCH_TERMS,
+  oosHistory:                process.env.SHEET_OOS_HISTORY,
+  listingChangeLog:          process.env.SHEET_LISTING_CHANGE_LOG,
 };
