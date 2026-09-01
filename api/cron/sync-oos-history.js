@@ -2,11 +2,11 @@
  * api/cron/sync-oos-history.js
  * Runs once daily, after sync-products.js's window would reasonably be
  * complete for the day. Tracks out-of-stock PERIODS (start date + end
- * date, per SKU, per brand) rather than just point-in-time snapshots —
+ * date, per SKU, per brand) rather than just point-in-time snapshots --
  * a running history of every time a product fell out of stock and when
  * it came back.
  *
- * ADDED 2026-09-01 per Jaclyn — same reasoning as sync-listing-change-
+ * ADDED 2026-09-01 per Jaclyn -- same reasoning as sync-listing-change-
  * log.js (see that file's header): trim-products-log.js's retention was
  * cut from 2 years to 13 months for real cell-budget reasons, and this
  * cron exists to preserve out-of-stock history separately and
@@ -14,16 +14,30 @@
  * losing the ability to see when a product was out of stock and for how
  * long.
  *
+ * UPDATED 2026-09-01 per Jaclyn: this cron no longer infers anything
+ * from a SKU's absence from today's snapshot. It used to close an open
+ * instance as 'closed_discontinued' when a SKU didn't appear in today's
+ * rows at all -- but that can't distinguish an actual deletion from
+ * sync-products.js simply failing or skipping a row that day, and a
+ * cron failure should never be read as evidence a product was
+ * discontinued. A SKU absent from today's snapshot is now just skipped
+ * entirely for this run: any open instance it has is carried forward
+ * completely unchanged (re-written into the sheet as-is, not touched or
+ * closed), and picked back up normally whenever it next appears. There
+ * is no 'closed_discontinued' status produced by this file anymore.
+ * (sync-products.js already excludes deleted/discontinued SKUs at the
+ * source, so this cron doesn't need its own deleted-SKU check.)
+ *
  * Two SEPARATE tracked definitions per SKU, since a product can be sold
  * out of FBA specifically while still fulfillable another way:
- *   'fba'          — fulfillable_quantity <= 0
- *   'all_inventory' — fulfillable_quantity <= 0 AND seller_fulfilled_quantity <= 0
+ *   'fba'          -- fulfillable_quantity <= 0
+ *   'all_inventory' -- fulfillable_quantity <= 0 AND seller_fulfilled_quantity <= 0
  * NOTE: these are the most direct, well-understood columns on
- * SHEET_PRODUCTS for this — deliberately NOT using total_quantity or
+ * SHEET_PRODUCTS for this -- deliberately NOT using total_quantity or
  * qty_on_hand, since their exact composition wasn't independently
  * confirmed here. Worth checking these definitions against the
  * dashboard's own existing "[OOS]" logic (referenced in its own console
- * logs) before trusting this as the single source of truth — if that
+ * logs) before trusting this as the single source of truth -- if that
  * logic uses a different combination of columns, this should be updated
  * to match it exactly rather than risk two different OOS definitions
  * existing side by side.
@@ -33,16 +47,14 @@
  *   - out of stock today, instance already open -> CONTINUE (no write needed)
  *   - back in stock today, instance open      -> CLOSE (end_date = yesterday)
  *   - back in stock today, no open instance   -> nothing to do
- *   - SKU had an open instance but no longer appears in today's LIVE
- *     snapshot at all (discontinued/delisted) -> CLOSE, status =
- *     'closed_discontinued' rather than leave it open forever with no
- *     way to ever naturally close it again.
+ *   - SKU absent from today's snapshot entirely -> nothing to do; any
+ *     open instance is carried forward unchanged, not closed
  *
  * "Open" instance = a row with a start_date and a blank end_date. Rather
  * than rewrite the whole tab every run, only the specific rows that need
- * to start or close get touched — everything else (past closed
- * instances) is read once to find currently-open rows, then written back
- * unchanged alongside whatever's new/closed this run.
+ * to start or close get touched -- everything else (past closed
+ * instances, plus any open instance untouched this run) is read once
+ * and written back alongside whatever's new/closed this run.
  *
  * Sheet: SHEET_OOS_HISTORY (must be added to config/sheets.js and set as
  * an env var before deploying). One tab per brand, auto-created on first
@@ -52,7 +64,7 @@
  * Manual:
  *   GET /api/cron/sync-oos-history
  *   Authorization: Bearer <CRON_SECRET>
- *   &brand=creme-shop   — restrict to one brand
+ *   &brand=creme-shop   -- restrict to one brand
  */
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
@@ -69,7 +81,7 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!sheets.oosHistory) {
-    return res.status(500).json({ error: 'sheets.oosHistory is not configured in config/sheets.js — add SHEET_OOS_HISTORY' });
+    return res.status(500).json({ error: 'sheets.oosHistory is not configured in config/sheets.js -- add SHEET_OOS_HISTORY' });
   }
 
   const onlyBrand = req.query.brand || null;
@@ -92,7 +104,7 @@ module.exports = async (req, res) => {
       });
 
       if (todayRowsBySku.size === 0) {
-        results.push({ brand: brand.id, status: 'skipped', reason: `no rows found for today (${today}) — sync-products.js may not have run yet` });
+        results.push({ brand: brand.id, status: 'skipped', reason: `no rows found for today (${today}) -- sync-products.js may not have run yet` });
         continue;
       }
 
@@ -115,7 +127,7 @@ module.exports = async (req, res) => {
         }
       });
 
-      let started = 0, continued = 0, closed = 0, closedDiscontinued = 0;
+      let started = 0, continued = 0, closed = 0;
       const finalOpenRows = [];
 
       todayRowsBySku.forEach((row, sku) => {
@@ -131,17 +143,17 @@ module.exports = async (req, res) => {
           const isOutToday = outByType[type];
 
           if (isOutToday && !openRow) {
-            // START — new open instance
+            // START -- new open instance
             finalOpenRows.push([brand.id, sku, row.asin || '', type, today, '', 'open', now]);
             started++;
             openInstanceByKey.delete(key); // consumed
           } else if (isOutToday && openRow) {
-            // CONTINUE — carry the existing open row forward unchanged
+            // CONTINUE -- carry the existing open row forward unchanged
             finalOpenRows.push([brand.id, sku, openRow.asin || row.asin || '', type, openRow.start_date, '', 'open', openRow.last_updated || now]);
             continued++;
             openInstanceByKey.delete(key);
           } else if (!isOutToday && openRow) {
-            // CLOSE — back in stock today, so the last confirmed
+            // CLOSE -- back in stock today, so the last confirmed
             // out-of-stock day was yesterday
             closedRows.push([brand.id, sku, openRow.asin || row.asin || '', type, openRow.start_date, yesterday, 'closed', now]);
             closed++;
@@ -151,14 +163,14 @@ module.exports = async (req, res) => {
         });
       });
 
-      // Any remaining entries in openInstanceByKey are SKUs that had an
-      // open instance but no longer appear in today's LIVE snapshot at
-      // all -- discontinued/delisted. Close these explicitly rather than
-      // leave them open forever with no way to naturally close again.
+      // Anything still left in openInstanceByKey is a SKU that had an
+      // open instance but didn't appear in today's snapshot at all.
+      // That is NOT evidence of discontinuation -- it could just as
+      // easily be a sync gap or a partial cron failure -- so nothing is
+      // inferred. Carry it forward completely unchanged.
       openInstanceByKey.forEach((openRow, key) => {
         const [sku, type] = key.split('||');
-        closedRows.push([brand.id, sku, openRow.asin || '', type, openRow.start_date, yesterday, 'closed_discontinued', now]);
-        closedDiscontinued++;
+        finalOpenRows.push([brand.id, sku, openRow.asin || '', type, openRow.start_date, '', 'open', openRow.last_updated || now]);
       });
 
       const outRows = [
@@ -168,8 +180,8 @@ module.exports = async (req, res) => {
 
       await replaceRows(sheets.oosHistory, brand.tabName, HEADERS, outRows, token);
 
-      console.log(`[sync-oos-history] ${brand.id} — started=${started} continued=${continued} closed=${closed} closedDiscontinued=${closedDiscontinued}`);
-      results.push({ brand: brand.id, status: 'ok', started, continued, closed, closedDiscontinued, totalRows: outRows.length });
+      console.log(`[sync-oos-history] ${brand.id} -- started=${started} continued=${continued} closed=${closed}`);
+      results.push({ brand: brand.id, status: 'ok', started, continued, closed, totalRows: outRows.length });
     } catch (err) {
       console.error(`[sync-oos-history] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
