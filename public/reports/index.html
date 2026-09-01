@@ -19865,7 +19865,22 @@ async function loadAuditResultsFromSheet() {
 
   function getOverviewPeriodConfig(key) {
     if (key === 'lastFull') {
-      const { year, month } = getLastFullMonth(); // month before the current one, 1-indexed
+      // FIXED 2026-09-01 — was calling getLastFullMonth(), which doesn't
+      // exist in this scope (it's declared locally inside several OTHER,
+      // separate IIFEs elsewhere in this file — Amazon/Website/Walmart
+      // Sales pages each have their own copy — none of which this
+      // function has access to). That threw a silent ReferenceError on
+      // every "Last Month" click, which the surrounding init function's
+      // try/catch swallowed — so the page never actually recomputed
+      // anything and just stayed frozen on whatever MTD last showed.
+      // Confirmed live via console: clicking the toggle logged the
+      // ReferenceError every time. Inlined here instead, same pattern
+      // every other scope in this file already uses for this exact
+      // calculation rather than relying on cross-scope access.
+      const nowForLF = new Date();
+      let year = nowForLF.getFullYear();
+      let month = nowForLF.getMonth(); // 0-indexed, so this IS last month's 1-indexed value
+      if (month === 0) { month = 12; year--; }
       let prevMonth = month - 1, prevYear = year;
       if (prevMonth === 0) { prevMonth = 12; prevYear--; }
       return {
@@ -20479,6 +20494,15 @@ async function loadAuditResultsFromSheet() {
       // match the hero number, which is worse than either being wrong alone.
       const donutTotal = amzMtdNetRevenue + webMtdNetRevenue + wmtMtdNetRevenue;
       if (donutTotal > 0) {
+        // FIXED 2026-09-01 — confirmed live: "Canvas is already in use.
+        // Chart with ID 'X' must be destroyed before the canvas ... can
+        // be reused." This function used to run once per page load; now
+        // it can run again on every toggle click, and nothing was ever
+        // destroying the prior instance before creating a new one on the
+        // same canvas. window._ovDonutChart was already being assigned
+        // (tracked), just never actually used to clean up — same failure
+        // class as the PDF export canvas-reuse bug documented earlier.
+        if (window._ovDonutChart) { window._ovDonutChart.destroy(); window._ovDonutChart = null; }
         window._ovDonutChart = new Chart(document.getElementById('chart-ov-donut'), {
           type: 'doughnut',
           data: {
@@ -20659,6 +20683,10 @@ async function loadAuditResultsFromSheet() {
         wmtTrend.unshift(monthlyRevenue(wmtRevRows, ty, tm));
       }
       if ([...amzTrend, ...webTrend, ...wmtTrend].some(v => v > 0)) {
+        // FIXED 2026-09-01 — same canvas-reuse bug as the donut chart
+        // above, same root cause (this function can now run repeatedly
+        // on toggle clicks).
+        if (window._ovTrendChart) { window._ovTrendChart.destroy(); window._ovTrendChart = null; }
         window._ovTrendChart = new Chart(document.getElementById('chart-ov-trend'), {
           type: 'line',
           data: {
