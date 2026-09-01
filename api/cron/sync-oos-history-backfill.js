@@ -1,9 +1,9 @@
 /**
  * api/cron/sync-oos-history-backfill.js
  * ONE-TIME BACKFILL for api/cron/sync-oos-history.js. Reconstructs OOS
- * PERIODS retroactively by replaying that cron's exact state machine
- * once per historical date already logged in SHEET_PRODUCTS, instead
- * of once for "today."
+ * PERIODS retroactively by replaying that cron's state machine once per
+ * historical date already logged in SHEET_PRODUCTS, instead of once for
+ * "today."
  *
  * ADDED 2026-09-01 per Jaclyn, alongside sync-oos-history.js itself.
  *
@@ -24,38 +24,43 @@
  * &force flag below) but pointless once sync-oos-history.js has taken
  * over live.
  *
- * SAME two tracked definitions per SKU as sync-oos-history.js:
- *   'fba'          -- fulfillable_quantity <= 0
- *   'all_inventory' -- fulfillable_quantity <= 0 AND seller_fulfilled_quantity <= 0
- * (Same caveat applies here too: these weren't independently confirmed
- * against the dashboard's own "[OOS]" logic -- check that before
- * trusting this as ground truth.)
+ * DELETED/DISCONTINUED SKUS ARE EXCLUDED ENTIRELY, per Jaclyn -- cross-
+ * referenced against SHEET_MASTER_SKU_LIST (one shared tab across all
+ * brands, not per-brand). Checks TWO signals, because the sheet uses two
+ * different conventions:
+ *   - Status column === 'DELETED' (most brands)
+ *   - Product Short Name starts with "DISCONTINUED" (Dazzle Dry, which
+ *     leaves Status blank entirely)
+ * A SKU matching either never enters the replay at all -- no rows are
+ * ever written for it, for any date in the range.
+ *
+ * *** ABSENCE FROM A DAY'S SNAPSHOT NEVER MEANS DISCONTINUED ***
+ * Per Jaclyn: if the underlying products cron failed or skipped a row
+ * on some day, that is NOT evidence the product was discontinued, and
+ * this script must not guess otherwise. A SKU that simply doesn't
+ * appear in a given date's SHEET_PRODUCTS rows is skipped for that date
+ * only -- its open instance (if any) is carried forward completely
+ * unchanged, picked back up whenever the SKU next appears in the data,
+ * however many days later that is. The only way a SKU's tracking ever
+ * ends before the range's last date is a genuine "back in stock"
+ * reading, or the master-SKU-list exclusion above. There is no
+ * "closed_discontinued" status produced by this script.
  *
  * State machine, replayed once per date D in ascending order across
- * every date SHEET_PRODUCTS has rows for (one full day D fully
- * processed = SKU is either "out" or "in" for that day, exactly as
- * sync-oos-history.js would have found it had it run live that day):
+ * every date SHEET_PRODUCTS has rows for:
  *   - out on D, no open instance    -> START (start_date = D)
  *   - out on D, instance open       -> CONTINUE
  *   - back in stock on D, open      -> CLOSE. end_date = the LAST
  *     historical date that SKU/type was actually confirmed out -- i.e.
- *     the previous date *processed*, not calendar D-1. SHEET_PRODUCTS
- *     can have gaps (cron didn't run some days), so calendar arithmetic
- *     would silently invent OOS days that were never actually observed.
- *   - SKU missing entirely from D's snapshot while an instance is open
- *     -> CLOSE, status 'closed_discontinued', same last-processed-date
- *     logic for end_date. Skipped on the very last date in the range
- *     (see below).
+ *     the last date it was seen in a START or CONTINUE, which may be
+ *     several days before D if there were gaps in between.
+ *   - SKU absent from D's snapshot entirely -> no action taken this
+ *     date. Any open instance is left exactly as it was.
  *
  * On the FINAL date processed, anything still open is left OPEN and
- * written as-is -- never force-closed just because the backfill loop
- * ends. sync-oos-history.js's next live daily run reads existing rows
- * via readRows() and will pick these up and continue them normally, as
- * if it had been running the whole time. This is also why the
- * "discontinued" check is skipped on the final date: with no
- * "tomorrow" to confirm the SKU is really gone (vs. just not synced
- * yet), closing it here would risk a false discontinuation the live
- * cron could never undo.
+ * written as-is. sync-oos-history.js's next live daily run reads
+ * existing rows via readRows() and will pick these up and continue them
+ * normally, as if it had been running the whole time.
  *
  * Sheet: SHEET_OOS_HISTORY (same sheet/tabs sync-oos-history.js writes
  * to). Columns: brand, sku, asin, type, start_date, end_date, status,
@@ -94,6 +99,28 @@ module.exports = async (req, res) => {
   if (!sheets.oosHistory) {
     return res.status(500).json({ error: 'sheets.oosHistory is not configured in config/sheets.js -- add SHEET_OOS_HISTORY' });
   }
+  if (!sheets.masterSkuList) {
+    return res.status(500).json({ error: 'sheets.masterSkuList is not configured in config/sheets.js -- add SHEET_MASTER_SKU_LIST (needed to exclude deleted/discontinued SKUs)' });
+  }
+
+  // SHEET_MASTER_SKU_LIST is ONE shared tab across all brands (same gid
+  // for every brand row in the sheet-ID map), not a per-brand tab like
+  // SHEET_PRODUCTS/SHEET_OOS_HISTORY -- so this is read once, not per
+  // brand. NOTE: readRows(sheets.masterSkuList) with no tabName argument
+  // is an assumption based on that single-tab structure -- verify
+  // against the actual _sheets_client.js signature before relying on
+  // this.
+  const masterRows = await readRows(sheets.masterSkuList);
+  const deletedSkus = new Set();
+  (masterRows || []).forEach(r => {
+    const sku = (r.sku || '').trim();
+    if (!sku) return;
+    const status = (r.status || '').trim().toUpperCase();
+    const shortName = (r.product_short_name || '').trim();
+    if (status === 'DELETED' || /^DISCONTINUED\b/i.test(shortName)) {
+      deletedSkus.add(sku);
+    }
+  });
 
   const onlyBrand = req.query.brand || null;
   const dryRun = req.query.dryRun === 'true';
@@ -122,20 +149,22 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      // Group every historical row by date, keyed by SKU within each date.
-      // Rows with a malformed date (anything not YYYY-MM-DD -- e.g. a
+      // Group every historical row by date, keyed by SKU within each
+      // date. Rows with a malformed date (anything not YYYY-MM-DD -- a
       // stray cell reference like "A1" leaking in from a header row)
-      // are skipped rather than included: a garbage value that sorts
-      // after real dates would get mistaken for the range's last date,
-      // which would wrongly exempt the TRUE last date from the
-      // discontinued-check and instead subject it to a bogus one.
+      // are skipped rather than included, since a garbage value sorting
+      // after real dates would get mistaken for the range's last date.
+      // SKUs confirmed deleted/discontinued in SHEET_MASTER_SKU_LIST
+      // are excluded entirely -- they never enter the replay.
       const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
       const rowsByDate = new Map(); // date -> Map(sku -> row)
       let badDateRows = 0;
+      let excludedDeletedRows = 0;
       productRows.forEach(r => {
         const date = (r.date || '').trim();
         const sku = (r.sku || '').trim();
         if (!date || !sku) return;
+        if (deletedSkus.has(sku)) { excludedDeletedRows++; return; }
         if (!DATE_RE.test(date)) { badDateRows++; return; }
         if (!rowsByDate.has(date)) rowsByDate.set(date, new Map());
         rowsByDate.get(date).set(sku, r);
@@ -151,10 +180,9 @@ module.exports = async (req, res) => {
       // sku||type -> { asin, start_date, last_seen_date }
       const openInstanceByKey = new Map();
       const closedRows = [];
-      let started = 0, continued = 0, closed = 0, closedDiscontinued = 0;
+      let started = 0, continued = 0, closed = 0;
 
-      sortedDates.forEach((date, idx) => {
-        const isLastDate = idx === sortedDates.length - 1;
+      sortedDates.forEach((date) => {
         const todayRowsBySku = rowsByDate.get(date);
 
         todayRowsBySku.forEach((row, sku) => {
@@ -174,7 +202,11 @@ module.exports = async (req, res) => {
               openInstanceByKey.set(key, { asin: row.asin || '', start_date: date, last_seen_date: date });
               started++;
             } else if (isOutToday && openRow) {
-              // CONTINUE -- extend the known-out window through today
+              // CONTINUE -- extend the known-out window through today.
+              // If there was a gap in the data since it was last seen,
+              // this silently spans it: we never invent a status change
+              // from missing data, so the SKU is just treated as still
+              // out the whole time.
               openRow.last_seen_date = date;
               if (row.asin) openRow.asin = row.asin;
               continued++;
@@ -189,19 +221,10 @@ module.exports = async (req, res) => {
           });
         });
 
-        // Discontinued check: any instance still open after processing
-        // `date` whose SKU didn't appear in `date`'s snapshot at all.
-        // Skipped on the final date -- see header note on why.
-        if (!isLastDate) {
-          Array.from(openInstanceByKey.entries()).forEach(([key, openRow]) => {
-            const [sku, type] = key.split('||');
-            if (!todayRowsBySku.has(sku)) {
-              closedRows.push([brand.id, sku, openRow.asin || '', type, openRow.start_date, openRow.last_seen_date, 'closed_discontinued', now]);
-              openInstanceByKey.delete(key);
-              closedDiscontinued++;
-            }
-          });
-        }
+        // SKUs absent from today's snapshot are simply left alone --
+        // no close, no status change. Their open instances (if any)
+        // remain in openInstanceByKey untouched, to be picked up again
+        // whenever they next appear in the data.
       });
 
       // Whatever's left open at the end of the range stays open, ready
@@ -220,16 +243,17 @@ module.exports = async (req, res) => {
         await replaceRows(sheets.oosHistory, brand.tabName, HEADERS, outRows, token);
       }
 
-      console.log(`[sync-oos-history-backfill] ${brand.id} -- window=${truncatedStart}..${windowEnd} started=${started} continued=${continued} closed=${closed} closedDiscontinued=${closedDiscontinued} stillOpen=${finalOpenRows.length} badDateRows=${badDateRows}${dryRun ? ' (DRY RUN)' : ''}`);
+      console.log(`[sync-oos-history-backfill] ${brand.id} -- window=${truncatedStart}..${windowEnd} started=${started} continued=${continued} closed=${closed} stillOpen=${finalOpenRows.length} badDateRows=${badDateRows} excludedDeletedRows=${excludedDeletedRows}${dryRun ? ' (DRY RUN)' : ''}`);
       results.push({
         brand: brand.id,
         status: dryRun ? 'dry_run' : 'ok',
         truncated_start: truncatedStart,
         window_end: windowEnd,
-        started, continued, closed, closedDiscontinued,
+        started, continued, closed,
         stillOpen: finalOpenRows.length,
         totalRows: outRows.length,
         badDateRows,
+        excludedDeletedRows,
       });
     } catch (err) {
       console.error(`[sync-oos-history-backfill] ${brand.id} failed:`, err.message);
