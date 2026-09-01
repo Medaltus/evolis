@@ -50,6 +50,14 @@
       "schedule": "45 4 * * *"
     },
     {
+      "path": "/api/cron/sync-oos-history",
+      "schedule": "50 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-listing-change-log",
+      "schedule": "55 4 * * *"
+    },
+    {
       "path": "/api/cron/sync-revenue-request",
       "schedule": "0 5 * * *"
     },
