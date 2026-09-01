@@ -107,20 +107,29 @@ module.exports = async (req, res) => {
   // for every brand row in the sheet-ID map), not a per-brand tab like
   // SHEET_PRODUCTS/SHEET_OOS_HISTORY -- so this is read once, not per
   // brand. NOTE: readRows(sheets.masterSkuList) with no tabName argument
-  // is an assumption based on that single-tab structure -- verify
-  // against the actual _sheets_client.js signature before relying on
-  // this.
-  const masterRows = await readRows(sheets.masterSkuList);
-  const deletedSkus = new Set();
-  (masterRows || []).forEach(r => {
-    const sku = (r.sku || '').trim();
-    if (!sku) return;
-    const status = (r.status || '').trim().toUpperCase();
-    const shortName = (r.product_short_name || '').trim();
-    if (status === 'DELETED' || /^DISCONTINUED\b/i.test(shortName)) {
-      deletedSkus.add(sku);
-    }
-  });
+  // is an assumption based on that single-tab structure -- if
+  // _sheets_client.js actually requires a tabName, this throws, which
+  // is why it's wrapped below instead of left to crash the function.
+  let deletedSkus;
+  try {
+    const masterRows = await readRows(sheets.masterSkuList);
+    deletedSkus = new Set();
+    (masterRows || []).forEach(r => {
+      const sku = (r.sku || '').trim();
+      if (!sku) return;
+      const status = (r.status || '').trim().toUpperCase();
+      const shortName = (r.product_short_name || '').trim();
+      if (status === 'DELETED' || /^DISCONTINUED\b/i.test(shortName)) {
+        deletedSkus.add(sku);
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to read SHEET_MASTER_SKU_LIST',
+      detail: err.message,
+      hint: 'readRows(sheets.masterSkuList) was called with no tabName -- check whether _sheets_client.js requires one even for a single-tab sheet, and if so pass the correct tab name here.',
+    });
+  }
 
   const onlyBrand = req.query.brand || null;
   const dryRun = req.query.dryRun === 'true';
