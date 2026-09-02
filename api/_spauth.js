@@ -21,6 +21,50 @@
 const https  = require('https');
 const crypto = require('crypto');
 
+// ── Retry for transient network errors ─────────────────────────────────────
+// Added 2026-09-02 — a single ECONNRESET (or similar connection blip between
+// Vercel and Amazon) used to fail the whole request immediately, with no
+// retry at any layer. For a cron that only runs every few hours, that meant
+// a brief network hiccup cost a full cycle before the next attempt, rather
+// than being absorbed within the same run. Applies to BOTH the LWA token
+// fetch (httpPost) and the actual SP-API call (httpRequest), so every caller
+// of spRequest()/getAdToken() gets this without any change on their end.
+//
+// Only retries genuine transport-level errors (connection reset, timeout,
+// refused, broken pipe, DNS blip) — never a parsed API error response (a
+// 429 or 5xx from Amazon still resolves/rejects exactly as before; this
+// doesn't change that behavior, see the note on httpRequest below).
+//
+// Worth knowing: a report-request POST isn't guaranteed idempotent — if an
+// ECONNRESET happens after Amazon already processed the request but before
+// the response made it back, a retry could occasionally cause a duplicate
+// report request. Low-stakes here (an unused extra report, not a real
+// side effect like a duplicate order/charge), so the tradeoff still clearly
+// favors retrying over failing outright and waiting for the next scheduled
+// run.
+const RETRYABLE_ERROR_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN']);
+const MAX_RETRIES    = 2;          // 3 attempts total
+const RETRY_DELAYS_MS = [500, 1500]; // backoff before attempt 2 and 3
+const REQUEST_TIMEOUT_MS = 30000;   // convert a hung socket into a retryable timeout error
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function withRetry(fn, label) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const retryable = RETRYABLE_ERROR_CODES.has(err.code);
+      if (!retryable || attempt === MAX_RETRIES) throw err;
+      console.warn(`[_spauth] ${label} — ${err.code}, retrying (attempt ${attempt + 2}/${MAX_RETRIES + 1})...`);
+      await sleep(RETRY_DELAYS_MS[attempt] || 1500);
+    }
+  }
+  throw lastErr;
+}
+
 // ── Token cache ───────────────────────────────────────────────────────────────
 const tokenCache = {};
 
@@ -142,7 +186,7 @@ function hmac(key, data) {
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 function httpPost(host, path, body, headers) {
-  return new Promise((resolve, reject) => {
+  return withRetry(() => new Promise((resolve, reject) => {
     const opts = {
       hostname: host, path, method: 'POST',
       headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
@@ -153,13 +197,18 @@ function httpPost(host, path, body, headers) {
       res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error(d.slice(0,200))); } });
     });
     req.on('error', reject);
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      const timeoutErr = new Error(`LWA token request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+      timeoutErr.code = 'ETIMEDOUT';
+      req.destroy(timeoutErr);
+    });
     req.write(body);
     req.end();
-  });
+  }), 'LWA token request');
 }
 
 function httpRequest(method, host, path, headers, body) {
-  return new Promise((resolve, reject) => {
+  return withRetry(() => new Promise((resolve, reject) => {
     const opts = {
       hostname: host, path, method,
       headers: { ...headers, 'Content-Length': Buffer.byteLength(body || '') },
@@ -173,9 +222,14 @@ function httpRequest(method, host, path, headers, body) {
       });
     });
     req.on('error', reject);
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      const timeoutErr = new Error(`SP-API request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+      timeoutErr.code = 'ETIMEDOUT';
+      req.destroy(timeoutErr);
+    });
     if (body) req.write(body);
     req.end();
-  });
+  }), 'SP-API request');
 }
 
 module.exports = { spRequest, getAdToken };
