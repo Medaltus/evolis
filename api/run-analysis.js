@@ -514,32 +514,113 @@ function repairTruncatedJson(text) {
   return repaired;
 }
 
-// Last resort when Claude's response can't be salvaged at all (rare, but
-// real — see the two repair attempts above). Everything in here was
-// already fully computed in code regardless of what Claude returned, so
-// this still writes real numbers to the sheet with a clearly-labeled
-// placeholder narrative, rather than the whole run producing nothing.
-// Matches the same "never let one bad response destroy the whole result"
-// principle the cron reliability playbook already applies elsewhere.
-function buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, skuStrategySnapshots, comparison }) {
-  const note = 'Claude\'s narrative response could not be parsed this run (likely truncated) — the numbers below are real and fully computed, but the written summary/wins/actions text is a placeholder until the next successful run.';
+// Last resort when a call's response can't be salvaged at all (rare, but
+// real — see the repair attempt above). Everything in here was already
+// fully computed in code regardless of what Claude returned, so this still
+// writes real numbers to the sheet with a clearly-labeled placeholder
+// narrative, rather than the whole run producing nothing. Matches the same
+// "never let one bad response destroy the whole result" principle the cron
+// reliability playbook already applies elsewhere.
+//
+// Split 2026-09-01 into one builder per call (organic vs. ppc+listing) —
+// see callClaudeSection below for why. A truncation in one call no longer
+// forces a placeholder onto sections the OTHER call actually produced fine.
+const FALLBACK_NOTE = 'Claude\'s narrative response could not be parsed this run (likely truncated) — the numbers below are real and fully computed, but the written summary/wins/actions text is a placeholder until the next successful run.';
+
+function buildFallbackOrganic({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, comparison }) {
+  return {
+    summary: FALLBACK_NOTE, reading_the_changes: FALLBACK_NOTE, wins: [], actions: [], opportunities: [], keywords_to_watch: [],
+    ranking_diagnostic: rankingDiagnostic ? FALLBACK_NOTE : 'Not enough data this week to compute.',
+    rank_changes: rankChanges, new_ppc_converters: newPpcConverters, page1_opportunities: page1Opportunities,
+    ranking_diagnostic_data: rankingDiagnostic,
+    comparison_window: comparison.hasHistory ? { prev_date: comparison.prevDate, curr_date: comparison.currDate } : null,
+  };
+}
+
+function buildFallbackPpcListing({ skuStrategySnapshots, listingImplementationStatus }) {
   const fallbackStrategyBySku = {};
   Object.keys(skuStrategySnapshots || {}).forEach(sku => {
     fallbackStrategyBySku[sku] = { ...skuStrategySnapshots[sku], recommended_bullets: [], suggested_exact_match_targets: [] };
   });
   return {
-    date: new Date().toISOString().slice(0, 10),
-    organic: {
-      summary: note, reading_the_changes: note, wins: [], actions: [], opportunities: [], keywords_to_watch: [],
-      ranking_diagnostic: rankingDiagnostic ? note : 'Not enough data this week to compute.',
-      rank_changes: rankChanges, new_ppc_converters: newPpcConverters, page1_opportunities: page1Opportunities,
-      ranking_diagnostic_data: rankingDiagnostic,
-      comparison_window: comparison.hasHistory ? { prev_date: comparison.prevDate, curr_date: comparison.currDate } : null,
-    },
-    ppc: { summary: note, wins: [], actions: [], opportunities: [], strategy_by_sku: fallbackStrategyBySku },
-    listing: { summary: note, violations: [], keyword_gaps: [], rewrites_recommended: [], implementation_status: listingImplementationStatus },
-    log_summary: note,
+    ppc: { summary: FALLBACK_NOTE, wins: [], actions: [], opportunities: [], strategy_by_sku: fallbackStrategyBySku },
+    listing: { summary: FALLBACK_NOTE, violations: [], keyword_gaps: [], rewrites_recommended: [], implementation_status: listingImplementationStatus },
+    log_summary: FALLBACK_NOTE,
   };
+}
+
+// Added 2026-09-01 per Jaclyn, replacing one combined Claude call with two
+// (see runAnalysisForBrand below) — the per-keyword and per-SKU output
+// fields have no item cap and scale with however much this brand tracks;
+// for évolis's 148 tracked keywords the combined response needed more than
+// max_tokens=12000 and truncated, taking organic AND ppc AND listing down
+// together even though the per-keyword map was the only real size driver.
+// Splitting means each call needs far less room on its own — no max_tokens
+// increase needed — and a truncation in one call no longer sinks the other.
+// This is the shared fetch+parse+repair+fallback body both calls now use.
+async function callClaudeSection({ apiKey, systemPrompt, userPrompt, brandId, sectionLabel, buildFallback }) {
+  const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 12000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }]
+    })
+  });
+
+  if (!claudeRes.ok) {
+    const err = await claudeRes.text();
+    const e = new Error(`Claude API error ${claudeRes.status} (${sectionLabel}): ${err.slice(0, 300)}`);
+    e.status = 502;
+    throw e;
+  }
+
+  const data = await claudeRes.json();
+  if (data.stop_reason === 'max_tokens') {
+    console.warn(`[run-analysis] ${brandId} — ${sectionLabel} response truncated by max_tokens`);
+  }
+
+  const raw = (data.content || [])
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('');
+
+  const clean0 = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
+
+  // Two escalating attempts before giving up — see repairTruncatedJson()
+  // above for why the bracket-tracking one works regardless of where a
+  // truncation lands (the old field-name-specific repair this replaced
+  // only worked if the cut happened to land after a known field name, and
+  // doesn't generalize across two calls with two different schemas).
+  let result = null;
+  let lastParseErr = null;
+
+  // Attempt 1: as-is (covers the common case — not actually truncated).
+  try { result = JSON.parse(clean0); } catch (e) { lastParseErr = e; }
+
+  // Attempt 2: real bracket/string-tracking repair.
+  if (!result) {
+    console.warn(`[run-analysis] ${brandId} — ${sectionLabel} response may be truncated, attempting repair`);
+    try { result = JSON.parse(repairTruncatedJson(clean0)); } catch (e) { lastParseErr = e; }
+  }
+
+  // Both failed — fall back to deterministic-only data for THIS section
+  // only, rather than throwing and losing the other call's real result too.
+  if (!result) {
+    console.error(`[run-analysis] ${brandId} — ${sectionLabel}: all JSON repair attempts failed. Raw length: ${raw.length}. Last error: ${lastParseErr && lastParseErr.message}. Falling back to deterministic-only insights for this section.`);
+    console.error(`[run-analysis] ${sectionLabel} raw (first 500):`, clean0.slice(0, 500));
+    return buildFallback();
+  }
+  return result;
 }
 
 // Keywords sitting just off page 1 with real volume behind them — a
@@ -858,28 +939,62 @@ CRITICAL: Respond with a single valid JSON object only. No markdown fences, no p
     ? `\n\nPER-SKU BUSINESS + KEYWORD SNAPSHOT — replaces the old hand-authored "Strategy by Product" cards (already computed; write 2-4 prioritized recommendation bullets per SKU plus a short list of suggested exact-match keyword targets, same style as the old cards: "PPC on 'hair growth serum' + 'scalp serum' — Reverse converts at 22.95% but only sees 122 sessions. At current conversion, adding 300 incremental sessions = +68 units/month."):\n${JSON.stringify(skuStrategySnapshots)}`
     : '';
 
-  const userPrompt = `Analyze this week vs history. Return ONLY this JSON structure, nothing else:
+  const sharedRules = `- IMPORTANT — DO NOT LIMIT THE NUMBER OF ITEMS IN ANY LIST FIELD (wins, actions, opportunities, keywords_to_watch, violations, keyword_gaps, rewrites_recommended, etc). Report every genuine finding the data actually supports. Do not pad weak filler to reach a minimum, and do not cut real findings to fit an artificial maximum — some weeks may have 2 real wins, other weeks may have 10; both are fine, report what's actually there.
+- No apostrophes in string values — use "does not" not "doesn't", etc.
+- Keep all string values under 200 characters`;
 
-{"date":"YYYY-MM-DD","organic":{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"keywords_to_watch":["string"],"ranking_diagnostic":"string","recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"},"recommended_actions_page1_opportunities":{"<keyword>":"string"}},"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"strategy_by_sku":{"<SKU>":{"recommended_bullets":[{"priority":"HIGH|MED|LOW","text":"string"}],"suggested_exact_match_targets":["string"]}}},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
+  // ── Call 1 — ORGANIC ──────────────────────────────────────────────────
+  // Split out 2026-09-01 (see callClaudeSection above for the full reason)
+  // — this is the section whose output scales with tracked-keyword count.
+  const organicUserPrompt = `Analyze this week's ORGANIC performance vs history. Return ONLY this JSON structure, nothing else:
+
+{"summary":"string","reading_the_changes":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"keywords_to_watch":["string"],"ranking_diagnostic":"string","recommended_actions_by_keyword":{"<keyword>":"string"},"recommended_actions_new_converters":{"<keyword>":"string"},"recommended_actions_page1_opportunities":{"<keyword>":"string"}}
 
 Rules for the response:
-- date: today's date in YYYY-MM-DD format
-- organic.reading_the_changes: prose, in the style of a sharp weekly recap — call out the single biggest win, the single biggest drop, and one clear next action, using ONLY the rank-change data provided below (do not invent numbers)
-- organic.recommended_actions_by_keyword: one entry per keyword from KEYWORD RANK CHANGES below, keyed EXACTLY as given. Each value is one tactical sentence (bid amount, campaign type, or "no action" if genuinely nothing to do) — same style as: "Add exact-match PPC at $1.00-1.25 to rebuild this term." Do not add or omit keywords from what's given.
-- organic.recommended_actions_new_converters: same idea, one entry per term from NEW PPC CONVERTERS below, keyed EXACTLY as given
-- organic.recommended_actions_page1_opportunities: same idea, one entry per keyword from PAGE 1 PUSH OPPORTUNITIES below, keyed EXACTLY as given
-- organic.opportunities: the page-1-push keywords framed as prose opportunities (not a duplicate of the keyed action map above — this is the human-readable version for the insights card)
-- organic.ranking_diagnostic: 2-4 sentences using ONLY the RANKING DIAGNOSTIC numbers below. If nothing notable, say organic ranking looks proportional to keyword difficulty this week rather than forcing a concern that isn't there.
-- ppc.strategy_by_sku: one entry per SKU from the PER-SKU BUSINESS + KEYWORD SNAPSHOT below, keyed EXACTLY by SKU (e.g. "EVO0001"). Do not add or omit SKUs from what's given. 2-4 recommended_bullets per SKU, ordered HIGH priority first, each one tactical sentence that references real numbers from that SKU's own snapshot (sessions, conversion_pct, revenue, or a keyword's vol_mo/aba_pct) — do not invent numbers not present in the snapshot, and do not compare one SKU's numbers against another SKU's. suggested_exact_match_targets: 3-7 keyword strings pulled from that SKU's own top_keywords list (do not invent keywords not in the list).
-- IMPORTANT — DO NOT LIMIT THE NUMBER OF ITEMS IN ANY LIST FIELD (wins, actions, opportunities, keywords_to_watch, violations, keyword_gaps, rewrites_recommended, etc). Report every genuine finding the data actually supports. Do not pad weak filler to reach a minimum, and do not cut real findings to fit an artificial maximum — some weeks may have 2 real wins, other weeks may have 10; both are fine, report what's actually there.
-- No apostrophes in string values — use "does not" not "doesn't", etc.
-- Keep all string values under 200 characters
+- reading_the_changes: prose, in the style of a sharp weekly recap — call out the single biggest win, the single biggest drop, and one clear next action, using ONLY the rank-change data provided below (do not invent numbers)
+- recommended_actions_by_keyword: one entry per keyword from KEYWORD RANK CHANGES below, keyed EXACTLY as given. Each value is one tactical sentence (bid amount, campaign type, or "no action" if genuinely nothing to do) — same style as: "Add exact-match PPC at $1.00-1.25 to rebuild this term." Do not add or omit keywords from what's given.
+- recommended_actions_new_converters: same idea, one entry per term from NEW PPC CONVERTERS below, keyed EXACTLY as given
+- recommended_actions_page1_opportunities: same idea, one entry per keyword from PAGE 1 PUSH OPPORTUNITIES below, keyed EXACTLY as given
+- opportunities: the page-1-push keywords framed as prose opportunities (not a duplicate of the keyed action map above — this is the human-readable version for the insights card)
+- ranking_diagnostic: 2-4 sentences using ONLY the RANKING DIAGNOSTIC numbers below. If nothing notable, say organic ranking looks proportional to keyword difficulty this week rather than forcing a concern that isn't there.
+${sharedRules}
+
+BUSINESS REPORT (sessions/units/revenue):
+${JSON.stringify(bizTrimmed)}
+${rankChangesSection}${newConvertersSection}${page1OpportunitiesSection}${rankingDiagnosticSection}
+
+HISTORY (last 4 weeks):
+${historicalCtx}`;
+
+  const organicResult = await callClaudeSection({
+    apiKey, systemPrompt, userPrompt: organicUserPrompt,
+    brandId: brand.id, sectionLabel: 'organic',
+    buildFallback: () => buildFallbackOrganic({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, comparison }),
+  });
+
+  // ── Call 2 — PPC + LISTING + log_summary ────────────────────────────────
+  // The section whose output scales with SKU count instead. Gets a short
+  // recap of Call 1's own summary so log_summary can still read as one
+  // cohesive weekly note rather than two disconnected halves.
+  const organicSummaryForContext = (organicResult && organicResult.summary) || 'Not available this run.';
+
+  const ppcListingUserPrompt = `Analyze this week's PPC and LISTING performance vs history. Return ONLY this JSON structure, nothing else:
+
+{"ppc":{"summary":"string","wins":["string"],"actions":["string"],"opportunities":["string"],"strategy_by_sku":{"<SKU>":{"recommended_bullets":[{"priority":"HIGH|MED|LOW","text":"string"}],"suggested_exact_match_targets":["string"]}}},"listing":{"summary":"string","violations":["string"],"keyword_gaps":["string"],"rewrites_recommended":["string"]},"log_summary":"string"}
+
+Rules for the response:
+- strategy_by_sku: one entry per SKU from the PER-SKU BUSINESS + KEYWORD SNAPSHOT below, keyed EXACTLY by SKU (e.g. "EVO0001"). Do not add or omit SKUs from what's given. 2-4 recommended_bullets per SKU, ordered HIGH priority first, each one tactical sentence that references real numbers from that SKU's own snapshot (sessions, conversion_pct, revenue, or a keyword's vol_mo/aba_pct) — do not invent numbers not present in the snapshot, and do not compare one SKU's numbers against another SKU's. suggested_exact_match_targets: 3-7 keyword strings pulled from that SKU's own top_keywords list (do not invent keywords not in the list).
+- log_summary: 1-3 sentences synthesizing the whole week (organic + PPC + listing) for next week's own historical context — this is the only thing future runs see of this week's analysis. Use the ORGANIC SUMMARY below plus your own PPC/listing findings; do not repeat either verbatim.
+${sharedRules}
+
+ORGANIC SUMMARY (already written this run, for context only — do not repeat it):
+${organicSummaryForContext}
 
 BUSINESS REPORT (sessions/units/revenue):
 ${JSON.stringify(bizTrimmed)}
 
 PPC (search terms / ad performance):
-${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${rankChangesSection}${newConvertersSection}${page1OpportunitiesSection}${rankingDiagnosticSection}${listingImplementationSection}${skuStrategySection}
+${JSON.stringify(ppcTrimmed)}${sqpSection}${adOrdersSection}${listingImplementationSection}${skuStrategySection}
 
 HISTORY (last 4 weeks):
 ${historicalCtx}
@@ -887,87 +1002,21 @@ ${historicalCtx}
 CURRENT LISTING:
 ${listingCtxTrimmed}`;
 
-  const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      // Raised from 5000 to 12000 on 2026-07-28 — the item-count caps
-      // removed earlier that same day made responses genuinely longer
-      // (uncapped wins/actions/opportunities/keywords_to_watch, plus a
-      // keyed recommended-action sentence per keyword in rank_changes,
-      // which scales with however many keywords this brand tracks), and
-      // 5000 started truncating mid-response for evolis the same day this
-      // shipped. See the repair logic below for what happens if a
-      // response still exceeds this.
-      max_tokens: 12000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
-    })
+  const ppcListingResult = await callClaudeSection({
+    apiKey, systemPrompt, userPrompt: ppcListingUserPrompt,
+    brandId: brand.id, sectionLabel: 'ppc+listing',
+    buildFallback: () => buildFallbackPpcListing({ skuStrategySnapshots, listingImplementationStatus }),
   });
 
-  if (!claudeRes.ok) {
-    const err = await claudeRes.text();
-    const e = new Error(`Claude API error ${claudeRes.status}: ${err.slice(0, 300)}`);
-    e.status = 502;
-    throw e;
-  }
-
-  const data = await claudeRes.json();
-  if (data.stop_reason === 'max_tokens') {
-    console.warn(`[run-analysis] ${brand.id} — response truncated by max_tokens`);
-  }
-
-  const raw = (data.content || [])
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('');
-
-  const clean0 = raw
-    .replace(/^```json\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
-
-  // Three escalating attempts before giving up — see repairTruncatedJson()
-  // and buildFallbackInsights() above for why each exists.
-  let insights = null;
-  let lastParseErr = null;
-
-  // Attempt 1: as-is (covers the common case — not actually truncated).
-  try { insights = JSON.parse(clean0); } catch (e) { lastParseErr = e; }
-
-  // Attempt 2: the original log_summary-based repair — cheap, and still
-  // exactly right when truncation happens to land late in the response.
-  if (!insights && !clean0.endsWith('}')) {
-    console.warn(`[run-analysis] ${brand.id} — response may be truncated, attempting repair (1/2: log_summary cut)`);
-    const lastBrace = clean0.lastIndexOf('"log_summary"');
-    if (lastBrace > 0) {
-      const attempt = clean0.slice(0, lastBrace) + '"log_summary":"Analysis complete — see organic, PPC and listing sections above."}';
-      try { insights = JSON.parse(attempt); } catch (e) { lastParseErr = e; }
-    }
-  }
-
-  // Attempt 3: real bracket/string-tracking repair — works regardless of
-  // WHERE the cut happened, unlike attempt 2.
-  if (!insights) {
-    console.warn(`[run-analysis] ${brand.id} — attempting repair (2/2: bracket-tracking)`);
-    try { insights = JSON.parse(repairTruncatedJson(clean0)); } catch (e) { lastParseErr = e; }
-  }
-
-  // All three failed — fall back to deterministic-only data rather than
-  // throwing and writing nothing at all for this week.
-  if (!insights) {
-    console.error(`[run-analysis] ${brand.id} — all JSON repair attempts failed. Raw length: ${raw.length}. Last error: ${lastParseErr && lastParseErr.message}. Falling back to deterministic-only insights.`);
-    console.error('[run-analysis] Raw (first 500):', clean0.slice(0, 500));
-    insights = buildFallbackInsights({ rankChanges, newPpcConverters, page1Opportunities, rankingDiagnostic, listingImplementationStatus, skuStrategySnapshots, comparison });
-    return insights; // already has rank_changes/etc. attached — skip the merge-back below, it's already in final shape
-  }
-
-  insights.date = new Date().toISOString().slice(0, 10); // always override — Claude often hallucinates dates
+  // ── Assemble combined insights object — same shape downstream code has
+  // always expected, so the merge-back logic below is unchanged. ────────
+  const insights = {
+    date: new Date().toISOString().slice(0, 10), // always set here — Claude often hallucinates dates
+    organic: organicResult,
+    ppc: ppcListingResult.ppc || { summary: FALLBACK_NOTE, wins: [], actions: [], opportunities: [], strategy_by_sku: {} },
+    listing: ppcListingResult.listing || { summary: FALLBACK_NOTE, violations: [], keyword_gaps: [], rewrites_recommended: [] },
+    log_summary: ppcListingResult.log_summary || FALLBACK_NOTE,
+  };
 
   // Merge Claude's prose back onto the code-computed numbers — this is the
   // only place organic.rank_changes / organic.new_ppc_converters /
