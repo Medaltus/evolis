@@ -298,7 +298,24 @@ module.exports = async (req, res) => {
         // "exceeds grid limits". Growing once per brand per run, here,
         // with a generous buffer (see ensureRowCapacity), means this
         // should only rarely need to fire at all going forward.
-        await ensureRowCapacity(sheets.products, item.brandTabName, tabNextRow[item.brandTabName], tabTokens[item.brandTabName]);
+        //
+        // FIXED 2026-09-02 — real incident: dearcloud (195 SKUs). This
+        // call used to check capacity for ONLY the run's starting row
+        // (tabNextRow at the moment this brand tab is first seen), not
+        // for every row the rest of THIS SAME RUN was about to write. A
+        // run can start safely within the grid and still write enough
+        // rows in one pass to cross the boundary partway through — this
+        // brand's grid was 7915 rows, the run started comfortably inside
+        // that, and by SKU ~53 of 195 the running row count had climbed
+        // past 7915 with capacity never re-checked. Every SKU after that
+        // point failed identically (see the tabNextRow note below for why
+        // it was EVERY SKU, not just the ones actually past the limit).
+        // Sizing this call to the full brand batch (worst case: every
+        // remaining SKU for this brand still needs a fresh row) instead
+        // of just the starting row means the grid is grown ONCE, up
+        // front, for everything this run could possibly write.
+        const brandSkuCount = masterList.filter(x => x.brandTabName === item.brandTabName).length;
+        await ensureRowCapacity(sheets.products, item.brandTabName, tabNextRow[item.brandTabName] + brandSkuCount, tabTokens[item.brandTabName]);
       }
 
       // Skip outright if this exact SKU already has a row for today —
@@ -345,6 +362,18 @@ module.exports = async (req, res) => {
       }
 
       const rowNumber = tabNextRow[item.brandTabName];
+      // FIXED 2026-09-02 — see the ensureRowCapacity note above. This used
+      // to only increment AFTER a successful write, at the bottom of this
+      // block. That meant any failure on this SKU's write — grid-limit or
+      // otherwise — left tabNextRow stuck on the same row number, so
+      // EVERY subsequent SKU for this brand this run recomputed the exact
+      // same rowNumber, hit the exact same failing range, and failed
+      // identically — turning one root-cause failure into dozens of
+      // repeated ones (dearcloud: DEC0053 through the end of that run, all
+      // reporting the identical range). Advancing here, as soon as the row
+      // is claimed, means a single bad write leaves at most one gap in the
+      // row sequence instead of stalling every SKU behind it.
+      tabNextRow[item.brandTabName]++;
 
       // purchased_units_90d — combined across channels. Amazon side keyed
       // by ASIN (as before); Walmart side keyed by SKU (no ASIN concept on
@@ -381,7 +410,6 @@ module.exports = async (req, res) => {
       // merely supposed to agree.
       const range = `${item.brandTabName}!A${rowNumber}:${COL_QTY_ON_HAND}${rowNumber}`;
       await updateRange(sheets.products, range, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
-      tabNextRow[item.brandTabName]++;
       processed++;
     } catch (err) {
       console.error(`[sync-products] ${item.sku} (${item.brandTabName}) failed:`, err.message);
