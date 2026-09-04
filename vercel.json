@@ -82,6 +82,10 @@
       "schedule": "50 6 * * *"
     },
     {
+      "path": "/api/cron/qa-business-report",
+      "schedule": "5 7 * * *"
+    },
+    {
       "path": "/api/cron/sync-walmart-orders",
       "schedule": "12 6 * * *"
     },
