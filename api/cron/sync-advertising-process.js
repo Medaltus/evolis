@@ -30,6 +30,17 @@ const TRIM_YEARS       = 3;
 const SUMMARY_HEADERS = [
   'year', 'month', 'impressions', 'clicks', 'spend', 'sales',
   'acos', 'roas', 'ad_units', 'ctr', 'cpc', 'brand', 'last_updated',
+  // ADDED 2026-09-04 — PPC Ad Type Snapshot card breakdown. Derived from
+  // the SAME spCampaigns/sbCampaigns/sdCampaigns report data already
+  // being requested and downloaded above for the blended columns — no
+  // new report requests needed, see brandTypeTotals below. campaigns_running
+  // is the one genuinely new API surface (campaign LISTING, not reporting
+  // — see getEnabledCampaignCountsByBrand for confidence caveats per ad
+  // type, SB and SD specifically are NOT yet confirmed against a real
+  // response).
+  'sp_spend', 'sp_sales', 'sp_ad_units', 'sp_acos', 'sp_campaigns_running',
+  'sb_spend', 'sb_sales', 'sb_ad_units', 'sb_acos', 'sb_campaigns_running',
+  'sd_spend', 'sd_sales', 'sd_ad_units', 'sd_acos', 'sd_campaigns_running',
 ];
 const ASIN_HEADERS = [
   'year', 'month', 'asin', 'ad_units', 'spend', 'sales',
@@ -178,6 +189,124 @@ function identifyBrand(campaignName) {
   return match ? match.tabName : null;
 }
 
+// ── Campaign counts (currently ENABLED) per ad type — ADDED 2026-09-04 ──────
+// For the PPC Ad Type Snapshot card's "# of Campaigns Running" metric. This
+// is a snapshot of campaign STATE, not performance data, so it needs the
+// campaign LISTING endpoints — a completely separate Ads API surface from
+// the Reporting API everything else in this file uses. Fetched ONCE per
+// run (not once per period) since "currently enabled" means the same thing
+// regardless of which month's row it ends up attached to.
+//
+// CONFIDENCE LEVELS — read before trusting these numbers:
+//   SP: reasonably confident — POST /sp/campaigns/list with a stateFilter
+//       body is a directly-documented v3 pattern.
+//   SB: BEST EFFORT, NOT CONFIRMED against a real response. Guessed from
+//       the same "POST .../list with stateFilter" convention used
+//       elsewhere in this API, following this file's own established
+//       practice of verifying a new endpoint with a one-off test-*.js
+//       script before trusting it in production (see CAMPAIGN_BRANDS'
+//       history, sdCampaigns, the 7-day attribution fix) — that
+//       verification hasn't happened yet for this specific endpoint.
+//   SD: BEST EFFORT, NOT CONFIRMED, same caveat as SB.
+// Each ad type's call is independently wrapped so a wrong guess for SB or
+// SD doesn't take down SP's (or the rest of the run's) numbers — same
+// "additive, non-blocking" philosophy already used for SD elsewhere here.
+async function getEnabledCampaignCountsByBrand(token, profileId) {
+  const counts = {}; // tabName -> { sp: n, sb: n, sd: n }
+  const bump = (tabName, key) => {
+    if (!counts[tabName]) counts[tabName] = { sp: 0, sb: 0, sd: 0 };
+    counts[tabName][key]++;
+  };
+
+  try {
+    const spCampaigns = await listAllPages(nextToken => listCampaignsPage(
+      '/sp/campaigns/list', token, profileId, 'application/vnd.spCampaign.v3+json', nextToken));
+    spCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sp'); });
+    console.log(`[sync-advertising-process] SP enabled campaigns fetched: ${spCampaigns.length}`);
+  } catch (err) {
+    console.warn('[sync-advertising-process] SP campaign count fetch failed (sp_campaigns_running blank this run):', err.message);
+  }
+
+  try {
+    const sbCampaigns = await listAllPages(nextToken => listCampaignsPage(
+      '/sb/v4/campaigns/list', token, profileId, 'application/vnd.sbcampaignresource.v4+json', nextToken));
+    sbCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sb'); });
+    console.log(`[sync-advertising-process] SB enabled campaigns fetched: ${sbCampaigns.length}`);
+  } catch (err) {
+    console.warn('[sync-advertising-process] SB campaign count fetch failed — endpoint shape not yet confirmed, see header comment (sb_campaigns_running blank this run):', err.message);
+  }
+
+  try {
+    const sdCampaigns = await listAllPages(nextToken => listCampaignsPage(
+      '/sd/campaigns/list', token, profileId, 'application/vnd.sdcampaign.v3+json', nextToken));
+    sdCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sd'); });
+    console.log(`[sync-advertising-process] SD enabled campaigns fetched: ${sdCampaigns.length}`);
+  } catch (err) {
+    console.warn('[sync-advertising-process] SD campaign count fetch failed — endpoint shape not yet confirmed, see header comment (sd_campaigns_running blank this run):', err.message);
+  }
+
+  return counts;
+}
+
+async function listCampaignsPage(path, token, profileId, contentType, nextToken) {
+  const resp = await adRequestJson('POST', path, token, profileId,
+    { stateFilter: { include: ['ENABLED'] }, maxResults: 200, ...(nextToken ? { nextToken } : {}) },
+    contentType);
+  return { items: resp.campaigns || [], nextToken: resp.nextToken || null };
+}
+
+// Generic nextToken-paginated collector, capped at 20 pages (4000
+// campaigns) as a sanity ceiling — no account here should have anywhere
+// near that many enabled campaigns of one type, so hitting the cap is
+// itself a sign the response shape isn't what's expected, not real
+// account size.
+async function listAllPages(fetchPage) {
+  const all = [];
+  let nextToken = null;
+  for (let i = 0; i < 20; i++) {
+    const { items, nextToken: nt } = await fetchPage(nextToken);
+    all.push(...items);
+    if (!nt) break;
+    nextToken = nt;
+  }
+  return all;
+}
+
+// Same shape as adRequest below, but with a caller-supplied versioned
+// content-type — the campaign listing endpoints use per-resource
+// versioned content-types (application/vnd.spCampaign.v3+json etc.), not
+// the plain application/json the reporting endpoints use. Also rejects on
+// a non-2xx status (adRequest doesn't) since these responses are read
+// directly rather than polled, so a bad status needs to surface as an
+// error immediately rather than being silently parsed as if it succeeded.
+function adRequestJson(method, path, token, profileId, body, contentType) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : '';
+    const headers = {
+      'Authorization':                   `Bearer ${token}`,
+      'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
+      'Content-Type':                    contentType,
+      'Accept':                          contentType,
+    };
+    if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
+    if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    const req = https.request({ hostname: AD_API_HOST, path, method, headers }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`${path} failed (${res.statusCode}): ${d.slice(0, 300)}`));
+        }
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`${path} parse error (${res.statusCode}): ${d.slice(0, 300)}`)); }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -310,6 +439,18 @@ module.exports = async (req, res) => {
       return res.status(202).json({ message: 'Reports not ready yet — will retry next run' });
     }
   }
+
+  // ── 2b. Campaign counts (currently ENABLED) — ADDED 2026-09-04 ────────────
+  // Independent of report polling above (different API surface entirely —
+  // see getEnabledCampaignCountsByBrand's header comment) and independent
+  // of curr/prev (a state snapshot, not a monthly aggregate), so fetched
+  // once here rather than inside the period loop below. Failure here
+  // should never block the spend/sales/units writes that already work —
+  // same non-blocking philosophy as the SD reports elsewhere in this file.
+  const enabledCampaignCounts = await getEnabledCampaignCountsByBrand(token, profileId).catch(err => {
+    console.warn('[sync-advertising-process] campaign count fetch failed entirely — all *_campaigns_running columns blank this run:', err.message);
+    return {};
+  });
 
   // ── 3. Derive year/month for each period ──────────────────────────────────
   function yearMonthFromEndDate(endDate) {
@@ -511,17 +652,20 @@ module.exports = async (req, res) => {
     const allCampaignRows = [
       ...spRows.map(r => ({
         ...r,
+        adType:             'sp', // ADDED 2026-09-04 — see brandTypeTotals below
         sales14d:           r.sales7d           || 0,
         unitsSoldClicks14d: r.unitsSoldClicks7d || 0,
       })),
       ...sbRows.map(r => ({
         ...r,
+        adType:              'sb', // ADDED 2026-09-04
         spend:               r.cost      || r.spend      || 0,
         sales14d:            r.sales     || r.sales14d    || 0,
         unitsSoldClicks14d:  r.purchases || r.purchases14d || 0,
       })),
       ...(sdCampRows || []).map(r => ({
         ...r,
+        adType:              'sd', // ADDED 2026-09-04
         spend:               r.cost      || 0,
         sales14d:            r.sales     || 0,
         unitsSoldClicks14d:  r.unitsSold || 0,
@@ -529,6 +673,14 @@ module.exports = async (req, res) => {
     ];
 
     const brandTotals = {};
+    // ADDED 2026-09-04 — parallel per-ad-type breakdown for the new sp_/
+    // sb_/sd_ columns, built from the exact same allCampaignRows the
+    // blended brandTotals below already uses (same data, same
+    // identifyBrand call) — just kept separate by type instead of
+    // immediately collapsed. brandTotals itself is completely untouched
+    // by this addition, so the existing blended columns this dashboard
+    // has always shown can't be affected by it.
+    const brandTypeTotals = {}; // tabName -> { sp: {spend,sales,adUnits}, sb: {...}, sd: {...} }
     allCampaignRows.forEach(r => {
       const tabName = identifyBrand(r.campaignName);
       if (!tabName) {
@@ -541,6 +693,16 @@ module.exports = async (req, res) => {
       brandTotals[tabName].spend       += r.spend              || 0;
       brandTotals[tabName].sales       += r.sales14d           || 0;
       brandTotals[tabName].adUnits     += r.unitsSoldClicks14d || 0;
+
+      if (!brandTypeTotals[tabName]) {
+        brandTypeTotals[tabName] = { sp: { spend: 0, sales: 0, adUnits: 0 }, sb: { spend: 0, sales: 0, adUnits: 0 }, sd: { spend: 0, sales: 0, adUnits: 0 } };
+      }
+      const tt = brandTypeTotals[tabName][r.adType];
+      if (tt) {
+        tt.spend   += r.spend              || 0;
+        tt.sales   += r.sales14d           || 0;
+        tt.adUnits += r.unitsSoldClicks14d || 0;
+      }
     });
 
     for (const brand of brands.filter(b => b.active)) {
@@ -553,14 +715,37 @@ module.exports = async (req, res) => {
         const roas = t.spend  > 0 ? round2(t.sales / t.spend)                     : null;
         const ctr  = t.impressions > 0 ? round2((t.clicks / t.impressions) * 100) : 0;
         const cpc  = t.clicks > 0 ? round2(t.spend / t.clicks)                    : 0;
-        const newRow = [year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, ctr, cpc, brand.id, now];
+
+        // ADDED 2026-09-04 — per-ad-type columns. tt falls back to zeroed
+        // sub-objects for a brand with no campaigns of a given type this
+        // period (e.g. no Sponsored Display yet) — same "0, not blank"
+        // convention the blended columns above already use via `t`'s own
+        // fallback. cc (campaign counts) falls back to '' per-type rather
+        // than 0, since a fetch failure (see getEnabledCampaignCountsByBrand)
+        // means "unknown this run", not "confirmed zero".
+        const tt = brandTypeTotals[brand.tabName] || { sp: {spend:0,sales:0,adUnits:0}, sb: {spend:0,sales:0,adUnits:0}, sd: {spend:0,sales:0,adUnits:0} };
+        const cc = enabledCampaignCounts[brand.tabName] || {};
+        const typeAcos = x => x.sales > 0 ? round2((x.spend / x.sales) * 100) : null;
+
+        const newRow = [
+          year, month, t.impressions, t.clicks, round2(t.spend), round2(t.sales), acos, roas, t.adUnits, ctr, cpc, brand.id, now,
+          round2(tt.sp.spend), round2(tt.sp.sales), tt.sp.adUnits, typeAcos(tt.sp), cc.sp ?? '',
+          round2(tt.sb.spend), round2(tt.sb.sales), tt.sb.adUnits, typeAcos(tt.sb), cc.sb ?? '',
+          round2(tt.sd.spend), round2(tt.sd.sales), tt.sd.adUnits, typeAcos(tt.sd), cc.sd ?? '',
+        ];
 
         const tok      = await ensureTabOnce(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
         const existing = await readRows(SHEET_AD_SUMMARY, brand.tabName);
-        // Upsert: remove matching year/month row, append new one
+        // Upsert: remove matching year/month row, append new one. Switched
+        // the kept-row mapping from a hand-listed column array to a
+        // SUMMARY_HEADERS-driven one — with 28 columns now (up from 13),
+        // hand-listing every column here risked a transcription slip that
+        // a header-driven map can't have. Preserves whatever a past run
+        // already computed for every OTHER month's row untouched, same as
+        // before.
         const kept = existing.filter(r => !(parseInt(r.year,10) === year && parseInt(r.month,10) === month));
         await replaceRows(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS,
-          [...kept.map(r => [r.year, r.month, r.impressions, r.clicks, r.spend, r.sales, r.acos, r.roas, r.ad_units, r.ctr, r.cpc, r.brand, r.last_updated]), newRow],
+          [...kept.map(r => SUMMARY_HEADERS.map(h => r[h] ?? '')), newRow],
           tok
         );
         allResults.push({ period: label, brand: brand.id, status: 'ok', spend: round2(t.spend), adUnits: t.adUnits });
