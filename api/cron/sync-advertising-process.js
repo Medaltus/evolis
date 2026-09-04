@@ -14,7 +14,7 @@
  */
 
 const { getAdToken }                                   = require('../_spauth');
-const { ensureTab, readRows, replaceRows, appendRows }  = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, appendRows, updateRange } = require('../config/_sheets_client');
 const brands                                           = require('../config/brands');
 const { sendCronFailureAlert }                         = require('../_alerts');
 const https                                            = require('https');
@@ -532,6 +532,32 @@ module.exports = async (req, res) => {
     return tok;
   }
 
+  // ADDED 2026-09-04 — ensureTab only CHECKS an existing tab's header row
+  // against `headers` and logs a warning on mismatch; it never fixes one
+  // (see its own comment: "Doesn't fix anything, just makes drift loud").
+  // replaceRows never touches row 1 at all — it only clears/writes from
+  // row 2 down. So on every brand tab created before today (i.e. all of
+  // them), row 1 would stay stuck at the old 13 column names forever
+  // without this. That's not just cosmetic: readRows keys each row by
+  // whatever's actually in row 1, so the new sp_/sb_/sd_ columns would
+  // read back as undefined on every row — including ones THIS cron just
+  // wrote real data into — meaning every subsequent run's upsert would
+  // silently blank those columns out for every month except the two
+  // currently being processed. Cached per tab per run, same pattern as
+  // ensureTabOnce above, so this fires once per tab even though both the
+  // curr and prev passes call it.
+  const headersRefreshedThisRun = new Set();
+  async function refreshHeaderOnce(sheetId, tabName, headers, token) {
+    const key = `${sheetId}::${tabName}`;
+    if (headersRefreshedThisRun.has(key)) return;
+    headersRefreshedThisRun.add(key);
+    try {
+      await updateRange(sheetId, `${tabName}!A1`, [headers], token, 'RAW');
+    } catch (err) {
+      console.error(`[sync-advertising-process] header refresh failed for tab "${tabName}" — new columns may not read back correctly until this succeeds:`, err.message);
+    }
+  }
+
   for (const period of periods) {
     const { label, year, month, endDate, asinRows, spRows, sbRows, sdRows, sdCampRows } = period;
     console.log(`[sync-advertising-process] ${label}: year=${year} month=${month} asin=${asinRows.length} sp=${spRows.length} sb=${sbRows.length} sd=${(sdRows || []).length} sdcamp=${(sdCampRows || []).length}`);
@@ -735,6 +761,7 @@ module.exports = async (req, res) => {
         ];
 
         const tok      = await ensureTabOnce(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS);
+        await refreshHeaderOnce(SHEET_AD_SUMMARY, brand.tabName, SUMMARY_HEADERS, tok);
         const existing = await readRows(SHEET_AD_SUMMARY, brand.tabName);
         // Upsert: remove matching year/month row, append new one. Switched
         // the kept-row mapping from a hand-listed column array to a
