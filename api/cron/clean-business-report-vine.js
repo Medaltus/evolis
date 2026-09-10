@@ -1,7 +1,11 @@
 /**
  * api/cron/clean-business-report-vine.js
  * Runs once daily, chained AFTER sync-business-report-process.js (which
- * runs at 5:15 UTC — schedule this a few minutes later, e.g. 5:30 UTC).
+ * runs at 5:50 UTC — this runs at 6:50 UTC, confirmed against the real
+ * vercel.json rather than trusted as-is; FIXED 2026-09-10, this comment
+ * previously said "5:15 UTC... schedule a few minutes later, e.g. 5:30
+ * UTC" — stale on both counts, same class of drift already found and
+ * fixed in sync-business-report-process.js's own header comment).
  *
  * THE PROBLEM (per Jaclyn, 2026-08-14): sync-orders-process.js's flat-file
  * order report already excludes Vine orders entirely (filtered out by
@@ -55,6 +59,22 @@
  * data — it needs to be updated to read the new _CLEAN columns instead,
  * or this fix has no visible effect. Not done as part of this file.
  *
+ * ADDED 2026-09-10 per Jaclyn — a SEPARATE, genuinely independent
+ * problem from Vine, found after this file was already in production:
+ * Amazon's Business Report also counts CANCELLED orders as real unit
+ * sales. This is NOT the same mechanism as Vine contamination — a
+ * cancelled order isn't tied to any enrollment window or per-ASIN
+ * budget, it can happen to any ASIN in any month — so it needed its own,
+ * independent deduction rather than being folded into the Vine logic
+ * above. Computed directly from the orders sheet's own cancelled rows
+ * (their real dollar amount is already right there in item_price), not
+ * an inferred delta the way Vine's deduction has to be. Two more columns
+ * appended: CANCELLED_UNITS_DEDUCTED, CANCELLED_SALES_DEDUCTED — and the
+ * existing UNITS_ORDERED_CLEAN / ORDERED_PRODUCT_SALES_CLEAN columns now
+ * subtract BOTH Vine and cancelled deductions, so the dashboard-facing
+ * "_CLEAN" columns don't need to change meaning or the dashboard doesn't
+ * need a second follow-up once the one above is done.
+ *
  * Manual:
  *   GET /api/cron/clean-business-report-vine?dryRun=true             — report only
  *   GET /api/cron/clean-business-report-vine?dryRun=true&debug=true   — report + exact ASIN/month/amount for every deduction
@@ -72,7 +92,24 @@ const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku
 
 const HEADERS = [
   'MONTH', 'YEAR', 'ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE',
+  // FIXED 2026-09-10 per Jaclyn — LAST_UPDATED added here, matching the
+  // exact same position sync-business-report-process.js already uses.
+  // Real, confirmed bug: this cron's own HEADERS array never had this
+  // column, and its replaceRows() call below only ever writes fields
+  // this array lists — meaning every time this cron ran (scheduled to
+  // run AFTER sync-business-report-process.js sets LAST_UPDATED), it
+  // would silently drop that value from the output entirely, undoing
+  // the other cron's own write on every single run. Both files' HEADERS
+  // arrays write to the exact same physical sheet/tab and MUST be kept
+  // in sync with each other whenever either one changes — there's no
+  // shared constant between them, so this has to be checked by hand.
+  'LAST_UPDATED',
   'VINE_UNITS_DEDUCTED', 'VINE_SALES_DEDUCTED', 'UNITS_ORDERED_CLEAN', 'ORDERED_PRODUCT_SALES_CLEAN',
+  // ADDED 2026-09-10 per Jaclyn — cancelled-order deduction, a separate
+  // problem from Vine (see fetchOrderDataByAsinMonth's own comment for
+  // why). Appended at the end, never inserted, same standing
+  // rule as every other schema change in this codebase.
+  'CANCELLED_UNITS_DEDUCTED', 'CANCELLED_SALES_DEDUCTED',
 ];
 
 const META_TAB = '_meta';
@@ -130,14 +167,16 @@ module.exports = async (req, res) => {
       const token   = await ensureTab(sheets.businessReport, brand.tabName, HEADERS);
       const rawRows = await readRows(sheets.businessReport, brand.tabName);
 
-      // Vine-clean organic units per ASIN per month, from the orders sheet
-      // sync-orders-process.js already excludes Vine from. Only fetched
-      // once per brand per run — this sheet can be large (thousands of
-      // rows for busy brands), same read-once-per-brand pattern used
-      // elsewhere in this codebase.
-      const orderUnitsByAsinMonth = await fetchOrderUnitsByAsinMonth(brand.tabName, targetMonths);
+      // Vine-clean organic units, AND cancelled-order units/dollars, both
+      // per ASIN per month — one single read of the orders sheet for
+      // both (see fetchOrderDataByAsinMonth's own comment for why this
+      // is combined rather than two separate reads). This sheet can be
+      // large (thousands of rows for busy brands), same read-once-per-
+      // brand pattern used elsewhere in this codebase.
+      const { organicUnitsMap: orderUnitsByAsinMonth, cancelledMap: cancelledByAsinMonth } = await fetchOrderDataByAsinMonth(brand.tabName, targetMonths);
 
       let deductionsApplied = 0;
+      let cancelledDeductionsApplied = 0;
       const deductionDetails = [];
       // CORRECTED 2026-08-14, second pass — per Jaclyn: a single Vine
       // ENROLLMENT allocates up to 30 UNITS (not 1) — each of up to 30
@@ -207,6 +246,7 @@ module.exports = async (req, res) => {
                 if (debugMode) {
                   deductionDetails.push({
                     asin, sku: r.SKU || '', month,
+                    type: 'vine',
                     enrollmentMonth: vineInfo.enrollmentMonth,
                     rawUnits, orderUnits, delta,
                     unitsDeducted: unitsThisMonth,
@@ -222,8 +262,40 @@ module.exports = async (req, res) => {
 
         r.VINE_UNITS_DEDUCTED         = vineUnitsDeducted;
         r.VINE_SALES_DEDUCTED         = vineSalesDeducted;
-        r.UNITS_ORDERED_CLEAN         = rawUnits - vineUnitsDeducted;
-        r.ORDERED_PRODUCT_SALES_CLEAN = round2(rawSales - vineSalesDeducted);
+
+        // ADDED 2026-09-10 per Jaclyn — cancelled-order deduction. Unlike
+        // Vine, this is NOT tied to any eligibility window or per-ASIN
+        // budget — a cancelled order is a cancelled order, in whatever
+        // real month it happened, full stop. Direct lookup from the
+        // orders sheet's own cancelled rows (summed in
+        // fetchOrderDataByAsinMonth above), not an inferred delta.
+        let cancelledUnitsDeducted = 0;
+        let cancelledSalesDeducted = 0;
+        if (asin && month) {
+          const cancelled = cancelledByAsinMonth.get(`${asin}||${month}`);
+          if (cancelled && (cancelled.units > 0 || cancelled.sales > 0)) {
+            cancelledUnitsDeducted = cancelled.units;
+            cancelledSalesDeducted = round2(cancelled.sales);
+            cancelledDeductionsApplied++;
+            if (debugMode) {
+              deductionDetails.push({
+                asin, sku: r.SKU || '', month,
+                type: 'cancelled',
+                rawUnits, unitsDeducted: cancelledUnitsDeducted, salesDeducted: cancelledSalesDeducted,
+              });
+            }
+          }
+        }
+        r.CANCELLED_UNITS_DEDUCTED = cancelledUnitsDeducted;
+        r.CANCELLED_SALES_DEDUCTED = cancelledSalesDeducted;
+
+        // _CLEAN columns now reflect BOTH corrections — Vine and
+        // cancelled — computed fresh from raw sources every run, same
+        // "never subtract from a previously-corrected value" safety
+        // property this file's header comment already establishes for
+        // Vine alone. Fully safe to re-run any number of times.
+        r.UNITS_ORDERED_CLEAN         = rawUnits - vineUnitsDeducted - cancelledUnitsDeducted;
+        r.ORDERED_PRODUCT_SALES_CLEAN = round2(rawSales - vineSalesDeducted - cancelledSalesDeducted);
 
         return HEADERS.map(h => r[h] ?? '');
       });
@@ -236,10 +308,12 @@ module.exports = async (req, res) => {
       }
 
       results.push({
-        brand: brand.id, status: 'ok', totalRows: outRows.length, deductionsApplied,
+        brand: brand.id, status: 'ok', totalRows: outRows.length,
+        vineDeductionsApplied: deductionsApplied,
+        cancelledDeductionsApplied,
         ...(debugMode ? { deductionDetails } : {}),
       });
-      console.log(`[clean-business-report-vine] ${brand.id} — ${deductionsApplied} Vine deduction(s) applied across ${targetMonths.join(', ')}`);
+      console.log(`[clean-business-report-vine] ${brand.id} — ${deductionsApplied} Vine deduction(s), ${cancelledDeductionsApplied} cancelled-order deduction(s) applied across ${targetMonths.join(', ')}`);
     } catch (err) {
       console.error(`[clean-business-report-vine] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
@@ -267,25 +341,52 @@ function addOneMonth(yyyyMm) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// Aggregates unit_count per ASIN per target month from this brand's
-// already-Vine-clean orders tab. Cancelled orders excluded, same
-// convention as every other cron that reads this sheet.
-async function fetchOrderUnitsByAsinMonth(brandTabName, targetMonths) {
+// Single read of the orders sheet, returning BOTH maps this cron needs:
+// (1) Vine-clean organic units per ASIN/month (cancelled excluded, same
+// as before) for the existing Vine cross-reference, and (2) cancelled
+// units/dollars per ASIN/month (added 2026-09-10) for the new deduction
+// below. Combined into one function/one readRows() call deliberately —
+// two separate functions each independently reading this same,
+// potentially large sheet would double the read volume for no reason,
+// re-risking the exact 429 RESOURCE_EXHAUSTED issue already found and
+// fixed once in this file (see the brand-stagger comment above).
+async function fetchOrderDataByAsinMonth(brandTabName, targetMonths) {
   const rows = await readRows(sheets.orders, brandTabName).catch(err => {
-    console.warn(`[clean-business-report-vine] ${brandTabName} — orders sheet read failed (Vine cross-reference will find 0 organic units this run, so no deductions will apply — safer than guessing): ${err.message}`);
+    console.warn(`[clean-business-report-vine] ${brandTabName} — orders sheet read failed (Vine cross-reference will find 0 organic units, and no cancelled-order deduction will apply, this run — safer than guessing): ${err.message}`);
     return [];
   });
-  const map = new Map();
+  const organicUnitsMap = new Map(); // "ASIN||month" -> units, cancelled excluded
+  const cancelledMap = new Map();    // "ASIN||month" -> { units, sales }, cancelled ONLY
   (rows || []).forEach(r => {
     const status = (r.status || '').toLowerCase();
-    if (status === 'cancelled') return;
     const asin = (r.asin || '').trim().toUpperCase();
     const month = (r.date || '').slice(0, 7);
     if (!asin || !targetMonths.includes(month)) return;
     const key = `${asin}||${month}`;
-    map.set(key, (map.get(key) || 0) + (parseInt(r.unit_count, 10) || 0));
+    if (status === 'cancelled') {
+      // ADDED 2026-09-10 per Jaclyn — separate, genuinely independent
+      // problem from Vine: Amazon's Business Report (Sales & Traffic)
+      // counts CANCELLED orders as real unit sales, same root-cause
+      // CLASS as Vine contamination but a different mechanism —
+      // cancelled orders aren't tied to any enrollment window or
+      // 30-unit budget, they can happen to any ASIN in any month. This
+      // is a DIRECT sum from the orders sheet's own cancelled rows
+      // (their real dollar amount is already sitting right there in
+      // item_price), not a delta-inference the way Vine's deduction has
+      // to be, since Vine units are never directly visible as their own
+      // rows anywhere. item_price is this sheet's LINE-ITEM total
+      // already (confirmed from sync-orders-process.js's own write
+      // schema) — summed directly, not re-multiplied by unit_count,
+      // which would double-count.
+      const existing = cancelledMap.get(key) || { units: 0, sales: 0 };
+      existing.units += parseInt(r.unit_count, 10) || 0;
+      existing.sales += parseFloat(String(r.item_price || 0).replace(/[$,]/g, '')) || 0;
+      cancelledMap.set(key, existing);
+    } else {
+      organicUnitsMap.set(key, (organicUnitsMap.get(key) || 0) + (parseInt(r.unit_count, 10) || 0));
+    }
   });
-  return map;
+  return { organicUnitsMap, cancelledMap };
 }
 
 async function fetchVineInfoByAsin() {
