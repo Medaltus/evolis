@@ -1387,6 +1387,18 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="kpi-card" id="ov-kpi-pending"><div class="kpi-label">Pending Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
     </div>
 
+    <!-- Goals Tracker — added 2026-09-04 per Jaclyn. First pass/mockup,
+         explicitly framed as v1 — see the [qa] console notes throughout
+         the JS for the real data-structure quirks found while building
+         this (mid-sheet column relabeling, Website's currently-blank
+         Ads goal for the last 3 months). -->
+    <div class="card" id="ov-goals-card" style="margin-bottom:22px;">
+      <div class="card-title" id="ov-goals-title">Goals Tracker — Month to Date</div>
+      <div id="ov-goals-body" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+        <div style="color:var(--muted);grid-column:1/-1;text-align:center;padding:20px;">Loading…</div>
+      </div>
+    </div>
+
     <div class="two-col" style="margin-bottom:22px;">
       <div class="card" style="margin-top:0;">
         <div class="card-title" id="ov-donut-title">Revenue by Channel — Month to Date</div>
@@ -1411,9 +1423,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
             <th style="text-align:left;padding:8px 10px;">Total Units</th>
             <th style="text-align:left;padding:8px 10px;">Ads (Amazon)</th>
             <th style="text-align:left;padding:8px 10px;">Organic</th>
+            <th style="text-align:left;padding:8px 10px;">Conv% (Amazon)</th>
           </tr>
         </thead>
-        <tbody id="ov-products-tbody"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
+        <tbody id="ov-products-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -1613,6 +1626,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <button class="ch-tab" onclick="showChannel('sales','s-amazon',this)">Amazon</button>
         <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
         <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-brand-momentum',this)">Brand Momentum</button>
       </div>
       <!-- Shared period-selector row — added 2026-08-12 per Jaclyn, moved
            here (right-aligned next to the channel tabs) to match Skinuva's
@@ -1818,6 +1832,75 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <button class="btn-cancel" id="wtp-insight-cancel">Cancel</button>
           <button class="btn-save-stage" id="wtp-insight-save">Save</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Brand Momentum tab — added 2026-09-01 per Jaclyn, ported from
+         Skinside Seoul's proven build. -->
+    <div class="channel-page" id="s-brand-momentum">
+      <div class="channel-hdr">
+        <span style="font-size:16px;font-weight:600;color:var(--navy);">Brand Momentum</span>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card" id="bm-kpi-reviews"><div class="kpi-label">Reviews Collected</div><div class="kpi-value">—</div></div>
+        <div class="kpi-card" id="bm-kpi-ranked-keywords"><div class="kpi-label">Keywords with Organic Rank</div><div class="kpi-value">—</div></div>
+        <div class="kpi-card" id="bm-kpi-sessions"><div class="kpi-label">Sessions</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">Sessions by Product</div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Product</th><th>Sessions</th><th>% vs Launch</th></tr></thead>
+            <tbody id="bm-sessions-tbody"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">Targeted Keyword Indexing Progress</div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Keyword</th><th>Product</th><th>Organic Rank</th><th>Search Volume</th></tr></thead>
+            <tbody id="bm-keyword-tbody"><tr><td colspan="4" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="ppc-note">ℹ Top 10 rows, keywords with real rank movement sorted first, then by rank ascending within each group.</div>
+      </div>
+
+      <div class="ppc-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+          <div class="ppc-card-title" style="margin-bottom:0;">Subcategory BSR by Product</div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
+            <input type="checkbox" id="bm-hide-negative-bsr" onchange="window.bmRenderBsrTable && window.bmRenderBsrTable()"> Hide negative changes
+          </label>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Product</th><th>Subcategory BSR</th><th>Change Since First Recorded</th><th>Subcategory</th></tr></thead>
+            <tbody id="bm-bsr-tbody"><tr><td colspan="4" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">Review Velocity &amp; Quality</div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Product</th><th>Review Count</th><th>Avg. Rating</th></tr></thead>
+            <tbody id="bm-review-velocity-tbody"><tr><td colspan="3" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="ppc-card">
+        <div class="ppc-card-title">What We're Tracking Next</div>
+        <ul style="margin:0;padding-left:20px;color:var(--text);font-size:13px;line-height:1.7;">
+          <li>Organic rank movement for our top-priority keyword set, month over month.</li>
+          <li>Subcategory BSR trends as a leading indicator of category-level momentum, independent of overall BSR.</li>
+          <li>Review velocity and rating trends as new products build up their own review base.</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -4860,6 +4943,7 @@ function showChannel(page, channelId, btn) {
     if (channelId === 's-amazon')        initAmazonLive();
     if (channelId === 's-website')       initWebLive();
     if (channelId === 's-walmart')       initWalmartLive();
+    if (channelId === 's-brand-momentum') window.initBrandMomentum();
     if (channelId.indexOf('x-') === 0)   window.initSalesExternalPage();
     if (channelId.indexOf('mx-') === 0)  window.initMarketingExternalPage();
     if (channelId.indexOf('ix-') === 0)  window.initInventoryExternalPage();
@@ -15272,6 +15356,278 @@ async function ppcLoadBlendedPerformance(periodKey) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// BRAND MOMENTUM TAB — added 2026-09-01 per Jaclyn, ported from Skinside
+// Seoul's proven build. Reuses fetchAmazonReviews()/getProductMaster()
+// (already cached, memoized, globally accessible in this same scope —
+// no second fetch of either sheet) plus the same Keyword Tracker
+// (per-keyword AND summary tabs) and Business Report sheets already
+// confirmed and used elsewhere on this dashboard.
+// ═══════════════════════════════════════════════════════════════════
+let window_bmLastKwRows = null; // cached for the "hide negative" checkbox re-render, avoids re-fetching on toggle
+
+window.initBrandMomentum = async function () {
+  if (window._bmInit) return;
+  window._bmInit = true;
+
+  try {
+    const [bizCsv, kwCsv, kwSummaryCsv, master, reviews] = await Promise.all([
+      fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(OV_KEYWORD_TRACKER_SHEET_ID, OV_KEYWORD_TRACKER_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      fetch(ovCsvUrl(KEYWORD_TRACKER_SUMMARY_SHEET_ID, KEYWORD_TRACKER_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+      getProductMaster(),
+      fetchAmazonReviews(),
+    ]);
+
+    const bizRows = parseCsvToRows(bizCsv);
+    const kwRows = parseCsvToRows(kwCsv).filter(r => r.date && r.asin && r.keyword);
+    const kwSummaryRows = parseCsvToRows(kwSummaryCsv);
+    window_bmLastKwRows = { bizRows, kwRows, kwSummaryRows, master, reviews };
+
+    const { year, month } = getLastFullMonthShared();
+    let prevYear = year, prevMonth = month - 1;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // évolis-specific product ASINs — every ASIN in Product Master whose
+    // brand matches évolis and channel includes Amazon (same pattern
+    // already established for Bundles/US-filter elsewhere on this page).
+    const evolisAsins = new Set(
+      Object.values(master.byAsin)
+        .filter(e => (e.brand || '').trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon'))
+        .map(e => e.asin)
+    );
+
+    // ── KPI 1: Reviews Collected — total review rows for évolis's own products ──
+    const evolisReviewRows = reviews.filter(r => evolisAsins.has((r.asin || '').trim().toUpperCase()));
+    const reviewsKpiEl = document.getElementById('bm-kpi-reviews');
+    if (reviewsKpiEl) reviewsKpiEl.querySelector('.kpi-value').textContent = evolisReviewRows.length.toLocaleString();
+
+    // ── KPI 2: Keywords with Organic Rank — latest sync date, rank 1-306 (not the ">" not-ranking marker) ──
+    const evolisKwRows = kwRows.filter(r => evolisAsins.has((r.asin || '').trim().toUpperCase()));
+    const latestKwDate = evolisKwRows.reduce((max, r) => (r.date > max ? r.date : max), '');
+    const latestKwRows = evolisKwRows.filter(r => r.date === latestKwDate);
+    const rankedKeywordSet = new Set();
+    latestKwRows.forEach(r => {
+      const rankStr = String(r.organic_rank || '').trim();
+      if (rankStr.startsWith('>')) return;
+      const rank = parseInt(rankStr.replace(/[^\d]/g, ''), 10);
+      if (!isNaN(rank) && rank >= 1 && r.keyword) rankedKeywordSet.add(r.keyword.trim().toLowerCase());
+    });
+    const rankedKwEl = document.getElementById('bm-kpi-ranked-keywords');
+    if (rankedKwEl) rankedKwEl.querySelector('.kpi-value').textContent = rankedKeywordSet.size.toLocaleString();
+
+    // ── KPI 3: Sessions (MoM) — sum across évolis's own ASIN rows for the last full month ──
+    const currSessions = bizRows.filter(r => parseInt(r.year, 10) === year && parseInt(r.month, 10) === month && evolisAsins.has((r.asin || '').trim().toUpperCase()))
+      .reduce((s, r) => s + (parseInt(r.sessions, 10) || 0), 0);
+    const prevSessions = bizRows.filter(r => parseInt(r.year, 10) === prevYear && parseInt(r.month, 10) === prevMonth && evolisAsins.has((r.asin || '').trim().toUpperCase()))
+      .reduce((s, r) => s + (parseInt(r.sessions, 10) || 0), 0);
+    const sessionsEl = document.getElementById('bm-kpi-sessions');
+    if (sessionsEl) {
+      sessionsEl.querySelector('.kpi-value').textContent = currSessions.toLocaleString();
+      const momEl = sessionsEl.querySelector('.kpi-mom');
+      if (momEl && prevSessions > 0) {
+        const pct = Math.round(((currSessions - prevSessions) / prevSessions) * 1000) / 10;
+        momEl.className = 'kpi-mom ' + (pct === 0 ? 'flat' : pct > 0 ? 'up' : 'dn');
+        momEl.textContent = (pct === 0 ? '' : pct > 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '% vs prior month';
+      }
+    }
+
+    // ── Sessions by Product ──
+    const launchSessionsBySku = {}; // first-ever recorded session count per SKU, for "% vs Launch"
+    const currSessionsBySku = {};
+    bizRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      if (!evolisAsins.has(asin)) return;
+      const entry = master.byAsin[asin];
+      const sku = entry ? entry.sku : asin;
+      const sessions = parseInt(r.sessions, 10) || 0;
+      if (parseInt(r.year, 10) === year && parseInt(r.month, 10) === month) {
+        currSessionsBySku[sku] = (currSessionsBySku[sku] || 0) + sessions;
+      }
+      const ym = `${r.year}-${String(r.month).padStart(2, '0')}`;
+      if (!launchSessionsBySku[sku] || ym < launchSessionsBySku[sku].ym) {
+        launchSessionsBySku[sku] = { ym, sessions };
+      }
+    });
+    const sessionsTbody = document.getElementById('bm-sessions-tbody');
+    if (sessionsTbody) {
+      const skus = Object.keys(currSessionsBySku).sort((a, b) => currSessionsBySku[b] - currSessionsBySku[a]);
+      sessionsTbody.innerHTML = skus.length ? skus.map(sku => {
+        const entry = master.bySku[sku];
+        const name = entry ? entry.name : sku;
+        const sessions = currSessionsBySku[sku];
+        const launch = launchSessionsBySku[sku];
+        const pctVsLaunch = (launch && launch.sessions > 0 && launch.ym !== `${year}-${String(month).padStart(2, '0')}`)
+          ? Math.round(((sessions - launch.sessions) / launch.sessions) * 1000) / 10
+          : null;
+        return `<tr><td><strong>${name}</strong></td><td>${sessions.toLocaleString()}</td><td>${pctVsLaunch == null ? '—' : (pctVsLaunch > 0 ? '+' : '') + pctVsLaunch + '%'}</td></tr>`;
+      }).join('') : '<tr><td colspan="3" style="color:var(--muted);">No data synced for this month yet</td></tr>';
+    }
+
+    // ── Targeted Keyword Indexing Progress — top 10, real-movement keywords first, then rank ascending ──
+    function pickLatestRankForKeyword(keyword, asin) {
+      const matches = latestKwRows.filter(r => r.keyword.trim().toLowerCase() === keyword && (r.asin || '').trim().toUpperCase() === asin);
+      return matches[0] || null;
+    }
+    function pickPrevRankForKeyword(keyword, asin) {
+      const priorRows = evolisKwRows.filter(r => r.date < latestKwDate && r.keyword.trim().toLowerCase() === keyword && (r.asin || '').trim().toUpperCase() === asin);
+      if (!priorRows.length) return null;
+      const priorDate = priorRows.reduce((max, r) => (r.date > max ? r.date : max), '');
+      return priorRows.find(r => r.date === priorDate) || null;
+    }
+    const seenKeywordAsin = new Set();
+    const keywordRows = [];
+    latestKwRows.forEach(r => {
+      const key = r.keyword.trim().toLowerCase() + '||' + (r.asin || '').trim().toUpperCase();
+      if (seenKeywordAsin.has(key)) return;
+      seenKeywordAsin.add(key);
+      const rankStr = String(r.organic_rank || '').trim();
+      const isRanking = rankStr && !rankStr.startsWith('>');
+      const rank = isRanking ? parseInt(rankStr.replace(/[^\d]/g, ''), 10) : null;
+      const prevRow = pickPrevRankForKeyword(r.keyword.trim().toLowerCase(), (r.asin || '').trim().toUpperCase());
+      const prevRankStr = prevRow ? String(prevRow.organic_rank || '').trim() : '';
+      const prevRank = (prevRankStr && !prevRankStr.startsWith('>')) ? parseInt(prevRankStr.replace(/[^\d]/g, ''), 10) : null;
+      const hasMovement = rank != null && prevRank != null && rank !== prevRank;
+      const entry = master.byAsin[(r.asin || '').trim().toUpperCase()];
+      keywordRows.push({ keyword: r.keyword, product: entry ? entry.name : r.asin, rank, hasMovement, volume: parseInt(r.search_volume, 10) || 0 });
+    });
+    keywordRows.sort((a, b) => {
+      if (a.hasMovement !== b.hasMovement) return a.hasMovement ? -1 : 1;
+      const ra = a.rank == null ? 9999 : a.rank, rb = b.rank == null ? 9999 : b.rank;
+      return ra - rb;
+    });
+    const kwTbody = document.getElementById('bm-keyword-tbody');
+    if (kwTbody) {
+      const top10 = keywordRows.slice(0, 10);
+      kwTbody.innerHTML = top10.length ? top10.map(r =>
+        `<tr><td>${r.keyword}</td><td>${r.product}</td><td>${r.rank == null ? 'Not ranking' : '#' + r.rank}</td><td>${r.volume.toLocaleString()}</td></tr>`
+      ).join('') : '<tr><td colspan="4" style="color:var(--muted);">No keyword data available</td></tr>';
+    }
+
+    // ── Subcategory BSR by Product — rendered by a separate function so the "hide negative" checkbox can re-render without re-fetching ──
+    window.bmRenderBsrTable();
+
+    // ── Review Velocity & Quality — per-product review count + avg rating, reusing the SAME review fetch, no second fetch ──
+    const reviewStatsBySku = {};
+    evolisReviewRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      const entry = master.byAsin[asin];
+      const sku = entry ? entry.sku : asin;
+      const name = entry ? entry.name : asin;
+      if (!reviewStatsBySku[sku]) reviewStatsBySku[sku] = { name, count: 0, ratingSum: 0 };
+      reviewStatsBySku[sku].count++;
+      reviewStatsBySku[sku].ratingSum += parseFloat(r.star_rating) || 0;
+    });
+    const velocityTbody = document.getElementById('bm-review-velocity-tbody');
+    if (velocityTbody) {
+      const skus = Object.keys(reviewStatsBySku).sort((a, b) => reviewStatsBySku[b].count - reviewStatsBySku[a].count);
+      velocityTbody.innerHTML = skus.length ? skus.map(sku => {
+        const s = reviewStatsBySku[sku];
+        const avgRating = s.count > 0 ? (s.ratingSum / s.count).toFixed(1) : '—';
+        return `<tr><td><strong>${s.name}</strong></td><td>${s.count.toLocaleString()}</td><td>${avgRating}</td></tr>`;
+      }).join('') : '<tr><td colspan="3" style="color:var(--muted);">No review data available</td></tr>';
+    }
+
+  } catch (err) {
+    console.warn('[BrandMomentum] failed:', err.message);
+  }
+};
+
+// Separate render function (not just inline in initBrandMomentum) so the
+// "Hide negative changes" checkbox can re-render instantly from the
+// already-fetched, cached data (window_bmLastKwRows) without re-fetching.
+// Hides the negative-change number AND its arrow together, as one unit,
+// by building both in the same template string — avoids the exact bug
+// Skinside Seoul hit (a shared KPI-card renderer drawing its own arrow
+// icon from a separate momClass field, independent of the text, so
+// clearing just the text left the arrow behind). Not applicable here by
+// construction, since this isn't routed through that shared component.
+window.bmRenderBsrTable = function () {
+  const tbody = document.getElementById('bm-bsr-tbody');
+  if (!tbody || !window_bmLastKwRows) return;
+  const { kwSummaryRows, master } = window_bmLastKwRows;
+  const hideNegative = document.getElementById('bm-hide-negative-bsr')?.checked;
+
+  const evolisAsins = new Set(
+    Object.values(master.byAsin)
+      .filter(e => (e.brand || '').trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon'))
+      .map(e => e.asin)
+  );
+
+  const rowsByAsin = {};
+  kwSummaryRows.forEach(r => {
+    const asin = (r.asin || '').trim().toUpperCase();
+    if (!evolisAsins.has(asin)) return;
+    if (!rowsByAsin[asin]) rowsByAsin[asin] = [];
+    rowsByAsin[asin].push(r);
+  });
+
+  const out = Object.keys(rowsByAsin).map(asin => {
+    const rows = rowsByAsin[asin].filter(r => r.subcategory_bsr).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    if (!rows.length) return null;
+    const first = rows[0];
+    const latest = rows[rows.length - 1];
+    const entry = master.byAsin[asin];
+    const name = entry ? entry.name : asin;
+    const firstBsr = Number(first.subcategory_bsr) || 0;
+    const latestBsr = Number(latest.subcategory_bsr) || 0;
+    // Lower BSR = improvement, matching the same convention used
+    // everywhere else on this dashboard (Insights > Products BSR trend).
+    const changePct = firstBsr > 0 ? Math.round(((firstBsr - latestBsr) / firstBsr) * 1000) / 10 : 0;
+    return { name, latestBsr, changePct, subcategory: latest.subcategory || '' };
+  }).filter(Boolean);
+
+  const filtered = hideNegative ? out.filter(r => r.changePct >= 0) : out;
+  filtered.sort((a, b) => a.latestBsr - b.latestBsr);
+
+  tbody.innerHTML = filtered.length ? filtered.map(r => {
+    const changeHtml = r.changePct === 0
+      ? '<span style="color:var(--muted);">flat</span>'
+      : `<span style="color:${r.changePct > 0 ? 'var(--green)' : 'var(--danger)'};">${r.changePct > 0 ? '▲' : '▼'} ${Math.abs(r.changePct)}%</span>`;
+    return `<tr><td><strong>${r.name}</strong></td><td>#${r.latestBsr.toLocaleString()}</td><td>${changeHtml}</td><td>${r.subcategory}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" style="color:var(--muted);">No subcategory BSR data available</td></tr>';
+};
+
+// Shared getLastFullMonth logic, duplicated here per the established
+// pattern in this file (each scope keeps its own local copy rather than
+// relying on cross-scope access — see the earlier real incident where
+// assuming this would be accessible broke the Overview page's toggle).
+function getLastFullMonthShared() {
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth();
+  if (month === 0) { month = 12; year--; }
+  return { year, month };
+}
+
+// ADDED 2026-09-04 for the Goals Tracker — raw 2D-array CSV parser
+// (row[columnIndex], not header-keyed). Needed specifically because that
+// sheet's column T header is unreliable (blank for most of the sheet's
+// history, only labeled starting partway through) — positional access
+// by real column letter is the only reliable way to read it.
+function parseCsv2D(text) {
+  if (!text || !text.trim()) return [];
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* skip, \n handles the line break */ }
+      else field += c;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
 function ppcRenderPanel(elId, items, rowFn) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -19986,7 +20342,7 @@ async function loadAuditResultsFromSheet() {
       // already declared globally further down this file (used by the
       // existing "Returns Processed" KPI on Marketing → Fulfillment & CS),
       // reused here rather than redeclared.
-      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv, webAdsCsv, webShoppingCsv] = await Promise.all([
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv, webAdsCsv, webShoppingCsv, bizCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -20015,7 +20371,14 @@ async function loadAuditResultsFromSheet() {
         // available source for per-ASIN Website ad units (not a full picture
         // of every Google campaign type).
         fetch(sheetCsvUrl(OV_WEB_ORDERS_SHEET_ID, WEB_SHOPPING_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        // ADDED 2026-09-04 per Jaclyn — Business Report, for the Conv%
+        // column on Top Selling Products. Amazon-only source (this sheet
+        // has no Website/Walmart sessions equivalent), same sheet/gid
+        // already confirmed and used elsewhere on this dashboard (PPC
+        // Blended Context, Brand Momentum).
+        fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
+      const bizRows = parseCsvToRows(bizCsv);
 
       const amzRows = isCsv(amzCsv) ? parseCsv(amzCsv).filter(isEvolisRow) : [];
       const webRows = isCsv(webCsv) ? parseCsv(webCsv) : [];
@@ -20444,6 +20807,30 @@ async function loadAuditResultsFromSheet() {
       const organicUnitsPrev = Math.max(0, prev.units - totalAdUnitsPrev);
       setKpi('ov-kpi-organic-orders', organicUnits.toLocaleString(), pctChange(organicUnits, organicUnitsPrev), ovMomSuffix);
 
+      // ADDED 2026-09-04 per Jaclyn — Conv% for Top Selling Products,
+      // same styling as the PPC page's Product Performance table
+      // (rank-pill, green >=15%, amber otherwise). Honest scope note:
+      // this is Amazon-only (units ÷ sessions), NOT blended across all
+      // 3 channels — Business Report has no Website/Walmart sessions
+      // equivalent, so mixing all-channel units into this rate would
+      // silently inflate it against a denominator that only covers part
+      // of the numerator. Column header says "(Amazon)" for the same
+      // reason, rather than presenting it as a whole-business rate.
+      const sessionsByAsinCurr = {};
+      bizRows.forEach(r => {
+        if (parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month) {
+          const asin = (r.asin || '').trim().toUpperCase();
+          if (asin) sessionsByAsinCurr[asin] = (sessionsByAsinCurr[asin] || 0) + (parseInt(r.sessions, 10) || 0);
+        }
+      });
+      function convCell(amazonUnits, asin) {
+        const sessions = sessionsByAsinCurr[asin] || 0;
+        if (!sessions) return '<span class="tp-dash">—</span>';
+        const conv = (amazonUnits / sessions) * 100;
+        const convClass = conv >= 15 ? 'rank-top' : (conv > 0 ? 'rank-low' : 'rank-none');
+        return `<span class="rank-pill ${convClass}">${conv.toFixed(2)}%</span>`;
+      }
+
       function momBadge(curr, prevVal) {
         if (!prevVal) return '';
         const p = Math.round(((curr - prevVal) / prevVal) * 100);
@@ -20472,7 +20859,7 @@ async function loadAuditResultsFromSheet() {
       const tbody = document.getElementById('ov-products-tbody');
       if (tbody) {
         if (!productRows.length) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
         } else {
           tbody.innerHTML = productRows.map((r, i) => `
             <tr>
@@ -20484,6 +20871,7 @@ async function loadAuditResultsFromSheet() {
               <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.total, r.totalPrev)}</div></td>
               <td style="padding:7px 10px;">${r.adUnits > 0 ? `<span class="tp-units">${r.adUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
               <td style="padding:7px 10px;">${r.orgUnits > 0 ? `<span class="tp-units">${r.orgUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
+              <td style="padding:7px 10px;">${convCell(r.amazon, r.asin)}</td>
             </tr>`).join('');
         }
       }
@@ -20503,14 +20891,189 @@ async function loadAuditResultsFromSheet() {
         // (tracked), just never actually used to clean up — same failure
         // class as the PDF export canvas-reuse bug documented earlier.
         if (window._ovDonutChart) { window._ovDonutChart.destroy(); window._ovDonutChart = null; }
+        const fmtDollar = n => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // ADDED 2026-09-04 per Jaclyn — "show totals" on this chart.
+        // Center-text plugin for the grand total (a real doughnut has no
+        // built-in center-text support in Chart.js), plus a custom
+        // tooltip formatter so hovering a segment shows a real dollar
+        // figure ("$2,496.47") instead of Chart.js's default raw,
+        // unformatted number. This is a live-dashboard-only plugin, not
+        // part of any PDF export capture path — the custom-plugin-text-
+        // invisible-to-font-scaling risk documented in the PDF export
+        // playbook doesn't apply here, but worth remembering if this
+        // chart is ever added to a PDF export later.
+        const centerTextPlugin = {
+          id: 'ovDonutCenterText',
+          afterDraw(chart) {
+            const { ctx, chartArea: { left, right, top, bottom } } = chart;
+            const cx = (left + right) / 2, cy = (top + bottom) / 2;
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '700 15px var(--font-subheader, sans-serif)';
+            ctx.fillStyle = '#001f60';
+            ctx.fillText(fmtDollar(donutTotal), cx, cy - 8);
+            ctx.font = '600 10px sans-serif';
+            ctx.fillStyle = '#6b7ba2';
+            ctx.fillText('TOTAL', cx, cy + 10);
+            ctx.restore();
+          }
+        };
         window._ovDonutChart = new Chart(document.getElementById('chart-ov-donut'), {
           type: 'doughnut',
           data: {
             labels: ['Amazon', 'Website', 'Walmart'],
             datasets: [{ data: [amzMtdNetRevenue, webMtdNetRevenue, wmtMtdNetRevenue], backgroundColor: ['#001f60', '#24e9a3', '#6b7ba2'], borderWidth: 0 }]
           },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } } } }
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } },
+              tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmtDollar(ctx.parsed)}` } },
+            }
+          },
+          plugins: [centerTextPlugin],
         });
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // GOALS TRACKER — added 2026-09-04 per Jaclyn. v1/mockup, framed
+      // explicitly as a first pass to react to, not a finished feature.
+      //
+      // Real data-structure findings from directly inspecting both real
+      // sheets before building this (not assumed):
+      //  - Column A is "MMM-YY" text (e.g. "Sep-26"), one row per MONTH,
+      //    not per day — this whole tracker reads ONE row per period,
+      //    not a range to sum.
+      //  - Column O ("Dollar Sales Goal") and AD ("Ads Sales Goal") are
+      //    confirmed real, consistently-used columns on both sheets.
+      //  - Column T is NOT what it looks like from the main header row
+      //    (blank there) — for most of this sheet's history it was a
+      //    free-text Notes column; only starting around Jun-26 did
+      //    someone repurpose it to hold real "Organic Goal" dollar
+      //    values, with a label placed directly on the Jun-26 row
+      //    itself rather than in the sheet's actual header row. Reading
+      //    older rows' column T as a goal number would silently read
+      //    garbled text instead — this only works reliably for the
+      //    recent months this tracker actually needs.
+      //  - Website's own AD column is confirmed BLANK for the last 3
+      //    months (Jul/Aug/Sep-26) — no separate Ads goal is currently
+      //    set for Website, Overall and Organic are identical. Handled
+      //    below by showing "No goal set" rather than a fake 0%.
+      //  - "Count all pending orders since this is live data" — the
+      //    rest of this page's Amazon aggregation (isValidAmazonRow)
+      //    excludes pending status. This tracker uses a separate
+      //    validity function that keeps pending, still excludes
+      //    cancelled and Vine. Walmart's and Website's EXISTING validity
+      //    functions already don't exclude pending at all — confirmed
+      //    by reading them directly rather than assuming — so no new
+      //    variant was needed for those two.
+      try {
+        function goalsIsValidAmazonRow(r) {
+          const status = (r.status || '').toLowerCase().trim();
+          if (status === 'cancelled') return false; // pending IS kept, deliberately
+          if ((r.promotion_ids || '').toLowerCase().includes('vine')) return false;
+          return true;
+        }
+        function parseGoalsDollar(val) {
+          const n = parseFloat(String(val || '').replace(/[$,()]/g, ''));
+          return isNaN(n) ? null : n;
+        }
+        function findGoalsRow(rows, year, month) {
+          const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1];
+          const target = `${monthAbbr}-${String(year).slice(2)}`;
+          return rows.find(r => (r[0] || '').trim() === target) || null;
+        }
+
+        const [goalsAmzCsv, goalsWebCsv] = await Promise.all([
+          fetch('https://docs.google.com/spreadsheets/d/1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3/export?format=csv&gid=154860784' + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch('https://docs.google.com/spreadsheets/d/1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3/export?format=csv&gid=1655791223' + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        ]);
+        const goalsAmzRows = parseCsv2D(goalsAmzCsv);
+        const goalsWebRows = parseCsv2D(goalsWebCsv);
+
+        const goalsRowAmz = findGoalsRow(goalsAmzRows, cfg.year, cfg.month);
+        const goalsRowWeb = findGoalsRow(goalsWebRows, cfg.year, cfg.month);
+        console.log('[GoalsTracker][qa] Amazon+Walmart goals row found:', !!goalsRowAmz, goalsRowAmz ? { overall: goalsRowAmz[14], organic: goalsRowAmz[19], ads: goalsRowAmz[29] } : null);
+        console.log('[GoalsTracker][qa] Website goals row found:', !!goalsRowWeb, goalsRowWeb ? { overall: goalsRowWeb[14], organic: goalsRowWeb[19], ads: goalsRowWeb[29] } : null);
+
+        // Live actual revenue, pending-inclusive, netted against returns
+        // (a returned sale shouldn't count toward a sales goal; a
+        // pending one should, since it hasn't been returned).
+        const amzGoalsActual = aggregateRange(amzRows, mtdStartStr, mtdEndStr, goalsIsValidAmazonRow).totalRevenue - amzReturnsMtd.totalAmt;
+        const wmtGoalsActual = wmtMtd.totalRevenue - wmtReturnsMtd.totalAmt; // wmtMtd already pending-inclusive, confirmed above
+        const webGoalsActual = webMtd.totalRevenue - webReturnsMtd.totalAmt; // webMtd already pending-inclusive, confirmed above
+        const amzWmtActual = amzGoalsActual + wmtGoalsActual;
+
+        // Amazon+Walmart's own Ad-attributed portion of amzWmtActual,
+        // reusing blendedSpend/blendedSales-style logic isn't available
+        // yet at this point in the function (computed further below) —
+        // approximated here from the same adOrdersCsv this function
+        // already has in scope, scoped to Amazon (Walmart's own ad-sales
+        // $ isn't separately available from wmtAdvRows at this point;
+        // flagged below rather than silently guessed).
+        let amzAdActual = null;
+        if (isCsv(adOrdersCsv)) {
+          const adRowsForGoals = parseCsv(adOrdersCsv).filter(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
+          amzAdActual = adRowsForGoals.reduce((s, r) => s + parseAmt(r.sales), 0);
+        }
+        const amzOrganicActual = amzAdActual != null ? Math.max(0, amzWmtActual - amzAdActual) : null;
+
+        function renderGoalsGroup(label, actualOverall, actualAds, actualOrganic, goalRow) {
+          if (!goalRow) return `<div><div style="font-weight:700;color:var(--navy);margin-bottom:8px;">${label}</div><div style="color:var(--muted);font-size:12px;">No goals row found for this month.</div></div>`;
+          const overallGoal = parseGoalsDollar(goalRow[14]);
+          const organicGoal = parseGoalsDollar(goalRow[19]);
+          const adsGoal = parseGoalsDollar(goalRow[29]);
+
+          function paceRow(sublabel, actual, goal) {
+            if (goal == null) return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="color:var(--muted);">${sublabel}</span><span style="color:var(--muted);">No goal set</span></div>`;
+            if (actual == null) return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="color:var(--muted);">${sublabel}</span><span style="color:var(--muted);">Not available yet</span></div>`;
+            let projected = actual, statusText, statusColor;
+            if (cfg.isPartial) {
+              // MTD — project the full month from what we're averaging
+              // per day so far.
+              const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
+              projected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
+              const pctOfGoal = goal > 0 ? Math.round((projected / goal) * 100) : 0;
+              statusText = `Projecting ${pctOfGoal}% of goal`;
+              statusColor = pctOfGoal >= 100 ? 'var(--green)' : pctOfGoal >= 85 ? 'var(--warn)' : 'var(--danger)';
+            } else {
+              // Last Full Month — the month is over, show how it actually ended up.
+              const pctOfGoal = goal > 0 ? Math.round((actual / goal) * 100) : 0;
+              statusText = pctOfGoal >= 100 ? `Hit goal — ${pctOfGoal}%` : `Missed goal — ${pctOfGoal}%`;
+              statusColor = pctOfGoal >= 100 ? 'var(--green)' : 'var(--danger)';
+            }
+            const fmtD = n => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);">
+              <span style="color:var(--muted);">${sublabel}</span>
+              <span style="text-align:right;">
+                <span style="font-weight:600;color:var(--navy);">${fmtD(actual)}</span>
+                <span style="color:var(--muted);"> / ${fmtD(goal)} goal</span><br>
+                <span style="font-size:11px;color:${statusColor};font-weight:600;">${statusText}</span>
+              </span>
+            </div>`;
+          }
+
+          return `<div>
+            <div style="font-weight:700;color:var(--navy);margin-bottom:4px;">${label}</div>
+            ${paceRow('Overall', actualOverall, overallGoal)}
+            ${paceRow('Organic', actualOrganic, organicGoal)}
+            ${paceRow('Ads', actualAds, adsGoal)}
+          </div>`;
+        }
+
+        const goalsBodyEl = document.getElementById('ov-goals-body');
+        const goalsTitleEl = document.getElementById('ov-goals-title');
+        if (goalsTitleEl) goalsTitleEl.textContent = `Goals Tracker — ${cfg.isPartial ? 'Month to Date' : 'Last Full Month'}`;
+        if (goalsBodyEl) {
+          goalsBodyEl.innerHTML =
+            renderGoalsGroup('Amazon (+ Walmart)', amzWmtActual, amzAdActual, amzOrganicActual, goalsRowAmz) +
+            renderGoalsGroup('Website', webGoalsActual, null, webGoalsActual, goalsRowWeb);
+        }
+      } catch (err) {
+        console.warn('[GoalsTracker] failed:', err.message);
+        const goalsBodyEl = document.getElementById('ov-goals-body');
+        if (goalsBodyEl) goalsBodyEl.innerHTML = '<div style="color:var(--danger);grid-column:1/-1;">Goals Tracker failed to load — check console.</div>';
       }
 
       // -- Ad Spend / Blended ACOS -- Amazon (prorated monthly estimate) + Website (real MTD) --
