@@ -82,10 +82,35 @@ const { sendCronFailureAlert }             = require('../_alerts');
 const MASTER_SHEET_ID  = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
 const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku, C=name, D=brand, E=price, F=date enrolled in Vine
 
-// clean-business-report-vine.js's own 13 columns, plus this cron's 5.
+// FIXED 2026-09-10 per Jaclyn — real, confirmed 3-way version of the
+// same bug already found once between sync-business-report-process.js
+// and clean-business-report-vine.js (LAST_UPDATED getting silently
+// dropped). This file's own HEADERS array was written against an OLDER
+// version of clean-business-report-vine.js's schema — this comment used
+// to say "clean-business-report-vine.js's own 13 columns," but that file
+// now has 16 (LAST_UPDATED added, plus CANCELLED_UNITS_DEDUCTED /
+// CANCELLED_SALES_DEDUCTED for a separate cancelled-order fix). This
+// file's replaceRows() call only ever writes fields THIS array lists —
+// meaning every run would have silently wiped all 3 of those columns
+// the moment this cron (which runs last in the chain) touched the
+// sheet. Fixed by inserting all 3 at their real positions, matching
+// clean-business-report-vine.js's actual current schema exactly, rather
+// than appending them somewhere convenient. This file's own 5 columns
+// (ORDERS_SHEET_UNITS onward) now correctly sit at the END, after
+// everything upstream — same rule as everywhere else in this codebase:
+// new columns append at the end, matching whatever the sheet actually
+// looks like at the time, not a stale memory of an earlier version.
+//
+// THREE FILES now write to this one sheet/tab, each with its own
+// independent HEADERS array and no shared constant between them —
+// worth treating this as a standing risk, not a one-time fix. Any
+// future schema change to ANY of the three needs a manual check against
+// the other two, or this exact bug recurs a fourth time.
 const HEADERS = [
   'MONTH', 'YEAR', 'ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE',
+  'LAST_UPDATED',
   'VINE_UNITS_DEDUCTED', 'VINE_SALES_DEDUCTED', 'UNITS_ORDERED_CLEAN', 'ORDERED_PRODUCT_SALES_CLEAN',
+  'CANCELLED_UNITS_DEDUCTED', 'CANCELLED_SALES_DEDUCTED',
   'ORDERS_SHEET_UNITS', 'ORDERS_SHEET_SALES_EST', 'UNEXPLAINED_UNITS_GAP', 'UNEXPLAINED_SALES_GAP_EST', 'FLAG',
 ];
 
