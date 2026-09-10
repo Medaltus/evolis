@@ -1396,16 +1396,21 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
          white cards around it — matches the same sand "featured content"
          treatment already established elsewhere in this design system
          (Executive Summary, Accomplished cards). Split into two separate
-         cards (Amazon+Walmart / Website) + sized up, also 2026-09-10. -->
+         cards (Amazon+Walmart / Website) + sized up, also 2026-09-10.
+         Section title moved outside/above the cards, per-card titles
+         simplified to just the channel name (no "Goals Tracker —"
+         prefix, no MTD/Last Full Month suffix — that's redundant with
+         the page's own period toggle right above this section). -->
+    <div class="card-title" style="font-size:16px;">Goal Tracker</div>
     <div class="two-col" style="margin-bottom:22px;align-items:stretch;">
       <div class="card" id="ov-goals-card-amz" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
-        <div class="card-title" id="ov-goals-title-amz" style="font-size:16px;">Goals Tracker — Amazon (+ Walmart) — Month to Date</div>
+        <div class="card-title" id="ov-goals-title-amz" style="font-size:16px;">Amazon + Walmart</div>
         <div id="ov-goals-body-amz" style="display:flex;gap:16px;">
           <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
         </div>
       </div>
       <div class="card" id="ov-goals-card-web" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
-        <div class="card-title" id="ov-goals-title-web" style="font-size:16px;">Goals Tracker — Website — Month to Date</div>
+        <div class="card-title" id="ov-goals-title-web" style="font-size:16px;">Website</div>
         <div id="ov-goals-body-web" style="display:flex;gap:16px;">
           <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
         </div>
@@ -21108,24 +21113,19 @@ async function loadAuditResultsFromSheet() {
                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:${statusColor};">${actualPct}%</div>
               </div>
               <div style="font-size:14px;color:var(--navy);font-weight:700;margin-top:8px;">${statusText}</div>
-              <div style="font-size:12px;color:var(--muted);">${fmtD(actual)} actual / ${fmtD(goal)} goal</div>
+              <div style="font-size:14px;color:var(--navy);font-weight:700;">Goal ${fmtD(goal)}</div>
             </div>`;
           }
 
           return `<div style="display:flex;gap:16px;flex:1;">
-            ${paceGauge('Total', actualOverall, overallGoal)}
-            ${paceGauge('Organic', actualOrganic, organicGoal)}
-            ${paceGauge('Ads', actualAds, adsGoal)}
+            ${paceGauge('Total Sales', actualOverall, overallGoal)}
+            ${paceGauge('Organic Sales', actualOrganic, organicGoal)}
+            ${paceGauge('Ads Sales', actualAds, adsGoal)}
           </div>`;
         }
 
         const goalsBodyAmzEl = document.getElementById('ov-goals-body-amz');
         const goalsBodyWebEl = document.getElementById('ov-goals-body-web');
-        const goalsTitleAmzEl = document.getElementById('ov-goals-title-amz');
-        const goalsTitleWebEl = document.getElementById('ov-goals-title-web');
-        const periodLabel = cfg.isPartial ? 'Month to Date' : 'Last Full Month';
-        if (goalsTitleAmzEl) goalsTitleAmzEl.textContent = `Goals Tracker — Amazon (+ Walmart) — ${periodLabel}`;
-        if (goalsTitleWebEl) goalsTitleWebEl.textContent = `Goals Tracker — Website — ${periodLabel}`;
         if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzAdActual, amzOrganicActual, goalsRowAmz);
         if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, null, webGoalsActual, goalsRowWeb);
       } catch (err) {
