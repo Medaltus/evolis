@@ -21068,14 +21068,14 @@ async function loadAuditResultsFromSheet() {
           function paceGauge(sublabel, actual, goal) {
             if (goal == null) {
               return `<div style="text-align:center;flex:1;">
-                <div style="font-size:15px;color:var(--muted);font-weight:600;margin-bottom:8px;">${sublabel}</div>
+                <div style="font-size:15px;color:var(--muted);font-weight:700;margin-bottom:8px;">${sublabel}</div>
                 ${buildGaugeSvg(0, 'var(--border)')}
                 <div style="font-size:13px;color:var(--muted);margin-top:8px;">No goal set</div>
               </div>`;
             }
             if (actual == null) {
               return `<div style="text-align:center;flex:1;">
-                <div style="font-size:15px;color:var(--muted);font-weight:600;margin-bottom:8px;">${sublabel}</div>
+                <div style="font-size:15px;color:var(--muted);font-weight:700;margin-bottom:8px;">${sublabel}</div>
                 ${buildGaugeSvg(0, 'var(--border)')}
                 <div style="font-size:13px;color:var(--muted);margin-top:8px;">Not available yet</div>
               </div>`;
@@ -21107,7 +21107,7 @@ async function loadAuditResultsFromSheet() {
               statusColor = actualPct >= 100 ? 'var(--green)' : 'var(--danger)';
             }
             return `<div style="text-align:center;flex:1;">
-              <div style="font-size:15px;color:var(--muted);font-weight:600;margin-bottom:8px;">${sublabel}</div>
+              <div style="font-size:15px;color:var(--muted);font-weight:700;margin-bottom:8px;">${sublabel}</div>
               <div style="position:relative;width:140px;height:140px;margin:0 auto;">
                 ${buildGaugeSvg(actualPct, statusColor)}
                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:${statusColor};">${actualPct}%</div>
@@ -21120,7 +21120,7 @@ async function loadAuditResultsFromSheet() {
           return `<div style="display:flex;gap:16px;flex:1;">
             ${paceGauge('Total Sales', actualOverall, overallGoal)}
             ${paceGauge('Organic Sales', actualOrganic, organicGoal)}
-            ${paceGauge('Ads Sales', actualAds, adsGoal)}
+            ${paceGauge('Ad Sales', actualAds, adsGoal)}
           </div>`;
         }
 
