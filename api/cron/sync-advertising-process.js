@@ -197,20 +197,30 @@ function identifyBrand(campaignName) {
 // run (not once per period) since "currently enabled" means the same thing
 // regardless of which month's row it ends up attached to.
 //
-// CONFIDENCE LEVELS — read before trusting these numbers:
-//   SP: reasonably confident — POST /sp/campaigns/list with a stateFilter
-//       body is a directly-documented v3 pattern.
-//   SB: BEST EFFORT, NOT CONFIRMED against a real response. Guessed from
-//       the same "POST .../list with stateFilter" convention used
-//       elsewhere in this API, following this file's own established
-//       practice of verifying a new endpoint with a one-off test-*.js
-//       script before trusting it in production (see CAMPAIGN_BRANDS'
-//       history, sdCampaigns, the 7-day attribution fix) — that
-//       verification hasn't happened yet for this specific endpoint.
-//   SD: BEST EFFORT, NOT CONFIRMED, same caveat as SB.
-// Each ad type's call is independently wrapped so a wrong guess for SB or
-// SD doesn't take down SP's (or the rest of the run's) numbers — same
-// "additive, non-blocking" philosophy already used for SD elsewhere here.
+// CONFIRMED 2026-09-04 against real évolis production output (see Vercel
+// logs, SEP 04 ~21:00 UTC run):
+//   SP: worked first try — POST /sp/campaigns/list, stateFilter.include
+//       ['ENABLED'], maxResults:200, Accept=Content-Type=the versioned
+//       spCampaign.v3 type, nextToken pagination. 81 campaigns fetched.
+//   SB: FAILED — 400 INVALID_ARGUMENT, a rangeError on maxResults:200.
+//       Fixed: capped at 100 (matching Amazon's own documented examples,
+//       which only ever show 50/100, never 200) and Accept corrected to
+//       plain application/json (Content-Type stays the versioned
+//       sbcampaignresource.v4 type) — SB's convention genuinely differs
+//       from SP's here, confirmed against Amazon's own curl examples.
+//   SD: FAILED — 405 "No resource method found for POST" — this endpoint
+//       doesn't accept POST at all, so the whole /sd/campaigns/list guess
+//       was wrong, not just a field value. Rewritten below: it's a GET to
+//       /sd/campaigns (no /list suffix) with query-string params
+//       (stateFilter, startIndex/count — no nextToken), returns a bare
+//       JSON array (not wrapped in {campaigns:[...]}), and per Amazon's
+//       own example response, state values are lowercase ("enabled"),
+//       unlike SP/SB's uppercase "ENABLED" — confirmed against Amazon's
+//       own documented example request/response for this endpoint.
+// Each ad type's call is still independently wrapped so a future surprise
+// on any one of them can't take the others down — same "additive,
+// non-blocking" philosophy already used for SD's reporting call elsewhere
+// in this file.
 async function getEnabledCampaignCountsByBrand(token, profileId) {
   const counts = {}; // tabName -> { sp: n, sb: n, sd: n }
   const bump = (tabName, key) => {
@@ -220,7 +230,8 @@ async function getEnabledCampaignCountsByBrand(token, profileId) {
 
   try {
     const spCampaigns = await listAllPages(nextToken => listCampaignsPage(
-      '/sp/campaigns/list', token, profileId, 'application/vnd.spCampaign.v3+json', nextToken));
+      '/sp/campaigns/list', token, profileId,
+      'application/vnd.spCampaign.v3+json', 'application/vnd.spCampaign.v3+json', 200, nextToken));
     spCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sp'); });
     console.log(`[sync-advertising-process] SP enabled campaigns fetched: ${spCampaigns.length}`);
   } catch (err) {
@@ -229,36 +240,38 @@ async function getEnabledCampaignCountsByBrand(token, profileId) {
 
   try {
     const sbCampaigns = await listAllPages(nextToken => listCampaignsPage(
-      '/sb/v4/campaigns/list', token, profileId, 'application/vnd.sbcampaignresource.v4+json', nextToken));
+      '/sb/v4/campaigns/list', token, profileId,
+      'application/vnd.sbcampaignresource.v4+json', 'application/json', 100, nextToken));
     sbCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sb'); });
     console.log(`[sync-advertising-process] SB enabled campaigns fetched: ${sbCampaigns.length}`);
   } catch (err) {
-    console.warn('[sync-advertising-process] SB campaign count fetch failed — endpoint shape not yet confirmed, see header comment (sb_campaigns_running blank this run):', err.message);
+    console.warn('[sync-advertising-process] SB campaign count fetch failed (sb_campaigns_running blank this run):', err.message);
   }
 
   try {
-    const sdCampaigns = await listAllPages(nextToken => listCampaignsPage(
-      '/sd/campaigns/list', token, profileId, 'application/vnd.sdcampaign.v3+json', nextToken));
+    const sdCampaigns = await listAllSdCampaigns(token, profileId);
     sdCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sd'); });
     console.log(`[sync-advertising-process] SD enabled campaigns fetched: ${sdCampaigns.length}`);
   } catch (err) {
-    console.warn('[sync-advertising-process] SD campaign count fetch failed — endpoint shape not yet confirmed, see header comment (sd_campaigns_running blank this run):', err.message);
+    console.warn('[sync-advertising-process] SD campaign count fetch failed (sd_campaigns_running blank this run):', err.message);
   }
 
   return counts;
 }
 
-async function listCampaignsPage(path, token, profileId, contentType, nextToken) {
+// SP/SB — both POST .../list with a stateFilter.include body and nextToken
+// pagination, differing only in content-type/accept and max page size.
+async function listCampaignsPage(path, token, profileId, contentType, acceptType, maxResults, nextToken) {
   const resp = await adRequestJson('POST', path, token, profileId,
-    { stateFilter: { include: ['ENABLED'] }, maxResults: 200, ...(nextToken ? { nextToken } : {}) },
-    contentType);
+    { stateFilter: { include: ['ENABLED'] }, maxResults, ...(nextToken ? { nextToken } : {}) },
+    contentType, acceptType);
   return { items: resp.campaigns || [], nextToken: resp.nextToken || null };
 }
 
-// Generic nextToken-paginated collector, capped at 20 pages (4000
-// campaigns) as a sanity ceiling — no account here should have anywhere
-// near that many enabled campaigns of one type, so hitting the cap is
-// itself a sign the response shape isn't what's expected, not real
+// Generic nextToken-paginated collector for SP/SB, capped at 20 pages
+// (4000+ campaigns) as a sanity ceiling — no account here should have
+// anywhere near that many enabled campaigns of one type, so hitting the
+// cap is itself a sign the response shape isn't what's expected, not real
 // account size.
 async function listAllPages(fetchPage) {
   const all = [];
@@ -272,21 +285,45 @@ async function listAllPages(fetchPage) {
   return all;
 }
 
-// Same shape as adRequest below, but with a caller-supplied versioned
-// content-type — the campaign listing endpoints use per-resource
-// versioned content-types (application/vnd.spCampaign.v3+json etc.), not
-// the plain application/json the reporting endpoints use. Also rejects on
-// a non-2xx status (adRequest doesn't) since these responses are read
-// directly rather than polled, so a bad status needs to surface as an
-// error immediately rather than being silently parsed as if it succeeded.
-function adRequestJson(method, path, token, profileId, body, contentType) {
+// SD — GET /sd/campaigns, query-string params, startIndex/count pagination
+// (no nextToken), bare-array response. Reuses the plain adRequest() helper
+// below (same one polling/discoverProfileId already use) rather than
+// adRequestJson, since this is a query-string GET with no request body at
+// all — nothing here needs a request Content-Type, and adRequest already
+// defaults Accept-less requests to plain JSON parsing, matching what
+// Amazon's own documented example for this endpoint expects.
+async function listAllSdCampaigns(token, profileId) {
+  const all = [];
+  const count = 100;
+  let startIndex = 0;
+  for (let i = 0; i < 20; i++) {
+    const page = await adRequest('GET', `/sd/campaigns?stateFilter=enabled&startIndex=${startIndex}&count=${count}`, token, profileId, null);
+    const items = Array.isArray(page) ? page : (page.campaigns || []);
+    all.push(...items);
+    if (items.length < count) break; // fewer than requested = last page
+    startIndex += count;
+  }
+  return all;
+}
+
+// Same shape as adRequest below, but with caller-supplied content-type/
+// accept headers — the SP/SB campaign listing endpoints use per-resource
+// versioned content-types (application/vnd.spCampaign.v3+json etc.) that
+// differ from the plain application/json the reporting endpoints use, and
+// (confirmed 2026-09-04) SB additionally wants a DIFFERENT Accept than its
+// own Content-Type, unlike SP where both match — see header comment above.
+// Also rejects on a non-2xx status (adRequest doesn't) since these
+// responses are read directly rather than polled, so a bad status needs
+// to surface as an error immediately rather than being silently parsed as
+// if it succeeded.
+function adRequestJson(method, path, token, profileId, body, contentType, acceptType) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : '';
     const headers = {
       'Authorization':                   `Bearer ${token}`,
       'Amazon-Advertising-API-ClientId': process.env.SP_AD_CLIENT_ID,
       'Content-Type':                    contentType,
-      'Accept':                          contentType,
+      'Accept':                          acceptType,
     };
     if (profileId) headers['Amazon-Advertising-API-Scope'] = String(profileId);
     if (bodyStr)   headers['Content-Length'] = Buffer.byteLength(bodyStr);
