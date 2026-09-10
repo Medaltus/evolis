@@ -1391,8 +1391,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
          explicitly framed as v1 — see the [qa] console notes throughout
          the JS for the real data-structure quirks found while building
          this (mid-sheet column relabeling, Website's currently-blank
-         Ads goal for the last 3 months). -->
-    <div class="card" id="ov-goals-card" style="margin-bottom:22px;">
+         Ads goal for the last 3 months). Sand background + navy accent
+         border added 2026-09-10 per Jaclyn, to stand out from the plain
+         white cards around it — matches the same sand "featured content"
+         treatment already established elsewhere in this design system
+         (Executive Summary, Accomplished cards). -->
+    <div class="card" id="ov-goals-card" style="margin-bottom:22px;background:var(--sand);border:none;border-top:3px solid var(--navy);">
       <div class="card-title" id="ov-goals-title">Goals Tracker — Month to Date</div>
       <div id="ov-goals-body" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
         <div style="color:var(--muted);grid-column:1/-1;text-align:center;padding:20px;">Loading…</div>
@@ -21019,46 +21023,80 @@ async function loadAuditResultsFromSheet() {
         }
         const amzOrganicActual = amzAdActual != null ? Math.max(0, amzWmtActual - amzAdActual) : null;
 
+        // Progress ring — plain SVG, deliberately not Chart.js. A single-
+        // value gauge like this doesn't need a charting library, and SVG
+        // sidesteps the whole canvas-reuse bug class entirely (already
+        // hit twice on this exact page — see the donut/trend chart fixes
+        // above) since it's DOM-based, not canvas-based, and just
+        // re-renders as a fresh string on every toggle click with
+        // nothing to destroy first.
+        function buildGaugeSvg(pct, colorHex) {
+          const size = 96, stroke = 10, r = (size - stroke) / 2, c = size / 2;
+          const circumference = 2 * Math.PI * r;
+          const clamped = Math.max(0, Math.min(100, pct));
+          const dashOffset = circumference * (1 - clamped / 100);
+          return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg);">
+            <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${stroke}"/>
+            <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${colorHex}" stroke-width="${stroke}"
+              stroke-dasharray="${circumference}" stroke-dashoffset="${dashOffset}" stroke-linecap="butt"/>
+          </svg>`;
+        }
+
         function renderGoalsGroup(label, actualOverall, actualAds, actualOrganic, goalRow) {
           if (!goalRow) return `<div><div style="font-weight:700;color:var(--navy);margin-bottom:8px;">${label}</div><div style="color:var(--muted);font-size:12px;">No goals row found for this month.</div></div>`;
           const overallGoal = parseGoalsDollar(goalRow[14]);
           const organicGoal = parseGoalsDollar(goalRow[19]);
           const adsGoal = parseGoalsDollar(goalRow[29]);
+          const fmtD = n => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-          function paceRow(sublabel, actual, goal) {
-            if (goal == null) return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="color:var(--muted);">${sublabel}</span><span style="color:var(--muted);">No goal set</span></div>`;
-            if (actual == null) return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);"><span style="color:var(--muted);">${sublabel}</span><span style="color:var(--muted);">Not available yet</span></div>`;
-            let projected = actual, statusText, statusColor;
+          function paceGauge(sublabel, actual, goal) {
+            if (goal == null) {
+              return `<div style="text-align:center;flex:1;">
+                <div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px;">${sublabel}</div>
+                ${buildGaugeSvg(0, 'var(--border)')}
+                <div style="font-size:11px;color:var(--muted);margin-top:6px;">No goal set</div>
+              </div>`;
+            }
+            if (actual == null) {
+              return `<div style="text-align:center;flex:1;">
+                <div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px;">${sublabel}</div>
+                ${buildGaugeSvg(0, 'var(--border)')}
+                <div style="font-size:11px;color:var(--muted);margin-top:6px;">Not available yet</div>
+              </div>`;
+            }
+            let projected = actual, pctOfGoal, statusText, statusColor;
             if (cfg.isPartial) {
               // MTD — project the full month from what we're averaging
               // per day so far.
               const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
               projected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
-              const pctOfGoal = goal > 0 ? Math.round((projected / goal) * 100) : 0;
-              statusText = `Projecting ${pctOfGoal}% of goal`;
+              pctOfGoal = goal > 0 ? Math.round((projected / goal) * 100) : 0;
+              statusText = `Projecting ${fmtD(projected)}`;
               statusColor = pctOfGoal >= 100 ? 'var(--green)' : pctOfGoal >= 85 ? 'var(--warn)' : 'var(--danger)';
             } else {
               // Last Full Month — the month is over, show how it actually ended up.
-              const pctOfGoal = goal > 0 ? Math.round((actual / goal) * 100) : 0;
-              statusText = pctOfGoal >= 100 ? `Hit goal — ${pctOfGoal}%` : `Missed goal — ${pctOfGoal}%`;
+              pctOfGoal = goal > 0 ? Math.round((actual / goal) * 100) : 0;
+              statusText = pctOfGoal >= 100 ? 'Hit goal' : 'Missed goal';
               statusColor = pctOfGoal >= 100 ? 'var(--green)' : 'var(--danger)';
             }
-            const fmtD = n => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);">
-              <span style="color:var(--muted);">${sublabel}</span>
-              <span style="text-align:right;">
-                <span style="font-weight:600;color:var(--navy);">${fmtD(actual)}</span>
-                <span style="color:var(--muted);"> / ${fmtD(goal)} goal</span><br>
-                <span style="font-size:11px;color:${statusColor};font-weight:600;">${statusText}</span>
-              </span>
+            return `<div style="text-align:center;flex:1;">
+              <div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px;">${sublabel}</div>
+              <div style="position:relative;width:96px;height:96px;margin:0 auto;">
+                ${buildGaugeSvg(pctOfGoal, statusColor)}
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:${statusColor};">${pctOfGoal}%</div>
+              </div>
+              <div style="font-size:11px;color:${statusColor};font-weight:600;margin-top:6px;">${statusText}</div>
+              <div style="font-size:10px;color:var(--muted);">${fmtD(actual)} actual / ${fmtD(goal)} goal</div>
             </div>`;
           }
 
           return `<div>
-            <div style="font-weight:700;color:var(--navy);margin-bottom:4px;">${label}</div>
-            ${paceRow('Overall', actualOverall, overallGoal)}
-            ${paceRow('Organic', actualOrganic, organicGoal)}
-            ${paceRow('Ads', actualAds, adsGoal)}
+            <div style="font-weight:700;color:var(--navy);margin-bottom:10px;">${label}</div>
+            <div style="display:flex;gap:8px;">
+              ${paceGauge('Total', actualOverall, overallGoal)}
+              ${paceGauge('Organic', actualOrganic, organicGoal)}
+              ${paceGauge('Ads', actualAds, adsGoal)}
+            </div>
           </div>`;
         }
 
