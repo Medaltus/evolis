@@ -21064,28 +21064,39 @@ async function loadAuditResultsFromSheet() {
                 <div style="font-size:11px;color:var(--muted);margin-top:6px;">Not available yet</div>
               </div>`;
             }
-            let projected = actual, pctOfGoal, statusText, statusColor;
+            // FIXED 2026-09-10 per Jaclyn — the ring's fill and center
+            // number now reflect ACTUAL progress against the goal
+            // (actual ÷ goal), which is what "the circles should be
+            // showing actual versus goal" means — real progress so far,
+            // not a full/maxed-out ring that hides how far along we
+            // actually are. The projection is used ONLY to decide the
+            // ring's color (on-pace vs not), completely separate from
+            // what the ring is filled to. Simplified to a clean binary
+            // green/red for both periods, matching "green if projecting
+            // to meet goal and red if projecting to miss goal" exactly
+            // — no amber middle state.
+            const actualPct = goal > 0 ? Math.round((actual / goal) * 100) : 0;
+            let projected = actual, statusText, statusColor;
             if (cfg.isPartial) {
               // MTD — project the full month from what we're averaging
-              // per day so far.
+              // per day so far, to decide the color only.
               const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
               projected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
-              pctOfGoal = goal > 0 ? Math.round((projected / goal) * 100) : 0;
+              const projectedPct = goal > 0 ? Math.round((projected / goal) * 100) : 0;
               statusText = `Projecting ${fmtD(projected)}`;
-              statusColor = pctOfGoal >= 100 ? 'var(--green)' : pctOfGoal >= 85 ? 'var(--warn)' : 'var(--danger)';
+              statusColor = projectedPct >= 100 ? 'var(--green)' : 'var(--danger)';
             } else {
-              // Last Full Month — the month is over, show how it actually ended up.
-              pctOfGoal = goal > 0 ? Math.round((actual / goal) * 100) : 0;
-              statusText = pctOfGoal >= 100 ? 'Hit goal' : 'Missed goal';
-              statusColor = pctOfGoal >= 100 ? 'var(--green)' : 'var(--danger)';
+              // Last Full Month — the month is over, actual IS final, no separate projection.
+              statusText = actualPct >= 100 ? 'Hit goal' : 'Missed goal';
+              statusColor = actualPct >= 100 ? 'var(--green)' : 'var(--danger)';
             }
             return `<div style="text-align:center;flex:1;">
               <div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px;">${sublabel}</div>
               <div style="position:relative;width:96px;height:96px;margin:0 auto;">
-                ${buildGaugeSvg(pctOfGoal, statusColor)}
-                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:${statusColor};">${pctOfGoal}%</div>
+                ${buildGaugeSvg(actualPct, statusColor)}
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:${statusColor};">${actualPct}%</div>
               </div>
-              <div style="font-size:11px;color:${statusColor};font-weight:600;margin-top:6px;">${statusText}</div>
+              <div style="font-size:11px;color:var(--navy);font-weight:700;margin-top:6px;">${statusText}</div>
               <div style="font-size:10px;color:var(--muted);">${fmtD(actual)} actual / ${fmtD(goal)} goal</div>
             </div>`;
           }
