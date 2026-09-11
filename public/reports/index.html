@@ -1438,6 +1438,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="card-title" id="ov-ad-type-title">Ad Spend by Type — Month to Date</div>
       <div style="position:relative;height:200px;"><canvas id="chart-ov-ad-type"></canvas></div>
       <div class="ppc-note" id="ov-ad-type-note" style="margin-top:10px;"></div>
+      <div style="overflow-x:auto;margin-top:14px;">
+        <table class="data-table">
+          <thead><tr><th>Ad Type</th><th># Campaigns</th><th>ACOS</th><th>Spend</th><th>Sales</th></tr></thead>
+          <tbody id="ov-ad-type-tbody"><tr><td colspan="5" style="color:var(--muted);">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card" style="margin-bottom:20px;">
@@ -4358,6 +4364,12 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         <div class="ppc-card-title" id="ppc-ad-type-title">Ad Spend by Type — Last Month</div>
         <div style="position:relative;height:200px;"><canvas id="chart-ppc-ad-type"></canvas></div>
         <div class="ppc-note" id="ppc-ad-type-note" style="margin-top:10px;"></div>
+        <div style="overflow-x:auto;margin-top:14px;">
+          <table class="data-table">
+            <thead><tr><th>Ad Type</th><th># Campaigns</th><th>ACOS</th><th>Spend</th><th>Sales</th></tr></thead>
+            <tbody id="ppc-ad-type-tbody"><tr><td colspan="5" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="ppc-card">
@@ -15431,6 +15443,31 @@ async function ppcLoadBlendedPerformance(periodKey) {
           },
         });
       }
+
+      // ADDED 2026-09-11 per Jaclyn — same per-type breakdown table as
+      // the Overview page (# campaigns, ACOS, spend, sales). amzAd is
+      // already the correct row for the current period, same as the
+      // chart above uses.
+      const ppcAdTypeTbody = document.getElementById('ppc-ad-type-tbody');
+      if (ppcAdTypeTbody) {
+        const fmtD = n => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const rows = [
+          { name: 'Sponsored Products', campaigns: amzAd.sp_campaigns_running, acos: amzAd.sp_acos, spend: spSpend, sales: numOr0(amzAd.sp_sales) },
+          { name: 'Sponsored Brands',   campaigns: amzAd.sb_campaigns_running, acos: amzAd.sb_acos, spend: sbSpend, sales: numOr0(amzAd.sb_sales) },
+          { name: 'Sponsored Display',  campaigns: amzAd.sd_campaigns_running, acos: amzAd.sd_acos, spend: sdSpend, sales: numOr0(amzAd.sd_sales) },
+        ];
+        ppcAdTypeTbody.innerHTML = rows.map(r => {
+          const campaignCount = parseInt(r.campaigns, 10) || 0;
+          const acosVal = numOr0(r.acos);
+          return `<tr>
+            <td>${r.name}</td>
+            <td>${campaignCount}</td>
+            <td>${acosVal > 0 ? acosVal.toFixed(1) + '%' : '<span class="tp-dash">—</span>'}</td>
+            <td>${fmtD(r.spend)}</td>
+            <td>${fmtD(r.sales)}</td>
+          </tr>`;
+        }).join('');
+      }
     } catch (err) {
       console.warn('[PPC AdTypeChart] failed:', err.message);
     }
@@ -21092,6 +21129,35 @@ async function loadAuditResultsFromSheet() {
         } else {
           const cardEl = document.getElementById('ov-ad-type-card');
           if (cardEl && adTypeNoteEl) adTypeNoteEl.textContent = 'No ad spend recorded for this period yet.';
+        }
+
+        // ADDED 2026-09-11 per Jaclyn — per-type breakdown table below
+        // the chart (# campaigns, ACOS, spend, sales), so a 100%/0%/0%
+        // period still shows something useful (0 campaigns running for
+        // SB/SD explicitly, not just an empty chart segment). All 3 rows
+        // always shown, even at zero — real column names confirmed
+        // directly from the actual sheet, not assumed.
+        const adTypeTbody = document.getElementById('ov-ad-type-tbody');
+        if (adTypeTbody && adRow) {
+          const fmtD = n => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const rows = [
+            { name: 'Sponsored Products', campaigns: adRow.sp_campaigns_running, acos: adRow.sp_acos, spend: spSpend, sales: numOr0(adRow.sp_sales) },
+            { name: 'Sponsored Brands',   campaigns: adRow.sb_campaigns_running, acos: adRow.sb_acos, spend: sbSpend, sales: numOr0(adRow.sb_sales) },
+            { name: 'Sponsored Display',  campaigns: adRow.sd_campaigns_running, acos: adRow.sd_acos, spend: sdSpend, sales: numOr0(adRow.sd_sales) },
+          ];
+          adTypeTbody.innerHTML = rows.map(r => {
+            const campaignCount = parseInt(r.campaigns, 10) || 0;
+            const acosVal = numOr0(r.acos);
+            return `<tr>
+              <td>${r.name}</td>
+              <td>${campaignCount}</td>
+              <td>${acosVal > 0 ? acosVal.toFixed(1) + '%' : '<span class="tp-dash">—</span>'}</td>
+              <td>${fmtD(r.spend)}</td>
+              <td>${fmtD(r.sales)}</td>
+            </tr>`;
+          }).join('');
+        } else if (adTypeTbody) {
+          adTypeTbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);">No data for this period.</td></tr>';
         }
       } catch (err) {
         console.warn('[AdTypeChart] failed:', err.message);
