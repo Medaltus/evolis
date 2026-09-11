@@ -1370,6 +1370,37 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="period-pills" id="ov-period-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
     </div>
 
+    <!-- Goals Tracker — added 2026-09-04 per Jaclyn. First pass/mockup,
+         explicitly framed as v1 — see the [qa] console notes throughout
+         the JS for the real data-structure quirks found while building
+         this (mid-sheet column relabeling, Website's currently-blank
+         Ads goal for the last 3 months). Sand background + navy accent
+         border added 2026-09-10 per Jaclyn, to stand out from the plain
+         white cards around it — matches the same sand "featured content"
+         treatment already established elsewhere in this design system
+         (Executive Summary, Accomplished cards). Split into two separate
+         cards (Amazon+Walmart / Website) + sized up, also 2026-09-10.
+         Section title moved outside/above the cards, per-card titles
+         simplified to just the channel name (no "Goals Tracker —"
+         prefix, no MTD/Last Full Month suffix — that's redundant with
+         the page's own period toggle right above this section). Moved
+         above the KPI rows, 2026-09-11 per Jaclyn. -->
+    <div class="card-title" style="font-size:16px;">Goal Tracker</div>
+    <div class="two-col" style="margin-bottom:22px;align-items:stretch;">
+      <div class="card" id="ov-goals-card-amz" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
+        <div class="card-title" id="ov-goals-title-amz" style="font-size:16px;">Amazon + Walmart</div>
+        <div id="ov-goals-body-amz" style="display:flex;gap:16px;">
+          <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
+        </div>
+      </div>
+      <div class="card" id="ov-goals-card-web" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
+        <div class="card-title" id="ov-goals-title-web" style="font-size:16px;">Website</div>
+        <div id="ov-goals-body-web" style="display:flex;gap:16px;">
+          <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
+        </div>
+      </div>
+    </div>
+
     <div class="kpi-row">
       <div class="kpi-card" id="ov-kpi-total-sales"><div class="kpi-label">Total Sales</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-units"><div class="kpi-label">Total Units Sold</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
@@ -1385,36 +1416,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="kpi-card" id="ov-kpi-ad-orders"><div class="kpi-label">MTD Ad-Driven Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-ad-sales"><div class="kpi-label">MTD Ad Sales</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-pending"><div class="kpi-label">Pending Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
-    </div>
-
-    <!-- Goals Tracker — added 2026-09-04 per Jaclyn. First pass/mockup,
-         explicitly framed as v1 — see the [qa] console notes throughout
-         the JS for the real data-structure quirks found while building
-         this (mid-sheet column relabeling, Website's currently-blank
-         Ads goal for the last 3 months). Sand background + navy accent
-         border added 2026-09-10 per Jaclyn, to stand out from the plain
-         white cards around it — matches the same sand "featured content"
-         treatment already established elsewhere in this design system
-         (Executive Summary, Accomplished cards). Split into two separate
-         cards (Amazon+Walmart / Website) + sized up, also 2026-09-10.
-         Section title moved outside/above the cards, per-card titles
-         simplified to just the channel name (no "Goals Tracker —"
-         prefix, no MTD/Last Full Month suffix — that's redundant with
-         the page's own period toggle right above this section). -->
-    <div class="card-title" style="font-size:16px;">Goal Tracker</div>
-    <div class="two-col" style="margin-bottom:22px;align-items:stretch;">
-      <div class="card" id="ov-goals-card-amz" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
-        <div class="card-title" id="ov-goals-title-amz" style="font-size:16px;">Amazon + Walmart</div>
-        <div id="ov-goals-body-amz" style="display:flex;gap:16px;">
-          <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
-        </div>
-      </div>
-      <div class="card" id="ov-goals-card-web" style="margin-top:0;background:var(--sand);border:none;border-top:3px solid var(--navy);">
-        <div class="card-title" id="ov-goals-title-web" style="font-size:16px;">Website</div>
-        <div id="ov-goals-body-web" style="display:flex;gap:16px;">
-          <div style="color:var(--muted);flex:1;text-align:center;padding:20px;">Loading…</div>
-        </div>
-      </div>
     </div>
 
     <div class="two-col" style="margin-bottom:22px;">
@@ -1433,16 +1434,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
          split, confirmed by reading the real Ad Orders Cache sheet
          directly before building this) — same breakdown reused
          identically on the PPC page, since there's no per-product
-         version to build instead. -->
+         version to build instead. Chart and table placed side by side,
+         2026-09-11 per Jaclyn — the screen is wide enough that stacking
+         them wasted horizontal space. -->
     <div class="card" id="ov-ad-type-card" style="margin-bottom:20px;">
       <div class="card-title" id="ov-ad-type-title">Ad Spend by Type — Month to Date</div>
-      <div style="position:relative;height:200px;"><canvas id="chart-ov-ad-type"></canvas></div>
-      <div class="ppc-note" id="ov-ad-type-note" style="margin-top:10px;"></div>
-      <div style="overflow-x:auto;margin-top:14px;">
-        <table class="data-table">
-          <thead><tr><th>Ad Type</th><th># Campaigns</th><th>ACOS</th><th>Spend</th><th>Sales</th></tr></thead>
-          <tbody id="ov-ad-type-tbody"><tr><td colspan="5" style="color:var(--muted);">Loading…</td></tr></tbody>
-        </table>
+      <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:0 0 280px;">
+          <div style="position:relative;height:200px;"><canvas id="chart-ov-ad-type"></canvas></div>
+          <div class="ppc-note" id="ov-ad-type-note" style="margin-top:10px;"></div>
+        </div>
+        <div style="flex:1;min-width:320px;overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>Ad Type</th><th># Campaigns</th><th>ACOS</th><th>Spend</th><th>Sales</th></tr></thead>
+            <tbody id="ov-ad-type-tbody"><tr><td colspan="5" style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
