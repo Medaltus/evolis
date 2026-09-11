@@ -20374,6 +20374,16 @@ async function loadAuditResultsFromSheet() {
     // campaigns only). Added 2026-08-05 per Jaclyn.
     const WEB_ADS_GID = '219707263';
     const WEB_SHOPPING_GID = '1841786277';
+    // FIXED 2026-09-11 per Jaclyn — confirmed live via console:
+    // "ReferenceError: AD_SUMMARY_SHEET_ID is not defined". This exact
+    // constant already exists twice elsewhere in this file, but both are
+    // scoped inside OTHER, separate functions (Amazon/Website Sales
+    // pages), and a third copy sits in an entirely different <script>
+    // block altogether — none of which this function can reach. Same
+    // mistake, same fix, as the earlier getLastFullMonth incident:
+    // declared locally here instead of assuming cross-scope access.
+    const AD_SUMMARY_SHEET_ID = '13cN301QZxkEGy6-8LfdzB8zmsHhUKwZqz6lsXKUJcnI'; // advertising cache
+    const AD_SUMMARY_GID      = '2032256212';                                     // Évolis tab
 
     // `now` stays literal wall-clock "today" — still needed below for
     // things that are genuinely period-independent (the trailing-6-months
