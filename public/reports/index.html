@@ -1428,6 +1428,18 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
     </div>
 
+    <!-- Ad Spend by Type (SP/SB/SD) — added 2026-09-11 per Jaclyn. Brand-
+         wide only (Amazon's ASIN-level ad orders data has no SP/SB/SD
+         split, confirmed by reading the real Ad Orders Cache sheet
+         directly before building this) — same breakdown reused
+         identically on the PPC page, since there's no per-product
+         version to build instead. -->
+    <div class="card" id="ov-ad-type-card" style="margin-bottom:20px;">
+      <div class="card-title" id="ov-ad-type-title">Ad Spend by Type — Month to Date</div>
+      <div style="position:relative;height:200px;"><canvas id="chart-ov-ad-type"></canvas></div>
+      <div class="ppc-note" id="ov-ad-type-note" style="margin-top:10px;"></div>
+    </div>
+
     <div class="card" style="margin-bottom:20px;">
       <div class="card-title">Top Selling Products <span style="font-weight:400;color:var(--muted);">(by Units, all channels, Month to Date)</span></div>
       <table class="tp-table" style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -4336,6 +4348,16 @@ Paraben-free · Sulfate-free · Silicone-free · Phthalate-free · Color-safe ·
         <div class="ppc-note" style="margin-top:12px;">
           ℹ Ad Spend/Ad Sales/Impressions/Clicks summed across Amazon + Walmart + Website's own ad platforms. Total Sales/TACOS are all-channel, organic + ads combined, using each channel's own order-validity rules (Amazon: excludes cancelled/pending + Vine; Walmart: excludes cancelled/canceled; Website: excludes refunded/cancelled/canceled). Unlike Skinuva's dashboard, Website is NOT excluded here — per Jaclyn, that exclusion doesn't apply to évolis. Units (Ads) and Avg. Sale per Unit are ads-specific (sum of the ad_units column ÷ Ad Sales), not blended order counts — every other metric on this page already told an ads-specific story, this makes Units/Avg. Sale per Unit consistent with that rather than mixing in organic orders. ACOS/TACOS/CTR/CPC are recomputed from the summed totals, not averaged from each channel's own percentage — averaging percentages directly would be mathematically wrong. CVR is intentionally omitted at the KPI level — Amazon/Walmart's ad summary sheets have no orders/purchases column, only ad units, so there's no real conversion-rate denominator; a clicks-based proxy would be misleading.
         </div>
+      </div>
+
+      <!-- Ad Spend by Type (SP/SB/SD) — added 2026-09-11 per Jaclyn.
+           Same brand-wide breakdown as the Overview page — no per-ASIN
+           version exists, confirmed by reading the real Ad Orders Cache
+           file directly (no SP/SB/SD split at that level at all). -->
+      <div class="ppc-card">
+        <div class="ppc-card-title" id="ppc-ad-type-title">Ad Spend by Type — Last Month</div>
+        <div style="position:relative;height:200px;"><canvas id="chart-ppc-ad-type"></canvas></div>
+        <div class="ppc-note" id="ppc-ad-type-note" style="margin-top:10px;"></div>
       </div>
 
       <div class="ppc-card">
@@ -15369,6 +15391,50 @@ async function ppcLoadBlendedPerformance(periodKey) {
       `).join('');
     }
 
+    // ADDED 2026-09-11 per Jaclyn — Ad Spend by Type (SP/SB/SD). amzAd is
+    // already the correct row for the currently-selected period (same
+    // one Channel Breakdown's Amazon row above uses) — no new fetch or
+    // row-lookup needed, sp_spend/sb_spend/sd_spend are real, confirmed
+    // column names on this same sheet. Brand-wide only, same limitation
+    // as the identical chart on the Overview page — no per-ASIN version
+    // exists in the underlying data.
+    try {
+      const spSpend = numOr0(amzAd.sp_spend);
+      const sbSpend = numOr0(amzAd.sb_spend);
+      const sdSpend = numOr0(amzAd.sd_spend);
+      const adTypeTotal = spSpend + sbSpend + sdSpend;
+
+      const ppcAdTypeTitleEl = document.getElementById('ppc-ad-type-title');
+      if (ppcAdTypeTitleEl) ppcAdTypeTitleEl.textContent = 'Ad Spend by Type — ' + (PB_PERIOD_LABELS[periodKey || 'lastFull'] || 'Last Month');
+
+      const ppcAdTypeNoteEl = document.getElementById('ppc-ad-type-note');
+      if (ppcAdTypeNoteEl) {
+        ppcAdTypeNoteEl.textContent = (adTypeTotal > 0 && sbSpend === 0 && sdSpend === 0)
+          ? 'ℹ 100% Sponsored Products this period — no active Sponsored Brands or Sponsored Display spend.'
+          : (adTypeTotal === 0 ? 'No ad spend recorded for this period yet.' : '');
+      }
+
+      if (adTypeTotal > 0) {
+        if (window._ppcAdTypeChart) { window._ppcAdTypeChart.destroy(); window._ppcAdTypeChart = null; }
+        window._ppcAdTypeChart = new Chart(document.getElementById('chart-ppc-ad-type'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Sponsored Products', 'Sponsored Brands', 'Sponsored Display'],
+            datasets: [{ data: [spSpend, sbSpend, sdSpend], backgroundColor: ['#001f60', '#24e9a3', '#c87d2f'], borderWidth: 0 }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } },
+              tooltip: { callbacks: { label: ctx => ` ${ctx.label}: $${ctx.parsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } },
+            }
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('[PPC AdTypeChart] failed:', err.message);
+    }
+
   } catch (err) {
     console.warn('[BlendedPerf] failed:', err.message);
   }
@@ -20360,7 +20426,7 @@ async function loadAuditResultsFromSheet() {
       // already declared globally further down this file (used by the
       // existing "Returns Processed" KPI on Marketing → Fulfillment & CS),
       // reused here rather than redeclared.
-      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv, webAdsCsv, webShoppingCsv, bizCsv] = await Promise.all([
+      const [amzCsv, webCsv, wmtCsv, adOrdersCsv, amzReturnsCsv, wmtReturnsCsv, webReturnsCsv, namesCsv, webAdsCsv, webShoppingCsv, bizCsv, adSummaryCsv] = await Promise.all([
         fetch(sheetCsvUrl(AMAZON_SHEET_ID, AMAZON_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WEB_SHEET_ID, WEB_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
         fetch(sheetCsvUrl(WMT_SHEET_ID, WMT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -20395,6 +20461,14 @@ async function loadAuditResultsFromSheet() {
         // already confirmed and used elsewhere on this dashboard (PPC
         // Blended Context, Brand Momentum).
         fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+        // ADDED 2026-09-11 per Jaclyn — Advertising Cache, for the new Ad
+        // Spend by Type (SP/SB/SD) chart. Same sheet/gid already
+        // confirmed and used elsewhere on this dashboard (PPC Blended
+        // Context's Ad Spend/ACOS). Real column names confirmed directly
+        // from the actual file, not assumed: sp_spend, sb_spend,
+        // sd_spend (plus matching _sales/_ad_units/_acos variants, not
+        // needed for this specific chart).
+        fetch(sheetCsvUrl(AD_SUMMARY_SHEET_ID, AD_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       ]);
       const bizRows = parseCsvToRows(bizCsv);
 
@@ -20952,6 +21026,65 @@ async function loadAuditResultsFromSheet() {
           },
           plugins: [centerTextPlugin],
         });
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // AD SPEND BY TYPE (SP/SB/SD) — added 2026-09-11 per Jaclyn.
+      // Brand-wide only — confirmed directly from the real Ad Orders
+      // Cache file that ASIN-level ad data has no SP/SB/SD split at all,
+      // so there's no per-product version of this chart to build. The
+      // Advertising Cache sheet DOES have this split (sp_spend, sb_spend,
+      // sd_spend, real column names confirmed from the actual file, not
+      // assumed), one row per year/month — no proration needed even for
+      // MTD, since this is a composition/breakdown (% of spend so far),
+      // not an absolute total being projected forward.
+      try {
+        const adSummaryRows = parseCsvToRows(adSummaryCsv);
+        const adRow = adSummaryRows.find(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
+        const numOr0 = v => parseFloat(String(v || '0').replace(/[$,]/g, '')) || 0;
+        const spSpend = adRow ? numOr0(adRow.sp_spend) : 0;
+        const sbSpend = adRow ? numOr0(adRow.sb_spend) : 0;
+        const sdSpend = adRow ? numOr0(adRow.sd_spend) : 0;
+        const adTypeTotal = spSpend + sbSpend + sdSpend;
+
+        const adTypeTitleEl = document.getElementById('ov-ad-type-title');
+        if (adTypeTitleEl) adTypeTitleEl.textContent = `Ad Spend by Type — ${cfg.isPartial ? 'Month to Date' : 'Last Full Month'}`;
+
+        const adTypeNoteEl = document.getElementById('ov-ad-type-note');
+        if (adTypeNoteEl) {
+          // Honest note when SB/SD are genuinely zero right now, rather
+          // than letting a 100%/0%/0% chart look like something's
+          // broken — confirmed this is real, current spend data, not a
+          // missing-data gap, before writing this note.
+          if (adTypeTotal > 0 && sbSpend === 0 && sdSpend === 0) {
+            adTypeNoteEl.textContent = 'ℹ 100% Sponsored Products this period — no active Sponsored Brands or Sponsored Display spend.';
+          } else {
+            adTypeNoteEl.textContent = '';
+          }
+        }
+
+        if (adTypeTotal > 0) {
+          if (window._ovAdTypeChart) { window._ovAdTypeChart.destroy(); window._ovAdTypeChart = null; }
+          window._ovAdTypeChart = new Chart(document.getElementById('chart-ov-ad-type'), {
+            type: 'doughnut',
+            data: {
+              labels: ['Sponsored Products', 'Sponsored Brands', 'Sponsored Display'],
+              datasets: [{ data: [spSpend, sbSpend, sdSpend], backgroundColor: ['#001f60', '#24e9a3', '#c87d2f'], borderWidth: 0 }]
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10, font: { size: 12 } } },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.label}: $${ctx.parsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } },
+              }
+            },
+          });
+        } else {
+          const cardEl = document.getElementById('ov-ad-type-card');
+          if (cardEl && adTypeNoteEl) adTypeNoteEl.textContent = 'No ad spend recorded for this period yet.';
+        }
+      } catch (err) {
+        console.warn('[AdTypeChart] failed:', err.message);
       }
 
       // ═══════════════════════════════════════════════════════════════
