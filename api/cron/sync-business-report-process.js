@@ -4,8 +4,10 @@
  * polls each until DONE, downloads, aggregates by brand, and writes to
  * SHEET_BUSINESS_REPORT — one tab per brand, one row per month.
  *
- * Runs at 5:15 UTC daily (15 min after sync-business-report-request).
- * Safe to re-run manually if the first attempt failed.
+ * Runs at 5:50 UTC daily (15 min after sync-business-report-request, which
+ * runs at 5:35 UTC — FIXED 2026-09-10, this comment previously said 5:15,
+ * stale from before the schedule moved; confirmed against the real
+ * vercel.json rather than trusted as-is).
  *
  * Backfill a single month:
  *   GET /api/cron/sync-business-report-process?month=YYYY-MM
@@ -33,6 +35,18 @@
  * `sessionsB2B` is the expected Amazon field name for this split, NOT
  * independently confirmed against a real response yet — verify with
  * ?debug=true the same way every other field name in this file should be.
+ *
+ * ADDED 2026-09-10 per Jaclyn — LAST_UPDATED column (column J, appended
+ * at the end of HEADERS, never inserted — see the standing rule on new
+ * columns elsewhere in this codebase). Written in ET (America/New_York,
+ * handles EST/EDT automatically), same conversion pattern already proven
+ * in sync-orders-process.js's toEstIso(). IMPORTANT — this is a CODE
+ * change only. ensureTab()/replaceRows() do not retroactively add a
+ * column to a tab that already has a header row — every brand's real
+ * tab needs "LAST_UPDATED" manually typed into column J before this
+ * runs, or every field from here onward will land one column off, same
+ * class of bug already hit twice elsewhere in this codebase
+ * (ppc_strategy, Stewardship Summary).
  */
 
 const zlib                                 = require('zlib');
@@ -41,7 +55,31 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 
-const HEADERS      = ['MONTH', 'YEAR', 'ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE'];
+// FIXED 2026-09-11 per Jaclyn — confirmed live in production logs: this
+// file's HEADERS only ever listed its OWN 10 columns, but the real sheet
+// (and the two downstream crons, clean-business-report-vine.js and
+// qa-business-report.js) have grown to 21. Since this cron runs FIRST in
+// the daily chain and rebuilds every row's array from scratch using only
+// ITS OWN headers list, it was silently wiping all 11 downstream columns
+// (VINE_* through FLAG) every single run — not just failing to write
+// them, actively destroying whatever the previous day's clean/qa runs
+// had computed. The downstream crons would regenerate them again later
+// the same day IF everything ran successfully in sequence, but that
+// still means a real, visible gap in those columns every day between
+// 5:50 UTC (this cron wipes them) and ~7:05 UTC (qa-business-report.js
+// finishes regenerating them) — and zero data at all if either
+// downstream cron ever fails to run. This cron doesn't compute any of
+// the 11 downstream columns itself — it now just has to know they exist
+// so it can carry their existing values forward untouched (see the
+// carry-forward logic where newRow is built below), same established
+// pattern as sync-orders-process.js preserving "Amazon Estimated fees" /
+// "Amazon Sale Promotions", columns it doesn't own either.
+const HEADERS = [
+  'MONTH', 'YEAR', 'ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE', 'LAST_UPDATED',
+  'VINE_UNITS_DEDUCTED', 'VINE_SALES_DEDUCTED', 'UNITS_ORDERED_CLEAN', 'ORDERED_PRODUCT_SALES_CLEAN',
+  'CANCELLED_UNITS_DEDUCTED', 'CANCELLED_SALES_DEDUCTED',
+  'ORDERS_SHEET_UNITS', 'ORDERS_SHEET_SALES_EST', 'UNEXPLAINED_UNITS_GAP', 'UNEXPLAINED_SALES_GAP_EST', 'FLAG',
+];
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
@@ -228,15 +266,31 @@ module.exports = async (req, res) => {
         Array.isArray(r)
           ? r
           : [
-              r['MONTH']                 ?? '',
-              r['YEAR']                  ?? '',
-              r['ASIN']                  ?? '',
-              r['SKU']                   ?? '',
-              r['SESSIONS']              ?? '',
-              r['PAGE_VIEWS']             ?? '',
-              r['UNITS_ORDERED']         ?? '',
-              r['ORDERED_PRODUCT_SALES'] ?? '',
-              r['CONVERSION_RATE']       ?? '',
+              r['MONTH']                       ?? '',
+              r['YEAR']                        ?? '',
+              r['ASIN']                        ?? '',
+              r['SKU']                         ?? '',
+              r['SESSIONS']                    ?? '',
+              r['PAGE_VIEWS']                  ?? '',
+              r['UNITS_ORDERED']                ?? '',
+              r['ORDERED_PRODUCT_SALES']       ?? '',
+              r['CONVERSION_RATE']             ?? '',
+              r['LAST_UPDATED']                 ?? '',
+              // FIXED 2026-09-11 — the 11 columns below are owned by
+              // clean-business-report-vine.js and qa-business-report.js,
+              // never computed here. Preserved as-is so this cron stops
+              // wiping them on every run — see HEADERS comment above.
+              r['VINE_UNITS_DEDUCTED']         ?? '',
+              r['VINE_SALES_DEDUCTED']         ?? '',
+              r['UNITS_ORDERED_CLEAN']          ?? '',
+              r['ORDERED_PRODUCT_SALES_CLEAN'] ?? '',
+              r['CANCELLED_UNITS_DEDUCTED']    ?? '',
+              r['CANCELLED_SALES_DEDUCTED']    ?? '',
+              r['ORDERS_SHEET_UNITS']          ?? '',
+              r['ORDERS_SHEET_SALES_EST']      ?? '',
+              r['UNEXPLAINED_UNITS_GAP']       ?? '',
+              r['UNEXPLAINED_SALES_GAP_EST']   ?? '',
+              r['FLAG']                        ?? '',
             ]
       );
 
@@ -286,13 +340,21 @@ module.exports = async (req, res) => {
           brandTotalSessions += acc.sessions;
           brandTotalUnits    += acc.unitsOrdered;
 
-          const newRow = [tMonthNum, tYearNum, asin, sku, acc.sessions, acc.pageViews, acc.unitsOrdered, orderedProductSales, conversionRate];
-
           const idx = workingRows.findIndex(r =>
             parseInt(r[0], 10) === tMonthNum &&
             parseInt(r[1], 10) === tYearNum &&
             (r[2] || '').toUpperCase() === asin
           );
+
+          // FIXED 2026-09-11 — carry forward whatever's already in the 11
+          // downstream columns (VINE_* through FLAG) this cron doesn't
+          // own, instead of overwriting the whole row with a 10-element
+          // array that has nothing in those positions at all. New rows
+          // (idx === -1) genuinely have nothing to carry forward yet —
+          // clean-business-report-vine.js and qa-business-report.js will
+          // populate those later the same day, same as always.
+          const downstreamExisting = idx >= 0 ? workingRows[idx].slice(10) : new Array(11).fill('');
+          const newRow = [tMonthNum, tYearNum, asin, sku, acc.sessions, acc.pageViews, acc.unitsOrdered, orderedProductSales, conversionRate, toEstIso(now), ...downstreamExisting];
 
           if (idx >= 0) {
             workingRows[idx] = newRow;
@@ -360,6 +422,20 @@ module.exports = async (req, res) => {
 
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n  => Math.round(n * 100) / 100;
+
+// ADDED 2026-09-10 per Jaclyn — same proven ET conversion already used in
+// sync-orders-process.js. Handles EST/EDT automatically via Intl, rather
+// than a hardcoded UTC offset that would be wrong half the year.
+function toEstIso(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
 
 // Products Cache is a daily-snapshot cron — every ASIN repeats once per
 // sync date, so only the most recent date's rows should count. Column C
