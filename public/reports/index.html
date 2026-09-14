@@ -16387,10 +16387,21 @@ async function loadInventoryPage() {
     const wfsMap = {};
 
     const statusMap = {};
+    // ADDED 2026-09-14 per Jaclyn — SKU Type (column J on this same
+    // sheet, already fetched above for Status) is CATALOG/BUNDLE/blank.
+    // Only CATALOG rows should appear on this internal inventory page —
+    // bundles aren't real, individually-stocked inventory items, they're
+    // a virtual grouping of catalog SKUs. Confirmed real column position
+    // and values by fetching this sheet directly before writing this:
+    // 893 CATALOG rows, 90 BUNDLE, 68 blank. Key is 'sku type' (with a
+    // literal space) — parseCsvToRows only lowercases headers, it doesn't
+    // replace spaces with underscores, confirmed against this exact file.
+    const skuTypeMap = {};
     parseCsvToRows(statusCsv).forEach(r => {
       const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
       const status = (r.status || '').trim().toUpperCase();
       if (sku && status) statusMap[sku] = status;
+      if (sku) skuTypeMap[sku] = (r['sku type'] || '').trim().toUpperCase();
     });
 
     // Daily snapshot cron — most recent date only
@@ -16452,8 +16463,17 @@ async function loadInventoryPage() {
         qtyAtAmazon, qtyAtMedaltus, available, allocated, wfs, onHand, consignment,
         days, status,
         discontinued: statusMap[skuUpper] === 'DELETED',
+        skuType: skuTypeMap[skuUpper] || '',
       };
-    }).filter(r => !(r.discontinued && r.onHand === 0));
+    })
+      .filter(r => !(r.discontinued && r.onHand === 0))
+      // ADDED 2026-09-14 per Jaclyn — bundles excluded from this page
+      // entirely, not just hidden/greyed like discontinued SKUs. A blank
+      // SKU Type (68 rows on the real sheet — likely SKUs Product Short
+      // Name hasn't been fully filled in for yet) is also excluded,
+      // matching "only include products that say CATALOG" literally
+      // rather than assuming blank should default to included.
+      .filter(r => r.skuType === 'CATALOG');
 
     // Second half of the same diagnostic — shows what's left AFTER the
     // discontinued+zero-stock filter, plus the raw computed fields for
