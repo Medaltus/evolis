@@ -1244,22 +1244,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="home-hero-date" id="home-date"></div>
     </div>
 
-    <!-- KPI row -->
-    <div class="home-kpi-row">
-      <div class="home-kpi-card">
-        <div class="home-kpi-label">Total SKUs</div>
-        <div class="home-kpi-value" id="home-kpi-skus">&mdash;</div>
-        <div class="home-kpi-sub">In your catalog</div>
-      </div>
-      <div class="home-kpi-card">
-        <div class="home-kpi-label">Units On Hand</div>
-        <div class="home-kpi-value" id="home-kpi-units">&mdash;</div>
-        <div class="home-kpi-sub" id="home-kpi-units-sub">Consignment units</div>
-      </div>
-    </div>
-
-    <!-- Team + Resources -->
-    <div class="home-grid">
+    <!-- Team + Resources — KPI row (Total SKUs / Units On Hand) removed
+         2026-09-14 per Jaclyn, this section is now the first thing below
+         the hero. align-items:start added explicitly so both cards stay
+         flush at the top regardless of content-height differences
+         between them (was relying on the grid default before). -->
+    <div class="home-grid" style="align-items:start;">
       <div class="card">
         <div class="home-card-title">Your Medaltus Team</div>
         <div class="home-card-sub">Reach out anytime &mdash; we're here to help.</div>
