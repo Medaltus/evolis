@@ -79,6 +79,10 @@
  *   GET /api/cron/clean-business-report-vine?dryRun=true             — report only
  *   GET /api/cron/clean-business-report-vine?dryRun=true&debug=true   — report + exact ASIN/month/amount for every deduction
  *   GET /api/cron/clean-business-report-vine                          — actually write
+ *   &brand=cloud-cafe   — ADDED 2026-09-10, restrict to one brand (same
+ *                         param/behavior as fees-estimate.js) — for
+ *                         spot-checking a single brand without writing
+ *                         (and rate-limit-pacing against) every other one
  *   Authorization: Bearer <CRON_SECRET>
  */
 
@@ -122,6 +126,7 @@ module.exports = async (req, res) => {
 
   const dryRun = req.query.dryRun === 'true';
   const debugMode = req.query.debug === 'true';
+  const onlyBrand = req.query.brand || null; // ADDED 2026-09-10, see header comment
 
   let targetMonths;
   try {
@@ -159,7 +164,7 @@ module.exports = async (req, res) => {
   const BRAND_READ_STAGGER_MS = 3500;
   let brandIndex = 0;
 
-  for (const brand of brands.filter(b => b.active)) {
+  for (const brand of brands.filter(b => b.active && (!onlyBrand || b.id === onlyBrand))) {
     if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
     brandIndex++;
 
@@ -329,7 +334,7 @@ module.exports = async (req, res) => {
     );
   }
 
-  res.status(200).json({ dryRun, targetMonths, results });
+  res.status(200).json({ dryRun, brand: onlyBrand || 'all', targetMonths, results });
 };
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
