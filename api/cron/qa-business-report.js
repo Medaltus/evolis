@@ -11,35 +11,50 @@
  * against Amazon's own SP-API schema for GET_SALES_AND_TRAFFIC_REPORT —
  * salesByAsin/trafficByAsin have no per-order breakdown at all, only
  * pre-aggregated totals), so there's no way to filter cancelled orders
- * out of this report on our end. clean-business-report-vine.js already
- * cross-references sheets.orders (which DOES have real per-order status,
- * and already excludes cancelled orders from every total computed off it
- * — see fetchOrderUnitsByAsinMonth below, same convention) — but it only
- * uses that cross-reference to catch Vine contamination, and only within
- * an ASIN's narrow Vine-eligible window (enrollment month + up to 2
- * months after). Outside that window, ANY gap between Amazon's raw
- * figures and the orders sheet's real totals — including one caused by a
- * cancellation Amazon hasn't retroactively corrected yet — passes
- * straight through into UNITS_ORDERED_CLEAN / ORDERED_PRODUCT_SALES_CLEAN
- * completely unexamined.
+ * out of this report on our end.
+ *
+ * UPDATED 2026-09-10 — this section originally said clean-business-
+ * report-vine.js only handled Vine, and that cancelled-order
+ * contamination passed straight through into UNITS_ORDERED_CLEAN /
+ * ORDERED_PRODUCT_SALES_CLEAN completely unexamined outside the Vine
+ * window. That's no longer true: clean-business-report-vine.js now has
+ * its OWN independent cancelled-order deduction (CANCELLED_UNITS_DEDUCTED
+ * / CANCELLED_SALES_DEDUCTED), computed directly from the orders sheet's
+ * real cancelled rows — not inferred, not tied to any eligibility window
+ * — and the _CLEAN columns this cron reads already have that subtracted
+ * out before this file ever sees them.
+ *
+ * That changes what this cron's own comparison actually measures. This
+ * file independently excludes cancelled orders from its own orders-sheet
+ * baseline too (see fetchOrderUnitsByAsinMonth below, unchanged) — so
+ * both sides of the comparison below (_CLEAN vs. orders-sheet units) are
+ * now on the same "non-Vine, non-cancelled" footing. A remaining gap is
+ * NOT primarily cancellations anymore (those are handled upstream, more
+ * precisely, from direct orders-sheet sums rather than an inferred
+ * delta) — it's whatever's left after BOTH known correction mechanisms
+ * have already run: a genuine report-cutoff timing difference between
+ * two independently-generated Amazon reports, a data-entry issue, or
+ * something not yet identified. Still worth flagging for a human to look
+ * at (see below) — just not worth assuming "probably a cancellation"
+ * anymore the way the original version of this comment implied.
  *
  * WHAT THIS CRON DOES, AND DELIBERATELY DOES NOT DO:
  *   This is a QA/reconciliation cron, not an auto-correction one. For
  *   every ASIN/month, it computes (Business Report CLEAN units/sales) −
  *   (orders sheet units/sales) and writes the gap as new columns. It does
  *   NOT subtract that gap into UNITS_ORDERED_CLEAN the way
- *   clean-business-report-vine.js subtracts Vine — a gap here could be a
- *   cancellation, a genuine report-cutoff timing difference between two
- *   independently-generated Amazon reports, or something else, and this
- *   codebase's own house rule (see clean-business-report-vine.js's header
- *   comment on why it rejected its first design) is to not auto-attribute
- *   a delta to a specific cause without strong evidence. The FLAG column
- *   below is a worklist for a human to look at, not a verdict.
+ *   clean-business-report-vine.js subtracts Vine and cancellations — a
+ *   gap here is by definition something NEITHER of those two mechanisms
+ *   already explains, and this codebase's own house rule (see
+ *   clean-business-report-vine.js's header comment on why it rejected
+ *   its first design) is to not auto-attribute a delta to a specific
+ *   cause without strong evidence. The FLAG column below is a worklist
+ *   for a human to look at, not a verdict.
  *
  * Compares against the *_CLEAN columns (not raw UNITS_ORDERED /
  * ORDERED_PRODUCT_SALES) since this runs after clean-business-report-vine.js
- * — a known, already-explained Vine gap shouldn't also show up here as an
- * "unexplained" one. Falls back to the raw columns if _CLEAN is blank
+ * — a known, already-explained Vine or cancelled-order gap shouldn't also
+ * show up here as an "unexplained" one. Falls back to the raw columns if _CLEAN is blank
  * (e.g. this cron ever runs before clean-business-report-vine.js on a
  * given day).
  *
@@ -189,8 +204,9 @@ module.exports = async (req, res) => {
         let flag                = r.FLAG                       ?? '';
 
         if (asin && month && targetMonths.includes(month)) {
-          // Prefer CLEAN (Vine-adjusted) figures; fall back to raw if this
-          // ever runs before clean-business-report-vine.js on a given day.
+          // Prefer CLEAN (Vine- and cancelled-order-adjusted) figures; fall
+          // back to raw if this ever runs before clean-business-report-vine.js
+          // on a given day.
           const cleanUnits = (r.UNITS_ORDERED_CLEAN !== '' && r.UNITS_ORDERED_CLEAN != null)
             ? parseFloat(r.UNITS_ORDERED_CLEAN) : (parseFloat(r.UNITS_ORDERED) || 0);
           const cleanSales = (r.ORDERED_PRODUCT_SALES_CLEAN !== '' && r.ORDERED_PRODUCT_SALES_CLEAN != null)
