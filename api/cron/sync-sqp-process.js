@@ -130,11 +130,39 @@ module.exports = async (req, res) => {
         continue;
       }
 
+      // FIXED 2026-09-16 — real incident: skinuva-ca showed "missing
+      // report_id_skinuva-ca_2026-08_b0" as a hard error, but this isn't
+      // actually brand-specific. In sync-sqp-request.js,
+      // report_batch_count_<brand>_<month> is written BEFORE that
+      // brand's batches are actually requested (needed so a partial run
+      // knows how many batches to expect on resume — see that file's
+      // header comment) — so any brand whose run gets cut off by
+      // MAX_NEW_REQUESTS_PER_RUN (currently 3) or quota exhaustion
+      // before reaching its own batch 0 will have batch_count recorded
+      // with no report_id yet. With 15+ active brands and a 3-request
+      // cap per run, this is ROUTINE mid-progress state, not a failure —
+      // it can happen to any brand sitting late in the iteration order,
+      // and resolves itself once a later sync-sqp-request run reaches
+      // it. Only treat a missing report_id as a genuine error once
+      // request.js itself has marked the brand fully REQUESTED (every
+      // batch present) — that combination means something's actually
+      // wrong (e.g. _meta got corrupted or edited by hand), rather than
+      // "hasn't gotten there yet."
+      const brandFullyRequested = metaMap[`report_status_${brand.id}`] === 'REQUESTED';
       const batchReportIds = [];
+      let missingBatchIndex = -1;
       for (let i = 0; i < batchCount; i++) {
         const id = metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`];
-        if (!id) { results.push({ brand: brand.id, status: 'error', reason: `missing report_id_${brand.id}_${targetMonth}_b${i}` }); batchReportIds.length = 0; break; }
+        if (!id) { missingBatchIndex = i; break; }
         batchReportIds.push(id);
+      }
+      if (missingBatchIndex !== -1) {
+        if (brandFullyRequested) {
+          results.push({ brand: brand.id, status: 'error', reason: `report_status is REQUESTED but report_id_${brand.id}_${targetMonth}_b${missingBatchIndex} is still missing — _meta may be corrupted` });
+        } else {
+          results.push({ brand: brand.id, status: 'request-in-progress' });
+        }
+        continue;
       }
       if (!batchReportIds.length) continue;
 
