@@ -494,7 +494,20 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
   const sfDefaultChannel    = sfFulfillmentAvail.find(f => f.fulfillment_channel_code === 'DEFAULT');
   const sellerFulfilledQuantity = sfDefaultChannel?.quantity ?? '';
 
-  const bullets = listing?.attributes?.bullet_point || [];
+  // FIXED 2026-09-17 — real incident, creme-shop's CRE0327-label
+  // (B0D42FB2GJ): confirmed via 51 consecutive days of production data
+  // (2026-07-28 through today) that listing.attributes.bullet_point never
+  // once populated for this SKU, while a direct ?testAsin diagnostic call
+  // against the SAME ASIN showed catalog.attributes.bullet_point WITH 5
+  // real bullets. This is a known SP-API gap, not ASIN-specific — the
+  // Listings API's attributes response doesn't reliably reflect bullet
+  // points even when they're live on the actual listing, while the
+  // Catalog API's bullet_point field does. Falls back to catalog only
+  // when listing's own array is empty, so a SKU whose listing DOES have
+  // bullets (the common case) is completely unaffected.
+  const bullets = listing?.attributes?.bullet_point?.length
+    ? listing.attributes.bullet_point
+    : (catalog?.attributes?.bullet_point || []);
   const bulletVal = idx => bullets[idx]?.value || '';
 
   const b2cOffer = (listing?.offers || []).find(o => o.offerType === 'B2C');
@@ -544,12 +557,17 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     // Highlights. Column name in the sheet stays item_highlights
     // (matches what the dashboard already reads); only the API source
     // attribute changed.
-    listing?.attributes?.title_differentiation?.[0]?.value || '',
+    //
+    // UPDATED 2026-09-17 — see the bullets fallback comment above this
+    // function's catalog-fetch section: title_differentiation gets the
+    // same catalog-attributes fallback now, for the same confirmed reason
+    // (listing.attributes doesn't reliably return it; catalog does).
+    listing?.attributes?.title_differentiation?.[0]?.value || catalog?.attributes?.title_differentiation?.[0]?.value || '',
     bulletVal(0), bulletVal(1), bulletVal(2), bulletVal(3), bulletVal(4),
-    listing?.attributes?.product_description?.[0]?.value || '',
+    listing?.attributes?.product_description?.[0]?.value || catalog?.attributes?.product_description?.[0]?.value || '',
     listing?.attributes?.generic_keyword?.[0]?.value || '',
     listing?.attributes?.ingredients?.[0]?.value || '',
-    listing?.attributes?.item_type_keyword?.[0]?.value || '',
+    listing?.attributes?.item_type_keyword?.[0]?.value || catalog?.attributes?.item_type_keyword?.[0]?.value || '',
     offersStr,
     issuesStr,
     nowIso,
