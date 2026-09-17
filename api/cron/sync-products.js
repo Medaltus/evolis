@@ -319,7 +319,7 @@ module.exports = async (req, res) => {
         // against its own write. Start empty instead whenever force=true.
         writtenTodaySets[item.brandTabName] = force
           ? new Set()
-          : new Set(existingRows.filter(r => (r.date || '') === today).map(r => (r.sku || '').trim().toUpperCase()));
+          : new Set(existingRows.filter(r => normalizeSheetDate(r.date) === today).map(r => (r.sku || '').trim().toUpperCase()));
 
         // ADDED 2026-08-14 — real production failure: creme-shop's grid
         // (10776 rows) was smaller than the row this run needed to write
@@ -793,6 +793,41 @@ async function fetchBrandWalmart90dUnits(brandTabName) {
   return map;
 }
 
+// FIXED 2026-09-17 — real incident: since ~2026-09-02, when the `date`
+// column started getting auto-converted by Sheets from plain text into
+// real date-typed cells, any read using 'FORMULA' render mode (needed by
+// clearRowsForDate below to protect total_quantity/days_of_inventory's
+// live formulas from being flattened on rewrite) returns a PLAIN DATE
+// CELL as its raw Sheets serial number (e.g. 46648), not a string — while
+// the default render mode returns it as a formatted display string that
+// may or may not be ISO depending on the column's actual number format.
+// Comparing either of those directly against a "YYYY-MM-DD" string with
+// !== / === silently never matches, which is exactly why
+// clearRowsForDate's "remove today's rows" comparison was quietly a
+// no-op for weeks: kept.length was always equal to rows.length, so the
+// write-back that's supposed to delete today's rows never fired, and
+// four consecutive ?force=true calls today each APPENDED a fresh batch
+// instead of replacing the previous one — hence creme-shop's duplicate
+// CRE0001–CRE0233 rows for 2026-09-17. Normalizing here means the
+// comparison works correctly regardless of whether a given cell is
+// still plain text or has been auto-converted to a real date, without
+// needing to change either read's render mode.
+function normalizeSheetDate(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10); // already ISO text — most rows today
+  }
+  const num = typeof value === 'number' ? value : parseFloat(value);
+  if (!isNaN(num) && num > 0) {
+    // Google Sheets' own date epoch is Dec 30, 1899 (UTC) — day 0.
+    const epochMs = Date.UTC(1899, 11, 30);
+    const d = new Date(epochMs + num * 86400000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+  return String(value);
+}
+
 // Removes every row matching `dateStr` from every brand tab in `brandList`
 // (defaults to every active brand), leaving all other dates' history
 // untouched. Used by ?force=true to support "overwrite today" without
@@ -804,7 +839,7 @@ async function clearRowsForDate(dateStr, brandList = brands.filter(b => b.active
     try {
       const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
       const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA'); // preserve formula text, not computed values
-      const kept  = rows.filter(r => (r.date || '') !== dateStr);
+      const kept  = rows.filter(r => normalizeSheetDate(r.date) !== dateStr);
       if (kept.length !== rows.length) {
         const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
         await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token, 'USER_ENTERED');
