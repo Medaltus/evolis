@@ -191,7 +191,21 @@ module.exports = async (req, res) => {
   // Omitting ?group= entirely still works exactly as before (all brands,
   // unsuffixed meta keys) — useful for manual/debug/backfill runs.
   const group = (req.query.group || '').trim().toUpperCase() || null;
-  const metaKey = base => group ? `${base}_group${group}` : base;
+  // ADDED 2026-09-17 — same idea as ?group=, one level more specific: lets
+  // a single brand be re-run in isolation (e.g. testing a field-extraction
+  // fix against one brand without burning quota/time reprocessing its
+  // whole group). Gets its own _meta suffix for the exact same reason
+  // group does — without it, a brand-scoped run's cursor/completion state
+  // would collide with the UNSUFFIXED keys a full or group-scoped run also
+  // reads/writes, and a brand run "completing" would wrongly mark the
+  // whole day complete for every other brand too.
+  const onlyBrand = (req.query.brand || '').trim() || null;
+  const metaKey = base => {
+    let key = base;
+    if (group)     key += `_group${group}`;
+    if (onlyBrand) key += `_brand${onlyBrand}`;
+    return key;
+  };
 
   let meta;
   try {
@@ -201,12 +215,17 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
-  // Brands belonging to this run's group (or every active brand, if no
-  // group was specified) — used both to scope ?force=true's clear step
-  // and to filter the master SKU list below.
-  const scopedBrands = brands.filter(b => b.active && (!group || b.productsSyncGroup === group));
-  if (group && scopedBrands.length === 0) {
-    return res.status(400).json({ error: `No active brand has productsSyncGroup="${group}" — check config/brands.js` });
+  // Brands belonging to this run's group and/or single-brand scope (or
+  // every active brand, if neither was specified) — used both to scope
+  // ?force=true's clear step and to filter the master SKU list below.
+  const scopedBrands = brands.filter(b =>
+    b.active && (!group || b.productsSyncGroup === group) && (!onlyBrand || b.id === onlyBrand)
+  );
+  if ((group || onlyBrand) && scopedBrands.length === 0) {
+    const parts = [];
+    if (group)     parts.push(`productsSyncGroup="${group}"`);
+    if (onlyBrand) parts.push(`id="${onlyBrand}"`);
+    return res.status(400).json({ error: `No active brand matches ${parts.join(' and ')} — check config/brands.js` });
   }
 
   let cursor = 0;
@@ -221,10 +240,10 @@ module.exports = async (req, res) => {
       await sendCronFailureAlert('sync-products', err.message, { Stage: "clearing today's rows for ?force=true" });
       return res.status(500).json({ error: 'Failed to clear today\'s existing rows before forced re-run', detail: err.message });
     }
-    console.log(`[sync-products] force=true${group ? ` (group ${group})` : ''} — cleared today's (${today}) existing rows, restarting from cursor 0`);
+    console.log(`[sync-products] force=true${group ? ` (group ${group})` : ''}${onlyBrand ? ` (brand ${onlyBrand})` : ''} — cleared today's (${today}) existing rows, restarting from cursor 0`);
   } else if (meta[metaKey('products_log_date')] === today) {
     if (meta[metaKey('products_log_complete')] === 'true') {
-      return res.status(200).json({ message: `Already completed for ${today}${group ? ` (group ${group})` : ''}. Pass ?force=true to overwrite today's rows and reprocess (e.g. after a column/logic change).` });
+      return res.status(200).json({ message: `Already completed for ${today}${group ? ` (group ${group})` : ''}${onlyBrand ? ` (brand ${onlyBrand})` : ''}. Pass ?force=true to overwrite today's rows and reprocess (e.g. after a column/logic change).` });
     }
     cursor = parseInt(meta[metaKey('products_log_cursor')] || '0', 10) || 0;
   }
@@ -238,7 +257,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to read master SKU list', detail: err.message });
   }
 
-  if (group) {
+  if (group || onlyBrand) {
     const scopedTabNames = new Set(scopedBrands.map(b => b.tabName));
     masterList = masterList.filter(item => scopedTabNames.has(item.brandTabName));
   }
