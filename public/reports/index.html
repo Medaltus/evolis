@@ -21302,6 +21302,51 @@ async function loadAuditResultsFromSheet() {
           return rows.find(r => (r[0] || '').trim() === target) || null;
         }
 
+        // ADDED 2026-09-17 per Jaclyn — cancellation-rate-adjusted MTD
+        // projection, ported from the spec written against MiGuard's live
+        // implementation. Computed ONCE here (a single pooled Amazon rate,
+        // not per-card) and passed into renderGoalsGroup below only for
+        // the Amazon+Walmart card — see the note at that call site for
+        // why Website does NOT get this adjustment. Deliberately reuses
+        // amzRows, already fetched/filtered-to-évolis earlier in this
+        // same function — no new fetch, matching the spec's "fetched
+        // fresh on every load, no caching" intent (this page's own load
+        // already re-fetches amzRows fresh every time it runs).
+        function computeAmazonCancelRate(rows, excludeYear, excludeMonth) {
+          const orderStatus = new Map(); // order_id -> { cancelled: bool, month: 'YYYY-MM', isVine: bool }
+          rows.forEach(r => {
+            const orderId = (r.order_id || '').trim();
+            const date = (r.date || '').trim();
+            if (!orderId || !date) return;
+            const month = date.slice(0, 7);
+            const isVine = (r.promotion_ids || '').toLowerCase().includes('vine');
+            const isCancelled = (r.status || '').toLowerCase().trim() === 'cancelled';
+            const existing = orderStatus.get(orderId);
+            if (!existing) {
+              orderStatus.set(orderId, { cancelled: isCancelled, month, isVine });
+            } else {
+              // Cancellation and Vine are both order-level facts once ANY
+              // line item on the order shows them — OR them in, don't
+              // overwrite with a later line item's own (possibly false) value.
+              existing.cancelled = existing.cancelled || isCancelled;
+              existing.isVine = existing.isVine || isVine;
+            }
+          });
+
+          const excludeMonthStr = `${excludeYear}-${String(excludeMonth).padStart(2, '0')}`;
+          let total = 0, cancelled = 0;
+          orderStatus.forEach(o => {
+            if (o.isVine) return;
+            if (o.month === excludeMonthStr) return; // the in-progress month itself — hasn't had time to cancel yet
+            total++;
+            if (o.cancelled) cancelled++;
+          });
+          if (total === 0) return null; // never fabricate a rate with zero history
+          return cancelled / total;
+        }
+        const amzCancelRate = computeAmazonCancelRate(amzRows, cfg.year, cfg.month);
+        console.log('[GoalsTracker][qa] Amazon cancel rate (pooled, Vine + current month excluded):', amzCancelRate == null ? 'no history yet' : (amzCancelRate * 100).toFixed(1) + '%');
+
         const [goalsAmzCsv, goalsWebCsv] = await Promise.all([
           fetch('https://docs.google.com/spreadsheets/d/1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3/export?format=csv&gid=154860784' + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
           fetch('https://docs.google.com/spreadsheets/d/1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3/export?format=csv&gid=1655791223' + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -21357,7 +21402,7 @@ async function loadAuditResultsFromSheet() {
           </svg>`;
         }
 
-        function renderGoalsGroup(actualOverall, actualAds, actualOrganic, goalRow) {
+        function renderGoalsGroup(actualOverall, actualAds, actualOrganic, goalRow, cancelRate) {
           if (!goalRow) return `<div style="color:var(--muted);font-size:13px;flex:1;text-align:center;padding:20px;">No goals row found for this month.</div>`;
           const overallGoal = parseGoalsDollar(goalRow[14]);
           const organicGoal = parseGoalsDollar(goalRow[19]);
@@ -21391,15 +21436,30 @@ async function loadAuditResultsFromSheet() {
             // to meet goal and red if projecting to miss goal" exactly
             // — no amber middle state.
             const actualPct = goal > 0 ? Math.round((actual / goal) * 100) : 0;
-            let projected = actual, statusText, statusColor;
+            let projected = actual, statusText, statusColor, cancelRateLabel = '';
             if (cfg.isPartial) {
               // MTD — project the full month from what we're averaging
               // per day so far, to decide the color only.
               const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
-              projected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
+              const rawProjected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
+              // ADDED 2026-09-17 per Jaclyn — cancellation-rate-adjusted
+              // projection (spec ported from MiGuard's live
+              // implementation). ONLY the color/text below is affected —
+              // actualPct and the ring's fill above are untouched, real
+              // revenue-to-date. cancelRate is undefined for the Website
+              // card (no Amazon-style order-level cancellation data
+              // exists for Website in this codebase) — rawProjected
+              // passes through unadjusted in that case, same as before
+              // this feature existed.
+              projected = cancelRate != null ? rawProjected * (1 - cancelRate) : rawProjected;
               const projectedPct = goal > 0 ? Math.round((projected / goal) * 100) : 0;
               statusText = `Projecting ${fmtD(projected)}`;
               statusColor = projectedPct >= 100 ? 'var(--green)' : 'var(--danger)';
+              if (cancelRate != null) {
+                cancelRateLabel = `<div style="font-size:10px;color:var(--muted);margin-top:2px;">adj. for ${Math.round(cancelRate * 100)}% avg. cancel rate</div>`;
+              } else if (cancelRate === null) {
+                cancelRateLabel = `<div style="font-size:10px;color:var(--muted);margin-top:2px;">no cancel-rate history yet</div>`;
+              }
             } else {
               // Last Full Month — the month is over, actual IS final, no separate projection.
               statusText = actualPct >= 100 ? 'Hit goal' : 'Missed goal';
@@ -21413,6 +21473,7 @@ async function loadAuditResultsFromSheet() {
               </div>
               <div style="font-size:14px;color:var(--navy);font-weight:700;margin-top:8px;">${statusText}</div>
               <div style="font-size:14px;color:var(--navy);font-weight:700;">Goal ${fmtD(goal)}</div>
+              ${cancelRateLabel}
             </div>`;
           }
 
@@ -21425,7 +21486,20 @@ async function loadAuditResultsFromSheet() {
 
         const goalsBodyAmzEl = document.getElementById('ov-goals-body-amz');
         const goalsBodyWebEl = document.getElementById('ov-goals-body-web');
-        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzAdActual, amzOrganicActual, goalsRowAmz);
+        // NOTE 2026-09-17 per Jaclyn — évolis sells on Amazon+Walmart AND
+        // Website, exactly the multi-channel case the cancel-rate spec
+        // flagged as needing a real decision rather than a silent
+        // default. Chose: apply the Amazon-derived rate ONLY to the
+        // Amazon+Walmart card (amzCancelRate passed below) — Walmart's
+        // own portion of that card still gets the Amazon rate applied to
+        // the blended total for now, since there's no separate Walmart
+        // order-level cancellation source to split it out with, and an
+        // Amazon-only rate is a closer real signal than none at all.
+        // Website gets NO adjustment (no cancelRate arg passed, so it's
+        // undefined) — applying an Amazon order-cancellation rate to a
+        // completely different channel would be exactly the kind of
+        // fabricated number the spec says never to default to.
+        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzAdActual, amzOrganicActual, goalsRowAmz, amzCancelRate);
         if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, null, webGoalsActual, goalsRowWeb);
       } catch (err) {
         console.warn('[GoalsTracker] failed:', err.message);
