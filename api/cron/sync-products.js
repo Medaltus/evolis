@@ -304,9 +304,22 @@ module.exports = async (req, res) => {
         // outright, regardless of what the cursor says, so a masterList
         // shift mid-day can no longer cause a duplicate write even if
         // the cursor math itself goes out of sync.
-        writtenTodaySets[item.brandTabName] = new Set(
-          existingRows.filter(r => (r.date || '') === today).map(r => (r.sku || '').trim().toUpperCase())
-        );
+        // FIXED 2026-09-17 — real incident: ?force=true cleared today's
+        // rows via clearRowsForDate() (its own read+write) a moment
+        // earlier, but this SEPARATE readRows() call right here raced
+        // ahead of that write's propagation — Sheets API reads immediately
+        // following a write aren't guaranteed to reflect it yet. The read
+        // saw the stale, pre-clear rows, writtenTodaySets ended up with
+        // every SKU in it, and the whole run (370/370 SKUs, group B)
+        // skipped everything as "already written" despite force=true
+        // having just cleared it. Since force explicitly means "today's
+        // rows for this brand don't exist anymore" — we know that
+        // deterministically from our own action, not from re-reading —
+        // there's no need to re-derive it from a read that can race
+        // against its own write. Start empty instead whenever force=true.
+        writtenTodaySets[item.brandTabName] = force
+          ? new Set()
+          : new Set(existingRows.filter(r => (r.date || '') === today).map(r => (r.sku || '').trim().toUpperCase()));
 
         // ADDED 2026-08-14 — real production failure: creme-shop's grid
         // (10776 rows) was smaller than the row this run needed to write
