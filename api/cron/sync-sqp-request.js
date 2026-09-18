@@ -99,14 +99,14 @@ function chunkAsinsByCharLimit(asinList, maxLen = 200) {
 const STAGGER_MS = 2000;
 let lastRequestAt = 0;
 
-async function requestReport(dataStartTime, dataEndTime, asinBatch, label) {
+async function requestReport(dataStartTime, dataEndTime, asinBatch, label, marketplaceId) {
   const waitMs = STAGGER_MS - (Date.now() - lastRequestAt);
   if (waitMs > 0) await sleep(waitMs);
   lastRequestAt = Date.now();
 
   const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
     reportType:     'GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT',
-    marketplaceIds: [process.env.SP_MARKETPLACE_ID],
+    marketplaceIds: [marketplaceId],
     dataStartTime,
     dataEndTime,
     reportOptions: { reportPeriod: 'MONTH', asin: asinBatch.join(' ') },
@@ -311,6 +311,11 @@ module.exports = async (req, res) => {
       results.push({
         brand: brand.id,
         skuPrefix: brand.skuPrefix || brand.id.toUpperCase(),
+        // ADDED 2026-09-16 — visible here specifically so a marketplace-
+        // variant brand's override can be confirmed correct BEFORE it
+        // spends any real request quota — see config/brands.js's
+        // marketplaceId field comment.
+        marketplaceId: brand.marketplaceId || process.env.SP_MARKETPLACE_ID,
         totalAsinsMatched: brandAsins.length,
         currentBatchCount: expectedBatchCount,
         storedBatchCount: storedBatchCount || null,
@@ -366,9 +371,17 @@ module.exports = async (req, res) => {
       }
 
       const label = `${brand.id} ${targetMonth} batch ${i} (${batches[i].length} ASINs)`;
+      // FIXED 2026-09-16 — marketplaceIds was hardcoded to
+      // process.env.SP_MARKETPLACE_ID for every brand's request, with no
+      // per-brand override. SQP is a single-marketplace-per-request
+      // report type (confirmed against Amazon's own documented
+      // constraint), so a marketplace-variant brand like skinuva-ca needs
+      // its own marketplace ID here, not the default US one — see
+      // config/brands.js's marketplaceId field comment for the full story.
+      const marketplaceId = brand.marketplaceId || process.env.SP_MARKETPLACE_ID;
       let result;
       try {
-        result = await requestReport(dataStartTime, dataEndTime, batches[i], label);
+        result = await requestReport(dataStartTime, dataEndTime, batches[i], label, marketplaceId);
       } catch (err) {
         hardError = err.message;
         break;
