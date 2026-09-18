@@ -19,6 +19,28 @@
  *                   Used by sync-subscriptions.js's SUBSCRIBER_RETENTION
  *                   call (asins filter, used by active_subscriptions,
  *                   does not have this same casing requirement).
+ * marketplaceId:   ADDED 2026-09-16 — OPTIONAL. Only set this for a brand
+ *                   entry that is a MARKETPLACE VARIANT of a real brand
+ *                   (same seller account, same products, sold through a
+ *                   different Amazon storefront) rather than a fully
+ *                   independent brand — skinuva-ca below is the first
+ *                   case. Real motivating bug: sync-sqp-request.js (Brand
+ *                   Analytics Search Query Performance) hardcoded
+ *                   process.env.SP_MARKETPLACE_ID for every brand's
+ *                   request, with no per-brand override — but SQP is a
+ *                   single-marketplace-per-request report type (confirmed
+ *                   against Amazon's own documented constraint), so
+ *                   skinuva-ca's request was silently asking for US-
+ *                   marketplace SQP data for what are presumably Canada-
+ *                   only ASINs. Most crons (orders, revenue) do NOT need
+ *                   this override — Amazon.ca activity for those already
+ *                   arrives bundled into the same US-scoped report via
+ *                   the flat file's `sales-channel` field (see
+ *                   skinuva-ca's own comment below) — so leave this unset
+ *                   unless a specific report type genuinely requires
+ *                   scoping to a different marketplace. When adding a UK
+ *                   variant later, set this to process.env.SP_MARKETPLACE_ID_UK
+ *                   (added to Vercel 2026-09-16, same as the CA one).
  *
  * cimeosil — REMOVED then RESTORED, both 2026-07-09. Initially dropped on
  * the assumption it wasn't a real registered brand (absent from the Brand
@@ -93,6 +115,12 @@ module.exports = [
     // ("Amazon.ca" vs "Amazon.com"), which is what this entry's
     // salesChannel is matched against. No new report request needed.
     salesChannel:    'Amazon.ca',
+    // ADDED 2026-09-16 — see marketplaceId note in the file header above.
+    // sync-sqp-request.js now uses this instead of defaulting to
+    // process.env.SP_MARKETPLACE_ID, since Search Query Performance is a
+    // single-marketplace-per-request report and this brand's ASINs are
+    // Canada-marketplace listings. Env var added to Vercel 2026-09-16.
+    marketplaceId:   process.env.SP_MARKETPLACE_ID_CA,
   },
   {
     id:              'dearcloud',
