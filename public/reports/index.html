@@ -2160,7 +2160,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="kpi-card">
           <div class="kpi-label">Reviews Requested</div>
           <div class="kpi-value" id="mfc-kpi-reviews">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-reviews-sub">Helium 10 Follow Up</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-reviews-sub">Post Purchase Follow Up</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Compliance Cases Resolved</div>
@@ -2380,7 +2380,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="kpi-card">
           <div class="kpi-label">Reviews Requested</div>
           <div class="kpi-value" id="mx-mfc-kpi-reviews">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Helium 10 Follow Up</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Post Purchase Follow Up</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Compliance Cases Resolved</div>
@@ -19778,7 +19778,21 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel" style="margin-top:16px;">Customer Service</div>' +
           '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
-            '<div class="pdfx-card-title">Orders by State · Last 30 Days</div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<div class="pdfx-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>' +
+              // ADDED 2026-09-18 per Jaclyn — this legend already existed
+              // live (a separate sibling element next to the card title,
+              // not part of the map SVG itself) but was never included in
+              // the PDF export, since mapHtml above is built purely from
+              // pdfxHTML('#mfc-us-svg') — the SVG element only, which
+              // never contained this legend to begin with. Matches the
+              // live version's exact gradient/sizing.
+              '<div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">' +
+                '<span>Fewer</span>' +
+                '<div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>' +
+                '<span>More</span>' +
+              '</div>' +
+            '</div>' +
             mapHtml +
           '</div>' +
         '</div>' +
