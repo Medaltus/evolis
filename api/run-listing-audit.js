@@ -305,10 +305,12 @@ async function getToken() {
 }
 
 // Sanitize a cell value for sending to Claude — remove smart quotes, em dashes,
-// HTML entities, extra whitespace. Truncate to maxLen.
+// HTML entities and extra whitespace. Input is preserved in full unless a
+// caller deliberately supplies maxLen. Output character limits are enforced
+// separately in the audit prompt and must never be reused as read-side caps.
 function san(s, maxLen) {
   if (!s) return '';
-  return String(s)
+  const cleaned = String(s)
     .replace(/&amp;/g, 'and').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/g, ' ')
     .replace(/[\u2018\u2019\u0060\u00b4]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
@@ -316,8 +318,8 @@ function san(s, maxLen) {
     .replace(/\u2026/g, '...')
     .replace(/\r?\n|\r/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLen || 400);
+    .trim();
+  return Number.isFinite(maxLen) ? cleaned.slice(0, maxLen) : cleaned;
 }
 
 // Parse Claude's plain-text delimited response into a result object.
@@ -749,8 +751,50 @@ COMPETITOR + CATEGORY-LEADER EVIDENCE:
 - Comparative context is not a template. Do not copy competitor wording or assume competitor claims/listings are compliant or substantiated for this product.
 - Use market data to understand positioning, shopper expectations and supported differentiation. Product-specific evidence outranks competitor/category convention.
 
+HOLISTIC PDP STRATEGY — REQUIRED BEFORE WRITING ANY FIELD:
+- Treat the title, Item Highlights, five bullets, description and backend keywords as one coordinated content system. Do not audit or rewrite a field in isolation.
+- First inventory the complete available evidence: PRODUCT CONTEXT, AUDIT GUARDRAILS, current listing, prior audit, business performance, keyword rankings and search volume, strategy groups, SKU-attributed ad terms, customer reviews, ingredients, brand insights and market context.
+- Build an internal content-priority map before generating rewrites. Identify: core product/use, purchase-critical facts, meaningful differentiators, substantiated proof, key ingredients, recurring customer needs or confusion, compliance constraints, established ranking terms, growth keyword opportunities, and useful information currently missing from the PDP.
+- Rank concepts by their value to shopper comprehension, conversion, differentiation, SEO defense, SEO growth and compliance. Existing copy does not receive priority merely because it is already present. PRODUCT CONTEXT is the source of truth for deciding which accurate product facts deserve PDP real estate.
+- Then assign each high-priority concept to its strongest appropriate field. Use the title for immediate product identification and the most valuable natural-fit search language; Item Highlights for rapid differentiation; bullets for the five strongest purchase-driving messages; description for useful detail, mechanism, education and supporting information; backend for relevant indexed keyword coverage that does not need shopper-facing placement.
+- Eliminate cross-field redundancy. Once a core benefit is clearly established, do not spend scarce space restating it in multiple bullets unless repetition is strategically justified by shopper comprehension or keyword protection.
+- Character limits are allocation constraints, not instructions to compress the current field. When a field is over limit, decide which concepts should remain, which should move, which are redundant or low-value enough to remove, and whether higher-priority unused PRODUCT CONTEXT or customer evidence should replace existing copy.
+- Do not silently discard meaningful information. If a product fact, customer need, differentiator, proof point or targeted keyword is removed from one field, determine whether it warrants relocation elsewhere in the PDP. State material relocations or intentional omissions concisely in the relevant NOTES field.
+- Do not assume all five current bullet topics deserve to survive. Select the five highest-value, nonredundant messages for this specific SKU from all available evidence. Likewise, do not omit a stronger unused message merely because no current bullet contains it.
+- Before finalizing, perform a whole-PDP coverage check: confirm the rewrites collectively communicate what the product is, why it matters, its strongest supported differentiators, the most important customer information, and the deliberate keyword strategy without avoidable duplication.
+- INPUT AND OUTPUT LENGTHS ARE SEPARATE: The current live title, Item Highlights, bullets, description, backend terms and ingredients are supplied for complete analysis and are not constrained by the rewrite limits. Read and assess the full supplied field. The 75/125/200/400-character limits apply only to the corresponding generated rewrites.
+- Do not say that a live field was truncated merely because it exceeds the allowed rewrite length. Only report input truncation if the prompt explicitly labels the field as truncated or includes a truncation marker.
+
+KEYWORD TIER CLASSIFICATION — DO NOT CONFUSE STRATEGY WITH PERFORMANCE:
+- Top 20, Opportunity, and Reach for the Stars are STRATEGY GROUPS: they identify keywords we want to target.
+- Tier 1, Tier 2, and Tier 3 are PERFORMANCE GROUPS: they are determined from current SHEET_KEYWORD_TRACKER data and the existing tenure logic.
+- A keyword may be called TIER 1 only when SHEET_KEYWORD_TRACKER provides a current organic rank <= PAGE1_RANK_CUTOFF for this SKU.
+- A keyword may be called TIER 2 only when SHEET_KEYWORD_TRACKER provides a current organic rank > PAGE1_RANK_CUTOFF and <= CLOSE_TO_PAGE1_MAX for this SKU.
+- A keyword may be called TIER 3 only when the existing Tier 3 tenure logic qualifies it.
+- If the tracker has no current organic rank for a keyword, NEVER describe it as Tier 1 or Tier 2.
+- Never infer a performance tier merely because a keyword appears in Top 20, Opportunity, Reach, the live listing, a previous audit, ads, reviews, or competitor data.
+
+TITLE KEYWORD SELECTION:
+- Title space is scarce. For SEO-oriented title language, preferentially use exact target keywords or natural grammatical forms of target keywords supplied in the strategy/performance evidence.
+- Priority for title SEO terms: Tier 1 Protect, then Tier 2 Push, then relevant Top 20 strategy keywords, then relevant Opportunity keywords. Reach for the Stars may be used only when strategically justified and when stronger target terms do not fit or are not appropriate.
+- Do NOT invent a new keyword phrase merely because it sounds natural, compact, or semantically related to the product.
+- Do NOT replace an available targeted keyword with an untracked synonym just to shorten the title.
+- An untracked phrase may be used only when it is necessary for accurate shopper comprehension/grammar or PRODUCT_CONTEXT/BRAND_INSIGHTS establishes it as important product terminology. If used, TITLE_NOTES must explicitly say it is untracked and explain why it is preferable to the available target keywords.
+- When shortening a title to meet the character limit, first look for a shorter accurate/compliant phrase from the supplied target keyword lists. Do not fill newly available title space with invented SEO terminology while relevant target keywords are available.
+- Consider current organic rank, search volume, strategy group, exact product relevance, compliance, and shopper comprehension together. Do not keyword-stuff.
+
+SEO EQUITY DEFENSE + KEYWORD RELOCATION:
+- Treat meaningful existing organic rankings as established SEO equity. The goal is incremental visibility growth without avoidable backsliding.
+- Before removing, materially altering, or reducing the prominence of a ranked keyword, evaluate its current organic rank, search volume, current PDP placement, exact product relevance and strategic importance. Consider ranking trajectory when trajectory data is supplied; never invent a trend when only current rank is available.
+- Protect valuable ranking terms in their current prominent field when practical. A larger-volume opportunity does not automatically justify displacing a relevant term with an established valuable ranking.
+- Before removing any targeted or ranked keyword from a field, check whether it appears elsewhere in the current PDP and proposed PDP. If it deserves continued coverage, relocate it to the strongest natural and compliant field available rather than letting it disappear.
+- Preserve exact keyword phrasing or a natural grammatical form when doing so remains accurate and readable. Do not force awkward repetition, keyword stuffing, irrelevant terms or noncompliant claims solely to preserve text.
+- Evaluate defense and opportunity together: protect what the ASIN is already winning, identify valuable coverage gaps, and add realistic growth terms without unnecessarily sacrificing existing visibility.
+- If an important keyword must be removed because it is inaccurate, noncompliant, irreconcilably awkward or displaced by materially stronger evidence, explain the tradeoff in the relevant NOTES field.
+- Complete this defense analysis before drafting rewrites, not as a QA step after the copy has already been written.
+
 KEYWORD COVERAGE RULES — priority order matters, read the tiers below carefully:
-- TIER 1 keywords (already ranking page 1) are the HIGHEST priority of anything in this audit — higher than adding any new keyword, higher than fixing a coverage gap. If a rewrite would remove or weaken a Tier 1 keyword's presence in whatever field it currently occupies, that is a critical problem — flag it explicitly and do not let the rewrite do that. We never want to lose a page-1 ranking to make room for something else.
+- TIER 1 keywords (already ranking page 1) are the highest SEO-defense priority. If a rewrite would remove or weaken a Tier 1 keyword in the field where it currently appears, treat that as a critical SEO risk: preserve it when accurate, compliant and natural, or explicitly explain the unavoidable tradeoff. Do not sacrifice valuable page-1 equity merely to add a new term or make copy sound cleaner.
 - TIER 2 keywords (close to page 1, sorted by volume) are the priority for NEW placement — these are the closest realistic wins. When choosing what to add to a field, prefer a Tier 2 keyword over an unranked keyword every time, even if the unranked one seems more "important" — proximity to page 1 with real volume behind it is worth more right now than a keyword with no ranking traction at all, no matter how strategically desirable that keyword sounds.
 - TIER 3 items (in the listing a long time, still not ranking) are NOT a placement task — do not just try to shove them into more fields. Raise them as a genuine open question in the relevant NOTES field: is this keyword too competitive for this listing to win, and does the suggested lower-volume alternative deserve a try instead? Do not resolve this question yourself — surface it for a human decision.
 - Do NOT recommend adding drug-claim keywords or any keyword that violates compliance rules, regardless of tier.
@@ -760,7 +804,9 @@ KEYWORD COVERAGE RULES — priority order matters, read the tiers below carefull
 BULLET FORMATTING RULES (apply to all bullet rewrites):
 - Every bullet must open with an ALL-CAPS phrase (3-6 words) followed by a colon, then sentence-case detail. Example: "CLINICALLY TESTED HAIR GROWTH SERUM: In 3 independent studies, 95% of users reported visibly thicker hair."
 - Flag any bullet that does NOT follow this ALL-CAPS header: detail format as a violation.
-- Across the catalog, align parallel bullets by position where products are related: B1 = hero claim/clinical proof, B2 = science/mechanism, B3 = key ingredients, B4 = who it is for/hair types, B5 = brand credentials/clean formula. Rewrites should follow this structure consistently.
+- Choose bullet topics only after completing the holistic PDP strategy. Each bullet must earn its space as one of the five strongest purchase-driving, nonredundant messages for this SKU.
+- For genuinely related variations, align parallel bullet positions when doing so improves comparison and consistency. Use B1 = hero value/proof, B2 = science/mechanism, B3 = key ingredients, B4 = intended user/use case, and B5 = credentials/formula as a flexible starting framework, not a mandatory template. Reorder or replace topics when PRODUCT CONTEXT, customer evidence or keyword strategy shows a different sequence is more valuable.
+- When shortening a bullet, do not merely compress its existing sentences. Reassess the current bullet against all unused and used evidence, retain only concepts that deserve bullet-level prominence, and relocate worthwhile supporting detail to the description or another appropriate field.
 - Within a single SKU, bullet headers should not repeat the same keyword root — vary to maximize keyword coverage.
 - Bullet rewrites must be max 200 chars including the ALL-CAPS header.
 
@@ -788,24 +834,26 @@ Write nothing else. No preamble. No explanation after the last line. Start immed
     const travel = isTravel(row);
 
     try {
-      const title     = san(row[COL.title], 400);
-      const ih        = san(row[COL.item_highlights], 200) || 'MISSING';
-      const b1        = san(row[COL.bullet_1], 300);
-      const b2        = san(row[COL.bullet_2], 300);
-      const b3        = san(row[COL.bullet_3], 300);
-      const b4        = san(row[COL.bullet_4], 300);
-      const b5        = san(row[COL.bullet_5], 300);
-      const desc      = san(row[COL.description], 400);
-      const backend      = san(row[COL.backend_keywords], 300);
-      const ingredients  = san(row[COL.ingredients], 600);
+      // Preserve the complete current PDP for analysis. Rewrite limits belong
+      // only to Claude's output instructions, never to these input fields.
+      const title        = san(row[COL.title]);
+      const ih           = san(row[COL.item_highlights]) || 'MISSING';
+      const b1           = san(row[COL.bullet_1]);
+      const b2           = san(row[COL.bullet_2]);
+      const b3           = san(row[COL.bullet_3]);
+      const b4           = san(row[COL.bullet_4]);
+      const b5           = san(row[COL.bullet_5]);
+      const desc         = san(row[COL.description]);
+      const backend      = san(row[COL.backend_keywords]);
+      const ingredients  = san(row[COL.ingredients]);
       const asin = (row[COL.asin] || '').trim();
       const skuContext = skuContextMap[sku] || {};
-      const productContext = san(skuContext.productContext || '', 2000);
-      const auditGuardrails = san(skuContext.auditGuardrails || '', 2000);
+      const productContext = san(skuContext.productContext || '');
+      const auditGuardrails = san(skuContext.auditGuardrails || '');
       const previousAudit = previousAuditMap[sku] || null;
       const contextBlock = `
 BUSINESS CONTEXT:
-BRAND INSIGHTS: ${san(brandInsights, 3000) || 'NOT AVAILABLE'}
+BRAND INSIGHTS: ${san(brandInsights) || 'NOT AVAILABLE'}
 PRODUCT CONTEXT: ${productContext || 'NOT AVAILABLE'}
 AUDIT GUARDRAILS: ${auditGuardrails || 'NOT AVAILABLE'}
 `;
@@ -825,7 +873,7 @@ Prior notes: ${san([previousAudit.titleNotes, previousAudit.ihNotes, previousAud
 ${contextBlock}${previousAuditContext}
 SKU: ${sku}
 Name: ${name} [TRAVEL SIZE]
-Title: ${title}
+Title (${title.length} chars as received by audit): ${title}
 Item Highlights: ${ih}
 Backend: ${backend}`;
       } else {
@@ -852,6 +900,13 @@ Backend: ${backend}`;
           const fmt = e => `${e.keyword}${e.rank !== null ? ` (rank #${e.rank}` : ' (not ranking'}${e.volume !== null ? `, ${e.volume}/mo)` : ')'}`;
 
           kwContext = `
+QUARTERLY KEYWORD STRATEGY GROUPS (these are TARGET GROUPS, not performance tiers):
+TOP 20 TARGETS: ${skuKws.top20.length ? skuKws.top20.join(', ') : 'None supplied.'}
+OPPORTUNITY TARGETS: ${(skuKws.opportunity || []).length ? skuKws.opportunity.join(', ') : 'None supplied.'}
+REACH FOR THE STARS: ${(skuKws.reach || []).length ? skuKws.reach.join(', ') : 'None supplied.'}
+
+IMPORTANT: Only the tracker-derived sections below establish Tier 1/Tier 2 status. A keyword appearing in a strategy group does not make it Tier 1 or Tier 2.
+
 TIER 1 — PROTECT (already ranking page 1 — DO NOT let a rewrite remove or weaken these; this is the highest priority, above adding anything new):
 ${tier1Protect.length ? tier1Protect.map(fmt).join(', ') : 'None currently on page 1 for this SKU.'}
 
@@ -895,6 +950,7 @@ FIELD PRIORITY FOR PLACEMENT: Title > Item Highlights > Bullets > Product Descri
         const marketContext = `CLOSE COMPETITORS: ${JSON.stringify((skuKws?.competitors || []).slice(0,10).map(compactMarketProduct))}\nCATEGORY LEADERS: ${JSON.stringify((skuKws?.categoryLeaders || []).slice(0,10).map(compactMarketProduct))}`;
 
         console.log(`[listing-audit][debug] ${sku}: context product=${!!productContext}, guardrails=${!!auditGuardrails}, priorAudit=${!!previousAudit}, businessMonths=${performanceContext.length}, trackerKeywords=${Object.keys(kwTrackerLookup).length}, adAsinRows=${adAsinRows.length}, reviews=${skuReviews.length}, competitors=${(skuKws?.competitors||[]).length}, leaders=${(skuKws?.categoryLeaders||[]).length}`);
+        console.log(`[listing-audit][debug] ${sku}: liveTitleChars=${title.length}, liveTitle=${JSON.stringify(title)}, strategyTop20=${skuKws?.top20?.length || 0}, strategyOpportunity=${skuKws?.opportunity?.length || 0}, strategyReach=${skuKws?.reach?.length || 0}`);
 
         userPrompt = `Audit this full listing SKU.
 ${contextBlock}${previousAuditContext}
@@ -908,14 +964,14 @@ SKU: ${sku}
 Name: ${name}
 ASIN: ${asin}
 Related SKUs in this catalog: ${siblings || 'none'}
-Title: ${title}
-Item Highlights: ${ih}
-Bullet 1: ${b1}
-Bullet 2: ${b2}
-Bullet 3: ${b3}
-Bullet 4: ${b4}
-Bullet 5: ${b5}
-Description (excerpt): ${desc}
+Title (${title.length} chars as received by audit): ${title}
+Item Highlights (${ih === 'MISSING' ? 0 : ih.length} chars as received by audit): ${ih}
+Bullet 1 (${b1.length} chars as received by audit): ${b1}
+Bullet 2 (${b2.length} chars as received by audit): ${b2}
+Bullet 3 (${b3.length} chars as received by audit): ${b3}
+Bullet 4 (${b4.length} chars as received by audit): ${b4}
+Bullet 5 (${b5.length} chars as received by audit): ${b5}
+Description (${desc.length} chars as received by audit): ${desc}
 Backend: ${backend}
 Ingredients: ${ingredients || 'NOT AVAILABLE'}`;
       }
