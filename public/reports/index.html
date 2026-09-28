@@ -1993,7 +1993,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           </label>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">
-          Sessions measured vs. launch; BSR change reflects total movement since first recorded.
+          Sessions measured vs. prior month; BSR change reflects total movement since first recorded.
         </div>
         <div class="momentum-cards-grid" id="bm-momentum-cards-grid"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
       </div>
@@ -16041,9 +16041,19 @@ window.initBrandMomentum = async function () {
     // this survives a future "evolis"/"Evolis"/"évolis" spelling
     // variation on the sheet without breaking again.
     const stripAccents = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // ADDED 2026-09-28 per Jaclyn — Brand Momentum should only show
+    // catalog products, not bundles (column J "SKU Type" on Product
+    // Short Name — same column/values already used for this exact
+    // purpose elsewhere on this dashboard, e.g. the internal Inventory
+    // page's own CATALOG-only filter). Confirmed directly against the
+    // real sheet before adding this: of the 31 Amazon-channel évolis
+    // rows, 19 are CATALOG and 12 are BUNDLE — the 12 bundles were
+    // showing as their own product cards before this fix, which is
+    // exactly the double-counting/merchandising-noise problem this
+    // column exists to let dashboards filter out.
     const evolisAsins = new Set(
       Object.values(master.byAsin)
-        .filter(e => stripAccents(e.brand).trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon'))
+        .filter(e => stripAccents(e.brand).trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon') && (e.skuType || '').trim().toUpperCase() === 'CATALOG')
         .map(e => e.asin)
     );
 
@@ -16083,7 +16093,12 @@ window.initBrandMomentum = async function () {
     }
 
     // ── Sessions by product (feeds cards, not a table anymore) ──
-    const launchSessionsBySku = {}; // first-ever recorded session count per SKU, for "% vs Launch"
+    // CHANGED 2026-09-28 per Jaclyn — was "% vs Launch" (first-ever
+    // recorded session count per SKU), now "% vs prior month" (MoM),
+    // matching the same prevYear/prevMonth already computed above for
+    // the top-3 Sessions KPI, just applied per-SKU instead of as one
+    // aggregate total.
+    const prevMonthSessionsBySku = {};
     const currSessionsBySku = {};
     bizRows.forEach(r => {
       const asin = (r.asin || '').trim().toUpperCase();
@@ -16091,12 +16106,12 @@ window.initBrandMomentum = async function () {
       const entry = master.byAsin[asin];
       const sku = entry ? entry.sku : asin;
       const sessions = parseInt(r.sessions, 10) || 0;
-      if (parseInt(r.year, 10) === year && parseInt(r.month, 10) === month) {
+      const rYear = parseInt(r.year, 10), rMonth = parseInt(r.month, 10);
+      if (rYear === year && rMonth === month) {
         currSessionsBySku[sku] = (currSessionsBySku[sku] || 0) + sessions;
       }
-      const ym = `${r.year}-${String(r.month).padStart(2, '0')}`;
-      if (!launchSessionsBySku[sku] || ym < launchSessionsBySku[sku].ym) {
-        launchSessionsBySku[sku] = { ym, sessions };
+      if (rYear === prevYear && rMonth === prevMonth) {
+        prevMonthSessionsBySku[sku] = (prevMonthSessionsBySku[sku] || 0) + sessions;
       }
     });
 
@@ -16190,7 +16205,7 @@ window.initBrandMomentum = async function () {
     // Cache everything bmRenderMomentumCards() needs to re-render without
     // re-fetching (same "hide negative" re-render pattern the old
     // bmRenderBsrTable used, now covering the whole card, not just BSR).
-    window._bmCardData = { master, currSessionsBySku, launchSessionsBySku, kwCountBySku, reviewStatsBySku, year, month };
+    window._bmCardData = { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month };
     window.bmRenderMomentumCards();
 
   } catch (err) {
@@ -16214,9 +16229,8 @@ window.initBrandMomentum = async function () {
 window.bmRenderMomentumCards = function () {
   const grid = document.getElementById('bm-momentum-cards-grid');
   if (!grid || !window._bmCardData) return;
-  const { master, currSessionsBySku, launchSessionsBySku, kwCountBySku, reviewStatsBySku, year, month } = window._bmCardData;
+  const { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month } = window._bmCardData;
   const hideNegativeBsr = document.getElementById('bm-hide-negative-bsr')?.checked;
-  const currMonthYm = `${year}-${String(month).padStart(2, '0')}`;
 
   const skus = Object.keys(currSessionsBySku).sort((a, b) => currSessionsBySku[b] - currSessionsBySku[a]);
   if (!skus.length) {
@@ -16229,13 +16243,18 @@ window.bmRenderMomentumCards = function () {
     const name = entry ? entry.name : sku;
 
     const sessions = currSessionsBySku[sku];
-    const launch = launchSessionsBySku[sku];
-    const pctVsLaunch = (launch && launch.sessions > 0 && launch.ym !== currMonthYm)
-      ? Math.round(((sessions - launch.sessions) / launch.sessions) * 1000) / 10
+    // CHANGED 2026-09-28 per Jaclyn — "% vs prior month" (MoM) instead
+    // of "% vs Launch". prevMonthSessionsBySku[sku] is undefined (not
+    // just zero) for a SKU with no sessions recorded last month at all
+    // — distinguished from "had 0 sessions last month" so a genuinely
+    // new SKU still shows "New SKU" rather than a misleading "+∞%".
+    const prevSessions = prevMonthSessionsBySku[sku];
+    const pctVsPrevMonth = (prevSessions !== undefined && prevSessions > 0)
+      ? Math.round(((sessions - prevSessions) / prevSessions) * 1000) / 10
       : null;
-    const sessPillHtml = pctVsLaunch != null
-      ? `<span class="momentum-pill ${pctVsLaunch > 0 ? 'momentum-pill-up' : 'momentum-pill-dn'}">${pctVsLaunch > 0 ? '▲' : '▼'} ${Math.abs(pctVsLaunch)}% vs launch</span>`
-      : `<span class="momentum-pill" style="background:var(--bg2);color:var(--muted);">${launch ? 'New SKU' : '—'}</span>`;
+    const sessPillHtml = pctVsPrevMonth != null
+      ? `<span class="momentum-pill ${pctVsPrevMonth > 0 ? 'momentum-pill-up' : 'momentum-pill-dn'}">${pctVsPrevMonth > 0 ? '▲' : '▼'} ${Math.abs(pctVsPrevMonth)}% vs prior month</span>`
+      : `<span class="momentum-pill" style="background:var(--bg2);color:var(--muted);">${prevSessions === undefined ? 'New SKU' : '—'}</span>`;
 
     const kwCount = kwCountBySku[sku] || 0;
 
@@ -21103,15 +21122,41 @@ async function loadAuditResultsFromSheet() {
         // our own <img>-only #pdfx-root content anyway. Confirmed 2026-07-14.
         // ADDED 2026-09-19 per Jaclyn — canonical PDF export pipeline,
         // ported verbatim from the VBC/Dazzle Dry build notes spec.
-        // Layer 3 (resolution): scale 2→3, JPEG 0.97→PNG (lossless,
-        // removes JPEG compression artifacting on text edges).
+        // Layer 3 (resolution): scale 2→3 for sharper text.
+        //
+        // FIXED 2026-09-28 per Jaclyn — real evidence from her own
+        // console log: PNG (also part of that same spec's Layer 3, tried
+        // first) crashed the export outright on a 17-page évolis report
+        // — RangeError: Invalid string length, thrown inside jsPDF's own
+        // internal Array.join during pdf.save(), AFTER all 17 pages had
+        // already captured successfully via html2canvas. That's a hard
+        // JS-engine string-length ceiling, not a quality/speed tradeoff
+        // — PNG's lossless encoding at scale:3 across 17 full-page
+        // screenshots produced more combined base64 data than one
+        // JavaScript string can hold. The spec's own file only had to
+        // validate against whatever page count VBC's own exports run at
+        // (single-brand, Amazon-only, no Brand Momentum/Insights/4-event
+        // pages) — évolis's page count is substantially larger, so this
+        // is a genuine évolis-scale problem the spec didn't anticipate,
+        // not a mistake in porting it. Reverted the FORMAT only (JPEG
+        // 0.97, matching the exact quality this file used before the
+        // PNG attempt and which was already proven to work at évolis's
+        // real page count) — scale:3 stays, so the resolution
+        // improvement is kept; JPEG's lossy compression is what actually
+        // brings the combined file size back under the string-length
+        // ceiling. Worth knowing: JPEG can reintroduce faint compression
+        // edges on text at very high zoom, the exact thing PNG was
+        // chosen to avoid — 0.97 quality keeps that minimal, and a
+        // crash-free export at slightly-less-than-perfect sharpness
+        // is the right tradeoff over a report that fails to generate
+        // at all.
         const canvas = await html2canvas(el, {
           scale: 3,
           backgroundColor: '#ffffff',
           ignoreElements: (node) => node.tagName === 'CANVAS' && !node.closest('#pdfx-root')
         });
         console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
-        const imgData = canvas.toDataURL('image/png');
+        const imgData = canvas.toDataURL('image/jpeg', 0.97);
         if (i > 0) pdf.addPage();
         // Layer 2 (never-distort proportional scaling) — the previous
         // logic capped height at pageHeightIn while leaving width fixed
@@ -21131,7 +21176,7 @@ async function loadAuditResultsFromSheet() {
           renderedWidthIn = pageWidthIn * shrink;
         }
         const xOffsetIn = (pageWidthIn - renderedWidthIn) / 2;
-        pdf.addImage(imgData, 'PNG', xOffsetIn, 0, renderedWidthIn, renderedHeightIn);
+        pdf.addImage(imgData, 'JPEG', xOffsetIn, 0, renderedWidthIn, renderedHeightIn);
       }
 
       const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
