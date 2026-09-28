@@ -16024,9 +16024,26 @@ window.initBrandMomentum = async function () {
     let prevYear = year, prevMonth = month - 1;
     if (prevMonth === 0) { prevMonth = 12; prevYear--; }
 
+    // FIXED 2026-09-28 per Jaclyn — real root cause of the entire Brand
+    // Momentum page showing zero data everywhere (all 3 KPIs, product
+    // cards, keyword table): confirmed directly against the live Product
+    // Short Name sheet that the real "Brand" column value is the
+    // ACCENTED "évolis" (confirmed: 46 rows, exact string), not plain
+    // "evolis" — 'évolis'.toLowerCase() !== 'evolis' in JS, since
+    // .toLowerCase() case-folds but does not strip accents, so this
+    // comparison always returned zero matches, making evolisAsins empty,
+    // which made every single downstream metric on this page empty too.
+    // This exact bug (this same brand-match line, copied verbatim from
+    // before this rebuild) predates this session's changes — not
+    // something the card rebuild introduced. Fixed to compare accent-
+    // stripped strings on both sides (Unicode NFD decompose + strip
+    // combining marks) rather than hardcoding the accented spelling, so
+    // this survives a future "evolis"/"Evolis"/"évolis" spelling
+    // variation on the sheet without breaking again.
+    const stripAccents = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const evolisAsins = new Set(
       Object.values(master.byAsin)
-        .filter(e => (e.brand || '').trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon'))
+        .filter(e => stripAccents(e.brand).trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon'))
         .map(e => e.asin)
     );
 
