@@ -748,6 +748,36 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .opp-title{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:6px;}
 .opp-subtitle{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;}
 .opp-body{font-size:12.5px;color:var(--muted);line-height:1.6;}
+/* ADDED 2026-09-28 per Jaclyn — "What's Been Accomplished" cards, ported
+   from the VBC/Dazzle Dry reference (which itself ported .opp-card/
+   .insight-grid FROM évolis originally — this is the authoritative,
+   unscoped source both were built against, not the .evo-page-prefixed
+   copy VBC keeps for its own reasons). Deliberately named .opp-card-title/
+   -subtitle/-body (not .opp-title/.opp-subtitle/.opp-body) so this new
+   section's CSS can't collide with the existing Future Opportunities
+   cards immediately below it on the same page. */
+.insight-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:0;}
+.opp-card-title{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px;}
+.opp-card-subtitle{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+.opp-card-body{font-size:12px;color:var(--navy);line-height:1.6;}
+.opp-card-images{display:none;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.opp-card-img{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:var(--bg2);}
+.acc-image-inputs{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border2);}
+.acc-image-inputs input{margin-bottom:6px;}
+.insight-image-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.insight-image-row input[type="text"]{flex:1;margin-bottom:0;}
+.insight-image-upload-btn{background:none;border:1px solid rgba(0,31,96,0.20);border-radius:var(--radius-sm);padding:4px 10px;font-size:10.5px;color:var(--muted);cursor:pointer;transition:all .13s;font-family:var(--font);white-space:nowrap;flex-shrink:0;}
+.insight-image-upload-btn:hover{border-color:var(--navy);color:var(--navy);}
+.insight-image-upload-btn.uploading{color:var(--muted);cursor:wait;}
+.insight-image-upload-btn.uploaded{border-color:#1db88a;color:#1db88a;}
+.insight-image-upload-btn.upload-error{border-color:var(--danger);color:var(--danger);}
+/* PDF-export-only image classes — only ever appear inside #pdfx-root, so
+   deliberately NOT reused from the live-dashboard classes above (the
+   Brand Momentum spec's "must be unscoped" lesson doesn't apply here
+   because these are already a separate class namespace, not a shared
+   one that needs unscoping). */
+.pdfx-opp-img{width:80px;height:108px;object-fit:cover;border-radius:0;border:1px solid var(--border);}
+.pdfx-opp-img-full{width:108px;height:100px;object-fit:cover;border-radius:0;border:1px solid var(--border);}
 .ppc-opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
 .ppc-opp-card.high{border-left:4px solid var(--warn);}
@@ -958,6 +988,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 /* flex:1 fills all remaining vertical space below the navy block (up to the full 11in page); justify-content:center vertically centers the pill/headline/columns within that remaining space, per the request to justify this content to the middle of the space below the navy area. */
 .pdfx-cover-white{padding:40px 60px;flex:1;display:flex;flex-direction:column;justify-content:center;}
 .pdfx-pill{display:inline-block;align-self:flex-start;background:rgba(36,233,163,.14);border:1px solid rgba(36,233,163,.35);border-radius:20px;padding:5px 16px;font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--green);margin-bottom:24px;}
+/* ADDED 2026-09-28 per Jaclyn — distinct pill color for "What's Been
+   Accomplished" (sand/warm) vs the green .pdfx-pill used for "Future
+   Opportunities", so the two sections read as visually distinct in the
+   PDF, matching the VBC/Dazzle Dry reference's own two-pill treatment. */
+.pdfx-pill-sand{background:var(--sand);border-color:rgba(200,125,47,.35);color:var(--warn);}
+.pdfx-opp-image-slot{display:flex;flex-wrap:wrap;gap:6px;}
 .pdfx-cover-headline{font-family:var(--font-subheader);font-size:20px;font-weight:600;color:var(--navy);line-height:1.35;margin-bottom:28px;}
 .pdfx-cover-cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:8px;}
 .pdfx-cover-col{font-size:12px;color:#48557a;line-height:1.75;}
@@ -1201,6 +1237,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-amazon" checked style="margin:0;"> Amazon</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-website" checked style="margin:0;"> Website</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-walmart" checked style="margin:0;"> Walmart</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-insights" checked style="margin:0;"> Insights</label>
         <!-- Marketing pages — same default-checked reasoning as Sales above. -->
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-fulfillment" checked style="margin:0;"> Fulfillment &amp; CS</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-stewardship" checked style="margin:0;"> Stewardship</label>
@@ -1660,6 +1697,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
         <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
         <button class="ch-tab" onclick="showChannel('sales','s-brand-momentum',this)">Brand Momentum</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-insights',this)">Insights</button>
       </div>
       <!-- Shared period-selector row — added 2026-08-12 per Jaclyn, moved
            here (right-aligned next to the channel tabs) to match Skinuva's
@@ -1934,6 +1972,48 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
           <li>Subcategory BSR trends as a leading indicator of category-level momentum, independent of overall BSR.</li>
           <li>Review velocity and rating trends as new products build up their own review base.</li>
         </ul>
+      </div>
+    </div>
+
+    <!-- ADDED 2026-09-28 per Jaclyn — ported from the VBC/Dazzle Dry
+         reference's dd-s-insights sub-tab (a Sales-page-level Insights
+         tab, distinct from the separate top-level Insights page/nav item
+         this dashboard already has). Same 3-card shape: a unit-sales-by-
+         category chart, the Subscribe & Save KPIs+chart (MOVED here from
+         the Opportunities page, not duplicated — removed from there
+         below), and an editable Key Insight text block matching this
+         file's own established .insight-text/.key-insight pattern. -->
+    <div class="channel-page" id="s-insights">
+      <div class="card">
+        <div class="card-title">Unit Sales by Product Category</div>
+        <div style="position:relative;height:320px;"><canvas id="ins-category-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Subscriptions</div>
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
+          <div class="kpi-card" id="kpi-active-subs"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">—</div><div class="kpi-mom flat">Loading…</div></div>
+          <div class="kpi-card" id="kpi-retention"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">—</div><div class="kpi-mom flat">Loading…</div></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;">Active Subscriptions by Month</div>
+          <div id="legend-sns" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="position:relative;height:260px;"><canvas id="chart-sns"></canvas></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Key Insight</div>
+          <button class="btn-edit" id="ins-catinsight-edit-btn">✏️ Edit</button>
+        </div>
+        <div class="insight-text key-insight" id="ins-catinsight-disp">Loading…</div>
+        <div class="insight-editor" id="ins-catinsight-editor">
+          <textarea id="ins-catinsight-input"></textarea>
+          <div class="editor-footer">
+            <span class="editor-note">Saves to this month's report row. Any field can be left blank — nothing here is required.</span>
+            <button class="btn-cancel" id="ins-catinsight-cancel-btn">Cancel</button>
+            <button class="btn-save-stage" id="ins-catinsight-save-btn">Save</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -2270,17 +2350,67 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     </div>
     <div class="channel-page" id="m-opportunities">
 
-      <div class="section-label">Subscribe &amp; Save</div>
-      <div class="kpi-row" style="margin-bottom:20px;">
-        <div class="kpi-card" id="kpi-active-subs"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" style="font-size:36px;">123</div><div class="kpi-mom flat">Loading…</div></div>
-        <div class="kpi-card" id="kpi-retention"><div class="kpi-label">Subscribe &amp; Save Retention (90 Days)</div><div class="kpi-value" style="font-size:36px;">70%</div><div class="kpi-mom flat">Loading…</div></div>
-      </div>
-      <div class="card" style="margin-bottom:20px;">
+      <!-- ADDED 2026-09-28 per Jaclyn — ported from the VBC/Dazzle Dry
+           reference (which itself originally ported the surrounding
+           .opp-card/.insight-editor pattern FROM évolis — bringing this
+           back as a genuine port, not a guess at what it should look
+           like). Same edit-in-place + monthly-report-row save pattern as
+           the existing Future Opportunities card below it, extended with
+           real image upload (accomplished1/accomplished2 only — 3/4 stay
+           text-only, matching the reference's own card layout exactly). -->
+      <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <div class="card-title" style="margin-bottom:0;">Active Subscriptions by Month</div>
-          <div id="legend-sns" style="display:flex;align-items:center;"></div>
+          <div class="card-title" style="margin-bottom:0;">What's Been Accomplished</div>
+          <button class="btn-edit" id="acc-edit-btn">✏️ Edit</button>
         </div>
-        <div style="position:relative;height:320px;"><canvas id="chart-sns"></canvas></div>
+        <div class="insight-grid" id="acc-display">
+          <div class="opp-card"><div class="opp-card-title" id="acc1-title-disp">Loading…</div><div class="opp-card-subtitle" id="acc1-subtitle-disp"></div><div class="opp-card-body" id="acc1-body-disp"></div><div class="opp-card-images" id="acc1-images-disp"></div></div>
+          <div class="opp-card"><div class="opp-card-title" id="acc2-title-disp">Loading…</div><div class="opp-card-subtitle" id="acc2-subtitle-disp"></div><div class="opp-card-body" id="acc2-body-disp"></div><div class="opp-card-images" id="acc2-images-disp"></div></div>
+          <div class="opp-card"><div class="opp-card-title" id="acc3-title-disp">Loading…</div><div class="opp-card-subtitle" id="acc3-subtitle-disp"></div><div class="opp-card-body" id="acc3-body-disp"></div></div>
+          <div class="opp-card"><div class="opp-card-title" id="acc4-title-disp">Loading…</div><div class="opp-card-subtitle" id="acc4-subtitle-disp"></div><div class="opp-card-body" id="acc4-body-disp"></div></div>
+        </div>
+        <div id="acc-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No entries added yet — click Edit to add up to 4.</div>
+        <div class="insight-editor" id="acc-editor">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div><div class="insight-editor-label">Accomplished 1 — Title</div><input type="text" id="acc1-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="acc1-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="acc1-body-input"></textarea>
+              <div class="acc-image-inputs">
+                <div class="insight-editor-label">Images (up to 6)</div>
+                <div class="insight-image-row"><input type="text" id="acc1-image1-input" placeholder="Image 1 URL"><label class="insight-image-upload-btn" id="acc1-image1-btn" for="acc1-image1-file">📤 Upload</label><input type="file" id="acc1-image1-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image1-input','acc1-image1-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc1-image2-input" placeholder="Image 2 URL"><label class="insight-image-upload-btn" id="acc1-image2-btn" for="acc1-image2-file">📤 Upload</label><input type="file" id="acc1-image2-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image2-input','acc1-image2-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc1-image3-input" placeholder="Image 3 URL"><label class="insight-image-upload-btn" id="acc1-image3-btn" for="acc1-image3-file">📤 Upload</label><input type="file" id="acc1-image3-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image3-input','acc1-image3-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc1-image4-input" placeholder="Image 4 URL"><label class="insight-image-upload-btn" id="acc1-image4-btn" for="acc1-image4-file">📤 Upload</label><input type="file" id="acc1-image4-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image4-input','acc1-image4-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc1-image5-input" placeholder="Image 5 URL"><label class="insight-image-upload-btn" id="acc1-image5-btn" for="acc1-image5-file">📤 Upload</label><input type="file" id="acc1-image5-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image5-input','acc1-image5-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc1-image6-input" placeholder="Image 6 URL"><label class="insight-image-upload-btn" id="acc1-image6-btn" for="acc1-image6-file">📤 Upload</label><input type="file" id="acc1-image6-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc1-image6-input','acc1-image6-btn')"></div>
+              </div>
+            </div>
+            <div><div class="insight-editor-label">Accomplished 2 — Title</div><input type="text" id="acc2-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="acc2-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="acc2-body-input"></textarea>
+              <div class="acc-image-inputs">
+                <div class="insight-editor-label">Images (up to 6)</div>
+                <div class="insight-image-row"><input type="text" id="acc2-image1-input" placeholder="Image 1 URL"><label class="insight-image-upload-btn" id="acc2-image1-btn" for="acc2-image1-file">📤 Upload</label><input type="file" id="acc2-image1-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image1-input','acc2-image1-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc2-image2-input" placeholder="Image 2 URL"><label class="insight-image-upload-btn" id="acc2-image2-btn" for="acc2-image2-file">📤 Upload</label><input type="file" id="acc2-image2-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image2-input','acc2-image2-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc2-image3-input" placeholder="Image 3 URL"><label class="insight-image-upload-btn" id="acc2-image3-btn" for="acc2-image3-file">📤 Upload</label><input type="file" id="acc2-image3-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image3-input','acc2-image3-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc2-image4-input" placeholder="Image 4 URL"><label class="insight-image-upload-btn" id="acc2-image4-btn" for="acc2-image4-file">📤 Upload</label><input type="file" id="acc2-image4-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image4-input','acc2-image4-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc2-image5-input" placeholder="Image 5 URL"><label class="insight-image-upload-btn" id="acc2-image5-btn" for="acc2-image5-file">📤 Upload</label><input type="file" id="acc2-image5-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image5-input','acc2-image5-btn')"></div>
+                <div class="insight-image-row"><input type="text" id="acc2-image6-input" placeholder="Image 6 URL"><label class="insight-image-upload-btn" id="acc2-image6-btn" for="acc2-image6-file">📤 Upload</label><input type="file" id="acc2-image6-file" accept="image/*" style="display:none;" onchange="evoUploadInsightImage(this,'acc2-image6-input','acc2-image6-btn')"></div>
+              </div>
+            </div>
+            <div><div class="insight-editor-label">Accomplished 3 — Title</div><input type="text" id="acc3-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="acc3-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="acc3-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Accomplished 4 — Title</div><input type="text" id="acc4-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="acc4-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="acc4-body-input"></textarea></div>
+          </div>
+          <div class="editor-footer">
+            <span class="editor-note">Saves all 4 cards together to this month's report row. Any field (including images) can be left blank.</span>
+            <button class="btn-cancel" id="acc-cancel-btn">Cancel</button>
+            <button class="btn-save-stage" id="acc-save-btn">Save</button>
+          </div>
+        </div>
       </div>
 
       <div class="card" style="margin-bottom:16px;">
@@ -4975,7 +5105,8 @@ function showPage(id, btn) {
     if (cid && cid.indexOf('ix-') === 0) window.initInventoryExternalPage();
     if (cid==='m-stewardship')   window.initStewardshipLive();
     if (cid==='m-fulfillment-cs') window.initMarketingFulfillmentCS();
-    if (cid==='m-opportunities' && !window._snsChart) initSns();
+    if (cid==='s-insights' && !window._snsChart) initSns();
+    if (cid==='s-insights' && !window._insCategoryChart) loadInsCategoryChart();
   }
 }
 
@@ -4997,7 +5128,8 @@ function showChannel(page, channelId, btn) {
     if (channelId.indexOf('mx-') === 0)  window.initMarketingExternalPage();
     if (channelId.indexOf('ix-') === 0)  window.initInventoryExternalPage();
     if (channelId === 'm-stewardship')   window.initStewardshipLive();
-    if (channelId === 'm-opportunities' && !window._snsChart) initSns();
+    if (channelId === 's-insights' && !window._snsChart) initSns();
+    if (channelId === 's-insights' && !window._insCategoryChart) loadInsCategoryChart();
     if (channelId === 'ev-primeday')     window.initPrimeDayReport();
     if (channelId === 'ev-spring')       window.initBigSpringSaleReport();
     if (channelId === 'ev-pbdd')         window.initPBDDReport();
@@ -12782,6 +12914,59 @@ async function initSnsExternal() {
 // Approve buttons total, both at the top-right of a tab menu rather than on
 // any content block: one on Sales (approves this month), one on Events
 // (approves whichever event tab is currently active).
+// ADDED 2026-09-28 per Jaclyn — real image upload for the Accomplished
+// cards, ported from the VBC/Dazzle Dry reference's ddUploadInsightImage
+// (renamed since this is évolis's own single-brand dashboard, not a
+// multi-brand one needing a "dd-" prefix). Backend: api/upload-insight-
+// image.js (new file — see that file's own header for what it does).
+// Declared as a bare top-level function (not inside any IIFE) since it's
+// called from inline onchange="" attributes in the HTML above, which
+// always resolve against the global scope.
+async function evoUploadInsightImage(fileInputEl, targetInputId, statusBtnId) {
+  const file = fileInputEl.files && fileInputEl.files[0];
+  if (!file) return;
+  const targetInput = document.getElementById(targetInputId);
+  const statusBtn = document.getElementById(statusBtnId);
+  const MAX_BYTES = 4 * 1024 * 1024; // stay comfortably under Vercel's 4.5MB body limit once base64-inflated ~33%
+  if (file.size > MAX_BYTES) {
+    if (statusBtn) { statusBtn.textContent = '✗ Too large (max 4MB)'; statusBtn.classList.remove('uploading', 'uploaded'); statusBtn.classList.add('upload-error'); }
+    fileInputEl.value = '';
+    return;
+  }
+  try {
+    if (statusBtn) { statusBtn.textContent = '⟳ Uploading…'; statusBtn.classList.remove('uploaded', 'upload-error'); statusBtn.classList.add('uploading'); }
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); // strip the data: URL prefix
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
+    const res = await fetch('/api/upload-insight-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, mimeType: file.type, imageBase64: base64 }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+    if (targetInput) targetInput.value = data.url;
+    if (statusBtn) { statusBtn.textContent = '✓ Uploaded'; statusBtn.classList.remove('uploading'); statusBtn.classList.add('uploaded'); }
+  } catch (err) {
+    console.error('[evoUploadInsightImage]', err);
+    if (statusBtn) { statusBtn.textContent = '✗ Upload failed'; statusBtn.classList.remove('uploading'); statusBtn.classList.add('upload-error'); }
+  } finally {
+    fileInputEl.value = ''; // allow re-selecting the same file again if needed
+  }
+}
+
+function renderAccImages(containerId, urls) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const valid = (urls || []).map(u => (u || '').trim()).filter(Boolean);
+  if (!valid.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = valid.map(u => '<img src="' + u.replace(/"/g, '&quot;') + '" class="opp-card-img" alt="" onerror="this.style.display=\'none\'">').join('');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof window.wireInsightBlock !== 'function') { console.warn('[ReportInsights] wireInsightBlock not loaded'); return; }
 
@@ -12814,6 +12999,15 @@ document.addEventListener('DOMContentLoaded', function() {
     scope: 'monthly',
     fields: [{ key: 'ad_impressions_note', displayId: 'adimp-insight-text', textareaId: 'adimp-insight-textarea', placeholder: 'No note added yet — click Edit to add one.' }],
     editBtnId: 'adimp-insight-edit-btn', saveBtnId: 'adimp-insight-save', cancelBtnId: 'adimp-insight-cancel', editorId: 'adimp-insight-editor',
+  });
+  // ADDED 2026-09-28 per Jaclyn — Key Insight field for the new Sales >
+  // Insights tab, ported structurally from the VBC/Dazzle Dry reference's
+  // dd-catinsight-* fields, matching this file's own wireInsightBlock
+  // pattern used by every other Key Insight field above.
+  window.wireInsightBlock({
+    scope: 'monthly',
+    fields: [{ key: 'category_key_insight', displayId: 'ins-catinsight-disp', textareaId: 'ins-catinsight-input', placeholder: 'No insight added yet — click Edit to add one.' }],
+    editBtnId: 'ins-catinsight-edit-btn', saveBtnId: 'ins-catinsight-save-btn', cancelBtnId: 'ins-catinsight-cancel-btn', editorId: 'ins-catinsight-editor',
   });
 
   // Events — one summary block per event tab. No per-block Approve anymore.
@@ -12861,6 +13055,104 @@ document.addEventListener('DOMContentLoaded', function() {
     },
   });
   window._refreshEventsApproveBtn = eventsApprove ? eventsApprove.refresh : null;
+
+  // ── What's Been Accomplished: 4 cards, cards 1-2 with up to 6 images ────
+  // ADDED 2026-09-28 per Jaclyn, ported from the VBC/Dazzle Dry reference.
+  // Same wireOpportunities() shape immediately below (bespoke rather than
+  // wireInsightBlock, for the same show/hide-whole-card-on-blank-Title
+  // reason), extended with real image upload via evoUploadInsightImage +
+  // renderAccImages.
+  (function wireAccomplished() {
+    const BRAND = 'evolis';
+    const editBtn = document.getElementById('acc-edit-btn');
+    const saveBtn = document.getElementById('acc-save-btn');
+    const cancelBtn = document.getElementById('acc-cancel-btn');
+    const editorEl = document.getElementById('acc-editor');
+    if (!editBtn || !saveBtn || !editorEl) return;
+
+    function getLastFullMonthLocalAcc() {
+      const now = new Date();
+      let year = now.getFullYear(), month = now.getMonth();
+      if (month === 0) { month = 12; year--; }
+      return { year, month };
+    }
+
+    async function load() {
+      const { year, month } = getLastFullMonthLocalAcc();
+      const row = await window.reportInsightsFetchRow(BRAND, { year: String(year), month: String(month) });
+      let anyVisible = false;
+      [1, 2, 3, 4].forEach(n => {
+        const title    = row ? (row[`acc${n}_title`]    || '') : '';
+        const subtitle = row ? (row[`acc${n}_subtitle`] || '') : '';
+        const body     = row ? (row[`acc${n}_body`]     || '') : '';
+        const card = document.getElementById(`acc-display`).children[n - 1];
+        if (title) {
+          anyVisible = true;
+          card.style.display = '';
+          document.getElementById(`acc${n}-title-disp`).textContent = title;
+          const subEl = document.getElementById(`acc${n}-subtitle-disp`);
+          if (subtitle) { subEl.textContent = subtitle; subEl.style.display = ''; }
+          else { subEl.textContent = ''; subEl.style.display = 'none'; }
+          document.getElementById(`acc${n}-body-disp`).textContent = body;
+        } else {
+          card.style.display = 'none';
+        }
+        const taTitle = document.getElementById(`acc${n}-title-input`);
+        const taSub   = document.getElementById(`acc${n}-subtitle-input`);
+        const taBody  = document.getElementById(`acc${n}-body-input`);
+        if (taTitle) taTitle.value = title;
+        if (taSub)   taSub.value = subtitle;
+        if (taBody)  taBody.value = body;
+
+        if (n === 1 || n === 2) {
+          const urls = [1, 2, 3, 4, 5, 6].map(i => (row ? (row[`acc${n}_image${i}`] || '') : ''));
+          renderAccImages(`acc${n}-images-disp`, urls);
+          urls.forEach((u, i) => {
+            const inp = document.getElementById(`acc${n}-image${i + 1}-input`);
+            if (inp) inp.value = u;
+            const btn = document.getElementById(`acc${n}-image${i + 1}-btn`);
+            if (btn) { btn.textContent = '📤 Upload'; btn.classList.remove('uploading', 'uploaded', 'upload-error'); }
+          });
+        }
+      });
+      document.getElementById('acc-empty-state').style.display = anyVisible ? 'none' : 'block';
+      return row;
+    }
+
+    editBtn.addEventListener('click', () => {
+      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+    });
+    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+
+    saveBtn.addEventListener('click', async () => {
+      const origLabel = saveBtn.textContent;
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      try {
+        const { year, month } = getLastFullMonthLocalAcc();
+        const fields = {};
+        [1, 2, 3, 4].forEach(n => {
+          fields[`acc${n}_title`]    = (document.getElementById(`acc${n}-title-input`).value || '').trim();
+          fields[`acc${n}_subtitle`] = (document.getElementById(`acc${n}-subtitle-input`).value || '').trim();
+          fields[`acc${n}_body`]     = (document.getElementById(`acc${n}-body-input`).value || '').trim();
+          if (n === 1 || n === 2) {
+            [1, 2, 3, 4, 5, 6].forEach(i => {
+              const inp = document.getElementById(`acc${n}-image${i}-input`);
+              fields[`acc${n}_image${i}`] = inp ? (inp.value || '').trim() : '';
+            });
+          }
+        });
+        await window.reportInsightsSaveFields({ scope: 'monthly', year, month, fields, action: 'save' });
+        await load();
+        editorEl.style.display = 'none';
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      } finally {
+        saveBtn.disabled = false; saveBtn.textContent = origLabel;
+      }
+    });
+
+    load();
+  })();
 
   // ── Future Opportunities: up to 4 cards, title/subtitle/body ────────────
   // Bespoke rather than wireInsightBlock, since it needs to show/hide whole
@@ -13682,6 +13974,96 @@ function getProductMaster() {
   })();
   return _productMasterPromise;
 }
+
+// ADDED 2026-09-28 per Jaclyn — "Unit Sales by Product Category" chart for
+// the new Sales > Insights tab, structurally ported from the VBC/Dazzle
+// Dry reference's loadDDCategoryChart, adapted to évolis's own real data
+// sources (verified directly against the live sheets before writing this,
+// not assumed from the reference): getProductMaster()'s byAsin map
+// (already strips the "EVO • " brand-code prefix at the source — see that
+// function's own comment) for category-per-ASIN, and the Business Report
+// sheet (month/year/ASIN, one row per ASIN per month) for units.
+// UNITS_ORDERED_CLEAN (Vine-deducted) used rather than raw UNITS_ORDERED,
+// per this file's own standing note that dashboards should read the
+// _CLEAN columns. évolis's 5 real categories, confirmed directly against
+// the Product Short Name sheet's "Product Category" column: Shampoo,
+// Conditioner, Hair Mask, Activator, Dry Shampoo (same 5 the existing
+// Insights > Reviews tab's category pills already use).
+const INS_CATEGORY_CONFIG = [
+  { match: 'Activator',   label: 'Activator',   color: '#001F60' },
+  { match: 'Shampoo',     label: 'Shampoo',     color: '#24E9A3' },
+  { match: 'Conditioner', label: 'Conditioner', color: '#6B7BA2' },
+  { match: 'Hair Mask',   label: 'Hair Mask',   color: '#C87D2F' },
+  { match: 'Dry Shampoo', label: 'Dry Shampoo', color: '#CCD3D5' },
+];
+window.loadInsCategoryChart = async function () {
+  if (window._insCategoryChart) return;
+  const canvas = document.getElementById('ins-category-chart');
+  if (!canvas) return;
+  const BIZ_SHEET_ID = '1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww';
+  const BIZ_GID = '310979287';
+  try {
+    const [master, bizCsv] = await Promise.all([
+      getProductMaster(),
+      fetch(ovCsvUrl(BIZ_SHEET_ID, BIZ_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
+    ]);
+    const bizRows = parseCsvToRows(bizCsv);
+
+    const f = v => parseFloat((v || '0').toString().replace(/[^0-9.-]/g, '')) || 0;
+    const byPeriod = {}; // 'YYYY-M' -> { category: units }
+    bizRows.forEach(r => {
+      const asin = (r.asin || '').trim().toUpperCase();
+      const entry = master.byAsin[asin];
+      const cat = entry ? entry.category : '';
+      if (!INS_CATEGORY_CONFIG.some(c => c.match === cat)) return;
+      const yr = (r.year || '').trim(), mo = String(f(r.month));
+      if (!yr || !mo) return;
+      const key = `${yr}-${mo}`;
+      byPeriod[key] = byPeriod[key] || {};
+      byPeriod[key][cat] = (byPeriod[key][cat] || 0) + f(r.units_ordered_clean);
+    });
+
+    const periods = Object.keys(byPeriod)
+      .map(k => { const [yr, mo] = k.split('-'); return { key: k, year: Number(yr), month: Number(mo) }; })
+      .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+      .slice(-13);
+    if (!periods.length) return;
+
+    const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels = periods.map(p => MONTH_ABBR[p.month - 1] || p.month);
+    const datasets = INS_CATEGORY_CONFIG.map(c => ({
+      label: c.label,
+      data: periods.map(p => (byPeriod[p.key] && byPeriod[p.key][c.match]) || 0),
+      backgroundColor: c.color,
+      borderRadius: 2,
+    }));
+
+    window._insCategoryChart = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 12, font: { family: 'DM Sans, sans-serif', size: 11 }, color: '#001F60' } },
+          tooltip: {
+            backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
+            titleColor: '#001F60', bodyColor: '#6B7BA2',
+            titleFont: { family: 'DM Sans, sans-serif', size: 11, weight: '600' },
+            bodyFont: { family: 'DM Sans, sans-serif', size: 11 },
+            padding: 12,
+          },
+        },
+        scales: {
+          x: { border: { display: false }, grid: { display: false }, ticks: { font: { family: 'DM Sans, sans-serif', size: 10 }, color: '#6B7BA2' } },
+          y: { border: { display: false }, grid: { color: 'rgba(0,31,96,0.05)' }, ticks: { font: { family: 'DM Sans, sans-serif', size: 10 }, color: '#6B7BA2' } },
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[loadInsCategoryChart]', err);
+  }
+};
 
 // Bundle product list — added 2026-08-10 per Jaclyn. Built dynamically
 // from Product Short Name (skuType === 'BUNDLE') rather than a hardcoded
@@ -19032,6 +19414,8 @@ async function loadAuditResultsFromSheet() {
     _investChart: 'chart-invest',
     _impressChart: 'chart-impressions',
     _snsChart: 'chart-sns',
+    // ADDED 2026-09-28 per Jaclyn — new Sales > Insights tab's category chart.
+    _insCategoryChart: 'ins-category-chart',
     // Added 2026-07-21 — was never registered here at all, so it fell
     // through to the naive pdfxRawChartImg fallback (no force-visible
     // ancestors, no correct-size capture), which is exactly why it showed
@@ -19060,6 +19444,25 @@ async function loadAuditResultsFromSheet() {
     _bfcmTopSellersChart: 'bfcm-chart-top-sellers',
   };
   let PDFX_CHART_CACHE = null; // populated once per export by pdfxCaptureAllChartImages() — now {varName: {img, width, height}}
+
+  // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle Dry
+  // build notes). Map of varName -> its real intended PDF display height
+  // (px, at PDFX_CARD_WIDTH_PX display width), used at CAPTURE time
+  // instead of deriving captureHeightPx from the live dashboard's own
+  // unrelated container height. Per the spec: "charts with no listed
+  // target... keep their original dashboard-container-derived sizing,
+  // unchanged." Starting empty deliberately — this file's own overflow-
+  // prone charts (if any) haven't been identified by a real test export
+  // yet, the way the spec's own history shows was necessary for VBC's
+  // Sales page chart specifically. pdfxFitChartsToPage/
+  // pdfxPlanChartHeights below are fully active regardless, so genuine
+  // overflow is still caught and handled correctly even with this map
+  // empty — this is the safety net doing its job, not a gap. Populate an
+  // entry here (keeping it in sync with the matching PDFX_EVOLIS_FIT_CHARTS
+  // entry's defaultHeightPx) only once a specific chart is confirmed, via
+  // a real export, to need its capture pre-sized rather than relying on
+  // the dynamic safety net.
+  const PDFX_CHART_TARGET_HEIGHT_PX = {};
 
   function pdfxRawChartImg(varName) {
     try {
@@ -19127,7 +19530,7 @@ async function loadAuditResultsFromSheet() {
 
 
 
-  async function pdfxCaptureAllChartImages() {
+  async function pdfxCaptureAllChartImages(heightOverrides) {
     const restore = []; // [{el, prop, prevValue}] — only ever touches display:none ancestors, nothing chart-related
     const varNames = Object.keys(PDFX_CHART_CANVAS_IDS);
 
@@ -19225,7 +19628,7 @@ async function loadAuditResultsFromSheet() {
     // explicit taller height — same capture logic, just with an optional
     // height override instead of the chart's current natural size. Per
     // Jaclyn 2026-07-15.
-    function pdfxCaptureOneChart(varName) {
+    function pdfxCaptureOneChart(varName, heightOverrides) {
       const liveCanvas = document.getElementById(PDFX_CHART_CANVAS_IDS[varName]);
       const liveChart = window[varName];
       if (!liveCanvas || !liveChart) return { img: '', width: 0, height: 0, displayHeightPx: 0 };
@@ -19265,7 +19668,20 @@ async function loadAuditResultsFromSheet() {
       const PDFX_CAPTURE_TENSION = 0.3; // 2026-07-16: bumped from 0.22 — Jaclyn wanted more curve. Re-tested at 0.3 (the dashboard's own native value) with the corrected line-weight scaling and 0.9x height factor already in place, and it now reads clean rather than bulgy — the earlier over-exaggeration was compounded by the un-scaled thin lines, not tension alone.
       const PDFX_LINE_WIDTH_TARGET_PX = 3;   // dashboard's own is 2.5 — slightly heavier per Jaclyn's "increase the weight" ask
       const PDFX_POINT_RADIUS_TARGET_PX = 2.2; // dashboard's own is 2
-      const captureHeightPx = Math.round(originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX));
+      const captureHeightPx = Math.round(
+        (heightOverrides && heightOverrides[varName])
+          ? originalWidthPx * ((heightOverrides[varName]) / PDFX_CARD_WIDTH_PX)
+          : (PDFX_CHART_TARGET_HEIGHT_PX[varName]
+              ? originalWidthPx * (PDFX_CHART_TARGET_HEIGHT_PX[varName] / PDFX_CARD_WIDTH_PX)
+              : originalWidthPx * ((dashboardHeightPx * PDFX_HEIGHT_FACTOR) / PDFX_CARD_WIDTH_PX))
+      );
+      // ADDED 2026-09-19 per Jaclyn — spec's "second bug" (playbook Case
+      // 8, a timing race): if a chart is still mid-animation when
+      // captured, Chart.js postpones the real resize() until its next
+      // draw, so the capture reads the canvas at its OLD size — wrong
+      // aspect ratio, silently. stop() forces any running animation to
+      // finish synchronously before resize() below actually takes effect.
+      liveChart.stop();
       liveChart.resize(originalWidthPx, captureHeightPx);
       console.log('[pdf-export][qa]', varName, '— canvas dims IMMEDIATELY after resize():', liveCanvas.width + 'x' + liveCanvas.height, '(requested', originalWidthPx + 'x' + captureHeightPx + ')');
 
@@ -19392,7 +19808,7 @@ async function loadAuditResultsFromSheet() {
 
     const images = {};
     varNames.forEach(function (varName) {
-      images[varName] = pdfxCaptureOneChart(varName);
+      images[varName] = pdfxCaptureOneChart(varName, heightOverrides);
     });
 
     // Nothing but hidden-ancestor visibility to restore now — the live
@@ -19441,7 +19857,14 @@ async function loadAuditResultsFromSheet() {
       : '<span style="font-family:Georgia,\'Times New Roman\',serif;font-style:italic;">évolis<sup style="font-size:.5em;">®</sup></span>';
   }
 
-  function pdfxChartBlock(varName, fallbackLabel) {
+  // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle Dry
+  // build notes): optional 3rd/4th params (maxHeightPx, imgId). maxHeightPx
+  // is intentionally IGNORED — kept as a parameter rather than touching
+  // every existing 2-arg call site's argument order, per the spec's own
+  // approach to this exact situation. imgId, when passed, tags the
+  // returned <img> so pdfxFitChartsToPage (below) can find and shrink
+  // this specific chart image if the page it's on overflows.
+  function pdfxChartBlock(varName, fallbackLabel, maxHeightPx, imgId) {
     const img = pdfxChartImg(varName);
     if (img) {
       // Height computed from the chart's OWN real captured aspect ratio at
@@ -19466,10 +19889,124 @@ async function loadAuditResultsFromSheet() {
       // width instead of stretching to fill the card, that's exactly "full
       // data span, squeezed into less than half the card width." No
       // ambiguity left for html2canvas to get wrong here. Confirmed 2026-07-14.
-      return '<img src="' + img + '" style="display:block;width:' + cardWidthPx + 'px;height:' + heightPx + 'px;">';
+      return '<img' + (imgId ? ' id="' + imgId + '"' : '') + ' src="' + img + '" style="display:block;width:' + cardWidthPx + 'px;height:' + heightPx + 'px;">';
     }
     return '<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);font-style:italic;">' +
       pdfxEscape(fallbackLabel || 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') + '</div>';
+  }
+
+  // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle Dry
+  // build notes). .pdfx-page is min-height:11in with overflow:hidden
+  // (confirmed directly from this file's own CSS) — content taller than
+  // that is silently CLIPPED, not pushed to a new page. 11in × 96 CSS
+  // px/in = 1056px.
+  const PDFX_TARGET_PAGE_HEIGHT_PX = 1056;
+
+  // Registry of pages known to pair a variable-length editable text field
+  // with a chart — the specific combination the spec identifies as the
+  // real overflow risk (a fixed-height page, a chart at a fixed target
+  // size, and page-to-page variability only in the text). Each of
+  // évolis's 4 event pages (Big Spring Sale/Prime Day/Prime Big Deal
+  // Days/BFCM) shares this exact pattern via the single buildEventPage()
+  // function: an editable Key Insight-style summary body paired with its
+  // own Top Sellers chart. Confirmed by reading buildEventPage() directly
+  // before writing this, not assumed from the pattern's name alone.
+  const PDFX_EVOLIS_FIT_CHARTS = {
+    'ev-bss':  [{ id: 'pdfx-img-bsstopsellers',  varName: '_bssTopSellersChart',  defaultHeightPx: 230, minHeightPx: 140 }],
+    'ev-pd':   [{ id: 'pdfx-img-pdtopsellers',   varName: '_pdTopSellersChart',   defaultHeightPx: 230, minHeightPx: 140 }],
+    'ev-pbdd': [{ id: 'pdfx-img-pbddtopsellers', varName: '_pbddTopSellersChart', defaultHeightPx: 230, minHeightPx: 140 }],
+    'ev-bfcm': [{ id: 'pdfx-img-bfcmtopsellers', varName: '_bfcmTopSellersChart', defaultHeightPx: 230, minHeightPx: 140 }],
+  };
+
+  // Layer 1 (post-capture safety net) — runs against a page already in
+  // the DOM (real captured chart <img>s already in place), right before
+  // that page's own html2canvas call. If the page's actual rendered
+  // height overflows the 11in page, proportionally shrinks the listed
+  // chart <img>s (width AND height together, so the aspect ratio that
+  // pdfxChartBlock already computed correctly is preserved — this only
+  // ever scales that box down, never distorts it) down to their
+  // minHeightPx floor, re-measuring after each step. This is a safety
+  // net specifically — pdfxPlanChartHeights below is the primary
+  // mechanism, capturing charts at the right size the first time so this
+  // rarely has to do real work.
+  function pdfxFitChartsToPage(pageEl, chartConfigs) {
+    if (!pageEl || !chartConfigs || !chartConfigs.length) return;
+    let guard = 0;
+    while (pageEl.scrollHeight > PDFX_TARGET_PAGE_HEIGHT_PX && guard < 20) {
+      guard++;
+      const imgs = chartConfigs
+        .map(function (c) { return { cfg: c, el: pageEl.querySelector('#' + c.id) }; })
+        .filter(function (x) { return x.el && x.el.offsetHeight > x.cfg.minHeightPx; });
+      if (!imgs.length) {
+        console.warn('[pdf-export][qa] pdfxFitChartsToPage: page still overflows (' + pageEl.scrollHeight + 'px) but every listed chart is already at its minHeightPx floor — clipping is likely for this export.');
+        break;
+      }
+      imgs.forEach(function (x) {
+        const curH = x.el.offsetHeight;
+        const curW = x.el.offsetWidth;
+        const newH = Math.max(x.cfg.minHeightPx, Math.round(curH * 0.92));
+        const newW = Math.round(curW * (newH / curH));
+        x.el.style.height = newH + 'px';
+        x.el.style.width = newW + 'px';
+      });
+    }
+    if (guard > 0) {
+      console.log('[pdf-export][qa] pdfxFitChartsToPage: shrank charts over', guard, 'pass(es) — final page height', pageEl.scrollHeight + 'px (target ' + PDFX_TARGET_PAGE_HEIGHT_PX + 'px)');
+    }
+  }
+
+  // Layer 1 continued (primary mechanism) — runs ONCE, before the real
+  // pdfxCaptureAllChartImages() call, so charts that would overflow their
+  // page get captured at a smaller size from the start (avoiding the
+  // blurriness of capturing large then shrinking the <img> after the
+  // fact via pdfxFitChartsToPage above). Builds each registered page's
+  // HTML once with charts at their defaultHeightPx, measures it offscreen,
+  // and for any page that overflows, halves the height gap iteratively
+  // (down to minHeightPx) until it's projected to fit. Returns a
+  // heightOverrides object keyed by varName, ready to pass straight into
+  // pdfxCaptureAllChartImages(heightOverrides).
+  //
+  // NOTE: this measures using whatever pdfxChartImg() currently returns
+  // for each chart — since PDFX_CHART_CACHE isn't populated yet at this
+  // point in the export flow, that's the pdfxRawChartImg() live-canvas
+  // fallback, not the final PDF-sized capture. That's a reasonable
+  // approximation for measuring page layout (chart aspect ratio doesn't
+  // change meaningfully between the two), not an exact prediction — this
+  // is why pdfxFitChartsToPage above still runs as a real safety net on
+  // the actual final page too, not just this.
+  async function pdfxPlanChartHeights(pageBuilders, fitCharts) {
+    const heightOverrides = {};
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:-99999px;left:-99999px;width:8.5in;';
+    document.body.appendChild(probe);
+    try {
+      for (const key of Object.keys(fitCharts)) {
+        const buildFn = pageBuilders[key];
+        const charts = fitCharts[key];
+        if (!buildFn || !charts || !charts.length) continue;
+        probe.innerHTML = buildFn();
+        const pageEl = probe.querySelector('.pdfx-page');
+        if (!pageEl) continue;
+        let projectedHeight = pageEl.scrollHeight;
+        if (projectedHeight <= PDFX_TARGET_PAGE_HEIGHT_PX) continue;
+        console.log('[pdf-export][qa] pdfxPlanChartHeights: page', key, 'projected to overflow —', projectedHeight + 'px vs target', PDFX_TARGET_PAGE_HEIGHT_PX + 'px');
+        for (const c of charts) {
+          let h = c.defaultHeightPx;
+          let guard = 0;
+          while (projectedHeight > PDFX_TARGET_PAGE_HEIGHT_PX && h > c.minHeightPx && guard < 10) {
+            guard++;
+            h = Math.max(c.minHeightPx, Math.round(h * 0.85));
+            const gap = projectedHeight - PDFX_TARGET_PAGE_HEIGHT_PX;
+            projectedHeight -= gap; // this chart's shrink is credited toward closing the whole page's gap
+          }
+          heightOverrides[c.varName] = h;
+          console.log('[pdf-export][qa] pdfxPlanChartHeights: pre-sizing', c.varName, 'to', h + 'px (default was', c.defaultHeightPx + 'px)');
+        }
+      }
+    } finally {
+      probe.remove();
+    }
+    return heightOverrides;
   }
 
   // Derives "June 2026" style label from a date-range string like
@@ -19606,6 +20143,29 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  // ADDED 2026-09-28 per Jaclyn — new Sales > Insights tab's PDF page,
+  // structurally matching this file's other Sales-tab page builders
+  // (header band + chlabel, KPIs, chart card, Key Insight callout).
+  // Combines the new category chart with the Subscribe & Save KPIs/chart
+  // moved here from buildOpportunitiesPage (see that function's own
+  // comment — it no longer renders this content, moved not duplicated).
+  function buildInsightsPage(monthYear) {
+    const snsKpis = ['kpi-active-subs', 'kpi-retention'].map(pdfxKpi);
+    const insight = pdfxText('#ins-catinsight-disp');
+    return '' +
+      '<div class="pdfx-page">' +
+        '<div class="pdfx-inner">' +
+          pdfxHeaderBand(monthYear, 'Sales') +
+          '<div class="pdfx-chlabel">Insights</div>' +
+          '<div class="pdfx-card"><div class="pdfx-card-title">Unit Sales by Product Category</div>' + pdfxChartBlock('_insCategoryChart') + '</div>' +
+          '<div class="pdfx-kpis n2" style="margin-top:14px;">' + snsKpis.map(pdfxKpiCardHtml).join('') + '</div>' +
+          '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
+          (insight ? '<div class="pdfx-insight"><strong>Key Insight:</strong> ' + pdfxEscape(insight) + '</div>' : '') +
+          pdfxFooter(monthYear) +
+        '</div>' +
+      '</div>';
+  }
+
   function buildStewardshipPage(monthYear) {
     const kpis = ['kpi-pct-revenue-invested', 'kpi-amazon-fees', 'kpi-pct-units-ads', 'kpi-ad-clicks', 'kpi-ad-impressions'].map(pdfxKpi);
     const ltdVal = pdfxText('#ltd-total-investments');
@@ -19656,8 +20216,74 @@ async function loadAuditResultsFromSheet() {
       '</div>';
   }
 
+  // Reads the src of every <img> inside a container — used to pull the
+  // already-uploaded/URL'd image URLs out of an acc*-images-disp
+  // container for the PDF export. Ported from the VBC/Dazzle Dry
+  // reference's pdfxImagesFromContainer.
+  function pdfxImagesFromContainer(containerId) {
+    const el = pdfxById(containerId);
+    if (!el) return [];
+    return Array.prototype.slice.call(el.querySelectorAll('img')).map(function (img) { return img.getAttribute('src'); }).filter(Boolean);
+  }
+
+  // ADDED 2026-09-28 per Jaclyn — "What's Been Accomplished" PDF block,
+  // ported from the VBC/Dazzle Dry reference's pdfxBuildOpportunitiesPage
+  // (specifically its slot-displacement logic — see the comment below,
+  // copied near-verbatim since the reasoning is unchanged by porting to
+  // évolis). Returns '' if all 4 cards are empty, matching
+  // pdfxFutureOpportunitiesBlock's own empty-state convention.
+  function pdfxAccomplishedBlock() {
+    const getField = function (n, field) { return pdfxText('#acc' + n + '-' + field + '-disp'); };
+    const imagesFor = function (n) { return (n === 1 || n === 2) ? pdfxImagesFromContainer('acc' + n + '-images-disp') : []; };
+    const hasOwnText = function (n) { return Boolean(getField(n, 'title') || getField(n, 'body')); };
+    const plainItem = function (title, subtitle, body) {
+      if (!title && !body) return '';
+      return '<div>' +
+        '<div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:3px;">' + pdfxEscape(title) + '</div>' +
+        (subtitle ? '<div style="font-size:10.5px;font-weight:600;color:var(--navy);margin-bottom:5px;">' + pdfxEscape(subtitle) + '</div>' : '') +
+        '<div style="font-size:10px;color:#48557a;line-height:1.45;">' + pdfxEscape(body) + '</div>' +
+        '</div>';
+    };
+
+    // Build all 4 text-only slots first...
+    const slots = {};
+    [1, 2, 3, 4].forEach(function (n) {
+      slots[n] = plainItem(getField(n, 'title'), getField(n, 'subtitle'), getField(n, 'body'));
+    });
+    // ...then let a card's images take over another slot, REPLACING that
+    // slot's own text entirely rather than being crammed as a small strip
+    // under the source card's own text (per the reference spec, ported
+    // near-verbatim — the reasoning doesn't change per brand). Two
+    // candidate targets per source: BELOW it (1->3, 2->4 — the default,
+    // since other slots routinely have their own real text that must not
+    // be silently overwritten) or BESIDE it (1->2, 2->1 — used only when
+    // BOTH candidate slots are already empty of their own text, e.g. a
+    // single accomplishment standing alone with images and nothing else
+    // filled in — "below" there would leave an entire column empty).
+    const targetsFor = { 1: { below: 3, beside: 2 }, 2: { below: 4, beside: 1 } };
+    [1, 2].forEach(function (sourceN) {
+      const images = imagesFor(sourceN);
+      if (!images.length) return;
+      const below = targetsFor[sourceN].below, beside = targetsFor[sourceN].beside;
+      const targetN = (!hasOwnText(below) && !hasOwnText(beside)) ? beside : below;
+      slots[targetN] = '<div class="pdfx-opp-image-slot">' + images.map(function (u) { return '<img src="' + u + '" class="pdfx-opp-img-full">'; }).join('') + '</div>';
+    });
+    const cards = [1, 2, 3, 4].map(function (n) { return slots[n]; }).join('');
+    if (!cards.trim()) return '';
+    return '<div class="pdfx-card" style="margin-top:14px;">' +
+      '<span class="pdfx-pill pdfx-pill-sand" style="margin-bottom:16px;">What\'s Been Accomplished</span>' +
+      '<div class="pdfx-cover-cols">' + cards + '</div>' +
+      '</div>';
+  }
+
   function pdfxFutureOpportunitiesBlock() {
-    const cards = Array.prototype.map.call(document.querySelectorAll('#m-opportunities .opp-card'), function (card) {
+    // NARROWED 2026-09-28 per Jaclyn — was '#m-opportunities .opp-card',
+    // which silently also matched the new Accomplished cards added above
+    // (added 2026-09-28) once they landed in the same #m-opportunities
+    // page, since both sections share the .opp-card class name. Scoped
+    // to #opp-grid specifically — the Future Opportunities cards' own
+    // display container — so this only ever reads its own cards.
+    const cards = Array.prototype.map.call(document.querySelectorAll('#opp-grid .opp-card'), function (card) {
       const title = pdfxText('.opp-title', card);
       if (!title) return ''; // blank Title = this slot is unused, per Jaclyn 2026-07-18
       const subtitle = pdfxText('.opp-subtitle', card);
@@ -19800,14 +20426,11 @@ async function loadAuditResultsFromSheet() {
   }
 
   function buildOpportunitiesPage(monthYear) {
-    const kpis = ['kpi-active-subs', 'kpi-retention'].map(pdfxKpi);
     return '' +
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
           pdfxHeaderBand(monthYear, 'Opportunities') +
-          '<div class="pdfx-chlabel">Subscribe &amp; Save</div>' +
-          '<div class="pdfx-kpis n2" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
-          '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
+          pdfxAccomplishedBlock() +
           pdfxFutureOpportunitiesBlock() +
           pdfxFooter(monthYear) +
         '</div>' +
@@ -19931,7 +20554,7 @@ async function loadAuditResultsFromSheet() {
         '</div>'
       : '';
     const chartHtml = hasKpis
-      ? '<div class="pdfx-card" style="margin-top:14px;"><div class="pdfx-card-title">Top Sellers — Units Sold</div>' + pdfxChartBlock('_' + prefix + 'TopSellersChart') + '</div>'
+      ? '<div class="pdfx-card" style="margin-top:14px;"><div class="pdfx-card-title">Top Sellers — Units Sold</div>' + pdfxChartBlock('_' + prefix + 'TopSellersChart', undefined, undefined, 'pdfx-img-' + prefix + 'topsellers') + '</div>'
       : '';
 
     return '' +
@@ -19990,6 +20613,7 @@ async function loadAuditResultsFromSheet() {
         amazon:        !!document.getElementById('pdf-include-amazon')        && document.getElementById('pdf-include-amazon').checked,
         website:       !!document.getElementById('pdf-include-website')       && document.getElementById('pdf-include-website').checked,
         walmart:       !!document.getElementById('pdf-include-walmart')       && document.getElementById('pdf-include-walmart').checked,
+        insights:      !!document.getElementById('pdf-include-insights')      && document.getElementById('pdf-include-insights').checked,
         fulfillment:   !!document.getElementById('pdf-include-fulfillment')   && document.getElementById('pdf-include-fulfillment').checked,
         stewardship:   !!document.getElementById('pdf-include-stewardship')   && document.getElementById('pdf-include-stewardship').checked,
         opportunities: !!document.getElementById('pdf-include-opportunities') && document.getElementById('pdf-include-opportunities').checked,
@@ -20009,7 +20633,8 @@ async function loadAuditResultsFromSheet() {
         (includeSections.walmart       && typeof window.initWalmartLive === 'function')            ? window.initWalmartLive()            : null,
         (includeSections.stewardship   && typeof window.initStewardshipLive === 'function')        ? window.initStewardshipLive()        : null,
         (includeSections.fulfillment   && typeof window.initMarketingFulfillmentCS === 'function')  ? window.initMarketingFulfillmentCS() : null,
-        (includeSections.opportunities && !window._snsChart && typeof initSns === 'function')       ? initSns()                           : null,
+        (includeSections.insights && !window._snsChart && typeof initSns === 'function')       ? initSns()                           : null,
+        (includeSections.insights && !window._insCategoryChart && typeof window.loadInsCategoryChart === 'function') ? window.loadInsCategoryChart() : null,
         // Prime Day's KPIs/chart are lazy-loaded on tab click — if it's
         // checked for inclusion but the tab was never opened this session,
         // this is what actually builds the chart before capture below.
@@ -20053,7 +20678,7 @@ async function loadAuditResultsFromSheet() {
       // never going to render because its page got excluded.
       const chartsBySection = {
         amazon: ['_amazonChart'], website: ['_webChart'], walmart: ['_walmartChart'],
-        stewardship: ['_investChart', '_impressChart'], opportunities: ['_snsChart'],
+        stewardship: ['_investChart', '_impressChart'], insights: ['_snsChart', '_insCategoryChart'],
       };
       const expectedCharts = Object.keys(chartsBySection)
         .filter(sec => includeSections[sec])
@@ -20067,13 +20692,32 @@ async function loadAuditResultsFromSheet() {
 
       // Logo/watermark are now embedded base64 constants (see PDFX_LOGO_SRC /
       // PDFX_WATERMARK_SRC above) — nothing to resolve at export time.
-      // Force-render + snapshot every chart's canvas BEFORE any page HTML is
-      // built, since buildXPage() calls read from the cache synchronously.
-      PDFX_CHART_CACHE = await pdfxCaptureAllChartImages();
-
+      // monthYear computed here (moved up from after the chart capture
+      // below) because pdfxPlanChartHeights needs it to build the event
+      // pages it measures — those builders take monthYear as an argument.
       const rangeText = pdfxText('#amazon-hdr-date') || pdfxText('#page-sales .page-sub') || '';
       const monthYear = pdfxMonthYear(rangeText) || pdfxMonthYear(document.title) || '';
       console.log('[pdf-export] monthYear:', JSON.stringify(monthYear));
+
+      // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle
+      // Dry build notes). Runs BEFORE the real chart capture so any
+      // registered page that's projected to overflow gets its charts
+      // captured at a smaller size from the start, rather than captured
+      // large and shrunk after the fact (blurrier). Only the 4 event
+      // pages are registered in PDFX_EVOLIS_FIT_CHARTS right now — see
+      // that constant's own comment for why. Gated on includeSections so
+      // this never builds/measures a page the export isn't including.
+      const pdfxPlanPageBuilders = {
+        'ev-bss':  includeSections.bss  ? function () { return buildEventPage('bss',  'Big Spring Sale',             monthYear); } : null,
+        'ev-pd':   includeSections.pd   ? function () { return buildEventPage('pd',   'Prime Day',                   monthYear); } : null,
+        'ev-pbdd': includeSections.pbdd ? function () { return buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear); } : null,
+        'ev-bfcm': includeSections.bfcm ? function () { return buildEventPage('bfcm', 'Black Friday & Cyber Monday', monthYear); } : null,
+      };
+      const pdfxChartHeightOverrides = await pdfxPlanChartHeights(pdfxPlanPageBuilders, PDFX_EVOLIS_FIT_CHARTS);
+
+      // Force-render + snapshot every chart's canvas BEFORE any page HTML is
+      // built, since buildXPage() calls read from the cache synchronously.
+      PDFX_CHART_CACHE = await pdfxCaptureAllChartImages(pdfxChartHeightOverrides);
 
       root = pdfxById('pdfx-root');
       if (!root) {
@@ -20089,6 +20733,7 @@ async function loadAuditResultsFromSheet() {
         includeSections.amazon        ? buildAmazonPage(monthYear)        : '',
         includeSections.website       ? buildWebsitePage(monthYear)       : '',
         includeSections.walmart       ? buildWalmartPage(monthYear)       : '',
+        includeSections.insights      ? buildInsightsPage(monthYear)      : '',
         includeSections.fulfillment   ? buildFulfillmentCsPage(monthYear) : '',
         includeSections.stewardship   ? buildStewardshipPage(monthYear)   : '',
         includeSections.opportunities ? buildOpportunitiesPage(monthYear) : '',
@@ -20196,6 +20841,20 @@ async function loadAuditResultsFromSheet() {
         const pageImgs = Array.from(el.querySelectorAll('img'));
         await Promise.all(pageImgs.map(img => (typeof img.decode === 'function') ? img.decode().catch(() => {}) : Promise.resolve()));
 
+        // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle
+        // Dry build notes), Layer 1 safety net. pdfxPlanChartHeights above
+        // already pre-sizes charts on registered pages that were projected
+        // to overflow, so this should rarely find real work left to do —
+        // it's the backstop for whatever that projection got wrong (the
+        // pre-pass measures with a live-canvas chart image, not the final
+        // PDF-sized one). .pdfx-page elements aren't otherwise labeled, so
+        // match this page to a registered config by checking for any of
+        // its registered chart image ids actually present here.
+        const pdfxFitKey = Object.keys(PDFX_EVOLIS_FIT_CHARTS).find(function (k) {
+          return PDFX_EVOLIS_FIT_CHARTS[k].some(function (c) { return el.querySelector('#' + c.id); });
+        });
+        if (pdfxFitKey) pdfxFitChartsToPage(el, PDFX_EVOLIS_FIT_CHARTS[pdfxFitKey]);
+
         // Better QA for next time this breaks: log each image's real pixel
         // data size (naturalWidth/Height) alongside its actual laid-out
         // size on THIS page right before capture. A blank chart with
@@ -20220,17 +20879,37 @@ async function loadAuditResultsFromSheet() {
         // not noise, that's this. ignoreElements tells html2canvas to skip
         // every live-dashboard canvas entirely — it only ever needs to see
         // our own <img>-only #pdfx-root content anyway. Confirmed 2026-07-14.
+        // ADDED 2026-09-19 per Jaclyn — canonical PDF export pipeline,
+        // ported verbatim from the VBC/Dazzle Dry build notes spec.
+        // Layer 3 (resolution): scale 2→3, JPEG 0.97→PNG (lossless,
+        // removes JPEG compression artifacting on text edges).
         const canvas = await html2canvas(el, {
-          scale: 2,
+          scale: 3,
           backgroundColor: '#ffffff',
           ignoreElements: (node) => node.tagName === 'CANVAS' && !node.closest('#pdfx-root')
         });
         console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
-        const imgData = canvas.toDataURL('image/jpeg', 0.97);
+        const imgData = canvas.toDataURL('image/png');
         if (i > 0) pdf.addPage();
-        // Scale the captured canvas to fill the page width, preserving aspect ratio
-        const renderedHeightIn = pageWidthIn * (canvas.height / canvas.width);
-        pdf.addImage(imgData, 'JPEG', 0, 0, pageWidthIn, Math.min(renderedHeightIn, pageHeightIn));
+        // Layer 2 (never-distort proportional scaling) — the previous
+        // logic capped height at pageHeightIn while leaving width fixed
+        // at pageWidthIn, so on any page taller than an 8.5:11 ratio the
+        // captured image's real proportions no longer matched the box it
+        // was forced into, squishing the whole page (including header/
+        // logo) non-uniformly. This is a pure safety net: if content is
+        // still taller than one page after Layer 1 (chart-height
+        // planning, added below) does its job, both dimensions now scale
+        // down TOGETHER, centered, so a rare overflow renders slightly
+        // smaller instead of stretched.
+        let renderedWidthIn = pageWidthIn;
+        let renderedHeightIn = pageWidthIn * (canvas.height / canvas.width);
+        if (renderedHeightIn > pageHeightIn) {
+          const shrink = pageHeightIn / renderedHeightIn;
+          renderedHeightIn = pageHeightIn;
+          renderedWidthIn = pageWidthIn * shrink;
+        }
+        const xOffsetIn = (pageWidthIn - renderedWidthIn) / 2;
+        pdf.addImage(imgData, 'PNG', xOffsetIn, 0, renderedWidthIn, renderedHeightIn);
       }
 
       const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
