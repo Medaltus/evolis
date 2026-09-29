@@ -56,14 +56,15 @@ const MONTHLY_HEADERS = [
   // row physically has its own newest column, or every existing row's data
   // silently shifts into the wrong columns on the next save.
   // Accomplished cards: append after all existing physical sheet columns.
-  'accomplished1_title', 'accomplished1_subtitle', 'accomplished1_body',
-  'accomplished1_image1', 'accomplished1_image2', 'accomplished1_image3',
-  'accomplished1_image4', 'accomplished1_image5', 'accomplished1_image6',
-  'accomplished2_title', 'accomplished2_subtitle', 'accomplished2_body',
-  'accomplished2_image1', 'accomplished2_image2', 'accomplished2_image3',
-  'accomplished2_image4', 'accomplished2_image5', 'accomplished2_image6',
-  'accomplished3_title', 'accomplished3_subtitle', 'accomplished3_body',
-  'accomplished4_title', 'accomplished4_subtitle', 'accomplished4_body',
+  'acc1_title', 'acc1_subtitle', 'acc1_body',
+  'acc1_image1', 'acc1_image2', 'acc1_image3',
+  'acc1_image4', 'acc1_image5', 'acc1_image6',
+  'acc2_title', 'acc2_subtitle', 'acc2_body',
+  'acc2_image1', 'acc2_image2', 'acc2_image3',
+  'acc2_image4', 'acc2_image5', 'acc2_image6',
+  'acc3_title', 'acc3_subtitle', 'acc3_body',
+  'acc4_title', 'acc4_subtitle', 'acc4_body',
+  'category_key_insight',
 ];
 
 const EVENT_HEADERS = [
