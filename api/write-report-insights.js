@@ -3,11 +3,11 @@
  * POST /api/write-report-insights
  *
  * Backend for the internal dashboard's editable report content (Executive
- * Summary, Amazon/Website/Walmart Key Insights, Opportunity cards, and the
+ * Summary, Amazon/Website/Walmart Key Insights, Opportunity and Accomplished cards, and the
  * per-event summaries on the Events page). Reads/writes SHEET_REPORT_INSIGHTS,
  * one pair of tabs per brand:
  *   {brand}         — one row per month.  Exec Summary, 3 Key Insights,
- *                     4 Opportunity card slots, plus status/approval.
+ *                     4 Opportunity and 4 Accomplished card slots, plus status/approval.
  *   {brand}_events  — one row per (event_name, event_year). Per-event
  *                     summary title/body, plus its own status/approval.
  *
@@ -55,6 +55,15 @@ const MONTHLY_HEADERS = [
   // field HAS to go at the end to match wherever the real sheet's header
   // row physically has its own newest column, or every existing row's data
   // silently shifts into the wrong columns on the next save.
+  // Accomplished cards: append after all existing physical sheet columns.
+  'accomplished1_title', 'accomplished1_subtitle', 'accomplished1_body',
+  'accomplished1_image1', 'accomplished1_image2', 'accomplished1_image3',
+  'accomplished1_image4', 'accomplished1_image5', 'accomplished1_image6',
+  'accomplished2_title', 'accomplished2_subtitle', 'accomplished2_body',
+  'accomplished2_image1', 'accomplished2_image2', 'accomplished2_image3',
+  'accomplished2_image4', 'accomplished2_image5', 'accomplished2_image6',
+  'accomplished3_title', 'accomplished3_subtitle', 'accomplished3_body',
+  'accomplished4_title', 'accomplished4_subtitle', 'accomplished4_body',
 ];
 
 const EVENT_HEADERS = [
