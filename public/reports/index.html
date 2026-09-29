@@ -19634,7 +19634,24 @@ async function loadAuditResultsFromSheet() {
   // entry's defaultHeightPx) only once a specific chart is confirmed, via
   // a real export, to need its capture pre-sized rather than relying on
   // the dynamic safety net.
-  const PDFX_CHART_TARGET_HEIGHT_PX = {};
+  // POPULATED 2026-09-28 per Jaclyn — "some of the graphs don't need to
+  // be that tall." Was deliberately empty until now (no real export to
+  // tune against) — values below are real dashboard heights from her
+  // own console log (Amazon/Website/Walmart/Insights-category charts
+  // were displaying at ~288px, Investments/Impressions ~229-250px, the
+  // Subscriptions chart ~234px), each reduced meaningfully rather than
+  // trimmed at the edges. Also helps issue #1 (page overflow) directly
+  // — smaller charts mean pages are less likely to need pdfxFitChartsToPage's
+  // shrink-safety-net to fire in the first place.
+  const PDFX_CHART_TARGET_HEIGHT_PX = {
+    _amazonChart: 200,
+    _webChart: 200,
+    _walmartChart: 200,
+    _insCategoryChart: 200,
+    _investChart: 170,
+    _impressChart: 170,
+    _snsChart: 180,
+  };
 
   function pdfxRawChartImg(varName) {
     try {
@@ -20333,7 +20350,6 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-kpis n2" style="margin-top:14px;">' + snsKpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
           (insight ? '<div class="pdfx-insight"><strong>Key Insight:</strong> ' + pdfxEscape(insight) + '</div>' : '') +
-          pdfxFooter(monthYear) +
         '</div>' +
       '</div>';
   }
@@ -20382,7 +20398,6 @@ async function loadAuditResultsFromSheet() {
             headHtml +
             '<div class="momentum-cards-grid">' + chunk.map(c => c.outerHTML).join('') + '</div>' +
           '</div>' +
-          pdfxFooter(monthYear) +
         '</div>';
       }).join('');
     }
@@ -20411,7 +20426,6 @@ async function loadAuditResultsFromSheet() {
           kwHtml +
           (nextHtml ? '<div style="margin-top:' + (kwHtml ? '22px' : '0') + ';">' + nextHtml + '</div>' : '') +
         '</div>' +
-        pdfxFooter(monthYear) +
       '</div>'
     ) : '';
 
@@ -20773,7 +20787,6 @@ async function loadAuditResultsFromSheet() {
       pdfxHeaderBand(eventHeaderTitle, 'Events', eventHeaderDates) +
       '<div class="pdfx-chlabel">Event Strategy</div>' +
       leadUp + during + leadOut + outlook +
-      pdfxFooter(monthYear) +
       '</div></div>';
     return page1;
   }
@@ -20817,7 +20830,6 @@ async function loadAuditResultsFromSheet() {
           datesHtml +
           '<div class="pdfx-card"><div class="pdfx-card-title">' + pdfxEscape(headline) + '</div><div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + body + '</div></div>' +
           kpisHtml + chartHtml +
-          pdfxFooter(monthYear) +
         '</div>' +
       '</div>';
   }
@@ -20881,6 +20893,42 @@ async function loadAuditResultsFromSheet() {
     })));
   }
 
+  // ADDED 2026-09-28 per Jaclyn — generalizes pdfxRasterizeSvgImages
+  // above to any remote (http/https) <img>, not just SVG data URIs.
+  // Draws each one to a canvas via a plain client-side Image load (this
+  // browser has already proven it can load these — that's exactly why
+  // they show correctly live) and swaps the src to an embedded data:
+  // PNG, so the server never needs to fetch anything external for
+  // images at all. crossOrigin='anonymous' is required to read pixels
+  // back off a cross-origin image without the canvas going tainted;
+  // if a given host doesn't send permissive CORS headers, that one
+  // image is silently left as its original remote src (same as today)
+  // rather than blocking the rest of the export.
+  async function pdfxRasterizeRemoteImages(root) {
+    const imgs = Array.from(root.querySelectorAll('img[src^="http"]'));
+    await Promise.all(imgs.map(img => new Promise(resolve => {
+      const tmp = new Image();
+      tmp.crossOrigin = 'anonymous';
+      tmp.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = tmp.naturalWidth || 1;
+          canvas.height = tmp.naturalHeight || 1;
+          canvas.getContext('2d').drawImage(tmp, 0, 0);
+          img.src = canvas.toDataURL('image/png');
+        } catch (e) {
+          // Tainted canvas (no permissive CORS on this host) or another
+          // failure — leave the original remote src in place rather
+          // than blocking the export; worst case this one image is
+          // back to relying on the server's own allowlist/fetch.
+        }
+        resolve();
+      };
+      tmp.onerror = () => resolve();
+      tmp.src = img.src;
+    })));
+  }
+
   // Server has no Georgia; the Plantin font file doesn't load there
   // either, so headings fell back to a plain sans. Gelasio is a free
   // Google font built with the same metrics as Georgia — loading it and
@@ -20901,11 +20949,43 @@ async function loadAuditResultsFromSheet() {
   // pdfxRasterizeSvgImages already applied to the clone (never to the
   // live page).
   async function pdfxBuildRenderDocument(root) {
+    // FIXED 2026-09-28 per Jaclyn — real evidence from her own exported
+    // PDF: pages taller than 11in were showing "condensed" (uniformly
+    // shrunk width, white margins on both edges) rather than clipped.
+    // Root cause: this function cloned #pdfx-root as-is and never ran
+    // the existing pdfxFitChartsToPage overflow-prevention that the
+    // screenshot export path already calls per-page — so an oversized
+    // page reached the server untouched, and Chrome's own print engine
+    // was auto-scaling it down to fit one Letter page rather than
+    // clipping or paginating. Must run on the LIVE pages (this uses id
+    // selectors, and ids are stripped from the clone below) before
+    // cloning, exactly like the screenshot path does.
+    const livePages = Array.from(root.querySelectorAll('.pdfx-page'));
+    livePages.forEach(pageEl => {
+      const fitKey = Object.keys(PDFX_EVOLIS_FIT_CHARTS).find(k =>
+        PDFX_EVOLIS_FIT_CHARTS[k].some(c => pageEl.querySelector('#' + c.id))
+      );
+      if (fitKey) pdfxFitChartsToPage(pageEl, PDFX_EVOLIS_FIT_CHARTS[fitKey]);
+    });
+
     const clone = root.cloneNode(true);
     clone.style.display = 'block';
     clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
     pdfxWrapSymbolGlyphs(clone);
     await pdfxRasterizeSvgImages(clone);
+    // ADDED 2026-09-28 per Jaclyn — real evidence: an uploaded
+    // Accomplished-card image showed fine live but came out as a blank
+    // white square in the PDF. Root cause: that image is a remote Drive
+    // URL, and the server's own request-interception (render-pdf.js)
+    // only allows a short, explicit host allowlist — any mismatch
+    // (a slightly different Drive URL shape, a not-yet-public file, a
+    // future non-Drive host) is silently blocked server-side even
+    // though the browser loads it fine client-side. Rasterizing every
+    // remote image to an embedded data: URI here — the same technique
+    // already used for SVG logos above, just generalized to any <img>
+    // — sidesteps the server's allowlist entirely, since it's already
+    // proven to load in this same browser right now.
+    await pdfxRasterizeRemoteImages(clone);
 
     const styleBlocks = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
     const linkBlocks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.outerHTML).join('\n');
