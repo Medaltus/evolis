@@ -19728,39 +19728,50 @@ async function loadAuditResultsFromSheet() {
         ticks: Object.assign({}, origTicks, { font: Object.assign({}, origTicks.font, { size: scaledSize }) })
       });
     });
+    return Object.assign({}, options, { scales: newScales });
+  }
 
-    // FIXED 2026-09-29 per Jaclyn — real evidence: a legend font-size
-    // change in a chart's own config was having zero visible effect in
-    // the PDF export specifically (still worked live). Root cause: this
-    // function only ever scaled options.scales[x/y].ticks.font — never
-    // options.plugins.legend. Everything else in the chart (axis ticks)
-    // gets its font size scaled UP to match the much-higher capture
-    // resolution (captureWidthPx ÷ 686 ≈ 3.26x, per the console log),
-    // so it displays back at the right size once the image is shown at
-    // its real 686px width — but the legend's font/box sizes were left
-    // at whatever the chart's own base config said, un-scaled, so at
-    // capture resolution they were proportionally tiny once the image
-    // shrank back down. Same treatment as ticks: scale the legend's own
-    // configured size by the same factor, keep boxWidth/boxHeight/padding
-    // in that same ratio to each other so the swatch-to-text proportions
-    // don't visibly change, just the whole legend's overall size.
-    const origPlugins = options.plugins || {};
-    const origLegend = origPlugins.legend || {};
-    const origLabels = origLegend.labels || {};
-    const baseLegendFontSize = (origLabels.font && origLabels.font.size) || 12;
-    const scaledLegendFontSize = Math.max(6, Math.round(baseLegendFontSize * fontScale));
-    const legendScaleRatio = scaledLegendFontSize / baseLegendFontSize;
-    const newLegend = Object.assign({}, origLegend, {
-      labels: Object.assign({}, origLabels, {
-        font: Object.assign({}, origLabels.font, { size: scaledLegendFontSize }),
-        boxWidth: Math.round((origLabels.boxWidth || 12) * legendScaleRatio),
-        boxHeight: Math.round((origLabels.boxHeight || 12) * legendScaleRatio),
-        padding: Math.round((origLabels.padding || 10) * legendScaleRatio),
-      }),
-    });
-    const newPlugins = Object.assign({}, origPlugins, { legend: newLegend });
-
-    return Object.assign({}, options, { scales: newScales, plugins: newPlugins });
+  // REVERTED 2026-09-29 per Jaclyn — real evidence: reconstructing a new
+  // `plugins` object (to scale the legend) crashed the export outright —
+  // "Recursion detected: _scriptable->_scriptable" inside Chart.js's own
+  // internal option-resolution machinery. Root cause, best understanding
+  // without being able to run this directly: Chart.js internally tracks
+  ///caches resolvers against specific option object references, and at
+  // least one chart on this dashboard has a scriptable legend
+  // (generateLabels, a function value) in its config — Object.assign-ing
+  // a brand-new plugins/legend/labels object tree, even one that copies
+  // that function over, was enough to corrupt that internal state across
+  // the sequential multi-chart capture loop. A full export failure is
+  // worse than an imperfect legend size, so this reverts to NOT touching
+  // options.plugins via object reconstruction at all.
+  //
+  // pdfxScaleLegendInPlace below is the safer replacement: mutates only
+  // the specific leaf number values (font.size/boxWidth/boxHeight/
+  // padding) directly on the EXISTING labels object, in place — never
+  // replaces legend/labels/plugins themselves, so anything else attached
+  // to those objects (a generateLabels function, any Chart.js-internal
+  // property) is left completely undisturbed. Returns the exact original
+  // values so the caller can restore them afterward; a no-op (returns
+  // null) for any chart whose legend config doesn't have the expected
+  // shape, rather than guessing.
+  function pdfxScaleLegendInPlace(liveChart, fontScale) {
+    const labels = liveChart.options && liveChart.options.plugins && liveChart.options.plugins.legend && liveChart.options.plugins.legend.labels;
+    if (!labels) return null;
+    const orig = {
+      fontSize: labels.font && labels.font.size,
+      boxWidth: labels.boxWidth,
+      boxHeight: labels.boxHeight,
+      padding: labels.padding,
+    };
+    const baseFontSize = orig.fontSize || 12;
+    const scaledFontSize = Math.max(6, Math.round(baseFontSize * fontScale));
+    const ratio = scaledFontSize / baseFontSize;
+    if (!labels.font) labels.font = {};
+    labels.font.size = scaledFontSize;
+    labels.boxWidth = Math.round((orig.boxWidth || 12) * ratio);
+    labels.boxHeight = Math.round((orig.boxHeight || 12) * ratio);
+    labels.padding = Math.round((orig.padding || 10) * ratio);
+    return { labels, orig };
   }
 
 
@@ -19975,16 +19986,14 @@ async function loadAuditResultsFromSheet() {
       let capturedHeight = liveCanvas.height;
       const hasScales = !!(liveChart.options && liveChart.options.scales);
       const origScales = hasScales ? liveChart.options.scales : null;
-      // FIXED 2026-09-29 per Jaclyn — real evidence: a legend size change
-      // inside pdfxWithScaledAxisFonts had zero effect on the actual PDF
-      // output. Root cause: that function was correctly computing a
-      // scaled `plugins` object (with the scaled legend) and returning
-      // it, but this call site only ever read `scaled.scales` back onto
-      // the live chart — `scaled.plugins` was computed and then silently
-      // discarded, never applied before capture. Mirrors the exact same
-      // save/apply/restore pattern already used for scales below.
-      const hasPlugins = !!(liveChart.options && liveChart.options.plugins);
-      const origPlugins = hasPlugins ? liveChart.options.plugins : null;
+      // REVERTED 2026-09-29 per Jaclyn — real evidence: the previous
+      // approach here (swapping liveChart.options.plugins to a whole
+      // reconstructed object) crashed the export outright — "Recursion
+      // detected: _scriptable->_scriptable" inside Chart.js's own option
+      // resolution. See pdfxScaleLegendInPlace's own comment for the
+      // full reasoning. legendScaleInfo is null for any chart whose
+      // legend doesn't have the expected labels shape — safe no-op.
+      let legendScaleInfo = null;
       try {
         if (hasScales) {
           // pdfxWithScaledAxisFonts only ever READS options.scales to build a
@@ -19992,7 +20001,7 @@ async function loadAuditResultsFromSheet() {
           // so origScales stays a pristine reference to swap back in below.
           const scaled = pdfxWithScaledAxisFonts(liveChart.options, targetW);
           liveChart.options.scales = scaled.scales;
-          if (hasPlugins) liveChart.options.plugins = scaled.plugins;
+          legendScaleInfo = pdfxScaleLegendInPlace(liveChart, targetW / PDFX_CARD_WIDTH_PX);
         }
         console.log('[pdf-export][qa]', varName, '— canvas dims right before update():', liveCanvas.width + 'x' + liveCanvas.height);
         liveChart.update('none'); // synchronous, no animation — picks up both the scale/font change above and the tension change above
@@ -20021,8 +20030,15 @@ async function loadAuditResultsFromSheet() {
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
         }
-        if (hasPlugins) {
-          liveChart.options.plugins = origPlugins; // restore the exact original reference
+        if (legendScaleInfo) {
+          // Restore the exact original leaf values — same object
+          // reference throughout, never replaced, so nothing else
+          // attached to it (e.g. a generateLabels function) was ever
+          // disturbed in the first place.
+          legendScaleInfo.labels.font.size = legendScaleInfo.orig.fontSize;
+          legendScaleInfo.labels.boxWidth = legendScaleInfo.orig.boxWidth;
+          legendScaleInfo.labels.boxHeight = legendScaleInfo.orig.boxHeight;
+          legendScaleInfo.labels.padding = legendScaleInfo.orig.padding;
         }
         if (liveChart.data && liveChart.data.datasets) {
           liveChart.data.datasets.forEach(function (ds, i) {
