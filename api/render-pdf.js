@@ -22,6 +22,19 @@
 // doesn't, the client-side JPEG fallback still works — exports won't
 // hard-fail either way — but real-text output won't be active until
 // this passes.
+//
+// ADDED 2026-09-29 per Jaclyn — diagnostic request logging. Real
+// evidence so far: an Accomplished-card image (a valid, working
+// https://lh3.googleusercontent.com/d/... URL — confirmed directly via
+// curl: 200 OK, permissive CORS, real PNG bytes returned) still comes
+// through blank in the PDF, even though this exact file is confirmed
+// deployed and lh3.googleusercontent.com is already in ALLOWED_HOSTS
+// below. Both of the obvious explanations (wrong host, stale deploy)
+// are ruled out with direct evidence — rather than guess a third
+// explanation blind, this logs every single request this page makes
+// (allowed AND blocked, with the actual reason) so the real cause shows
+// up directly in Vercel's function logs on the next real export,
+// instead of more speculation from either side.
 
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
@@ -61,14 +74,30 @@ async function lockDownRequests(page, ownHost) {
   page.on('request', (req) => {
     try {
       const url = req.url();
-      if (url.startsWith('data:')) return req.continue().catch(() => {});
+      if (url.startsWith('data:')) {
+        console.log('[render-pdf][req] ALLOW data-uri (', url.length, 'chars)');
+        return req.continue().catch((e) => console.warn('[render-pdf][req] continue() failed for data-uri:', e.message));
+      }
       const host = new URL(url).host;
-      if (host === ownHost || ALLOWED_HOSTS.includes(host)) return req.continue().catch(() => {});
-      return req.abort().catch(() => {});
+      if (host === ownHost || ALLOWED_HOSTS.includes(host)) {
+        console.log('[render-pdf][req] ALLOW', host, '—', url.slice(0, 120));
+        return req.continue().catch((e) => console.warn('[render-pdf][req] continue() failed for', host, ':', e.message));
+      }
+      console.warn('[render-pdf][req] BLOCK — host not in allowlist:', JSON.stringify(host), '— full url:', url.slice(0, 200));
+      return req.abort().catch((e) => console.warn('[render-pdf][req] abort() itself failed:', e.message));
     } catch (e) {
       // Any URL-parsing failure or racing-navigation error: fail closed.
+      console.warn('[render-pdf][req] BLOCK — request handler threw (failing closed):', e.message, '— raw url was:', (function () { try { return req.url(); } catch (e2) { return '(url() itself threw: ' + e2.message + ')'; } })());
       req.abort().catch(() => {});
     }
+  });
+  // Separate listener, doesn't affect blocking logic — just visibility
+  // into what actually failed to load once Chrome gives up on it,
+  // independent of whether our own interceptor allowed or blocked it
+  // (a request we ALLOWED can still fail for its own reasons — timeout,
+  // the remote host erroring, etc.).
+  page.on('requestfailed', (req) => {
+    console.warn('[render-pdf][req] FAILED after being allowed —', req.url().slice(0, 200), '— errorText:', req.failure() && req.failure().errorText);
   });
 }
 
@@ -82,6 +111,20 @@ async function renderHtmlToPdf(html, ownHost) {
     // headless Chrome can print a first paint with fallback fonts still
     // showing, before the real ones swap in.
     await page.evaluateHandle('document.fonts.ready').catch(() => {});
+    // ADDED 2026-09-29 — direct in-page check of every <img> tag right
+    // before printing: does the browser itself think each one loaded
+    // successfully (naturalWidth/naturalHeight > 0), independent of the
+    // request-interception logging above. This is the most direct
+    // possible answer to "did this specific image actually render."
+    const imgReport = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('img')).map((img) => ({
+        src: (img.src || '').slice(0, 150),
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        complete: img.complete,
+      }));
+    }).catch((e) => [{ error: e.message }]);
+    console.log('[render-pdf][img-report]', JSON.stringify(imgReport));
     const pdfBuffer = await page.pdf({
       format: 'Letter',
       printBackground: true,
