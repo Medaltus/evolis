@@ -19975,6 +19975,16 @@ async function loadAuditResultsFromSheet() {
       let capturedHeight = liveCanvas.height;
       const hasScales = !!(liveChart.options && liveChart.options.scales);
       const origScales = hasScales ? liveChart.options.scales : null;
+      // FIXED 2026-09-29 per Jaclyn — real evidence: a legend size change
+      // inside pdfxWithScaledAxisFonts had zero effect on the actual PDF
+      // output. Root cause: that function was correctly computing a
+      // scaled `plugins` object (with the scaled legend) and returning
+      // it, but this call site only ever read `scaled.scales` back onto
+      // the live chart — `scaled.plugins` was computed and then silently
+      // discarded, never applied before capture. Mirrors the exact same
+      // save/apply/restore pattern already used for scales below.
+      const hasPlugins = !!(liveChart.options && liveChart.options.plugins);
+      const origPlugins = hasPlugins ? liveChart.options.plugins : null;
       try {
         if (hasScales) {
           // pdfxWithScaledAxisFonts only ever READS options.scales to build a
@@ -19982,6 +19992,7 @@ async function loadAuditResultsFromSheet() {
           // so origScales stays a pristine reference to swap back in below.
           const scaled = pdfxWithScaledAxisFonts(liveChart.options, targetW);
           liveChart.options.scales = scaled.scales;
+          if (hasPlugins) liveChart.options.plugins = scaled.plugins;
         }
         console.log('[pdf-export][qa]', varName, '— canvas dims right before update():', liveCanvas.width + 'x' + liveCanvas.height);
         liveChart.update('none'); // synchronous, no animation — picks up both the scale/font change above and the tension change above
@@ -20009,6 +20020,9 @@ async function loadAuditResultsFromSheet() {
         }
         if (hasScales) {
           liveChart.options.scales = origScales; // restore the exact original reference
+        }
+        if (hasPlugins) {
+          liveChart.options.plugins = origPlugins; // restore the exact original reference
         }
         if (liveChart.data && liveChart.data.datasets) {
           liveChart.data.datasets.forEach(function (ds, i) {
@@ -20420,7 +20434,7 @@ async function loadAuditResultsFromSheet() {
   // holds for any product count without further changes.
   function buildBrandMomentumPages(monthYear) {
     const cards = Array.from(document.querySelectorAll('#bm-momentum-cards-grid .momentum-pcard'));
-    const FIRST_PAGE_MAX = 3, OTHER_PAGE_MAX = 5;
+    const FIRST_PAGE_MAX = 4, OTHER_PAGE_MAX = 5;
     const productChunks = [];
     {
       const remaining = cards.slice();
