@@ -201,6 +201,11 @@
     "api/upload-keyword-tracker.js": {
       "maxDuration": 60
     },
+    "api/render-pdf.js": {
+      "maxDuration": 60,
+      "memory": 2048,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
     "api/*.js": {
       "maxDuration": 30
     },
