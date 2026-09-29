@@ -14008,7 +14008,19 @@ function getProductMaster() {
       .then(r => r.ok ? r.text() : '').catch(() => '');
     const rows = parseCsvToRows(csv);
     const bySku = {}, byAsin = {};
+    let deletedSkipped = 0;
     rows.forEach(r => {
+      // ADDED 2026-09-28 per Jaclyn — Status column (column H on Product
+      // Short Name) marks DELETED products, which should be excluded
+      // from everything on the dashboard, not just individually per
+      // feature. Skipped here at the shared source rather than filtered
+      // per-page, so every feature that reads master.bySku/byAsin
+      // automatically never sees a deleted product at all — confirmed
+      // directly against the real sheet before writing this: 5 of
+      // évolis's 46 rows are DELETED today (e.g. EVO0013, "Let There Be
+      // Hair Supplements," the one Jaclyn named specifically), the other
+      // 41 are LIVE.
+      if ((r.status || '').trim().toUpperCase() === 'DELETED') { deletedSkipped++; return; }
       const asin = (r.asin || '').trim().toUpperCase();
       const sku  = (r.sku  || '').trim().toUpperCase().replace(/-SF$/i, '');
       const entry = {
@@ -14019,10 +14031,12 @@ function getProductMaster() {
         skuType: (r['sku type'] || r.sku_type || '').trim(),
         category: stripCategoryBrandPrefix(r['product category'] || r.product_category || ''),
         channel: (r['channel'] || r.channel || '').trim(), // added 2026-08-10 per Jaclyn — needed to scope bundles to Amazon-only
+        status: (r.status || '').trim(),
       };
       if (sku) bySku[sku] = entry;
       if (asin) byAsin[asin] = entry;
     });
+    console.log('[getProductMaster] skipped', deletedSkipped, 'DELETED-status row(s)');
     return { bySku, byAsin };
   })();
   return _productMasterPromise;
@@ -20810,6 +20824,209 @@ async function loadAuditResultsFromSheet() {
 
   // ---- main entry point ----------------------------------------------------
 
+  // ── Real-text PDF output — ADDED 2026-09-28 per Jaclyn, ported from
+  // the VBC/Dazzle Dry spec's "Real-text PDF output" section. Sends the
+  // same #pdfx-root pages to /api/render-pdf (headless Chrome), which
+  // returns a real-vector-text PDF instead of a giant screenshot — this
+  // is the actual fix for the RangeError crash (a hard string-length
+  // ceiling, not a quality tradeoff) and cuts file size dramatically
+  // (VBC: 155MB -> 2.58MB). Falls back to the existing screenshot method
+  // automatically if the server call fails for any reason, so export
+  // never just fails outright — see pdfxRenderPagesToPdf below.
+  const PDFX_RENDER_ENDPOINT = '/api/render-pdf';
+  const PDFX_RENDER_TIMEOUT_MS = 45000;
+  const PDFX_RENDER_MAX_BODY_BYTES = 4.2 * 1024 * 1024;
+  const PDFX_SYMBOL_RE = /[★☆▲▼↕→]/g;
+  const PDFX_SYMBOL_FONT_STACK = "'Noto Sans Symbols 2','Noto Sans Math',sans-serif";
+  const PDFX_SYMBOL_FONT_CSS = "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Symbols+2&family=Noto+Sans+Math&display=swap');";
+  const PDFX_FALLBACK_TOAST = 'Server rendering unavailable this time — used the standard export instead.';
+
+  // Server's Chrome has no system symbol fonts — without this, ★☆▲▼↕→
+  // print as empty boxes. Wraps each occurrence in a span forcing the
+  // Google Fonts symbol stack.
+  function pdfxWrapSymbolGlyphs(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const targets = [];
+    let node;
+    while ((node = walker.nextNode())) { if (PDFX_SYMBOL_RE.test(node.nodeValue)) targets.push(node); }
+    targets.forEach(n => {
+      const span = document.createElement('span');
+      span.innerHTML = n.nodeValue.replace(PDFX_SYMBOL_RE, m => `<span style="font-family:${PDFX_SYMBOL_FONT_STACK};">${m}</span>`);
+      n.parentNode.replaceChild(span, n);
+    });
+  }
+
+  // The server's Chrome renders data:image/svg+xml <img> tags (the logo
+  // and cover watermark, which use masks/color-matrix filters)
+  // unreliably — rasterizing to PNG client-side first, where the
+  // browser's own SVG engine (proven, already working live) draws it
+  // once and hands over a plain raster image instead.
+  async function pdfxRasterizeSvgImages(root) {
+    const imgs = Array.from(root.querySelectorAll('img[src^="data:image/svg+xml"]'));
+    await Promise.all(imgs.map(img => new Promise(resolve => {
+      const tmp = new Image();
+      tmp.onload = () => {
+        const longest = Math.max(tmp.naturalWidth, tmp.naturalHeight) || 1;
+        const scale = Math.min(1, 1600 / longest);
+        const w = Math.max(1, Math.round(tmp.naturalWidth * scale));
+        const h = Math.max(1, Math.round(tmp.naturalHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(tmp, 0, 0, w, h);
+        try { img.src = canvas.toDataURL('image/png'); } catch (e) { /* leave original src on failure */ }
+        resolve();
+      };
+      tmp.onerror = () => resolve(); // leave original src rather than block the whole export on one bad image
+      tmp.src = img.src;
+    })));
+  }
+
+  // Server has no Georgia; the Plantin font file doesn't load there
+  // either, so headings fell back to a plain sans. Gelasio is a free
+  // Google font built with the same metrics as Georgia — loading it and
+  // renaming it "Georgia" in this render document only means every
+  // existing `font-family: Georgia` rule keeps the dashboard's real line
+  // breaks, with no CSS changes needed anywhere else.
+  function pdfxGetGeorgiaAliasCss() {
+    return "@font-face{font-family:'Georgia';src:local('Gelasio'),url('https://fonts.gstatic.com/s/gelasio/v9/cIfiMaFfvUQxTV_QAilsRR8Ai56JMs9GAA.woff2') format('woff2');}" +
+      "@import url('https://fonts.googleapis.com/css2?family=Gelasio&display=swap');";
+  }
+
+  // Clones #pdfx-root and assembles a full standalone HTML document for
+  // the server to print: the page's own stylesheets/style blocks, a
+  // <base> so relative font URLs resolve, print CSS pinning each
+  // .pdfx-page to one 8.5x11in Letter page (never-distort zoom-down if a
+  // page still overflows, same rule as the screenshot path's Layer 2),
+  // the symbol-font and Georgia-alias CSS, and pdfxWrapSymbolGlyphs +
+  // pdfxRasterizeSvgImages already applied to the clone (never to the
+  // live page).
+  async function pdfxBuildRenderDocument(root) {
+    const clone = root.cloneNode(true);
+    clone.style.display = 'block';
+    clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    pdfxWrapSymbolGlyphs(clone);
+    await pdfxRasterizeSvgImages(clone);
+
+    const styleBlocks = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
+    const linkBlocks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.outerHTML).join('\n');
+
+    const printCss = `
+      @page { size: 8.5in 11in; margin: 0; }
+      html, body { margin: 0; padding: 0; }
+      .pdfx-page {
+        width: 8.5in; height: 11in; overflow: hidden;
+        page-break-after: always; box-sizing: border-box;
+        transform-origin: top left;
+      }
+    `;
+
+    return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<base href="' + location.origin + '/">' +
+      linkBlocks + styleBlocks +
+      '<style>' + pdfxGetGeorgiaAliasCss() + PDFX_SYMBOL_FONT_CSS + printCss + '</style>' +
+      '</head><body>' + clone.outerHTML + '</body></html>';
+  }
+
+  // POSTs the render document to /api/render-pdf and returns a PDF Blob,
+  // or throws — the caller (pdfxRenderPagesToPdf) is what decides to
+  // fall back on a throw, this function just reports success/failure
+  // honestly rather than swallowing it.
+  async function pdfxRenderViaServer(root) {
+    const html = await pdfxBuildRenderDocument(root);
+    if (new Blob([html]).size > PDFX_RENDER_MAX_BODY_BYTES) {
+      throw new Error('Render document exceeds ' + PDFX_RENDER_MAX_BODY_BYTES + ' byte payload limit');
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PDFX_RENDER_TIMEOUT_MS);
+    try {
+      const res = await fetch(PDFX_RENDER_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        let msg = 'Server render failed (' + res.status + ')';
+        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (e) {}
+        throw new Error(msg);
+      }
+      return await res.blob();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Triggers a browser download of a Blob — used by both the server-text
+  // path and the screenshot fallback path, so both end up downloading
+  // the same way regardless of which one produced the PDF.
+  function pdfxDownloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // The screenshot method this file used before real-text rendering
+  // existed — kept exactly as-is (same scale:3/JPEG 0.97 fix from
+  // 2026-09-28, same Layer 1/Layer 2 logic) but as its own function
+  // returning a Blob, so it can serve as the automatic fallback when the
+  // server call fails for any reason (self-test never run, server
+  // error, timeout, payload too large). Export never just fails outright.
+  async function pdfxScreenshotPagesToPdf(pageEls, monthYear) {
+    const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (typeof jsPDFCtor !== 'function') throw new Error('jsPDF constructor not found on window.jspdf.jsPDF or window.jsPDF.');
+    if (typeof html2canvas !== 'function') throw new Error('html2canvas is not available as a global.');
+
+    const pdf = new jsPDFCtor({ unit: 'in', format: 'letter', orientation: 'portrait' });
+    const pageWidthIn = 8.5, pageHeightIn = 11;
+
+    for (let i = 0; i < pageEls.length; i++) {
+      const el = pageEls[i];
+      const pageImgs = Array.from(el.querySelectorAll('img'));
+      await Promise.all(pageImgs.map(img => (typeof img.decode === 'function') ? img.decode().catch(() => {}) : Promise.resolve()));
+
+      const pdfxFitKey = Object.keys(PDFX_EVOLIS_FIT_CHARTS).find(function (k) {
+        return PDFX_EVOLIS_FIT_CHARTS[k].some(function (c) { return el.querySelector('#' + c.id); });
+      });
+      if (pdfxFitKey) pdfxFitChartsToPage(el, PDFX_EVOLIS_FIT_CHARTS[pdfxFitKey]);
+
+      const canvas = await html2canvas(el, {
+        scale: 3,
+        backgroundColor: '#ffffff',
+        ignoreElements: (node) => node.tagName === 'CANVAS' && !node.closest('#pdfx-root')
+      });
+      console.log('[pdf-export][fallback] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
+      const imgData = canvas.toDataURL('image/jpeg', 0.97);
+      if (i > 0) pdf.addPage();
+      let renderedWidthIn = pageWidthIn;
+      let renderedHeightIn = pageWidthIn * (canvas.height / canvas.width);
+      if (renderedHeightIn > pageHeightIn) {
+        const shrink = pageHeightIn / renderedHeightIn;
+        renderedHeightIn = pageHeightIn;
+        renderedWidthIn = pageWidthIn * shrink;
+      }
+      const xOffsetIn = (pageWidthIn - renderedWidthIn) / 2;
+      pdf.addImage(imgData, 'JPEG', (pageWidthIn - renderedWidthIn) / 2, 0, renderedWidthIn, renderedHeightIn);
+    }
+    return pdf.output('blob');
+  }
+
+  // Orchestrator: try real-text server rendering first, fall back to the
+  // screenshot method automatically on any failure — export never just
+  // fails outright either way. Returns {blob, usedFallback}.
+  async function pdfxRenderPagesToPdf(root, pageEls, monthYear) {
+    try {
+      const blob = await pdfxRenderViaServer(root);
+      console.log('[pdf-export] real-text PDF rendered server-side —', blob.size, 'bytes');
+      return { blob, usedFallback: false };
+    } catch (err) {
+      console.warn('[pdf-export] server render failed, falling back to screenshot method:', err.message);
+      const blob = await pdfxScreenshotPagesToPdf(pageEls, monthYear);
+      return { blob, usedFallback: true };
+    }
+  }
+
   window.exportPartnerPDF = async function () {
     const btn = pdfxById('pdf-export-btn');
     if (btn) { btn.disabled = true; btn.classList.add('pdfx-loading'); }
@@ -21064,124 +21281,18 @@ async function loadAuditResultsFromSheet() {
       if (typeof jsPDFCtor !== 'function') throw new Error('jsPDF constructor not found on window.jspdf.jsPDF or window.jsPDF.');
       if (typeof html2canvas !== 'function') throw new Error('html2canvas is not available as a global.');
 
-      const pdf = new jsPDFCtor({ unit: 'in', format: 'letter', orientation: 'portrait' });
-      const pageWidthIn = 8.5, pageHeightIn = 11;
-
-      for (let i = 0; i < pageEls.length; i++) {
-        const el = pageEls[i];
-        // Amazon (page 2, the FIRST content page) rendering correctly while
-        // every later page's chart images came out blank — despite all of
-        // them decoding successfully in the one big batch at the top of
-        // this function — is the signature of decoded image readiness not
-        // surviving several sequential heavy (scale:2, full-page) html2canvas
-        // render() calls. Re-decoding each page's own images immediately
-        // before ITS capture (not just once, upfront, for everything)
-        // guards against that regardless of the exact browser mechanism
-        // behind it. This resolves near-instantly if nothing was actually
-        // evicted, so it's cheap insurance either way.
-        const pageImgs = Array.from(el.querySelectorAll('img'));
-        await Promise.all(pageImgs.map(img => (typeof img.decode === 'function') ? img.decode().catch(() => {}) : Promise.resolve()));
-
-        // ADDED 2026-09-19 per Jaclyn — canonical pipeline spec (VBC/Dazzle
-        // Dry build notes), Layer 1 safety net. pdfxPlanChartHeights above
-        // already pre-sizes charts on registered pages that were projected
-        // to overflow, so this should rarely find real work left to do —
-        // it's the backstop for whatever that projection got wrong (the
-        // pre-pass measures with a live-canvas chart image, not the final
-        // PDF-sized one). .pdfx-page elements aren't otherwise labeled, so
-        // match this page to a registered config by checking for any of
-        // its registered chart image ids actually present here.
-        const pdfxFitKey = Object.keys(PDFX_EVOLIS_FIT_CHARTS).find(function (k) {
-          return PDFX_EVOLIS_FIT_CHARTS[k].some(function (c) { return el.querySelector('#' + c.id); });
-        });
-        if (pdfxFitKey) pdfxFitChartsToPage(el, PDFX_EVOLIS_FIT_CHARTS[pdfxFitKey]);
-
-        // Better QA for next time this breaks: log each image's real pixel
-        // data size (naturalWidth/Height) alongside its actual laid-out
-        // size on THIS page right before capture. A blank chart with
-        // naturalWidth>0 but rect width/height 0 means a layout problem;
-        // naturalWidth 0 means the image itself never had real data.
-        pageImgs.forEach((img, idx) => {
-          const rect = img.getBoundingClientRect();
-          console.log('[pdf-export][qa] page', i + 1, 'img#' + idx, '— natural:', img.naturalWidth + 'x' + img.naturalHeight, '— laid out:', Math.round(rect.width) + 'x' + Math.round(rect.height), '— src:', img.src.slice(0, 40));
-        });
-
-        // html2canvas clones the ENTIRE document by default, not just `el`
-        // — it needs the full page for accurate global style computation.
-        // That clone pass was tripping over whatever live-dashboard chart
-        // canvas happened to be 0×0/tainted at that exact moment, and it
-        // wasn't just logging a harmless warning: comparing two consecutive
-        // export runs, the SPECIFIC charts that failed to render matched
-        // exactly which canvases were listed as tainted each time — when
-        // Investments/Impressions were hidden (0×0) they failed and Amazon
-        // rendered; next run Investments/Impressions happened to still be
-        // visible from the last-viewed tab, and THEY rendered while Amazon/
-        // Website/Walmart/Subscriptions (now hidden) failed instead. That's
-        // not noise, that's this. ignoreElements tells html2canvas to skip
-        // every live-dashboard canvas entirely — it only ever needs to see
-        // our own <img>-only #pdfx-root content anyway. Confirmed 2026-07-14.
-        // ADDED 2026-09-19 per Jaclyn — canonical PDF export pipeline,
-        // ported verbatim from the VBC/Dazzle Dry build notes spec.
-        // Layer 3 (resolution): scale 2→3 for sharper text.
-        //
-        // FIXED 2026-09-28 per Jaclyn — real evidence from her own
-        // console log: PNG (also part of that same spec's Layer 3, tried
-        // first) crashed the export outright on a 17-page évolis report
-        // — RangeError: Invalid string length, thrown inside jsPDF's own
-        // internal Array.join during pdf.save(), AFTER all 17 pages had
-        // already captured successfully via html2canvas. That's a hard
-        // JS-engine string-length ceiling, not a quality/speed tradeoff
-        // — PNG's lossless encoding at scale:3 across 17 full-page
-        // screenshots produced more combined base64 data than one
-        // JavaScript string can hold. The spec's own file only had to
-        // validate against whatever page count VBC's own exports run at
-        // (single-brand, Amazon-only, no Brand Momentum/Insights/4-event
-        // pages) — évolis's page count is substantially larger, so this
-        // is a genuine évolis-scale problem the spec didn't anticipate,
-        // not a mistake in porting it. Reverted the FORMAT only (JPEG
-        // 0.97, matching the exact quality this file used before the
-        // PNG attempt and which was already proven to work at évolis's
-        // real page count) — scale:3 stays, so the resolution
-        // improvement is kept; JPEG's lossy compression is what actually
-        // brings the combined file size back under the string-length
-        // ceiling. Worth knowing: JPEG can reintroduce faint compression
-        // edges on text at very high zoom, the exact thing PNG was
-        // chosen to avoid — 0.97 quality keeps that minimal, and a
-        // crash-free export at slightly-less-than-perfect sharpness
-        // is the right tradeoff over a report that fails to generate
-        // at all.
-        const canvas = await html2canvas(el, {
-          scale: 3,
-          backgroundColor: '#ffffff',
-          ignoreElements: (node) => node.tagName === 'CANVAS' && !node.closest('#pdfx-root')
-        });
-        console.log('[pdf-export] page', i + 1, 'canvas size:', canvas.width, 'x', canvas.height);
-        const imgData = canvas.toDataURL('image/jpeg', 0.97);
-        if (i > 0) pdf.addPage();
-        // Layer 2 (never-distort proportional scaling) — the previous
-        // logic capped height at pageHeightIn while leaving width fixed
-        // at pageWidthIn, so on any page taller than an 8.5:11 ratio the
-        // captured image's real proportions no longer matched the box it
-        // was forced into, squishing the whole page (including header/
-        // logo) non-uniformly. This is a pure safety net: if content is
-        // still taller than one page after Layer 1 (chart-height
-        // planning, added below) does its job, both dimensions now scale
-        // down TOGETHER, centered, so a rare overflow renders slightly
-        // smaller instead of stretched.
-        let renderedWidthIn = pageWidthIn;
-        let renderedHeightIn = pageWidthIn * (canvas.height / canvas.width);
-        if (renderedHeightIn > pageHeightIn) {
-          const shrink = pageHeightIn / renderedHeightIn;
-          renderedHeightIn = pageHeightIn;
-          renderedWidthIn = pageWidthIn * shrink;
-        }
-        const xOffsetIn = (pageWidthIn - renderedWidthIn) / 2;
-        pdf.addImage(imgData, 'JPEG', xOffsetIn, 0, renderedWidthIn, renderedHeightIn);
-      }
-
+      // REPLACED 2026-09-28 per Jaclyn — was an inline html2canvas loop +
+      // pdf.save(); now tries real-text server rendering first
+      // (pdfxRenderPagesToPdf -> pdfxRenderViaServer), falling back to
+      // the exact same screenshot logic (now pdfxScreenshotPagesToPdf)
+      // automatically if the server call fails for any reason. See the
+      // "Real-text PDF output" block above exportPartnerPDF for all the
+      // new pieces this call depends on.
+      const { blob, usedFallback } = await pdfxRenderPagesToPdf(root, pageEls, monthYear);
       const filename = 'Evolis_Partnership_Report_' + (monthYear ? monthYear.replace(' ', '_') : 'Report') + '.pdf';
-      pdf.save(filename);
-      console.log('[pdf-export] pdf.save() called — download should start now');
+      pdfxDownloadBlob(blob, filename);
+      console.log('[pdf-export] download triggered —', usedFallback ? 'screenshot fallback' : 'real-text server render');
+      if (usedFallback) console.warn('[pdf-export]', PDFX_FALLBACK_TOAST);
 
       root.style.display = 'none';
       root.style.position = ''; root.style.top = ''; root.style.left = ''; root.style.zIndex = ''; root.style.opacity = '';
