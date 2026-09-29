@@ -20935,12 +20935,26 @@ async function loadAuditResultsFromSheet() {
   // (VBC: 155MB -> 2.58MB). Falls back to the existing screenshot method
   // automatically if the server call fails for any reason, so export
   // never just fails outright — see pdfxRenderPagesToPdf below.
+  //
+  // REPLACED 2026-09-29 per Jaclyn — real evidence: server rendering had
+  // been silently failing on every single export since this was first
+  // built (console showed "screenshot fallback... Server rendering
+  // unavailable" every time), which is why the Accomplished-card image
+  // investigation kept going nowhere — the real-text path was never
+  // actually running at all, not just failing to embed one image. Root
+  // cause, found by comparing directly against VBC's actual working
+  // render-pdf.js (which she shared): this client was sending a JSON
+  // body ({html: "..."}), but the real, working server contract expects
+  // raw HTML (optionally gzip-compressed) as application/octet-stream.
+  // The two constants below and pdfxRenderViaServer/pdfxBuildRenderDocument
+  // now match that real contract, ported as closely to verbatim as
+  // possible given this file's own existing helper function names.
   const PDFX_RENDER_ENDPOINT = '/api/render-pdf';
   const PDFX_RENDER_TIMEOUT_MS = 45000;
-  const PDFX_RENDER_MAX_BODY_BYTES = 4.2 * 1024 * 1024;
+  const PDFX_RENDER_MAX_BODY_BYTES = 60 * 1024 * 1024; // matches the server's own MAX_HTML_BYTES (post-gunzip)
   const PDFX_SYMBOL_RE = /[★☆▲▼↕→]/g;
   const PDFX_SYMBOL_FONT_STACK = "'Noto Sans Symbols 2','Noto Sans Math',sans-serif";
-  const PDFX_SYMBOL_FONT_CSS = "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Symbols+2&family=Noto+Sans+Math&display=swap');";
+  const PDFX_SYMBOL_FONT_CSS = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Symbols+2&family=Noto+Sans+Math&display=swap';
   const PDFX_FALLBACK_TOAST = 'Server rendering unavailable this time — used the standard export instead.';
 
   // Server's Chrome has no system symbol fonts — without this, ★☆▲▼↕→
@@ -21049,18 +21063,25 @@ async function loadAuditResultsFromSheet() {
   // the symbol-font and Georgia-alias CSS, and pdfxWrapSymbolGlyphs +
   // pdfxRasterizeSvgImages already applied to the clone (never to the
   // live page).
+  // Clones #pdfx-root and assembles a full standalone HTML document for
+  // the server to print: the page's own stylesheets/style blocks, a
+  // <base> so relative font URLs resolve, print CSS pinning each
+  // .pdfx-page to one 8.5x11in Letter page, the symbol-font and
+  // Georgia-alias CSS, and pdfxWrapSymbolGlyphs + pdfxRasterizeSvgImages
+  // already applied to the clone (never to the live page).
+  //
+  // Zoom-based overflow handling ported directly from VBC's real,
+  // working version (she shared it directly — matched near-verbatim
+  // rather than reasoned out blind): any page taller than
+  // PDFX_TARGET_PAGE_HEIGHT_PX gets `zoom` scaled down proportionally,
+  // both dimensions together, same never-distort principle as the
+  // screenshot path's own Layer 2 safety net. Kept ALONGSIDE (not
+  // instead of) the existing pdfxFitChartsToPage chart-shrink pass
+  // below — that one shrinks specific oversized charts before this ever
+  // has to fire, so on a normal export this zoom step should rarely do
+  // anything at all; it's the same kind of last-resort backstop
+  // pdfxFitChartsToPage already is for the screenshot path.
   async function pdfxBuildRenderDocument(root) {
-    // FIXED 2026-09-28 per Jaclyn — real evidence from her own exported
-    // PDF: pages taller than 11in were showing "condensed" (uniformly
-    // shrunk width, white margins on both edges) rather than clipped.
-    // Root cause: this function cloned #pdfx-root as-is and never ran
-    // the existing pdfxFitChartsToPage overflow-prevention that the
-    // screenshot export path already calls per-page — so an oversized
-    // page reached the server untouched, and Chrome's own print engine
-    // was auto-scaling it down to fit one Letter page rather than
-    // clipping or paginating. Must run on the LIVE pages (this uses id
-    // selectors, and ids are stripped from the clone below) before
-    // cloning, exactly like the screenshot path does.
     const livePages = Array.from(root.querySelectorAll('.pdfx-page'));
     livePages.forEach(pageEl => {
       const fitKey = Object.keys(PDFX_EVOLIS_FIT_CHARTS).find(k =>
@@ -21069,72 +21090,83 @@ async function loadAuditResultsFromSheet() {
       if (fitKey) pdfxFitChartsToPage(pageEl, PDFX_EVOLIS_FIT_CHARTS[fitKey]);
     });
 
+    const zooms = livePages.map(el => {
+      const h = el.scrollHeight;
+      return h > PDFX_TARGET_PAGE_HEIGHT_PX + 1 ? { zoom: PDFX_TARGET_PAGE_HEIGHT_PX / h, heightPx: h } : null;
+    });
+
     const clone = root.cloneNode(true);
-    clone.style.display = 'block';
+    clone.removeAttribute('style');
+    Array.from(clone.querySelectorAll('.pdfx-page')).forEach((pg, i) => {
+      const z = zooms[i];
+      if (!z) return;
+      pg.style.zoom = String(z.zoom);
+      pg.style.height = z.heightPx + 'px';
+      pg.style.margin = '0 auto';
+    });
     clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
     pdfxWrapSymbolGlyphs(clone);
     await pdfxRasterizeSvgImages(clone);
-    // REMOVED 2026-09-29 per Jaclyn — reviewed the VBC/Dazzle Dry
-    // reference's actual working pdfxBuildRenderDocument directly (the
-    // dashboard where this image-in-PDF problem was confirmed solved):
-    // it does NOT rasterize remote images at all, only SVGs (same as
-    // pdfxRasterizeSvgImages above). The client-side remote-image
-    // rasterization added here 2026-09-28 wasn't part of what actually
-    // makes VBC's version work — it was my own added complexity, on top
-    // of an already-not-working baseline, and evidently didn't fix the
-    // real problem either. Reverted to match VBC's proven approach
-    // exactly: let the server fetch remote images itself. If the image
-    // still doesn't show after this, the real cause is almost certainly
-    // server-side — either the render-pdf.js host allowlist, or (more
-    // likely, per the still-open TODO from several turns back) the
-    // REPORTS_FOLDER_ID placeholder in api/upload-insight-image.js never
-    // having been updated to évolis's own Drive folder, which would mean
-    // the "uploaded" image's URL itself was never valid to begin with.
+    // Confirmed 2026-09-29 against VBC's own actual working file: it
+    // does NOT rasterize remote (non-SVG) images at all — the server
+    // fetches them itself. évolis's own remote-image rasterization
+    // attempt was removed the same day this was confirmed; the real bug
+    // this whole time was the request contract below, not image
+    // handling of any kind.
 
     const styleBlocks = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
     const linkBlocks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.outerHTML).join('\n');
 
-    const printCss = `
-      @page { size: 8.5in 11in; margin: 0; }
-      html, body { margin: 0; padding: 0; }
-      .pdfx-page {
-        width: 8.5in; height: 11in; overflow: hidden;
-        page-break-after: always; box-sizing: border-box;
-        transform-origin: top left;
-      }
-    `;
+    const printCss = `@page{size:8.5in 11in;margin:0}
+html,body{height:auto!important;margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#pdfx-root{position:static!important;left:auto!important;top:auto!important;display:block!important;opacity:1!important;z-index:auto!important;width:8.5in}
+.pdfx-page{width:8.5in;height:11in;min-height:0;overflow:hidden;break-after:page;page-break-after:always}
+.pdfx-page:last-child{break-after:auto;page-break-after:auto}`;
 
-    return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-      '<base href="' + location.origin + '/">' +
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+      '<base href="' + pdfxEscape(location.href) + '">' +
       linkBlocks + styleBlocks +
-      '<style>' + pdfxGetGeorgiaAliasCss() + PDFX_SYMBOL_FONT_CSS + printCss + '</style>' +
-      '</head><body>' + clone.outerHTML + '</body></html>';
+      '<link rel="stylesheet" href="' + PDFX_SYMBOL_FONT_CSS + '">' +
+      '<style>' + pdfxGetGeorgiaAliasCss() + '</style>' +
+      '<style>' + printCss + '</style>' +
+      '</head><body><div id="pdfx-root">' + clone.innerHTML + '</div></body></html>';
   }
 
   // POSTs the render document to /api/render-pdf and returns a PDF Blob,
   // or throws — the caller (pdfxRenderPagesToPdf) is what decides to
   // fall back on a throw, this function just reports success/failure
   // honestly rather than swallowing it.
+  //
+  // REPLACED 2026-09-29 per Jaclyn — matches the server's REAL contract
+  // now (confirmed directly against VBC's own working client code):
+  // raw HTML body, gzip-compressed when the browser supports
+  // CompressionStream, Content-Type: application/octet-stream, with an
+  // X-Pdfx-Encoding: gzip header the server checks for. The previous
+  // version sent JSON ({html: "..."}) — the server never understood
+  // that at all, which is the actual reason every export silently fell
+  // back to the screenshot method, not any image-specific problem.
   async function pdfxRenderViaServer(root) {
     const html = await pdfxBuildRenderDocument(root);
-    if (new Blob([html]).size > PDFX_RENDER_MAX_BODY_BYTES) {
-      throw new Error('Render document exceeds ' + PDFX_RENDER_MAX_BODY_BYTES + ' byte payload limit');
+    let body = new Blob([html], { type: 'text/html' });
+    const headers = { 'Content-Type': 'application/octet-stream' };
+    if (typeof CompressionStream === 'function') {
+      body = await new Response(body.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      headers['X-Pdfx-Encoding'] = 'gzip';
+    }
+    if (body.size > PDFX_RENDER_MAX_BODY_BYTES) {
+      throw new Error('Render payload ' + (body.size / 1048576).toFixed(1) + 'MB is over the upload limit');
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), PDFX_RENDER_TIMEOUT_MS);
     try {
-      const res = await fetch(PDFX_RENDER_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html }),
-        signal: controller.signal,
-      });
+      const res = await fetch(PDFX_RENDER_ENDPOINT, { method: 'POST', headers, body, signal: controller.signal });
       if (!res.ok) {
-        let msg = 'Server render failed (' + res.status + ')';
-        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (e) {}
-        throw new Error(msg);
+        const msg = await res.text().catch(() => '');
+        throw new Error('render-pdf HTTP ' + res.status + ' ' + msg.slice(0, 200));
       }
-      return await res.blob();
+      const blob = await res.blob();
+      if (blob.size < 1000) throw new Error('render-pdf returned an empty file');
+      return new Blob([blob], { type: 'application/pdf' });
     } finally {
       clearTimeout(timer);
     }
