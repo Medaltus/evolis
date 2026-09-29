@@ -14147,7 +14147,7 @@ window.loadInsCategoryChart = async function () {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'end', labels: { boxWidth: 20, boxHeight: 20, font: { family: 'DM Sans, sans-serif', size: 14 }, color: '#001F60', padding: 14 } },
+          legend: { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 12, font: { family: 'DM Sans, sans-serif', size: 11 }, color: '#001F60', padding: 10 } },
           tooltip: {
             backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
             titleColor: '#001F60', bodyColor: '#6B7BA2',
@@ -19661,7 +19661,7 @@ async function loadAuditResultsFromSheet() {
     _amazonChart: 200,
     _webChart: 200,
     _walmartChart: 200,
-    _insCategoryChart: 200,
+    _insCategoryChart: 240,
     _investChart: 170,
     _impressChart: 170,
     _snsChart: 180,
@@ -20575,7 +20575,21 @@ async function loadAuditResultsFromSheet() {
   // évolis). Returns '' if all 4 cards are empty, matching
   // pdfxFutureOpportunitiesBlock's own empty-state convention.
   function pdfxAccomplishedBlock() {
-    const getField = function (n, field) { return pdfxText('#acc' + n + '-' + field + '-disp'); };
+    // FIXED 2026-09-29 per Jaclyn — real evidence: an empty Accomplished
+    // card showed the literal word "Loading…" in the PDF instead of
+    // being left out. Root cause: getField reads the live DOM's display
+    // element directly, and this file's own HTML sets "Loading…" as
+    // that element's initial placeholder text before wireAccomplished's
+    // async load() call resolves — if the PDF export runs before that
+    // resolves, "Loading…" is what's actually sitting in the DOM, and
+    // it's a truthy non-empty string, so the plainItem "is this card
+    // empty" check below never caught it. Treating "Loading…" as empty
+    // here fixes this regardless of timing, rather than trying to
+    // guarantee load() has always finished by export time.
+    const getField = function (n, field) {
+      const v = pdfxText('#acc' + n + '-' + field + '-disp');
+      return v === 'Loading…' ? '' : v;
+    };
     const imagesFor = function (n) { return (n === 1 || n === 2) ? pdfxImagesFromContainer('acc' + n + '-images-disp') : []; };
     const hasOwnText = function (n) { return Boolean(getField(n, 'title') || getField(n, 'body')); };
     const plainItem = function (title, subtitle, body) {
@@ -21060,19 +21074,22 @@ async function loadAuditResultsFromSheet() {
     clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
     pdfxWrapSymbolGlyphs(clone);
     await pdfxRasterizeSvgImages(clone);
-    // ADDED 2026-09-28 per Jaclyn — real evidence: an uploaded
-    // Accomplished-card image showed fine live but came out as a blank
-    // white square in the PDF. Root cause: that image is a remote Drive
-    // URL, and the server's own request-interception (render-pdf.js)
-    // only allows a short, explicit host allowlist — any mismatch
-    // (a slightly different Drive URL shape, a not-yet-public file, a
-    // future non-Drive host) is silently blocked server-side even
-    // though the browser loads it fine client-side. Rasterizing every
-    // remote image to an embedded data: URI here — the same technique
-    // already used for SVG logos above, just generalized to any <img>
-    // — sidesteps the server's allowlist entirely, since it's already
-    // proven to load in this same browser right now.
-    await pdfxRasterizeRemoteImages(clone);
+    // REMOVED 2026-09-29 per Jaclyn — reviewed the VBC/Dazzle Dry
+    // reference's actual working pdfxBuildRenderDocument directly (the
+    // dashboard where this image-in-PDF problem was confirmed solved):
+    // it does NOT rasterize remote images at all, only SVGs (same as
+    // pdfxRasterizeSvgImages above). The client-side remote-image
+    // rasterization added here 2026-09-28 wasn't part of what actually
+    // makes VBC's version work — it was my own added complexity, on top
+    // of an already-not-working baseline, and evidently didn't fix the
+    // real problem either. Reverted to match VBC's proven approach
+    // exactly: let the server fetch remote images itself. If the image
+    // still doesn't show after this, the real cause is almost certainly
+    // server-side — either the render-pdf.js host allowlist, or (more
+    // likely, per the still-open TODO from several turns back) the
+    // REPORTS_FOLDER_ID placeholder in api/upload-insight-image.js never
+    // having been updated to évolis's own Drive folder, which would mean
+    // the "uploaded" image's URL itself was never valid to begin with.
 
     const styleBlocks = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
     const linkBlocks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.outerHTML).join('\n');
