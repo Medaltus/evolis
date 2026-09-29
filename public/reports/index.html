@@ -14069,7 +14069,7 @@ const INS_CATEGORY_CONFIG = [
   { match: 'Activator',   label: 'Activator',   color: '#001F60' },
   { match: 'Shampoo',     label: 'Shampoo',     color: '#24E9A3' },
   { match: 'Conditioner', label: 'Conditioner', color: '#6B7BA2' },
-  { match: 'Hair Mask',   label: 'Hair Mask',   color: '#C87D2F' },
+  { match: 'Hair Mask',   label: 'Hair Mask',   color: '#F4DFD0' },
   { match: 'Dry Shampoo', label: 'Dry Shampoo', color: '#CCD3D5' },
 ];
 window.loadInsCategoryChart = async function () {
@@ -14133,7 +14133,7 @@ window.loadInsCategoryChart = async function () {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', align: 'end', labels: { boxWidth: 12, boxHeight: 12, font: { family: 'DM Sans, sans-serif', size: 11 }, color: '#001F60' } },
+          legend: { position: 'top', align: 'end', labels: { boxWidth: 20, boxHeight: 20, font: { family: 'DM Sans, sans-serif', size: 14 }, color: '#001F60', padding: 14 } },
           tooltip: {
             backgroundColor: '#fff', borderColor: 'rgba(0,31,96,0.1)', borderWidth: 1,
             titleColor: '#001F60', bodyColor: '#6B7BA2',
@@ -20374,7 +20374,7 @@ async function loadAuditResultsFromSheet() {
   // holds for any product count without further changes.
   function buildBrandMomentumPages(monthYear) {
     const cards = Array.from(document.querySelectorAll('#bm-momentum-cards-grid .momentum-pcard'));
-    const FIRST_PAGE_MAX = 3, OTHER_PAGE_MAX = 5;
+    const FIRST_PAGE_MAX = 3, OTHER_PAGE_MAX = 3;
     const productChunks = [];
     {
       const remaining = cards.slice();
@@ -20904,29 +20904,40 @@ async function loadAuditResultsFromSheet() {
   // if a given host doesn't send permissive CORS headers, that one
   // image is silently left as its original remote src (same as today)
   // rather than blocking the rest of the export.
+  // FIXED 2026-09-28 per Jaclyn — real evidence: the uploaded
+  // Accomplished-card image still didn't come through after the first
+  // attempt at this function (canvas drawImage + crossOrigin=anonymous).
+  // That approach requires the image HOST to send permissive CORS
+  // headers for the canvas-pixel-read check specifically — a separate,
+  // stricter browser check than a plain fetch()'s own CORS check, and
+  // Drive's lh3.googleusercontent.com does not reliably send it for
+  // that specific check even for publicly-shared files. Switched to
+  // fetch() + Blob + FileReader instead: reads the raw response bytes
+  // directly, which never touches canvas tainting at all, so it works
+  // for any host that allows a normal cross-origin GET (the much more
+  // common, permissive case, and the one Drive's public-file links
+  // actually support).
   async function pdfxRasterizeRemoteImages(root) {
     const imgs = Array.from(root.querySelectorAll('img[src^="http"]'));
-    await Promise.all(imgs.map(img => new Promise(resolve => {
-      const tmp = new Image();
-      tmp.crossOrigin = 'anonymous';
-      tmp.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = tmp.naturalWidth || 1;
-          canvas.height = tmp.naturalHeight || 1;
-          canvas.getContext('2d').drawImage(tmp, 0, 0);
-          img.src = canvas.toDataURL('image/png');
-        } catch (e) {
-          // Tainted canvas (no permissive CORS on this host) or another
-          // failure — leave the original remote src in place rather
-          // than blocking the export; worst case this one image is
-          // back to relying on the server's own allowlist/fetch.
-        }
-        resolve();
-      };
-      tmp.onerror = () => resolve();
-      tmp.src = img.src;
-    })));
+    await Promise.all(imgs.map(async img => {
+      try {
+        const res = await fetch(img.src, { mode: 'cors' });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        img.src = dataUrl;
+      } catch (e) {
+        // Leave the original remote src in place rather than blocking
+        // the export — worst case this one image falls back to relying
+        // on the server's own allowlist/fetch, same as before this fix.
+        console.warn('[pdfxRasterizeRemoteImages] could not embed', img.src, '—', e.message);
+      }
+    }));
   }
 
   // Server has no Georgia; the Plantin font file doesn't load there
