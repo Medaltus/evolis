@@ -1,187 +1,185 @@
 // api/render-pdf.js
 //
-// Ported 2026-09-28 per Jaclyn from the VBC/Dazzle Dry reference spec
-// ("Real-text PDF output"). CommonJS, per spec. Prints the client-sent
-// #pdfx-root HTML with headless Chrome so text/KPIs/tables come back as
-// real vector text instead of a screenshot — this is what fixes the
-// RangeError crash from the html2canvas/PNG approach (that was a hard
-// JS string-length ceiling, not a quality tradeoff) and cuts file size
-// dramatically (VBC: 155MB screenshot PDF -> 2.58MB real-text PDF).
+// Turns the dashboard's own PDF pages (#pdfx-root, serialized client-side
+// by pdfxBuildRenderDocument in index.html) into a REAL PDF with
+// headless Chrome — text, KPIs and tables come out as selectable vector
+// text instead of screenshots, and the file is a normal, emailable size.
+// Chart images are the same PNGs the dashboard already captured.
 //
-// Deploy requirements (cannot be done from here — must happen in the
-// real repo/Vercel project):
-//   package.json:  "@sparticuz/chromium": "153.0.0", "puppeteer-core": "25.11.0"
-//     (pin exactly — these two versions must match each other)
-//   vercel.json entry for this function:
-//     "api/render-pdf.js": { "maxDuration": 60, "memory": 2048, "includeFiles": "node_modules/@sparticuz/chromium/bin/**" }
-//     (without includeFiles, Vercel does not bundle the Chromium binary)
+// PORTED 2026-09-29 per Jaclyn — replaced verbatim with the real,
+// working VBC/Dazzle Dry reference file (the canonical one, confirmed
+// working there), rather than my own earlier version. My own version
+// diverged in two ways that likely explain why server-side rendering
+// had been silently failing on every single export since I first wrote
+// it: (1) it used top-level, eager require() for @sparticuz/chromium and
+// puppeteer-core — this file's own comment below explains exactly why
+// that's wrong (a packaging/loading failure crashes the whole function
+// with Vercel's opaque, undiagnosable error, on every request); (2) it
+// expected a JSON body ({html: "..."}), not this file's real contract
+// (raw, optionally gzipped HTML as application/octet-stream) — the
+// client-side pdfxRenderViaServer/pdfxBuildRenderDocument have been
+// updated to match this real contract, not the other way around.
 //
-// Deploy check (required after every deploy, per spec): open
-// /api/render-pdf directly in a browser tab (GET). It should self-test
-// (start Chromium, print a test page) and return {"ok": true}. If it
-// doesn't, the client-side JPEG fallback still works — exports won't
-// hard-fail either way — but real-text output won't be active until
-// this passes.
+// CANONICAL — port this file verbatim to every Medaltus dashboard repo
+// (see the PDF Export build notes' "Read this first" section). Only the
+// dashboard HTML differs per brand; this endpoint never does.
 //
-// ADDED 2026-09-29 per Jaclyn — diagnostic request logging. Real
-// evidence so far: an Accomplished-card image (a valid, working
-// https://lh3.googleusercontent.com/d/... URL — confirmed directly via
-// curl: 200 OK, permissive CORS, real PNG bytes returned) still comes
-// through blank in the PDF, even though this exact file is confirmed
-// deployed and lh3.googleusercontent.com is already in ALLOWED_HOSTS
-// below. Both of the obvious explanations (wrong host, stale deploy)
-// are ruled out with direct evidence — rather than guess a third
-// explanation blind, this logs every single request this page makes
-// (allowed AND blocked, with the actual reason) so the real cause shows
-// up directly in Vercel's function logs on the next real export,
-// instead of more speculation from either side.
+// Request:  POST, Content-Type: application/octet-stream, body = the full
+//           HTML document (gzipped when header X-Pdfx-Encoding: gzip).
+// Response: application/pdf on success; JSON {error} otherwise. Any
+//           non-200 makes the dashboard fall back to its screenshot PDF,
+//           so an export never simply fails.
+//
+// Security: the page may only load data: URIs, this deployment's own
+// origin (the Plantin font file), Google Fonts, and Drive-hosted images
+// (lh3.googleusercontent.com, used by Accomplished-card uploads). Every
+// other network request is blocked.
+//
+// Needs in vercel.json: maxDuration 60, memory 2048, and includeFiles for
+// @sparticuz/chromium's bin folder (Vercel's file tracing does not pick
+// up the compressed Chromium binary on its own).
 
-const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
+const zlib = require('zlib');
 
-const MAX_BODY_BYTES = 4.2 * 1024 * 1024; // 4.2MB gzipped payload ceiling, per spec
-const MAX_PDF_BYTES = 4.4 * 1024 * 1024;  // over this, return 413 so the client falls back
+// Loaded lazily INSIDE the handler (not at the top of the file) so that a
+// packaging/loading problem comes back as a readable JSON error instead of
+// Vercel's opaque FUNCTION_INVOCATION_FAILED crash page — which is what the
+// first deploy returned (2026-09-28), with no way to see the cause.
+let puppeteerMod = null;
+async function loadPuppeteer() {
+  if (!puppeteerMod) {
+    const mod = await import('puppeteer-core');
+    puppeteerMod = mod.default || mod;
+  }
+  return puppeteerMod;
+}
 
-// Only these origins may be reached from inside the rendered page — the
-// Chrome instance has no reason to load anything else, and blocking
-// everything else is a real security boundary, not just cleanliness.
-const ALLOWED_HOSTS = [
+const MAX_HTML_BYTES = 60 * 1024 * 1024;     // after gunzip
+const MAX_RESPONSE_BYTES = 4.4 * 1024 * 1024; // Vercel's response limit is 4.5MB
+const RENDER_TIMEOUT_MS = 40000;
+const ALLOWED_HOSTS = new Set([
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   'lh3.googleusercontent.com',
-];
+]);
 
-let _browserPromise = null; // reused across warm invocations, per spec
-
+// Reused across warm invocations so only a cold start pays Chromium's
+// launch cost.
+let browserPromise = null;
 async function getBrowser() {
-  if (_browserPromise) return _browserPromise;
-  _browserPromise = (async () => {
-    const executablePath = await chromium.executablePath();
+  if (browserPromise) {
+    const existing = await browserPromise.catch(() => null);
+    if (existing && existing.connected) return existing;
+  }
+  browserPromise = (async () => {
+    const puppeteer = await loadPuppeteer();
+    const { default: chromium } = await import('@sparticuz/chromium');
     return puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
+      args: await puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
+      defaultViewport: { width: 816, height: 1056 },
+      executablePath: await chromium.executablePath(),
+      headless: 'shell',
     });
   })();
-  return _browserPromise;
+  return browserPromise;
 }
 
-// Blocks every request that isn't a data: URI, this deployment's own
-// host, or one of ALLOWED_HOSTS above. Applied per-page in renderHtmlToPdf.
-async function lockDownRequests(page, ownHost) {
-  await page.setRequestInterception(true);
-  page.on('request', (req) => {
-    try {
-      const url = req.url();
-      if (url.startsWith('data:')) {
-        console.log('[render-pdf][req] ALLOW data-uri (', url.length, 'chars)');
-        return req.continue().catch((e) => console.warn('[render-pdf][req] continue() failed for data-uri:', e.message));
-      }
-      const host = new URL(url).host;
-      if (host === ownHost || ALLOWED_HOSTS.includes(host)) {
-        console.log('[render-pdf][req] ALLOW', host, '—', url.slice(0, 120));
-        return req.continue().catch((e) => console.warn('[render-pdf][req] continue() failed for', host, ':', e.message));
-      }
-      console.warn('[render-pdf][req] BLOCK — host not in allowlist:', JSON.stringify(host), '— full url:', url.slice(0, 200));
-      return req.abort().catch((e) => console.warn('[render-pdf][req] abort() itself failed:', e.message));
-    } catch (e) {
-      // Any URL-parsing failure or racing-navigation error: fail closed.
-      console.warn('[render-pdf][req] BLOCK — request handler threw (failing closed):', e.message, '— raw url was:', (function () { try { return req.url(); } catch (e2) { return '(url() itself threw: ' + e2.message + ')'; } })());
-      req.abort().catch(() => {});
-    }
-  });
-  // Separate listener, doesn't affect blocking logic — just visibility
-  // into what actually failed to load once Chrome gives up on it,
-  // independent of whether our own interceptor allowed or blocked it
-  // (a request we ALLOWED can still fail for its own reasons — timeout,
-  // the remote host erroring, etc.).
-  page.on('requestfailed', (req) => {
-    console.warn('[render-pdf][req] FAILED after being allowed —', req.url().slice(0, 200), '— errorText:', req.failure() && req.failure().errorText);
-  });
+async function readRawBody(req) {
+  const parsed = req.body;
+  if (Buffer.isBuffer(parsed)) return parsed;
+  if (typeof parsed === 'string') return Buffer.from(parsed, 'utf8');
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
 }
 
-async function renderHtmlToPdf(html, ownHost) {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+// GET /api/render-pdf  →  self-test: launches Chromium, prints a one-line
+// page, and reports each step's result as JSON. Open it in a browser tab
+// after any deploy to confirm the endpoint works end to end.
+async function selfTest(res) {
+  const steps = { node: process.version };
+  const t0 = Date.now();
   try {
-    await lockDownRequests(page, ownHost);
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 45000 });
-    // Let web fonts actually finish loading before printing — otherwise
-    // headless Chrome can print a first paint with fallback fonts still
-    // showing, before the real ones swap in.
-    await page.evaluateHandle('document.fonts.ready').catch(() => {});
-    // ADDED 2026-09-29 — direct in-page check of every <img> tag right
-    // before printing: does the browser itself think each one loaded
-    // successfully (naturalWidth/naturalHeight > 0), independent of the
-    // request-interception logging above. This is the most direct
-    // possible answer to "did this specific image actually render."
-    const imgReport = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('img')).map((img) => ({
-        src: (img.src || '').slice(0, 150),
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        complete: img.complete,
-      }));
-    }).catch((e) => [{ error: e.message }]);
-    console.log('[render-pdf][img-report]', JSON.stringify(imgReport));
-    const pdfBuffer = await page.pdf({
-      format: 'Letter',
-      printBackground: true,
-      preferCSSPageSize: true,
-    });
-    return pdfBuffer;
-  } finally {
-    await page.close().catch(() => {});
+    const puppeteer = await loadPuppeteer();
+    steps.puppeteerLoaded = true;
+    const { default: chromium } = await import('@sparticuz/chromium');
+    steps.chromiumLoaded = true;
+    steps.executablePath = await chromium.executablePath();
+    const browser = await getBrowser();
+    steps.browserVersion = await browser.version();
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<p style="font:16px sans-serif">render-pdf self-test</p>');
+      const pdf = await page.pdf({ format: 'letter' });
+      steps.samplePdfBytes = pdf.length;
+    } finally {
+      await page.close().catch(() => {});
+    }
+    steps.ok = true;
+  } catch (err) {
+    steps.ok = false;
+    steps.error = String((err && err.stack) || err).slice(0, 1500);
   }
+  steps.ms = Date.now() - t0;
+  return res.status(steps.ok ? 200 : 500).json(steps);
 }
 
 module.exports = async (req, res) => {
-  // GET = deploy self-test (per spec): starts Chromium, prints a test
-  // page, confirms the whole pipeline actually works post-deploy.
-  if (req.method === 'GET') {
-    try {
-      const testHtml = '<html><body><h1 style="font-family:sans-serif;">render-pdf self-test</h1><p>If you can read this as a real PDF page, Chromium + Puppeteer are working.</p></body></html>';
-      const buf = await renderHtmlToPdf(testHtml, req.headers.host || '');
-      return res.status(200).json({ ok: true, testPdfBytes: buf.length });
-    } catch (err) {
-      console.error('[api/render-pdf] self-test failed', err);
-      return res.status(200).json({ ok: false, error: err.message || String(err) });
-    }
-  }
-
+  if (req.method === 'GET') return selfTest(res);
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let page = null;
   try {
-    const bodyStr = JSON.stringify(req.body || {});
-    if (Buffer.byteLength(bodyStr, 'utf8') > MAX_BODY_BYTES) {
-      return res.status(413).json({ error: 'Payload too large' });
+    let raw = await readRawBody(req);
+    if (!raw.length) return res.status(400).json({ error: 'Empty request body' });
+    if (String(req.headers['x-pdfx-encoding'] || '').toLowerCase() === 'gzip') {
+      raw = zlib.gunzipSync(raw, { maxOutputLength: MAX_HTML_BYTES });
     }
-    const { html } = req.body || {};
-    if (!html || typeof html !== 'string') {
-      return res.status(400).json({ error: 'html (string) is required' });
-    }
+    if (raw.length > MAX_HTML_BYTES) return res.status(413).json({ error: 'HTML too large' });
+    const html = raw.toString('utf8');
 
-    const pdfBuffer = await renderHtmlToPdf(html, req.headers.host || '');
+    const ownHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
 
-    if (pdfBuffer.length > MAX_PDF_BYTES) {
-      // Per spec: this is what triggers the client-side screenshot
-      // fallback — not a hard failure of the export as a whole.
-      return res.status(413).json({ error: 'Rendered PDF exceeds size limit', bytes: pdfBuffer.length });
+    const browser = await getBrowser();
+    page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const url = request.url();
+      // .catch on every continue/abort: an unhandled rejection here (e.g.
+      // "Request is already handled") would crash the whole function.
+      const allow = () => Promise.resolve(request.continue()).catch(() => {});
+      const block = () => Promise.resolve(request.abort()).catch(() => {});
+      if (url.startsWith('data:') || url.startsWith('about:')) return allow();
+      let host = '';
+      try { host = new URL(url).host; } catch (e) { return block(); }
+      if (host === ownHost || ALLOWED_HOSTS.has(host)) return allow();
+      return block();
+    });
+
+    await page.setContent(html, { waitUntil: 'networkidle0', timeout: RENDER_TIMEOUT_MS });
+    await page.evaluate(() => document.fonts.ready.then(() => true));
+
+    const pdf = Buffer.from(await page.pdf({
+      preferCSSPageSize: true,
+      printBackground: true,
+      timeout: RENDER_TIMEOUT_MS,
+    }));
+
+    if (pdf.length > MAX_RESPONSE_BYTES) {
+      console.error('[api/render-pdf] PDF too large to return:', pdf.length);
+      return res.status(413).json({ error: `Rendered PDF is ${(pdf.length / 1048576).toFixed(1)}MB, over the 4.4MB response limit` });
     }
 
     res.setHeader('Content-Type', 'application/pdf');
-    return res.status(200).send(pdfBuffer);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(pdf);
   } catch (err) {
-    // Every failure path returns readable JSON rather than letting
-    // Vercel surface its own FUNCTION_INVOCATION_FAILED — per spec, this
-    // was the actual first-deploy bug (packages must load inside the
-    // handler, and every page.close()/request continue-or-abort needs
-    // its own .catch, both already true above).
     console.error('[api/render-pdf]', err);
-    return res.status(500).json({ error: err.message || 'Render failed' });
+    return res.status(500).json({ error: String((err && err.stack) || err).slice(0, 1500) });
+  } finally {
+    if (page) await page.close().catch(() => {});
   }
 };
