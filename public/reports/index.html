@@ -812,8 +812,22 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
    the whole page to non-uniformly squish during capture. Live dashboard
    spacing stays completely untouched — only applies inside the PDF via
    this wrapper. */
-.pdfx-momentum-tight .momentum-cards-grid{gap:14px;}
-.pdfx-momentum-tight .momentum-pcard-body{padding:16px 20px;}
+/* EXPANDED 2026-09-29 per Jaclyn — "3 fits but wastes space, fonts can
+   be smaller, condense so 5 fit on a page with no other KPIs." Only
+   affects the PDF capture (this wrapper class is added only inside
+   #pdfx-root) — the live dashboard's own card spacing is completely
+   untouched. Sized to fit 5 cards + gaps within the ~900px of a
+   no-KPI-row Brand Momentum page (pages after the first, which still
+   carries the top-3 KPIs and needs its own room). */
+.pdfx-momentum-tight .momentum-cards-grid{gap:8px;}
+.pdfx-momentum-tight .momentum-pcard-hd{padding:7px 14px;}
+.pdfx-momentum-tight .momentum-pcard-name{font-size:13px;}
+.pdfx-momentum-tight .momentum-pcard-rating{font-size:11px;}
+.pdfx-momentum-tight .momentum-pcard-body{padding:9px 16px;}
+.pdfx-momentum-tight .momentum-pcard-label{font-size:9px;}
+.pdfx-momentum-tight .momentum-pcard-value{font-size:19px;}
+.pdfx-momentum-tight .momentum-pcard-subcategory{font-size:9.5px;}
+.pdfx-momentum-tight .momentum-pill{font-size:9px;padding:2px 7px;}
 .ppc-opp-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
 .ppc-opp-card.urgent{border-left:4px solid var(--danger);}
 .ppc-opp-card.high{border-left:4px solid var(--warn);}
@@ -19714,7 +19728,39 @@ async function loadAuditResultsFromSheet() {
         ticks: Object.assign({}, origTicks, { font: Object.assign({}, origTicks.font, { size: scaledSize }) })
       });
     });
-    return Object.assign({}, options, { scales: newScales });
+
+    // FIXED 2026-09-29 per Jaclyn — real evidence: a legend font-size
+    // change in a chart's own config was having zero visible effect in
+    // the PDF export specifically (still worked live). Root cause: this
+    // function only ever scaled options.scales[x/y].ticks.font — never
+    // options.plugins.legend. Everything else in the chart (axis ticks)
+    // gets its font size scaled UP to match the much-higher capture
+    // resolution (captureWidthPx ÷ 686 ≈ 3.26x, per the console log),
+    // so it displays back at the right size once the image is shown at
+    // its real 686px width — but the legend's font/box sizes were left
+    // at whatever the chart's own base config said, un-scaled, so at
+    // capture resolution they were proportionally tiny once the image
+    // shrank back down. Same treatment as ticks: scale the legend's own
+    // configured size by the same factor, keep boxWidth/boxHeight/padding
+    // in that same ratio to each other so the swatch-to-text proportions
+    // don't visibly change, just the whole legend's overall size.
+    const origPlugins = options.plugins || {};
+    const origLegend = origPlugins.legend || {};
+    const origLabels = origLegend.labels || {};
+    const baseLegendFontSize = (origLabels.font && origLabels.font.size) || 12;
+    const scaledLegendFontSize = Math.max(6, Math.round(baseLegendFontSize * fontScale));
+    const legendScaleRatio = scaledLegendFontSize / baseLegendFontSize;
+    const newLegend = Object.assign({}, origLegend, {
+      labels: Object.assign({}, origLabels, {
+        font: Object.assign({}, origLabels.font, { size: scaledLegendFontSize }),
+        boxWidth: Math.round((origLabels.boxWidth || 12) * legendScaleRatio),
+        boxHeight: Math.round((origLabels.boxHeight || 12) * legendScaleRatio),
+        padding: Math.round((origLabels.padding || 10) * legendScaleRatio),
+      }),
+    });
+    const newPlugins = Object.assign({}, origPlugins, { legend: newLegend });
+
+    return Object.assign({}, options, { scales: newScales, plugins: newPlugins });
   }
 
 
@@ -20374,7 +20420,7 @@ async function loadAuditResultsFromSheet() {
   // holds for any product count without further changes.
   function buildBrandMomentumPages(monthYear) {
     const cards = Array.from(document.querySelectorAll('#bm-momentum-cards-grid .momentum-pcard'));
-    const FIRST_PAGE_MAX = 3, OTHER_PAGE_MAX = 3;
+    const FIRST_PAGE_MAX = 3, OTHER_PAGE_MAX = 5;
     const productChunks = [];
     {
       const remaining = cards.slice();
