@@ -22599,40 +22599,48 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         // same function — no new fetch, matching the spec's "fetched
         // fresh on every load, no caching" intent (this page's own load
         // already re-fetches amzRows fresh every time it runs).
-        function computeAmazonCancelRate(rows, excludeYear, excludeMonth) {
-          const orderStatus = new Map(); // order_id -> { cancelled: bool, month: 'YYYY-MM', isVine: bool }
-          rows.forEach(r => {
-            const orderId = (r.order_id || '').trim();
-            const date = (r.date || '').trim();
-            if (!orderId || !date) return;
-            const month = date.slice(0, 7);
-            const isVine = (r.promotion_ids || '').toLowerCase().includes('vine');
-            const isCancelled = (r.status || '').toLowerCase().trim() === 'cancelled';
-            const existing = orderStatus.get(orderId);
-            if (!existing) {
-              orderStatus.set(orderId, { cancelled: isCancelled, month, isVine });
-            } else {
-              // Cancellation and Vine are both order-level facts once ANY
-              // line item on the order shows them — OR them in, don't
-              // overwrite with a later line item's own (possibly false) value.
-              existing.cancelled = existing.cancelled || isCancelled;
-              existing.isVine = existing.isVine || isVine;
-            }
-          });
-
-          const excludeMonthStr = `${excludeYear}-${String(excludeMonth).padStart(2, '0')}`;
-          let total = 0, cancelled = 0;
-          orderStatus.forEach(o => {
-            if (o.isVine) return;
-            if (o.month === excludeMonthStr) return; // the in-progress month itself — hasn't had time to cancel yet
-            total++;
-            if (o.cancelled) cancelled++;
-          });
-          if (total === 0) return null; // never fabricate a rate with zero history
-          return cancelled / total;
+        // REWRITTEN 2026-10-02 per Jaclyn's hub spec — the Goal Tracker
+        // now runs the exact logic the hub uses for évolis. Shared date
+        // normalizer: the Amazon orders cache mixes YYYY-MM-DD and
+        // M/D/YYYY in the same column (confirmed earlier this project).
+        function gtNormDate(v) {
+          const s = String(v || '').trim();
+          let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+          m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+          return '';
         }
-        const amzCancelRate = computeAmazonCancelRate(amzRows, cfg.year, cfg.month);
-        console.log('[GoalsTracker][qa] Amazon cancel rate (pooled, Vine + current month excluded):', amzCancelRate == null ? 'no history yet' : (amzCancelRate * 100).toFixed(1) + '%');
+        // Spec: group by order_id (cancelled if ANY line item is), drop
+        // Vine orders, exclude BOTH the real current in-progress month and
+        // the earliest month present in the rolling cache (both partial),
+        // pool the rest. null when there's no qualifying history.
+        function computeCancelRateFromRows(rows) {
+          const orders = new Map();
+          rows.forEach(r => {
+            const id = (r.order_id || '').trim();
+            const d = gtNormDate(r.date);
+            if (!id || !d) return;
+            const month = d.slice(0, 7);
+            const vine = (r.promotion_ids || '').toLowerCase().includes('vine');
+            const canc = (r.status || '').toLowerCase().trim() === 'cancelled';
+            const o = orders.get(id);
+            if (!o) orders.set(id, { month, vine, canc });
+            else { o.vine = o.vine || vine; o.canc = o.canc || canc; }
+          });
+          const now = new Date();
+          const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          let earliestMonth = null;
+          orders.forEach(o => { if (!earliestMonth || o.month < earliestMonth) earliestMonth = o.month; });
+          let total = 0, cancelled = 0;
+          orders.forEach(o => {
+            if (o.vine || o.month === currentMonth || o.month === earliestMonth) return;
+            total++; if (o.canc) cancelled++;
+          });
+          return total === 0 ? null : cancelled / total;
+        }
+        const amzCancelRate = computeCancelRateFromRows(amzRows);
+        console.log('[GoalsTracker][qa] Amazon cancel rate (pooled; Vine, current month, earliest cache month excluded):', amzCancelRate == null ? 'no history yet' : (amzCancelRate * 100).toFixed(1) + '%');
 
         const [goalsAmzCsv, goalsWebCsv] = await Promise.all([
           fetch('https://docs.google.com/spreadsheets/d/1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3/export?format=csv&gid=154860784' + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
@@ -22646,50 +22654,73 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         console.log('[GoalsTracker][qa] Amazon+Walmart goals row found:', !!goalsRowAmz, goalsRowAmz ? { overall: goalsRowAmz[14], organic: goalsRowAmz[19], ads: goalsRowAmz[29] } : null);
         console.log('[GoalsTracker][qa] Website goals row found:', !!goalsRowWeb, goalsRowWeb ? { overall: goalsRowWeb[14], organic: goalsRowWeb[19], ads: goalsRowWeb[29] } : null);
 
-        // Live actual revenue, pending-inclusive, netted against returns
-        // (a returned sale shouldn't count toward a sales goal; a
-        // pending one should, since it hasn't been returned).
-        const amzGoalsActual = aggregateRange(amzRows, mtdStartStr, mtdEndStr, goalsIsValidAmazonRow).totalRevenue - amzReturnsMtd.totalAmt;
-        const wmtGoalsActual = wmtMtd.totalRevenue - wmtReturnsMtd.totalAmt; // wmtMtd already pending-inclusive, confirmed above
-        const webGoalsActual = webMtd.totalRevenue - webReturnsMtd.totalAmt; // webMtd already pending-inclusive, confirmed above
-        const amzWmtActual = amzGoalsActual + wmtGoalsActual;
-
-        // FIXED 2026-09-29 per Jaclyn — real evidence: the Goal
-        // Tracker's "Organic Sales" ring was showing too high, because
-        // this subtracted only Amazon's own ad-sales (amzAdActual) from
-        // amzWmtActual — which is Amazon+Walmart COMBINED total. That
-        // left Walmart's own ad-driven sales miscounted as "organic"
-        // entirely, inflating this ring by however much Walmart spent on
-        // ads that month. The card itself is scoped to Amazon+Walmart,
-        // so "ad sales" subtracted from it must be Amazon+Walmart too,
-        // not Amazon alone — matching scope on both sides of the
-        // subtraction, not just the label on the ring.
-        //
-        // Walmart's own ad-sales $ for this exact month wasn't
-        // separately available yet at this point in the function before
-        // this fix (the real fetch/parse the rest of this function later
-        // uses for its own blendedSales KPI lives further down, after
-        // this card has already rendered) — fetched directly here
-        // instead, small and local, same sheet/gid/column names that
-        // later code already uses and already has confirmed real.
-        let amzAdActual = null;
-        if (isCsv(adOrdersCsv)) {
-          const adRowsForGoals = parseCsv(adOrdersCsv).filter(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
-          amzAdActual = adRowsForGoals.reduce((s, r) => s + parseAmt(r.sales), 0);
+        // ── Actuals, per the hub spec (2026-10-02) ──
+        // Date window: 1st of the month through cfg.day (today for MTD,
+        // the last day for Last Month) — same mtdStartStr/mtdEndStr this
+        // page already uses.
+        function isGoalsValidRow(r) {
+          if ((r.status || '').toLowerCase().trim() === 'cancelled') return false;
+          if ((r.promotion_ids || '').toLowerCase().includes('vine')) return false;
+          return true; // Pending is KEPT, deliberately
         }
-        let wmtAdActualForGoals = 0;
-        try {
-          const WALMART_ADVERTISING_SHEET_ID_GOALS = '1H1mAYxu8udO7vuCPGs8u0iVzHaRh0wbHb4PyIka4pUU';
-          const WALMART_ADVERTISING_GID_GOALS = '844750080'; // evolis tab — same sheet the later blendedSales KPI uses
-          const wmtAdvCsvForGoals = await fetch(sheetCsvUrl(WALMART_ADVERTISING_SHEET_ID_GOALS, WALMART_ADVERTISING_GID_GOALS) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
-          if (isCsv(wmtAdvCsvForGoals)) {
-            const wmtAdvRowsForGoals = parseCsv(wmtAdvCsvForGoals);
-            const wmtThisMonthForGoals = wmtAdvRowsForGoals.find(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
-            if (wmtThisMonthForGoals) wmtAdActualForGoals = parseAmt(wmtThisMonthForGoals.sales);
-          }
-        } catch (e) { console.warn('[Evolis][overview] Goal Tracker Walmart ad-sales lookup failed:', e.message); }
-        const amzWmtAdActualCombined = amzAdActual != null ? (amzAdActual + wmtAdActualForGoals) : null;
-        const amzOrganicActual = amzWmtAdActualCombined != null ? Math.max(0, amzWmtActual - amzWmtAdActualCombined) : null;
+        // Amazon + Walmart: group by order_id, SUM item_price within each
+        // order, then sum across orders. No returns netting.
+        function sumOrdersRevenue(rows) {
+          const orderTotals = {};
+          rows.forEach(r => {
+            const d = gtNormDate(r.date);
+            if (!d || d < mtdStartStr || d > mtdEndStr || !isGoalsValidRow(r) || !r.order_id) return;
+            orderTotals[r.order_id] = (orderTotals[r.order_id] || 0) + parseAmt(r.item_price);
+          });
+          return Object.values(orderTotals).reduce((a, v) => a + v, 0);
+        }
+        // Ad Orders Cache is pre-aggregated by year/month/asin — sum sales.
+        function sumAdSales(rows) {
+          return rows
+            .filter(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month)
+            .reduce((a, r) => a + parseAmt(r.sales), 0);
+        }
+        // Website: brand === 'evolis', exclude refunded/cancelled/canceled/
+        // voided. order_total repeats the whole-order value on every line
+        // item, so it's SET once per order, not summed.
+        function sumWebsiteOrdersRevenue(rows) {
+          const orderTotals = {};
+          rows.forEach(r => {
+            if ((r.brand || '').toLowerCase().trim() !== 'evolis') return;
+            const d = gtNormDate(r.date);
+            const fs = (r.financial_status || r.status || '').toLowerCase();
+            if (!d || d < mtdStartStr || d > mtdEndStr) return;
+            if (fs === 'refunded' || fs === 'cancelled' || fs === 'canceled' || fs === 'voided') return;
+            if (!r.order_id) return;
+            orderTotals[r.order_id] = parseAmt(r.order_total);
+          });
+          return Object.values(orderTotals).reduce((a, v) => a + v, 0);
+        }
+        // Website ads: ONE DELIBERATE DEVIATION from the hub spec. The
+        // spec takes revenue once per date because the old
+        // sync-google-ads cron copied the whole day's site revenue onto
+        // every campaign row. That cron was fixed 2026-10-02: revenue is
+        // now each campaign's own Google conversions_value, so rows must
+        // be SUMMED. Taking one value per date would silently drop every
+        // campaign after the first on any multi-campaign day. (September
+        // has one campaign per day, so both methods give the same
+        // $756.56 today; they diverge as soon as a second campaign runs.)
+        function sumWebsiteAdsRevenue(rows) {
+          return rows.reduce((a, r) => {
+            const d = gtNormDate(r.date);
+            return (d && d >= mtdStartStr && d <= mtdEndStr) ? a + parseAmt(r.revenue) : a;
+          }, 0);
+        }
+
+        const amzWmtActual = sumOrdersRevenue(amzRows) + sumOrdersRevenue(wmtRows);
+        const adOrdersRowsForGoals = isCsv(adOrdersCsv) ? parseCsv(adOrdersCsv) : [];
+        const amzWmtAdsActual = isCsv(adOrdersCsv) ? sumAdSales(adOrdersRowsForGoals) : null;
+        const amzOrganicActual = amzWmtAdsActual != null ? Math.max(0, amzWmtActual - amzWmtAdsActual) : null;
+
+        const webGoalsActual = sumWebsiteOrdersRevenue(webRows);
+        const webAdsActual = sumWebsiteAdsRevenue(webAdsRows);
+        const webOrganicActual = Math.max(0, webGoalsActual - webAdsActual);
+        console.log('[GoalsTracker][qa] Amz+Wmt total/ads/organic:', amzWmtActual.toFixed(2), amzWmtAdsActual, amzOrganicActual, '| Web total/ads/organic:', webGoalsActual.toFixed(2), webAdsActual.toFixed(2), webOrganicActual.toFixed(2));
 
         // Progress ring — plain SVG, deliberately not Chart.js. A single-
         // value gauge like this doesn't need a charting library, and SVG
@@ -22809,13 +22840,10 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         // undefined) — applying an Amazon order-cancellation rate to a
         // completely different channel would be exactly the kind of
         // fabricated number the spec says never to default to.
-        // Passing amzWmtAdActualCombined (not the raw Amazon-only
-        // amzAdActual) here too — this card's 3 rings are Total/Organic/
-        // Ad for "Amazon + Walmart" as one unit, so all three need the
-        // same two-channel scope to stay internally consistent (Total
-        // should equal Organic + Ad as displayed, not just in theory).
-        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzWmtAdActualCombined, amzOrganicActual, goalsRowAmz, amzCancelRate);
-        if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, null, webGoalsActual, goalsRowWeb);
+        // Ads per the hub spec: Amazon+Walmart card = Ad Orders Cache sales
+        // (2026-10-02 — replaces the earlier Amazon+Walmart-advertising blend).
+        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzWmtAdsActual, amzOrganicActual, goalsRowAmz, amzCancelRate);
+        if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, webAdsActual, webOrganicActual, goalsRowWeb);
       } catch (err) {
         console.warn('[GoalsTracker] failed:', err.message);
         const goalsBodyAmzEl = document.getElementById('ov-goals-body-amz');
