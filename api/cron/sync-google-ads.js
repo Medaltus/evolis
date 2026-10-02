@@ -97,7 +97,8 @@ module.exports = async (req, res) => {
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
-      metrics.conversions
+      metrics.conversions,
+      metrics.conversions_value
     FROM campaign
     WHERE ${gaqlDate}
       AND metrics.impressions > 0
@@ -119,27 +120,50 @@ module.exports = async (req, res) => {
     return res.status(200).json({ message: 'No ad data in range', mode, startDate, endDate });
   }
 
-  // ── 3. Read Shopify orders for revenue lookup ─────────────────────────────
-  let orderRows = [];
-  try {
-    orderRows = await readRows(SHEET_ID, ORDERS_TAB);
-    console.log(`[sync-google-ads] loaded ${orderRows.length} order rows for revenue lookup`);
-  } catch (e) {
-    console.warn('[sync-google-ads] could not read orders tab — ACOS will be blank');
-  }
+  // FIXED 2026-10-02 per Jaclyn — real evidence: évolis's own dashboard
+  // was showing ~$1.9K Google Ads revenue for September, while her
+  // partner's (Google Ads' own) dashboard showed ~$1K — a ~1.9x
+  // inflation. Root cause: `revenue` here used to be built entirely
+  // from the Shopify orders tab's TOTAL site revenue for a given date
+  // (revenueByDate[date], summed across every order that day regardless
+  // of channel) — and that same single day-total was then copied onto
+  // EVERY campaign row for that day. A day with 2 campaigns running
+  // counted that day's real revenue twice when the column was summed
+  // for a month; 3 campaigns, three times — not a flat error, one that
+  // scales with however many campaigns happen to run each day, which
+  // matches a ~1.9x gap implying ~2 campaigns/day on average in
+  // September. The GAQL query below never even requested
+  // metrics.conversions_value (Google Ads' own real per-campaign
+  // revenue figure) — only metrics.conversions (a count, not a dollar
+  // amount) — so there was no genuinely per-campaign revenue source to
+  // use in the first place. Switched to metrics.conversions_value
+  // (added to the query above), matching the pattern the sibling
+  // shopping_performance_view query below already uses correctly. This
+  // also means the Shopify-orders revenue lookup this section used to
+  // do is no longer needed for the campaign-level tab — Google Ads
+  // reports its own per-campaign revenue directly now, which is also
+  // what should make this match her partner's (Google Ads') own
+  // dashboard going forward, since that's presumably reading the same
+  // Google-side attribution rather than Shopify's own order data.
+  //
+  // Tradeoff worth knowing: this switches the source of truth for this
+  // tab from Shopify's own ground-truth order data to Google Ads' own
+  // attribution model, which can differ from real orders (view-through
+  // conversions, attribution window effects, etc.) — the previous
+  // design's instinct to prefer Shopify's real numbers wasn't wrong in
+  // principle, it just had a duplication bug in how it was applied
+  // per-campaign. If matching Google Ads' own reported number is the
+  // goal (which comparing directly against her partner's dashboard
+  // suggests), this is the correct fix; if real-order-based ACOS matters
+  // more than matching Google's own UI, the alternative is allocating
+  // each day's real Shopify total proportionally across that day's
+  // campaigns instead of copying it wholesale — a materially different,
+  // more involved fix, not implemented here without confirming which is
+  // wanted.
 
-  // Build revenue map: date → total revenue (sum item_price, exclude refunded/cancelled)
-  const revenueByDate = {};
-  for (const row of orderRows) {
-    const finStatus = (row.financial_status || row.status || '').toLowerCase();
-    if (finStatus === 'refunded' || finStatus === 'cancelled' || finStatus === 'canceled') continue;
-    const date  = normalizeDate(row.date);
-    if (!date) continue;
-    const price = parseFloat((row.item_price || '0').replace(/[$,]/g, '')) || 0;
-    revenueByDate[date] = (revenueByDate[date] || 0) + price;
-  }
-
-  // ── 4. Build sheet rows ───────────────────────────────────────────────────
+  // ── 3. Build sheet rows ───────────────────────────────────────────────────
+  // (renumbered — this no longer depends on the Shopify orders read,
+  // which moved below since it's only needed for the shopping-sync step now)
   const newLineItems = adsRows.map(r => {
     const date         = r.segments?.date || '';
     const campaignName = r.campaign?.name || '';
@@ -147,7 +171,7 @@ module.exports = async (req, res) => {
     const clicks       = parseInt(r.metrics?.clicks || '0', 10);
     const spend        = round2(parseInt(r.metrics?.costMicros || '0', 10) / 1_000_000);
     const conversions  = round2(r.metrics?.conversions || 0);
-    const revenue      = round2(revenueByDate[date] || 0);
+    const revenue      = round2(r.metrics?.conversionsValue || 0);
     const acos         = revenue > 0 ? round2(spend / revenue) : '';
 
     return {
@@ -163,39 +187,51 @@ module.exports = async (req, res) => {
     };
   }).filter(r => r.date && r.campaign_name);
 
-  // ── 5. Dedup and write ────────────────────────────────────────────────────
+  // ── 4. Read Shopify orders — still needed below, for the shopping-
+  // performance (per-product) sync's own sku resolution, even though the
+  // campaign-level revenue/ACOS above no longer depends on it.
+  let orderRows = [];
+  try {
+    orderRows = await readRows(SHEET_ID, ORDERS_TAB);
+    console.log(`[sync-google-ads] loaded ${orderRows.length} order rows for shopping-sync sku resolution`);
+  } catch (e) {
+    console.warn('[sync-google-ads] could not read orders tab — shopping-performance sku resolution will be blank');
+  }
+
+  // ── 5. Upsert and write ───────────────────────────────────────────────────
+  // CHANGED 2026-10-02 per Jaclyn — was skip-if-exists (append only new
+  // date+campaign keys). That meant the revenue fix above could NEVER
+  // correct rows already written with the old inflated value — re-running
+  // September would just log "skipped N duplicates" and leave the bad
+  // numbers in place. Now an upsert, same pattern the shopping tab below
+  // already uses: rows in this run's date range overwrite their existing
+  // date+campaign row; everything outside the range is kept untouched.
+  // Also means Google Ads' own after-the-fact conversion corrections
+  // (conversions keep attributing for days after a click) get picked up
+  // on any re-run instead of being frozen at first-write.
   const token        = await ensureTab(SHEET_ID, ADS_TAB, ADS_HEADERS);
   const existingRows = await readRows(SHEET_ID, ADS_TAB);
-  const existingKeys = new Set(
-    existingRows
-      .map(r => `${r.date}||${r.campaign_name}`)
-      .filter(k => k !== '||')
-  );
+  const byKey = new Map();
+  existingRows.forEach(r => {
+    const key = `${r.date}||${r.campaign_name}`;
+    if (key !== '||') byKey.set(key, r);
+  });
 
-  // FIXED 2026-08-18 — was defaulting to valueInputOption=RAW, same
-  // forced-text issue found and fixed across many other files this
-  // review. impressions/clicks/spend/conversions/revenue/acos now write
-  // as real numbers. campaign_name protected with a leading apostrophe
-  // (Sheets' own force-text convention under USER_ENTERED) as cheap
-  // defensive insurance — low risk in practice, but costs nothing.
-  const rowsToWrite = newLineItems
-    .filter(r => !existingKeys.has(`${r.date}||${r.campaign_name}`))
-    .map(r => ADS_HEADERS.map(h => {
-      const v = r[h] ?? '';
-      return (h === 'campaign_name' && v !== '') ? `'${v}` : v;
-    }));
+  let newCount = 0, updatedCount = 0;
+  newLineItems.forEach(item => {
+    const key = `${item.date}||${item.campaign_name}`;
+    if (byKey.has(key)) updatedCount++; else newCount++;
+    byKey.set(key, item);
+  });
 
-  const dupCount = newLineItems.length - rowsToWrite.length;
-  if (dupCount > 0) {
-    console.log(`[sync-google-ads] skipped ${dupCount} duplicate date+campaign rows`);
-  }
-
-  if (rowsToWrite.length > 0) {
-    await appendRows(SHEET_ID, ADS_TAB, rowsToWrite, token, 'USER_ENTERED');
-    console.log(`[sync-google-ads] wrote ${rowsToWrite.length} rows`);
-  } else {
-    console.log('[sync-google-ads] 0 new rows (all duplicates)');
-  }
+  // campaign_name protected with a leading apostrophe (Sheets' force-text
+  // convention under USER_ENTERED); numeric columns write as real numbers.
+  const outputRows = Array.from(byKey.values()).map(r => ADS_HEADERS.map(h => {
+    const v = r[h] ?? '';
+    return (h === 'campaign_name' && v !== '') ? `'${v}` : v;
+  }));
+  await replaceRows(SHEET_ID, ADS_TAB, ADS_HEADERS, outputRows, token, 'USER_ENTERED');
+  console.log(`[sync-google-ads] ads: ${newCount} new, ${updatedCount} refreshed, ${outputRows.length} total`);
 
   // ── 6. Shopping performance (per-product) — new, best-effort ─────────────
   // Deliberately isolated in its own try/catch: campaign-level ads sync above
@@ -214,8 +250,7 @@ module.exports = async (req, res) => {
   }
 
   return res.status(200).json({
-    rows:      rowsToWrite.length,
-    skipped:   dupCount,
+    ads:       { new: newCount, updated: updatedCount, totalRows: outputRows.length },
     shopping:  shoppingResult,
     mode,
     startDate,
