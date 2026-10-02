@@ -22803,7 +22803,10 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
               }
             } else {
               // Last Full Month — the month is over, actual IS final, no separate projection.
-              statusText = actualPct >= 100 ? 'Hit goal' : 'Missed goal';
+              // CHANGED 2026-10-02 per Jaclyn — show the real revenue hit for
+              // this ring (total/organic/ads) instead of "Hit goal"/"Missed
+              // goal". Ring color still carries hit vs missed.
+              statusText = `Actual ${fmtD(actual)}`;
               statusColor = actualPct >= 100 ? 'var(--green)' : 'var(--danger)';
             }
             return `<div style="text-align:center;flex:1;">
