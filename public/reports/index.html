@@ -22654,19 +22654,42 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         const webGoalsActual = webMtd.totalRevenue - webReturnsMtd.totalAmt; // webMtd already pending-inclusive, confirmed above
         const amzWmtActual = amzGoalsActual + wmtGoalsActual;
 
-        // Amazon+Walmart's own Ad-attributed portion of amzWmtActual,
-        // reusing blendedSpend/blendedSales-style logic isn't available
-        // yet at this point in the function (computed further below) —
-        // approximated here from the same adOrdersCsv this function
-        // already has in scope, scoped to Amazon (Walmart's own ad-sales
-        // $ isn't separately available from wmtAdvRows at this point;
-        // flagged below rather than silently guessed).
+        // FIXED 2026-09-29 per Jaclyn — real evidence: the Goal
+        // Tracker's "Organic Sales" ring was showing too high, because
+        // this subtracted only Amazon's own ad-sales (amzAdActual) from
+        // amzWmtActual — which is Amazon+Walmart COMBINED total. That
+        // left Walmart's own ad-driven sales miscounted as "organic"
+        // entirely, inflating this ring by however much Walmart spent on
+        // ads that month. The card itself is scoped to Amazon+Walmart,
+        // so "ad sales" subtracted from it must be Amazon+Walmart too,
+        // not Amazon alone — matching scope on both sides of the
+        // subtraction, not just the label on the ring.
+        //
+        // Walmart's own ad-sales $ for this exact month wasn't
+        // separately available yet at this point in the function before
+        // this fix (the real fetch/parse the rest of this function later
+        // uses for its own blendedSales KPI lives further down, after
+        // this card has already rendered) — fetched directly here
+        // instead, small and local, same sheet/gid/column names that
+        // later code already uses and already has confirmed real.
         let amzAdActual = null;
         if (isCsv(adOrdersCsv)) {
           const adRowsForGoals = parseCsv(adOrdersCsv).filter(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
           amzAdActual = adRowsForGoals.reduce((s, r) => s + parseAmt(r.sales), 0);
         }
-        const amzOrganicActual = amzAdActual != null ? Math.max(0, amzWmtActual - amzAdActual) : null;
+        let wmtAdActualForGoals = 0;
+        try {
+          const WALMART_ADVERTISING_SHEET_ID_GOALS = '1H1mAYxu8udO7vuCPGs8u0iVzHaRh0wbHb4PyIka4pUU';
+          const WALMART_ADVERTISING_GID_GOALS = '844750080'; // evolis tab — same sheet the later blendedSales KPI uses
+          const wmtAdvCsvForGoals = await fetch(sheetCsvUrl(WALMART_ADVERTISING_SHEET_ID_GOALS, WALMART_ADVERTISING_GID_GOALS) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+          if (isCsv(wmtAdvCsvForGoals)) {
+            const wmtAdvRowsForGoals = parseCsv(wmtAdvCsvForGoals);
+            const wmtThisMonthForGoals = wmtAdvRowsForGoals.find(r => parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month);
+            if (wmtThisMonthForGoals) wmtAdActualForGoals = parseAmt(wmtThisMonthForGoals.sales);
+          }
+        } catch (e) { console.warn('[Evolis][overview] Goal Tracker Walmart ad-sales lookup failed:', e.message); }
+        const amzWmtAdActualCombined = amzAdActual != null ? (amzAdActual + wmtAdActualForGoals) : null;
+        const amzOrganicActual = amzWmtAdActualCombined != null ? Math.max(0, amzWmtActual - amzWmtAdActualCombined) : null;
 
         // Progress ring — plain SVG, deliberately not Chart.js. A single-
         // value gauge like this doesn't need a charting library, and SVG
@@ -22786,7 +22809,12 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         // undefined) — applying an Amazon order-cancellation rate to a
         // completely different channel would be exactly the kind of
         // fabricated number the spec says never to default to.
-        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzAdActual, amzOrganicActual, goalsRowAmz, amzCancelRate);
+        // Passing amzWmtAdActualCombined (not the raw Amazon-only
+        // amzAdActual) here too — this card's 3 rings are Total/Organic/
+        // Ad for "Amazon + Walmart" as one unit, so all three need the
+        // same two-channel scope to stay internally consistent (Total
+        // should equal Organic + Ad as displayed, not just in theory).
+        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzWmtAdActualCombined, amzOrganicActual, goalsRowAmz, amzCancelRate);
         if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, null, webGoalsActual, goalsRowWeb);
       } catch (err) {
         console.warn('[GoalsTracker] failed:', err.message);
