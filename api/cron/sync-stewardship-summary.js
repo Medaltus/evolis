@@ -69,6 +69,21 @@ const HEADERS = [
   'revenue', 'units',
   'amazon_subscriptions', 'website_subscriptions', 'total_subscriptions',
   'last_updated',
+  // ADDED 2026-10-03 per Jaclyn — column O. Appended AFTER last_updated
+  // rather than inserted next to ads_spend, deliberately: the sheet's
+  // existing columns A–N stay exactly where they are, so nothing that
+  // reads this sheet by position (or any hand-added column to its right)
+  // shifts. Sourced from the advertising cache's `sales` column (blended
+  // SP + SB + SD, same 7-day SP attribution as ads_spend's own source),
+  // with the same existing-row fallback every other column here uses —
+  // so a historical month someone pastes into column O by hand survives
+  // any run where the ad cache has no row for that month. Where the ad
+  // cache DOES have a row for a month, the cron's value wins, same as
+  // ads_spend/impressions/clicks. The sheet's row-1 header for this
+  // column must be exactly `ad_sales` (lowercase) — readRows keys every
+  // row by whatever row 1 says, so a differently-named header means the
+  // fallback below can't see the pasted values and would blank them.
+  'ad_sales',
 ];
 
 module.exports = async (req, res) => {
@@ -233,6 +248,10 @@ module.exports = async (req, res) => {
           websiteSubscriptions,
           totalSubscriptions,
           now,
+          // ad_sales — column O, ADDED 2026-10-03. Fresh from the ad cache's
+          // `sales` when it has a row for this month, otherwise whatever's
+          // already in the sheet (hand-pasted history), otherwise 0.
+          adRow ? parseAmt(adRow.sales) : (existingRow ? parseAmt(existingRow.ad_sales) : 0),
         ];
       });
 
