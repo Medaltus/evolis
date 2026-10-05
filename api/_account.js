@@ -63,4 +63,12 @@ function cronLabel(cronName, account = DEFAULT_ACCOUNT) {
   return account === DEFAULT_ACCOUNT ? cronName : `${cronName} [${account}]`;
 }
 
-module.exports = { DEFAULT_ACCOUNT, getAccount, brandsForAccount, metaTabFor, cronLabel };
+// Value written to the orders sheets' selling_account column. NewDerm keeps
+// the exact 'Newderm' string existing rows already have, so anything that
+// filters on it is unaffected.
+const SELLING_ACCOUNT_LABELS = { newderm: 'Newderm', hol: 'High On Love' };
+function sellingAccountLabel(account = DEFAULT_ACCOUNT) {
+  return SELLING_ACCOUNT_LABELS[account] || account;
+}
+
+module.exports = { DEFAULT_ACCOUNT, getAccount, brandsForAccount, metaTabFor, cronLabel, sellingAccountLabel };
