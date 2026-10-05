@@ -1,6 +1,6 @@
 /**
  * api/config/brands.js
- * Central brand registry for Newderm seller account.
+ * Central brand registry for every seller account (NewDerm + High On Love).
  * Add a new brand here and the next cron run automatically
  * creates its tab in all sheets.
  *
@@ -41,6 +41,17 @@
  *                   scoping to a different marketplace. When adding a UK
  *                   variant later, set this to process.env.SP_MARKETPLACE_ID_UK
  *                   (added to Vercel 2026-09-16, same as the CA one).
+ * sellerAccount:   ADDED 2026-10-05 — OPTIONAL. Which Amazon seller account
+ *                   this brand sells under. Omitted = 'newderm' (every
+ *                   brand except High On Love). Must match an account key
+ *                   in api/_spauth.js's SELLER_ACCOUNTS. Each Amazon cron
+ *                   runs once per account (?account=hol for High On Love,
+ *                   on its own staggered schedule) and only processes the
+ *                   brands whose sellerAccount matches — see api/_account.js.
+ * excludedReports: ADDED 2026-09-18 — OPTIONAL array of report keys this
+ *                   brand should be skipped for (e.g. ['sqp']). A cron that
+ *                   honors it skips the brand cleanly, the same way it
+ *                   skips a brand with no ASINs — not an error.
  *
  * cimeosil — REMOVED then RESTORED, both 2026-07-09. Initially dropped on
  * the assumption it wasn't a real registered brand (absent from the Brand
@@ -130,6 +141,12 @@ module.exports = [
     displayName:     'dearcloud',
     amazonBrandName: 'DEARCLOUD',
     active:          true,
+    // ADDED 2026-09-18 per Jaclyn — dearcloud is closing; only products
+    // cache, orders and ads data are still needed. Its 11 SQP batches were
+    // also a big part of why brands later in this list were starved of
+    // SQP data (see sync-sqp-request.js). Only takes effect once
+    // sync-sqp-request.js reads excludedReports.
+    excludedReports: ['sqp'],
   },
   {
     id:              'creme-shop',
@@ -262,7 +279,19 @@ module.exports = [
     tabName:         'high-on-love',
     skuPrefix:       'HOL',
     displayName:     'High On Love',
-    amazonBrandName: 'HIGHONLOVE',
+    amazonBrandName: 'HIGHONLOVE', // still unverified against Brand Registry — see file header
+    // ADDED 2026-10-05 — its own seller account and SP-API app
+    // (SP_CLIENT_ID_HOL / SP_CLIENT_SECRET_HOL / SP_REFRESH_TOKEN_HOL /
+    // SP_SELLER_ID_HOL); ads are under the same Amazon Ads login as NewDerm.
+    sellerAccount:   'hol',
+    // No productsSyncGroup on purpose: sync-products' High On Love run is
+    // its own scheduled invocation (?account=hol), not part of group A/B.
+    //
+    // KEEP active:false until every Amazon cron has been updated to filter
+    // by sellerAccount. Any cron not yet updated still loops every active
+    // brand and would process High On Love with NewDerm's credentials.
+    // Sheet-only crons (stewardship, business-report cleanup/QA, OOS
+    // history, listing change log) pick it up automatically once active.
     active:          false,
   },
 ];
