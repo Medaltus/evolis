@@ -38,8 +38,9 @@
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
+const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
 
-const META_TAB     = '_meta_events';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 const EVENTS_TAB    = 'Events';
 
@@ -57,6 +58,20 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-05) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love —
+  // see api/_account.js.
+  // High On Love's orders go into the SAME event tabs (rows are tagged by
+  // brand), but its pending report IDs live in _meta_events_hol.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account, '_meta_events');
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   const now = new Date();
@@ -165,7 +180,7 @@ module.exports = async (req, res) => {
         marketplaceIds: [process.env.SP_MARKETPLACE_ID],
         dataStartTime:  m.start,
         dataEndTime:    m.end,
-      });
+      }, account);
       if (!createResp || !createResp.reportId) {
         console.error(`[sync-event-orders-request] ${m.tabName} — no reportId in response:`, JSON.stringify(createResp));
         continue;
@@ -209,5 +224,5 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to write meta', detail: err.message, reportIds });
   }
 
-  res.status(200).json({ reportIds, matched, skipped });
+  res.status(200).json({ account, reportIds, matched, skipped });
 };
