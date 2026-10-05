@@ -61,7 +61,7 @@
  * active brand; it's the master ASIN sheet that's incomplete, not this
  * brand's registration. See the inline note on its entry below.
  *
- * high-on-love — ADDED 2026-07-21, active:false. On a SEPARATE Amazon
+ * high-on-love — ADDED 2026-07-21, active:false; ACTIVATED 2026-10-05. On a SEPARATE Amazon
  * seller account from the rest of this project — no SP-API/Ads API
  * connection has been set up for it yet ("eventually," per Jaclyn,
  * 2026-07-21). Added now to the registry ahead of that setup so it
@@ -287,11 +287,16 @@ module.exports = [
     // No productsSyncGroup on purpose: sync-products' High On Love run is
     // its own scheduled invocation (?account=hol), not part of group A/B.
     //
-    // KEEP active:false until every Amazon cron has been updated to filter
-    // by sellerAccount. Any cron not yet updated still loops every active
-    // brand and would process High On Love with NewDerm's credentials.
+    // ACTIVATED 2026-10-05. Crons already updated for sellerAccount
+    // (orders, orders backfill, event orders) run High On Love on its own
+    // ?account=hol schedule. Crons NOT yet updated still loop every active
+    // brand on NewDerm's credentials until they're done — that doesn't
+    // touch NewDerm's data (NewDerm's reports don't contain HOL SKUs), it
+    // just means empty High On Love tabs from those crons, plus wasted
+    // "not found" lookups and alerts from sync-products and sync-sqp-request
+    // specifically, until those two are updated.
     // Sheet-only crons (stewardship, business-report cleanup/QA, OOS
-    // history, listing change log) pick it up automatically once active.
-    active:          false,
+    // history, listing change log) pick it up automatically.
+    active:          true,
   },
 ];
