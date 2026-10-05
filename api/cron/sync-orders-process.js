@@ -44,7 +44,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
-const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel, sellingAccountLabel } = require('../_account');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -89,11 +89,6 @@ const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
 // headline/bullets did on ppc_strategy.
 
 // META_TAB is now per account — set inside the handler via metaTabFor().
-
-// Value written to column T (selling_account) per seller account. NewDerm
-// keeps the exact 'Newderm' string existing rows already have, so nothing
-// downstream that filters on it changes.
-const SELLING_ACCOUNT_LABEL = { newderm: 'Newderm', hol: 'High On Love' };
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // Generous poll window — this step runs on its own schedule 15 min after
@@ -376,7 +371,7 @@ module.exports = async (req, res) => {
           preservedPromo, // column Q, Amazon Sale Promotions — untouched by this job
           marketplace,    // column R — NEW 2026-08-12
           channel,        // column S — NEW 2026-08-12
-          SELLING_ACCOUNT_LABEL[account] || account, // column T, selling_account.
+          sellingAccountLabel(account), // column T, selling_account.
                           // Still not read from the report — the credentials used for
                           // this run are scoped to one seller account, so the run's own
                           // account IS the selling account. CHANGED 2026-10-05: was a
