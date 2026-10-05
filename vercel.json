@@ -54,6 +54,10 @@
       "schedule": "20 4 5 * *"
     },
     {
+      "path": "/api/cron/sync-orders-backfill?account=hol",
+      "schedule": "40 4 5 * *"
+    },
+    {
       "path": "/api/cron/trim-products-log",
       "schedule": "45 4 * * *"
     },
