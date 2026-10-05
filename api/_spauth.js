@@ -16,6 +16,15 @@
  *   SP_AD_CLIENT_SECRET   — Advertising API client secret
  *   SP_AD_REFRESH_TOKEN   — Advertising API refresh token
  *   SP_AD_PROFILE_ID      — Advertising profile ID
+ *
+ * Second seller account — High On Love (ADDED 2026-10-05):
+ *   SP_CLIENT_ID_HOL      — High On Love's own LWA app client ID (separate app)
+ *   SP_CLIENT_SECRET_HOL  — High On Love's own LWA app client secret
+ *   SP_REFRESH_TOKEN_HOL  — High On Love seller's refresh token
+ *   SP_SELLER_ID_HOL      — High On Love's merchant/seller ID
+ * AWS keys and marketplace IDs are shared between both accounts. Ads uses
+ * the SAME Amazon Ads login for both, so getAdToken() is unchanged — the
+ * account difference on the ads side is only which profile gets used.
  */
 
 const https  = require('https');
@@ -96,13 +105,49 @@ async function getLWAToken(clientId, clientSecret, refreshToken, cacheKey) {
   return tokenCache[cacheKey].token;
 }
 
-async function getSPToken() {
-  return getLWAToken(
-    process.env.SP_CLIENT_ID,
-    process.env.SP_CLIENT_SECRET,
-    process.env.SP_REFRESH_TOKEN,
-    'sp'
-  );
+// ── Seller accounts — ADDED 2026-10-05 ──────────────────────────────────────
+// NewDerm stays the default everywhere, so every existing caller of
+// spRequest() keeps working exactly as before without passing anything.
+// A brand on another seller account (config/brands.js `sellerAccount`)
+// passes its account id as spRequest()'s 5th argument.
+const SELLER_ACCOUNTS = {
+  newderm: {
+    clientId:     () => process.env.SP_CLIENT_ID,
+    clientSecret: () => process.env.SP_CLIENT_SECRET,
+    refreshToken: () => process.env.SP_REFRESH_TOKEN,
+    // Same NewDerm seller ID the ads crons already match profiles against.
+    sellerId:     () => process.env.SP_SELLER_ID || 'A25QTQX4QSLFM9',
+  },
+  hol: {
+    clientId:     () => process.env.SP_CLIENT_ID_HOL,
+    clientSecret: () => process.env.SP_CLIENT_SECRET_HOL,
+    refreshToken: () => process.env.SP_REFRESH_TOKEN_HOL,
+    sellerId:     () => process.env.SP_SELLER_ID_HOL,
+  },
+};
+const DEFAULT_ACCOUNT = 'newderm';
+
+function getAccount(account = DEFAULT_ACCOUNT) {
+  const acct = SELLER_ACCOUNTS[account];
+  if (!acct) throw new Error(`Unknown seller account "${account}" — expected one of: ${Object.keys(SELLER_ACCOUNTS).join(', ')}`);
+  return acct;
+}
+
+function getSellerId(account = DEFAULT_ACCOUNT) {
+  const id = getAccount(account).sellerId();
+  if (!id) throw new Error(`No seller ID configured for account "${account}" — check its SP_SELLER_ID env var`);
+  return id;
+}
+
+async function getSPToken(account = DEFAULT_ACCOUNT) {
+  const acct = getAccount(account);
+  const clientId = acct.clientId(), clientSecret = acct.clientSecret(), refreshToken = acct.refreshToken();
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error(`SP-API credentials missing for account "${account}" — check its SP_CLIENT_ID / SP_CLIENT_SECRET / SP_REFRESH_TOKEN env vars`);
+  }
+  // Cache key per account — otherwise one account's cached token would be
+  // silently reused for the other account's requests.
+  return getLWAToken(clientId, clientSecret, refreshToken, `sp_${account}`);
 }
 
 async function getAdToken() {
@@ -117,9 +162,9 @@ async function getAdToken() {
 /**
  * Make a signed SP-API request using direct IAM signing (no STS).
  */
-async function spRequest(method, path, query = {}, body = null) {
+async function spRequest(method, path, query = {}, body = null, account = DEFAULT_ACCOUNT) {
   const host     = 'sellingpartnerapi-na.amazon.com';
-  const spToken  = await getSPToken();
+  const spToken  = await getSPToken(account);
   const bodyStr  = body ? JSON.stringify(body) : '';
   const qs       = Object.keys(query).length ? '?' + new URLSearchParams(query).toString() : '';
   const fullPath = path + qs;
@@ -232,4 +277,4 @@ function httpRequest(method, host, path, headers, body) {
   }), 'SP-API request');
 }
 
-module.exports = { spRequest, getAdToken };
+module.exports = { spRequest, getAdToken, getSellerId, SELLER_ACCOUNTS: Object.keys(SELLER_ACCOUNTS) };
