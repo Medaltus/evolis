@@ -44,6 +44,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -87,7 +88,12 @@ const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
 // `marketplace` onward will silently land in the wrong column the same way
 // headline/bullets did on ppc_strategy.
 
-const META_TAB     = '_meta';
+// META_TAB is now per account — set inside the handler via metaTabFor().
+
+// Value written to column T (selling_account) per seller account. NewDerm
+// keeps the exact 'Newderm' string existing rows already have, so nothing
+// downstream that filters on it changes.
+const SELLING_ACCOUNT_LABEL = { newderm: 'Newderm', hol: 'High On Love' };
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // Generous poll window — this step runs on its own schedule 15 min after
@@ -100,6 +106,23 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-05) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Each account keeps its
+  // report ID/status in its own _meta tab so the two runs never overwrite
+  // each other's pending report.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-orders-process', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    // e.g. High On Love while it's still active:false — skip without
+    // touching Amazon or the sheet, so its schedule entry can be live early.
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   // ── 1. Read reportId (+ range, for logging) from _meta ─────────────────────
@@ -119,11 +142,11 @@ module.exports = async (req, res) => {
     }
   } catch (err) {
     console.error('[sync-orders-process] failed to read _meta:', err.message);
-    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'reading _meta tab' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
-  console.log(`[sync-orders-process] processing report ${reportId} (${reportStart} → ${reportEnd})`);
+  console.log(`[sync-orders-process] (${account}) processing report ${reportId} (${reportStart} → ${reportEnd})`);
 
   // ── 2. Poll until DONE ───────────────────────────────────────────────────
   let documentId = null;
@@ -132,7 +155,7 @@ module.exports = async (req, res) => {
   while (Date.now() < deadline) {
     await sleep(REPORT_POLL_INTERVAL_MS);
     try {
-      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
       const status     = statusResp.processingStatus;
       console.log(`[sync-orders-process] report ${reportId} status: ${status}`);
 
@@ -141,7 +164,7 @@ module.exports = async (req, res) => {
         break;
       }
       if (status === 'FATAL' || status === 'CANCELLED') {
-        await sendCronFailureAlert('sync-orders-process', `Report ${status}`, { 'Report ID': reportId });
+        await sendCronFailureAlert(CRON, `Report ${status}`, { 'Report ID': reportId });
         return res.status(500).json({ error: `Report ${status}`, reportId });
       }
     } catch (err) {
@@ -159,7 +182,7 @@ module.exports = async (req, res) => {
   // ── 3. Download and decompress ───────────────────────────────────────────
   let rawTsv;
   try {
-    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
     const fileResp = await fetch(docResp.url);
     if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
@@ -176,7 +199,7 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-orders-process] failed to download/decompress report:', err.message);
-    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'downloading/decompressing report' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'downloading/decompressing report' });
     return res.status(500).json({ error: 'Failed to download report', detail: err.message });
   }
 
@@ -207,7 +230,9 @@ module.exports = async (req, res) => {
   const nowEst  = toEstIso(new Date());
   const results = [];
 
-  for (const brand of brands.filter(b => b.active)) {
+  // Only this seller account's brands — High On Love's run never touches
+  // NewDerm tabs and vice versa (ADDED 2026-10-05).
+  for (const brand of accountBrands) {
     try {
       // Brand is determined by SKU prefix — never by Amazon's brand field.
       // We intentionally do NOT filter out cancelled/pending orders here —
@@ -351,10 +376,12 @@ module.exports = async (req, res) => {
           preservedPromo, // column Q, Amazon Sale Promotions — untouched by this job
           marketplace,    // column R — NEW 2026-08-12
           channel,        // column S — NEW 2026-08-12
-          'Newderm',      // column T, selling_account — NEW 2026-08-21. Hardcoded, not
-                          // read from the report — the SP-API credentials themselves are
-                          // scoped to this one account, so every row this cron produces
-                          // is always Newderm by definition.
+          SELLING_ACCOUNT_LABEL[account] || account, // column T, selling_account.
+                          // Still not read from the report — the credentials used for
+                          // this run are scoped to one seller account, so the run's own
+                          // account IS the selling account. CHANGED 2026-10-05: was a
+                          // hardcoded 'Newderm', which would have stamped High On Love's
+                          // orders as Newderm once its ?account=hol run existed.
         ];
 
         if (existing) {
@@ -393,19 +420,19 @@ module.exports = async (req, res) => {
     await replaceRows(sheets.orders, META_TAB, META_HEADERS, metaRows, token);
   } catch (err) {
     console.warn('[sync-orders-process] failed to update _meta status:', err.message);
-    await sendCronFailureAlert('sync-orders-process', err.message, { Stage: 'marking report processed in _meta' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'marking report processed in _meta' });
   }
 
   const failedBrands = results.filter(r => r.status === 'error');
   if (failedBrands.length > 0) {
     await sendCronFailureAlert(
-      'sync-orders-process',
+      CRON,
       failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
       { 'Brands failed': String(failedBrands.length) }
     );
   }
 
-  res.status(200).json({ synced: results, reportId, timestamp: nowEst });
+  res.status(200).json({ account, synced: results, reportId, timestamp: nowEst });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
