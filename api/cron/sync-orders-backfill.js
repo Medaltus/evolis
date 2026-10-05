@@ -17,6 +17,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, replaceRows, readRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { getAccount, brandsForAccount, sellingAccountLabel } = require('../_account');
 const https                                = require('https');
 
 const HEADERS = [
@@ -93,6 +94,17 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-05) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love —
+  // see api/_account.js.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const now          = new Date();
   const defaultYear  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
   const defaultMonth = now.getMonth() === 0 ? 12 : now.getMonth();
@@ -100,7 +112,7 @@ module.exports = async (req, res) => {
   const year  = parseInt(req.query.year  || defaultYear);
   const month = parseInt(req.query.month || defaultMonth);
 
-  console.log(`[backfill] starting for ${year}-${String(month).padStart(2,'0')}`);
+  console.log(`[backfill] (${account}) starting for ${year}-${String(month).padStart(2,'0')}`);
 
   // ── Request report ────────────────────────────────────────────────────────
   const { start, end } = monthRange(year, month);
@@ -112,7 +124,7 @@ module.exports = async (req, res) => {
       dataStartTime:  start,
       dataEndTime:    end,
       marketplaceIds: [process.env.SP_MARKETPLACE_ID],
-    });
+    }, account);
     reportId = resp.reportId;
     if (!reportId) throw new Error(`No reportId: ${JSON.stringify(resp)}`);
     console.log(`[backfill] report created: ${reportId}`);
@@ -123,7 +135,7 @@ module.exports = async (req, res) => {
   // ── Poll until ready ──────────────────────────────────────────────────────
   let reportMeta;
   try {
-    reportMeta = await pollReport(reportId, 270_000);
+    reportMeta = await pollReport(reportId, 270_000, account);
     console.log(`[backfill] report ready`);
   } catch (err) {
     return res.status(500).json({ error: `Poll failed: ${err.message}`, reportId });
@@ -132,7 +144,7 @@ module.exports = async (req, res) => {
   // ── Download TSV ──────────────────────────────────────────────────────────
   let tsvText;
   try {
-    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${reportMeta.reportDocumentId}`);
+    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${reportMeta.reportDocumentId}`, {}, null, account);
     tsvText = await downloadText(docResp.url);
     console.log(`[backfill] downloaded ${tsvText.length} bytes`);
   } catch (err) {
@@ -163,7 +175,8 @@ module.exports = async (req, res) => {
   // did in the rolling 120-day sheet.
   const STANDARD_ORDER_ID_PATTERN = /^\d{3}-\d{7}-\d{7}$/;
 
-  for (const brand of brands.filter(b => b.active)) {
+  // Only this seller account's brands (ADDED 2026-10-05).
+  for (const brand of accountBrands) {
     try {
       // Group line items by order, filter to this brand's SKU prefix
       const orderMap = {};
@@ -227,7 +240,7 @@ module.exports = async (req, res) => {
         [...o.skus].join(', '),
         [...o.asins].join(', '),
         brand.id, syncTime,
-        'Newderm', // selling_account — hardcoded, see HEADERS comment above
+        sellingAccountLabel(account), // selling_account — the run's own account (was hardcoded 'Newderm' before 2026-10-05)
       ]);
 
       console.log(`[backfill] ${brand.id} — ${sheetRows.length} orders`);
@@ -245,7 +258,7 @@ module.exports = async (req, res) => {
     }
   }
 
-  res.status(200).json({ synced: results, reportId, year, month, timestamp: syncTime });
+  res.status(200).json({ account, synced: results, reportId, year, month, timestamp: syncTime });
 };
 
 // ── replaceMonth — only replaces rows for target year/month ──────────────────
@@ -291,10 +304,10 @@ async function pruneOldMonths(sheetId, tabName, token, maxMonths) {
 }
 
 // ── Report polling ────────────────────────────────────────────────────────────
-async function pollReport(reportId, timeoutMs) {
+async function pollReport(reportId, timeoutMs, account) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+    const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
     console.log(`[backfill] status: ${resp.processingStatus}`);
     if (resp.processingStatus === 'DONE') return resp;
     if (['FATAL', 'CANCELLED'].includes(resp.processingStatus)) {
