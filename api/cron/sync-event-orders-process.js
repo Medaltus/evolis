@@ -27,6 +27,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -38,7 +39,7 @@ const HEADERS = [
                  // orders were found mislabeled as plain skinuva here too
 ];
 
-const META_TAB     = '_meta_events';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 const REPORT_POLL_TIMEOUT_MS  = 60_000;
@@ -87,6 +88,20 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-05) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love —
+  // see api/_account.js.
+  // Rows are written into the same shared event tabs as NewDerm's (upsert
+  // by order_id+sku, so neither account overwrites the other).
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account, '_meta_events');
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const force = req.query.force === 'true';
   const nowEst = toEstIso(new Date());
 
@@ -125,7 +140,7 @@ module.exports = async (req, res) => {
     while (Date.now() < deadline) {
       await sleep(REPORT_POLL_INTERVAL_MS);
       try {
-        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
         console.log(`[sync-event-orders-process] ${tabName} report ${reportId} status: ${statusResp.processingStatus}`);
         if (statusResp.processingStatus === 'DONE') { documentId = statusResp.reportDocumentId; break; }
         if (statusResp.processingStatus === 'FATAL' || statusResp.processingStatus === 'CANCELLED') {
@@ -143,7 +158,7 @@ module.exports = async (req, res) => {
     // ── Download & decompress ─────────────────────────────────────────
     let rows;
     try {
-      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
       const fileResp = await fetch(docResp.url);
       if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
       const buffer = Buffer.from(await fileResp.arrayBuffer());
@@ -164,7 +179,8 @@ module.exports = async (req, res) => {
     }
 
     // ── Tag each row with its brand (SKU prefix + channel disambiguation), exclude Vine ─────────
-    const activeBrands = brands.filter(b => b.active);
+    // Match against this account's brands only (ADDED 2026-10-05).
+    const activeBrands = accountBrands;
     const outRows = [];
     for (const row of rows) {
       const sku   = (row['sku'] || row['seller-sku'] || '').toUpperCase();
@@ -240,7 +256,7 @@ module.exports = async (req, res) => {
     console.warn('[sync-event-orders-process] failed to update _meta_events:', err.message);
   }
 
-  res.status(200).json({ synced: results, timestamp: nowEst });
+  res.status(200).json({ account, synced: results, timestamp: nowEst });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
