@@ -32,6 +32,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const sheets                               = require('../config/sheets');
 const brands                               = require('../config/brands');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { accountForBrand }                  = require('../_account');
 
 const HEADERS       = ['MONTH', 'ASIN', 'START_DATE', 'END_DATE',
   'SEARCH_QUERY', 'SEARCH_QUERY_SCORE', 'SEARCH_QUERY_VOLUME',
@@ -84,7 +85,21 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'No target_month in _meta — did sync-sqp-request run and succeed?', meta: metaMap });
   }
 
-  const activeBrands = brands.filter(b => b.active);
+  // excludedReports ADDED 2026-09-18 (dearcloud) — same filter as
+  // sync-sqp-request.js, so an excluded brand's leftover state is ignored.
+  const activeBrands = brands.filter(b => b.active && !(b.excludedReports || []).includes('sqp'));
+
+  // FIXED 2026-10-06 — month-aware status, same rule as sync-sqp-request.js's
+  // statusFor() (see that file for the full incident). A status only counts
+  // for the month it was recorded for; legacy entries with no month: a
+  // legacy PROCESSED is honored, a legacy REQUESTED is treated as stale.
+  const statusFor = brandId => {
+    const status = metaMap[`report_status_${brandId}`];
+    if (!status) return null;
+    const month = metaMap[`report_status_month_${brandId}`];
+    if (month) return month === targetMonth ? status : null;
+    return status === 'PROCESSED' ? status : null;
+  };
   const results = [];
   const debugResults = [];
   // All per-batch diagnostics below push to this — debugResults in debug
@@ -119,7 +134,7 @@ module.exports = async (req, res) => {
       continue;
     }
     try {
-      if (metaMap[`report_status_${brand.id}`] === 'PROCESSED' && !req.query.force && !debugMode) {
+      if (statusFor(brand.id) === 'PROCESSED' && !req.query.force && !debugMode) {
         results.push({ brand: brand.id, status: 'already-processed' });
         continue;
       }
@@ -148,7 +163,7 @@ module.exports = async (req, res) => {
       // batch present) — that combination means something's actually
       // wrong (e.g. _meta got corrupted or edited by hand), rather than
       // "hasn't gotten there yet."
-      const brandFullyRequested = metaMap[`report_status_${brand.id}`] === 'REQUESTED';
+      const brandFullyRequested = statusFor(brand.id) === 'REQUESTED';
       const batchReportIds = [];
       let missingBatchIndex = -1;
       for (let i = 0; i < batchCount; i++) {
@@ -173,7 +188,7 @@ module.exports = async (req, res) => {
 
       for (let i = 0; i < batchReportIds.length; i++) {
         const reportId = batchReportIds[i];
-        const result = await pollReportUntilDone(reportId, brand.id, targetMonth, i);
+        const result = await pollReportUntilDone(reportId, brand.id, targetMonth, i, accountForBrand(brand));
 
         // Added 2026-07-31 — full raw poll response, debug mode only. The
         // status STRING alone ("DONE") doesn't show whether the response
@@ -184,9 +199,9 @@ module.exports = async (req, res) => {
         }
 
         if (result.status === 'FATAL' || result.status === 'CANCELLED') {
-          const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId);
+          const errorDocumentContent = await tryDownloadDocument(result.statusBody?.reportDocumentId, accountForBrand(brand));
           targetArray.push({ brand: brand.id, status: result.status, batchIndex: i, reportId, errorDocumentContent, rawPollResponse: debugMode ? result.statusBody : undefined });
-          if (!debugMode) { metaMap[`report_status_${brand.id}`] = result.status; brandStopped = true; break; }
+          if (!debugMode) { metaMap[`report_status_${brand.id}`] = result.status; metaMap[`report_status_month_${brand.id}`] = targetMonth; brandStopped = true; break; }
           continue; // debug mode: keep inspecting the rest of this brand's batches rather than stopping at the first bad one
         }
         if (result.status !== 'DONE') {
@@ -202,7 +217,7 @@ module.exports = async (req, res) => {
         // This is the exact piece of information that had to be
         // reconstructed by hand from screenshots before this existed.
         let rawDocResp = null;
-        const jsonText = await downloadReportJson(result.documentId, debugMode ? (dr => { rawDocResp = dr; }) : null);
+        const jsonText = await downloadReportJson(result.documentId, debugMode ? (dr => { rawDocResp = dr; }) : null, accountForBrand(brand));
 
         if (jsonText === null) {
           targetArray.push({ brand: brand.id, status: 'error', batchIndex: i, reason: 'download failed', rawDocumentResponse: debugMode ? rawDocResp : undefined });
@@ -255,6 +270,7 @@ module.exports = async (req, res) => {
       console.log(`[sync-sqp-process] ${brand.id} ${targetMonth} — wrote ${flatRows.length} rows to tab "${brand.tabName}"`);
 
       metaMap[`report_status_${brand.id}`]     = 'PROCESSED';
+      metaMap[`report_status_month_${brand.id}`] = targetMonth; // ADDED 2026-10-06
       metaMap[`last_processed_at_${brand.id}`] = ts;
       results.push({ brand: brand.id, status: 'ok', rowsWritten: flatRows.length });
 
@@ -294,7 +310,7 @@ module.exports = async (req, res) => {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex) {
+async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex, account) {
   let statusBody = null;
   let status = null;
   const deadline = Date.now() + REPORT_POLL_TIMEOUT_MS;
@@ -302,7 +318,7 @@ async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex) {
   while (Date.now() < deadline) {
     await sleep(REPORT_POLL_INTERVAL_MS);
     try {
-      const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      const resp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
       status = resp.processingStatus;
       statusBody = resp;
       console.log(`[sync-sqp-process] ${brandId} ${targetMonth} batch ${batchIndex} report ${reportId} status: ${status}`);
@@ -318,10 +334,10 @@ async function pollReportUntilDone(reportId, brandId, targetMonth, batchIndex) {
   return { status: status || 'TIMEOUT', documentId: null, statusBody };
 }
 
-async function downloadReportJson(documentId, onDocResp) {
+async function downloadReportJson(documentId, onDocResp, account) {
   if (!documentId) return null;
   try {
-    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
     if (onDocResp) onDocResp(docResp); // debug-mode hook only — never called in production runs
     if (!docResp.url) {
       // Added 2026-07-31 — real failure across 9 brands, all exactly 1
@@ -357,9 +373,9 @@ async function downloadReportJson(documentId, onDocResp) {
   }
 }
 
-async function tryDownloadDocument(documentId) {
+async function tryDownloadDocument(documentId, account) {
   if (!documentId) return null;
-  const content = await downloadReportJson(documentId);
+  const content = await downloadReportJson(documentId, null, account);
   if (content) console.error('[sync-sqp-process] FATAL error document content:', content.slice(0, 2000));
   return content;
 }
