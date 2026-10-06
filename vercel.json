@@ -78,8 +78,16 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/sync-revenue-request?account=hol",
+      "schedule": "5 5 * * *"
+    },
+    {
       "path": "/api/cron/sync-revenue-process",
       "schedule": "15 5 * * *"
+    },
+    {
+      "path": "/api/cron/sync-revenue-process?account=hol",
+      "schedule": "25 5 * * *"
     },
     {
       "path": "/api/cron/sync-stewardship-summary",
