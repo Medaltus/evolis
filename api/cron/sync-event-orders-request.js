@@ -152,6 +152,15 @@ module.exports = async (req, res) => {
     // hasn't happened yet — Amazon has no order data for the future.
     const cappedEnd = `${endDate}T23:59:59Z` > safeBefore ? safeBefore : `${endDate}T23:59:59Z`;
 
+    // FIXED 2026-10-05 — an event that hasn't STARTED yet (e.g. Prime Big
+    // Deal Days on 2026-10-05, starting 10-06) had its end capped to "now"
+    // while its start stayed in the future, producing an inverted range
+    // (start after end) that Amazon rejects. Nothing to pull until it starts.
+    if (`${startDate}T00:00:00Z` >= cappedEnd) {
+      skipped.push({ tabName: target.tabName, reason: `"${best['Event Name']}" hasn't started yet (starts ${startDate})` });
+      continue;
+    }
+
     matched.push({
       tabName: target.tabName,
       start: `${startDate}T00:00:00Z`,
@@ -173,6 +182,7 @@ module.exports = async (req, res) => {
 
   // ── 3. Request one report per matched event ─────────────────────────────
   const reportIds = {};
+  const errors    = {}; // tabName -> Amazon's actual error message (ADDED 2026-10-05)
   for (const m of matched) {
     try {
       const createResp = await spRequest('POST', '/reports/2021-06-30/reports', {}, {
@@ -183,17 +193,19 @@ module.exports = async (req, res) => {
       }, account);
       if (!createResp || !createResp.reportId) {
         console.error(`[sync-event-orders-request] ${m.tabName} — no reportId in response:`, JSON.stringify(createResp));
+        errors[m.tabName] = `no reportId in response: ${JSON.stringify(createResp).slice(0, 300)}`;
         continue;
       }
       reportIds[m.tabName] = createResp.reportId;
       console.log(`[sync-event-orders-request] ${m.tabName} (${m.matchedEventName}) report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error(`[sync-event-orders-request] ${m.tabName} failed to request report:`, err.message);
+      errors[m.tabName] = err.message;
     }
   }
 
   if (!Object.keys(reportIds).length) {
-    return res.status(500).json({ error: 'All report requests failed', matched, skipped });
+    return res.status(500).json({ error: 'All report requests failed', account, errors, matched, skipped });
   }
 
   // ── 4. Write meta ─────────────────────────────────────────────────────────
@@ -224,5 +236,5 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to write meta', detail: err.message, reportIds });
   }
 
-  res.status(200).json({ account, reportIds, matched, skipped });
+  res.status(200).json({ account, reportIds, errors, matched, skipped });
 };
