@@ -13,7 +13,8 @@
  *   SHEET_AD_ORDERS    → one tab per brand, one row per ASIN per month (SP only)
  */
 
-const { getAdToken }                                   = require('../_spauth');
+const { getAdToken, getSellerId }                     = require('../_spauth');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { ensureTab, readRows, replaceRows, appendRows, updateRange } = require('../config/_sheets_client');
 const brands                                           = require('../config/brands');
 const { sendCronFailureAlert }                         = require('../_alerts');
@@ -23,7 +24,7 @@ const zlib                                             = require('zlib');
 const AD_API_HOST      = 'advertising-api.amazon.com';
 const SHEET_AD_SUMMARY = process.env.SHEET_ADVERTISING;
 const SHEET_AD_ORDERS  = process.env.SHEET_AD_ORDERS || '1N30haUFZkdv9rrvYuWwUhxEm0z7MGp1bz9F462aF-QI';
-const META_TAB         = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS     = ['KEY', 'VALUE', 'UPDATED_AT'];
 const TRIM_YEARS       = 3;
 
@@ -121,6 +122,8 @@ const CAMPAIGN_BRANDS = [
   { name: 'prohibition',    tabName: 'prohibition'    },
   { name: 'skinside seoul', tabName: 'skinside-seoul' },
   { name: 'skinside-seoul', tabName: 'skinside-seoul' },
+  { name: 'high on love',   tabName: 'high-on-love'   }, // ADDED 2026-10-06 — see matchBrand in the handler: a High On Love run
+  { name: 'highonlove',     tabName: 'high-on-love'   }, // attributes every campaign to High On Love regardless of name anyway
   { name: 'cosmette',       tabName: 'cosmette'       }, // CONFIRMED 2026-08-21 — real campaigns are "Cosmette - SP - Auto - ..." (6 campaigns, screenshot from Jaclyn)
 ].sort((a, b) => b.name.length - a.name.length);
 
@@ -221,7 +224,7 @@ function identifyBrand(campaignName) {
 // on any one of them can't take the others down — same "additive,
 // non-blocking" philosophy already used for SD's reporting call elsewhere
 // in this file.
-async function getEnabledCampaignCountsByBrand(token, profileId) {
+async function getEnabledCampaignCountsByBrand(token, profileId, matchBrand = identifyBrand) {
   const counts = {}; // tabName -> { sp: n, sb: n, sd: n }
   const bump = (tabName, key) => {
     if (!counts[tabName]) counts[tabName] = { sp: 0, sb: 0, sd: 0 };
@@ -232,7 +235,7 @@ async function getEnabledCampaignCountsByBrand(token, profileId) {
     const spCampaigns = await listAllPages(nextToken => listCampaignsPage(
       '/sp/campaigns/list', token, profileId,
       'application/vnd.spCampaign.v3+json', 'application/vnd.spCampaign.v3+json', 200, nextToken));
-    spCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sp'); });
+    spCampaigns.forEach(c => { const t = matchBrand(c.name || c.campaignName); if (t) bump(t, 'sp'); });
     console.log(`[sync-advertising-process] SP enabled campaigns fetched: ${spCampaigns.length}`);
   } catch (err) {
     console.warn('[sync-advertising-process] SP campaign count fetch failed (sp_campaigns_running blank this run):', err.message);
@@ -241,8 +244,13 @@ async function getEnabledCampaignCountsByBrand(token, profileId) {
   try {
     const sbCampaigns = await listAllPages(nextToken => listCampaignsPage(
       '/sb/v4/campaigns/list', token, profileId,
-      'application/vnd.sbcampaignresource.v4+json', 'application/json', 100, nextToken));
-    sbCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sb'); });
+      // FIXED 2026-10-06 — Accept back to the versioned type. On 2026-09-04,
+      // versioned Accept + maxResults 200 reached Amazon's validation (400 on
+      // maxResults); switching Accept to application/json then produced a 404
+      // "Could not find resource" every run — Amazon routes this endpoint by
+      // the Accept header. Versioned Accept + maxResults 100 is the fix.
+      'application/vnd.sbcampaignresource.v4+json', 'application/vnd.sbcampaignresource.v4+json', 100, nextToken));
+    sbCampaigns.forEach(c => { const t = matchBrand(c.name || c.campaignName); if (t) bump(t, 'sb'); });
     console.log(`[sync-advertising-process] SB enabled campaigns fetched: ${sbCampaigns.length}`);
   } catch (err) {
     console.warn('[sync-advertising-process] SB campaign count fetch failed (sb_campaigns_running blank this run):', err.message);
@@ -250,7 +258,7 @@ async function getEnabledCampaignCountsByBrand(token, profileId) {
 
   try {
     const sdCampaigns = await listAllSdCampaigns(token, profileId);
-    sdCampaigns.forEach(c => { const t = identifyBrand(c.name || c.campaignName); if (t) bump(t, 'sd'); });
+    sdCampaigns.forEach(c => { const t = matchBrand(c.name || c.campaignName); if (t) bump(t, 'sd'); });
     console.log(`[sync-advertising-process] SD enabled campaigns fetched: ${sdCampaigns.length}`);
   } catch (err) {
     console.warn('[sync-advertising-process] SD campaign count fetch failed (sd_campaigns_running blank this run):', err.message);
@@ -350,6 +358,28 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Same Amazon Ads login
+  // for both; the account decides which ad PROFILE is used and which _meta
+  // tab this run's report IDs live in, so the two runs never collide.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-advertising-process', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
+  // Campaign → brand for THIS run. NewDerm's ad profile holds many brands, so
+  // it matches by campaign name (identifyBrand). An account with a single
+  // brand (High On Love) owns every campaign in its own ad profile, so all of
+  // them belong to that brand whatever they're named. (ADDED 2026-10-06)
+  const singleBrandTab = accountBrands.length === 1 ? accountBrands[0].tabName : null;
+  const matchBrand = singleBrandTab ? (() => singleBrandTab) : identifyBrand;
+
   const now = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
 
   // ── 1. Read _meta ──────────────────────────────────────────────────────────
@@ -358,7 +388,7 @@ module.exports = async (req, res) => {
     const rawMeta = await readRows(SHEET_AD_SUMMARY, META_TAB);
     rawMeta.forEach(r => { if (r.KEY) meta[r.KEY] = r.VALUE; });
   } catch (err) {
-    await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'read _meta tab' });
+    await sendCronFailureAlert(CRON, err.message, { stage: 'read _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
@@ -386,7 +416,7 @@ module.exports = async (req, res) => {
 
   if (!hasNewIds && !hasLegacyIds) {
     const msg = 'No ad report IDs found in _meta — did sync-advertising-request run?';
-    await sendCronFailureAlert('sync-advertising-process', msg);
+    await sendCronFailureAlert(CRON, msg);
     return res.status(400).json({ error: msg });
   }
 
@@ -413,7 +443,7 @@ module.exports = async (req, res) => {
         return res.status(200).json({ message: `Queue advanced to ${nextMonth}`, remaining: queue.length });
       } catch (err) {
         console.error(`[sync-advertising-process] queue advance failed:`, err.message);
-        await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'backfill queue advance', nextMonth });
+        await sendCronFailureAlert(CRON, err.message, { stage: 'backfill queue advance', nextMonth });
         return res.status(200).json({ message: 'Queue advance failed', error: err.message });
       }
     }
@@ -424,7 +454,7 @@ module.exports = async (req, res) => {
   try {
     token = await getAdToken();
   } catch (err) {
-    await sendCronFailureAlert('sync-advertising-process', err.message, { stage: 'getAdToken' });
+    await sendCronFailureAlert(CRON, err.message, { stage: 'getAdToken' });
     return res.status(500).json({ error: 'Failed to get ad token', detail: err.message });
   }
 
@@ -484,7 +514,7 @@ module.exports = async (req, res) => {
   // once here rather than inside the period loop below. Failure here
   // should never block the spend/sales/units writes that already work —
   // same non-blocking philosophy as the SD reports elsewhere in this file.
-  const enabledCampaignCounts = await getEnabledCampaignCountsByBrand(token, profileId).catch(err => {
+  const enabledCampaignCounts = await getEnabledCampaignCountsByBrand(token, profileId, matchBrand).catch(err => {
     console.warn('[sync-advertising-process] campaign count fetch failed entirely — all *_campaigns_running columns blank this run:', err.message);
     return {};
   });
@@ -522,7 +552,7 @@ module.exports = async (req, res) => {
         const sku       = (cols[1] || '').toUpperCase();
         const brandName = (cols[3] || '').toLowerCase().trim();
         if (!asin || !brandName) return;
-        const nameMatched = brands.find(b =>
+        const nameMatched = accountBrands.find(b => // this account's brands only (2026-10-06)
           b.active && (
             brandName === b.id.toLowerCase() ||
             brandName === b.displayName.toLowerCase() ||
@@ -538,7 +568,7 @@ module.exports = async (req, res) => {
         // can't contain a longer one). Disambiguate the real sibling set
         // by shared SKU PREFIX (not name), then resolve using the SKU's
         // own "-CA" suffix, same pattern as everywhere else today.
-        const siblings = brands.filter(b =>
+        const siblings = accountBrands.filter(b =>
           b.active && b.skuPrefix && nameMatched.skuPrefix && b.skuPrefix === nameMatched.skuPrefix
         );
         const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
@@ -745,7 +775,7 @@ module.exports = async (req, res) => {
     // has always shown can't be affected by it.
     const brandTypeTotals = {}; // tabName -> { sp: {spend,sales,adUnits}, sb: {...}, sd: {...} }
     allCampaignRows.forEach(r => {
-      const tabName = identifyBrand(r.campaignName);
+      const tabName = matchBrand(r.campaignName);
       if (!tabName) {
         console.log(`[sync-advertising-process] unmatched campaign: "${r.campaignName}"`);
         return;
@@ -768,7 +798,10 @@ module.exports = async (req, res) => {
       }
     });
 
-    for (const brand of brands.filter(b => b.active)) {
+    // Only this account's brands (2026-10-06) — this loop writes a row for
+    // EVERY brand it visits, zeros included, so visiting the other account's
+    // brands would overwrite their real numbers with zeros.
+    for (const brand of accountBrands) {
       if (sheetOpIndex > 0) await sleep(SHEET_WRITE_STAGGER_MS);
       sheetOpIndex++;
 
@@ -827,7 +860,7 @@ module.exports = async (req, res) => {
     const summary = failedResults
       .map(r => `${r.period}/${r.brand}${r.stage ? ` (${r.stage})` : ''}: ${r.error}`)
       .join('\n');
-    await sendCronFailureAlert('sync-advertising-process', summary, {
+    await sendCronFailureAlert(CRON, summary, {
       failedCount: failedResults.length,
       totalCount:  allResults.length,
     });
