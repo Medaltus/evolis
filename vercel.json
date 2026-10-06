@@ -98,8 +98,16 @@
       "schedule": "35 5 * * *"
     },
     {
+      "path": "/api/cron/sync-business-report-request?account=hol",
+      "schedule": "37 5 * * *"
+    },
+    {
       "path": "/api/cron/sync-business-report-process",
       "schedule": "50 5 * * *"
+    },
+    {
+      "path": "/api/cron/sync-business-report-process?account=hol",
+      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/cron/clean-business-report-vine",
