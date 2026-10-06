@@ -47,6 +47,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const sheets                               = require('../config/sheets');
 const brands                               = require('../config/brands');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { accountForBrand }                  = require('../_account');
 
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -99,7 +100,7 @@ function chunkAsinsByCharLimit(asinList, maxLen = 200) {
 const STAGGER_MS = 2000;
 let lastRequestAt = 0;
 
-async function requestReport(dataStartTime, dataEndTime, asinBatch, label, marketplaceId) {
+async function requestReport(dataStartTime, dataEndTime, asinBatch, label, marketplaceId, account) {
   const waitMs = STAGGER_MS - (Date.now() - lastRequestAt);
   if (waitMs > 0) await sleep(waitMs);
   lastRequestAt = Date.now();
@@ -110,7 +111,7 @@ async function requestReport(dataStartTime, dataEndTime, asinBatch, label, marke
     dataStartTime,
     dataEndTime,
     reportOptions: { reportPeriod: 'MONTH', asin: asinBatch.join(' ') },
-  });
+  }, account);
 
   if (createResp?.reportId) {
     console.log(`[sync-sqp-request] ${label}: ${createResp.reportId}`);
@@ -252,12 +253,64 @@ module.exports = async (req, res) => {
   }
   metaMap['target_month'] = targetMonth;
 
+  // FIXED 2026-10-06 — real incident, the main cause of 10 brands getting
+  // no SQP data for months. report_status_<brand> had NO month in its key,
+  // but this file skipped any brand whose status was REQUESTED — for every
+  // month. sync-sqp-process.js only flips status to PROCESSED after
+  // downloading the CURRENT target month's reports, so once a brand's
+  // status was REQUESTED for one month and target_month moved on before
+  // that month got processed, it stayed REQUESTED forever and this file
+  // skipped it forever. (It's also what produced the "report_status is
+  // REQUESTED but report_id ... is still missing" alert for skinuva-ca.)
+  // Status now records which month it applies to
+  // (report_status_month_<brand>), and only counts for that month. Older
+  // entries written before this fix have no month: a legacy REQUESTED is
+  // treated as stale (so the brand gets requested again — already-requested
+  // batches are still skipped by the per-batch check below), and a legacy
+  // PROCESSED is left alone (it's harmless here; this file only skips on
+  // REQUESTED).
+  const statusFor = brandId => {
+    const status = metaMap[`report_status_${brandId}`];
+    if (!status) return null;
+    const month = metaMap[`report_status_month_${brandId}`];
+    if (month) return month === targetMonth ? status : null;
+    return status === 'PROCESSED' ? status : null;
+  };
+
   const asinsByBrand = await getAsinsByBrand();
   if (asinsByBrand.size === 0) {
     await sendCronFailureAlert('sync-sqp-request', 'Master SKU List returned 0 usable rows — every brand will be skipped this run. Check sheets.masterSkuList / MASTER_SKU_TAB.');
   }
-  const activeBrands = brands.filter(b => b.active);
+  // excludedReports ADDED 2026-09-18 — e.g. dearcloud, which is closing and
+  // doesn't need SQP (see config/brands.js).
+  const activeBrands = brands.filter(b => b.active && !(b.excludedReports || []).includes('sqp'));
   const results = [];
+
+  // FIXED 2026-10-06 — rotation. This loop used to start from the first
+  // brand in config/brands.js on every run. With a deliberately tiny
+  // per-run request cap (MAX_NEW_REQUESTS_PER_RUN below — a confirmed real
+  // Amazon burst limit), brands near the front could use up every run's
+  // budget for days, and brands near the end of the list never got a turn
+  // at all. Each run now starts where the previous one stopped, so every
+  // brand gets its turn. Trade-off: a large brand (creme-shop, ~24 batches)
+  // finishes over more runs than before, instead of finishing fast while
+  // starving everyone behind it.
+  let rotationStart = parseInt(metaMap['next_brand_rotation_index'], 10) || 0;
+  if (rotationStart >= activeBrands.length) rotationStart = 0; // brand list changed since it was saved
+  const rotatedBrands = activeBrands.slice(rotationStart).concat(activeBrands.slice(0, rotationStart));
+  const saveRotation = async (stoppedAtBrandId) => {
+    // Next run starts at the brand AFTER where this one stopped.
+    const idx = stoppedAtBrandId ? activeBrands.findIndex(b => b.id === stoppedAtBrandId) : -1;
+    const next = idx === -1 ? rotationStart : (idx + 1) % activeBrands.length;
+    metaMap['next_brand_rotation_index'] = String(next);
+    try {
+      const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
+      const metaRows = Object.entries(metaMap).map(([k, v]) => [k, v, ts]);
+      await replaceRows(sheets.searchQueryPerformance, META_TAB, META_HEADERS, metaRows, token);
+    } catch (err) {
+      console.warn('[sync-sqp-request] failed to save rotation position — next run may start from the same brand:', err.message);
+    }
+  };
 
   // Added 2026-07-31 — pure ASIN-matching inspection, no Amazon calls at
   // all, so it's safe to run anytime without touching the request quota
@@ -293,7 +346,7 @@ module.exports = async (req, res) => {
   let requestsThisRun = 0;
   const hardErrors = []; // genuine failures only — quota/cap-reached is expected, self-throttling behavior, not alerted on
 
-  for (const brand of activeBrands) {
+  for (const brand of rotatedBrands) {
     if (brandFilter && brand.id.toLowerCase() !== brandFilter.toLowerCase()) continue;
 
     const brandAsins = asinsByBrand.get(brand.id) || [];
@@ -316,6 +369,7 @@ module.exports = async (req, res) => {
         // spends any real request quota — see config/brands.js's
         // marketplaceId field comment.
         marketplaceId: brand.marketplaceId || process.env.SP_MARKETPLACE_ID,
+        account: accountForBrand(brand), // ADDED 2026-10-06
         totalAsinsMatched: brandAsins.length,
         currentBatchCount: expectedBatchCount,
         storedBatchCount: storedBatchCount || null,
@@ -325,6 +379,8 @@ module.exports = async (req, res) => {
         // this got checked by hand. Now visible directly, every run.
         batchCountMismatch: !!storedBatchCount && storedBatchCount !== expectedBatchCount,
         existingReportStatus: metaMap[`report_status_${brand.id}`] || null,
+        statusMonth: metaMap[`report_status_month_${brand.id}`] || null, // ADDED 2026-10-06
+        statusCountsForThisMonth: statusFor(brand.id), // what the skip check below will actually see
         batches: batches.map((b, i) => ({
           batchIndex: i,
           asinCount: b.length,
@@ -345,7 +401,7 @@ module.exports = async (req, res) => {
     }
     metaMap[`report_batch_count_${brand.id}_${targetMonth}`] = String(expectedBatchCount);
 
-    if (metaMap[`report_status_${brand.id}`] === 'REQUESTED' && !req.query.force) {
+    if (statusFor(brand.id) === 'REQUESTED' && !req.query.force) {
       console.log(`[sync-sqp-request] ${brand.id} ${targetMonth} already fully requested — skipping. Pass ?force=true to request fresh ones anyway.`);
       results.push({ brand: brand.id, status: 'skipped' });
       continue;
@@ -381,7 +437,7 @@ module.exports = async (req, res) => {
       const marketplaceId = brand.marketplaceId || process.env.SP_MARKETPLACE_ID;
       let result;
       try {
-        result = await requestReport(dataStartTime, dataEndTime, batches[i], label, marketplaceId);
+        result = await requestReport(dataStartTime, dataEndTime, batches[i], label, marketplaceId, accountForBrand(brand)); // account ADDED 2026-10-06
       } catch (err) {
         hardError = err.message;
         break;
@@ -413,6 +469,7 @@ module.exports = async (req, res) => {
     const allBatchesPresent = Array.from({ length: expectedBatchCount }, (_, i) => !!metaMap[`report_id_${brand.id}_${targetMonth}_b${i}`]).every(Boolean);
     if (allBatchesPresent) {
       metaMap[`report_status_${brand.id}`]     = 'REQUESTED';
+      metaMap[`report_status_month_${brand.id}`] = targetMonth; // ADDED 2026-10-06 — see statusFor()
       metaMap[`last_requested_at_${brand.id}`] = ts;
       try {
         const token = await ensureTab(sheets.searchQueryPerformance, META_TAB, META_HEADERS);
@@ -430,13 +487,18 @@ module.exports = async (req, res) => {
       if (hardErrors.length > 0) {
         await sendCronFailureAlert('sync-sqp-request', hardErrors.join('\n'), { 'Brands with real errors': String(hardErrors.length) });
       }
-      return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted' });
+      if (!brandFilter) await saveRotation(brand.id);
+      return res.status(200).json({ ok: true, targetMonth, results, stoppedEarly: true, reason: 'quota exhausted', nextRunStartsAfter: brand.id });
     }
   }
 
   if (hardErrors.length > 0) {
     await sendCronFailureAlert('sync-sqp-request', hardErrors.join('\n'), { 'Brands with real errors': String(hardErrors.length) });
   }
+
+  // Finished every brand without hitting the cap — still advance, so the
+  // next run doesn't always begin with the same brand.
+  if (!debugMode && !brandFilter && rotatedBrands.length) await saveRotation(rotatedBrands[rotatedBrands.length - 1].id);
 
   res.status(200).json({ ok: true, debug: debugMode, targetMonth, results });
 };
