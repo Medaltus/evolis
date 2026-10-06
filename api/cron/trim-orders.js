@@ -25,6 +25,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { normalizeOrderDate }               = require('../_dates'); // ADDED 2026-10-06 — reads every date shape
 
 // FIXED 2026-08-14 — same bug as fees-estimate.js and sale-promotions.js,
 // found earlier today: this was still the pre-2026-08-12 15-column shape,
@@ -67,7 +68,10 @@ module.exports = async (req, res) => {
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   const cutoffStr = cutoff.toISOString().slice(0, 10); // YYYY-MM-DD
 
-  console.log(`[trim-orders] trimming rows before ${cutoffStr}`);
+  // ADDED 2026-10-06 — ?dryRun=true reports what WOULD be trimmed per brand
+  // (and which date formats each tab actually has) without writing anything.
+  const dryRun = req.query.dryRun === 'true';
+  console.log(`[trim-orders] ${dryRun ? '(dry run) ' : ''}trimming rows before ${cutoffStr}`);
 
   const results = [];
 
@@ -81,8 +85,27 @@ module.exports = async (req, res) => {
         continue;
       }
 
-      const kept    = allRows.filter(r => (r.date || '') >= cutoffStr);
+      // FIXED 2026-10-06 — real incident: MiGuard still had April orders in
+      // a 120-day cache in October. This compared the RAW date text against
+      // "YYYY-MM-DD". If a tab's date cells read back as "4/15/2026" (Sheets
+      // auto-converting text into real date cells), plain text comparison
+      // breaks both ways: "4/15/2026" sorts AFTER "2026-..." so old rows were
+      // never trimmed, and "10/5/2026" sorts BEFORE it so recent Oct–Jan
+      // rows could be deleted. Every date is now normalized to YYYY-MM-DD
+      // first (ISO text, M/D/YYYY text, or a raw Sheets date serial). A date
+      // that can't be read at all is KEPT — this cron never deletes a row it
+      // can't date.
+      const formats = {};
+      let unreadable = 0;
+      const kept = allRows.filter(r => {
+        const { iso, format } = normalizeOrderDate(r.date);
+        formats[format] = (formats[format] || 0) + 1;
+        if (!iso) { unreadable++; return true; }
+        r.__iso = iso;
+        return iso >= cutoffStr;
+      });
       const trimmed = allRows.length - kept.length;
+      if (unreadable) console.warn(`[trim-orders] ${brand.id} — ${unreadable} row(s) with an unreadable date kept as-is`);
 
       // ADDED 2026-10-06 — safety valve. This cron deletes data, so if a
       // trim would remove EVERY row, something is wrong (e.g. the date
@@ -96,13 +119,13 @@ module.exports = async (req, res) => {
 
       if (trimmed === 0) {
         console.log(`[trim-orders] ${brand.id} — nothing to trim`);
-        results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed: 0 });
+        results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed: 0, dateFormats: formats });
         continue;
       }
 
       // Sort by date asc, then order_id for consistency
       kept.sort((a, b) => {
-        const d = (a.date || '').localeCompare(b.date || '');
+        const d = (a.__iso || '').localeCompare(b.__iso || ''); // normalized dates (2026-10-06)
         return d !== 0 ? d : (a.order_id || '').localeCompare(b.order_id || '');
       });
 
@@ -110,11 +133,17 @@ module.exports = async (req, res) => {
       // keys every row by row 1), so every column survives — including ones
       // added later that HEADERS doesn't know about. CHANGED 2026-10-06.
       const columns   = columnsForTab(allRows);
+      if (dryRun) {
+        const oldest = kept.reduce((m, r) => (r.__iso && (!m || r.__iso < m) ? r.__iso : m), null);
+        results.push({ brand: brand.id, dryRun: true, before: allRows.length, wouldKeep: kept.length, wouldTrim: trimmed, oldestKept: oldest, dateFormats: formats, unreadableDatesKept: unreadable });
+        continue;
+      }
+
       const rowArrays = kept.map(row => columns.map(h => row[h] ?? ''));
       await replaceRows(sheets.orders, brand.tabName, HEADERS, rowArrays, token);
 
       console.log(`[trim-orders] ${brand.id} — trimmed ${trimmed} rows (${allRows.length} → ${kept.length})`);
-      results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed });
+      results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed, dateFormats: formats });
 
     } catch (err) {
       console.error(`[trim-orders] ${brand.id} failed:`, err.message);
@@ -134,6 +163,7 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({
+    dryRun,
     cutoff: cutoffStr,
     results,
     totalTrimmed,
