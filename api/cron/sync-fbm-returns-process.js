@@ -57,8 +57,9 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const sheets                                = require('../config/sheets');
 const brands                                = require('../config/brands');
 const { sendCronFailureAlert }              = require('../_alerts');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 
-const META_TAB     = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // Same 20-column shape as sync-returns-process.js — both crons write to
@@ -79,8 +80,10 @@ const REPORT_POLL_INTERVAL_MS = 4_000;
 // file header for why there's no channel-field fallback available here.
 const CA_SKU_PATTERN = /-CA(-|\.|$)/i;
 
-function matchBrandForSku(sku) {
-  const candidates = brands.filter(b => b.active && sku.toUpperCase().startsWith(b.skuPrefix.toUpperCase()));
+// pool ADDED 2026-10-06 — the run's own account's brands, so a High On Love
+// run can only ever match High On Love's brands and vice versa.
+function matchBrandForSku(sku, pool = brands.filter(b => b.active)) {
+  const candidates = pool.filter(b => sku.toUpperCase().startsWith(b.skuPrefix.toUpperCase()));
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
   const isCa = CA_SKU_PATTERN.test(sku);
@@ -97,6 +100,21 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. High On Love's report
+  // tracking lives in _meta_hol (FBA keys and fbm_ keys, same split as
+  // NewDerm's _meta), so the two accounts never overwrite each other.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-fbm-returns-process', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const nowEst = toEstIso(new Date());
 
   // ── 1. Read fbm_report_id from _meta ────────────────────────────────────
@@ -108,7 +126,7 @@ module.exports = async (req, res) => {
       if (r['KEY']) metaMap[r['KEY']] = r['VALUE'];
     }
   } catch (err) {
-    await sendCronFailureAlert('sync-fbm-returns-process', err.message, { Stage: 'reading _meta' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'reading _meta' });
     return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
   }
 
@@ -123,11 +141,11 @@ module.exports = async (req, res) => {
   while (Date.now() < deadline) {
     await sleep(REPORT_POLL_INTERVAL_MS);
     try {
-      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`);
+      const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
       console.log(`[sync-fbm-returns-process] report ${reportId} status: ${statusResp.processingStatus}`);
       if (statusResp.processingStatus === 'DONE') { documentId = statusResp.reportDocumentId; break; }
       if (statusResp.processingStatus === 'FATAL' || statusResp.processingStatus === 'CANCELLED') {
-        await sendCronFailureAlert('sync-fbm-returns-process', `report ${statusResp.processingStatus}`, { ReportId: reportId });
+        await sendCronFailureAlert(CRON, `report ${statusResp.processingStatus}`, { ReportId: reportId });
         return res.status(500).json({ error: `Report ${statusResp.processingStatus}`, reportId });
       }
     } catch (err) {
@@ -141,10 +159,10 @@ module.exports = async (req, res) => {
   // ── 3. Download the XML ──────────────────────────────────────────────────
   let xmlText;
   try {
-    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+    const docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
     xmlText = await downloadText(docResp.url, docResp.compressionAlgorithm);
   } catch (err) {
-    await sendCronFailureAlert('sync-fbm-returns-process', err.message, { Stage: 'downloading report document' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'downloading report document' });
     return res.status(500).json({ error: 'Failed to download report', detail: err.message });
   }
 
@@ -171,7 +189,7 @@ module.exports = async (req, res) => {
   const rowsByBrand = {};
   const unmatchedSkus = new Set();
   parsed.forEach(r => {
-    const matched = matchBrandForSku(r.sku);
+    const matched = matchBrandForSku(r.sku, accountBrands);
     if (!matched) { unmatchedSkus.add(r.sku); return; }
     (rowsByBrand[matched.tabName] = rowsByBrand[matched.tabName] || []).push({ ...r, brand: matched.id });
   });
@@ -248,7 +266,7 @@ module.exports = async (req, res) => {
   const failedBrands = results.filter(r => r.status === 'error');
   if (failedBrands.length > 0) {
     await sendCronFailureAlert(
-      'sync-fbm-returns-process',
+      CRON,
       failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
       { 'Brands failed': String(failedBrands.length) }
     );
@@ -268,6 +286,7 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({
+    account,
     synced: results,
     totalReturnRecordsInReport: returnBlocks.length,
     unmatchedSkuCount: unmatchedSkus.size,
