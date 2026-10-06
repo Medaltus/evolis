@@ -202,8 +202,16 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/sync-advertising-request?account=hol",
+      "schedule": "5 3 * * *"
+    },
+    {
       "path": "/api/cron/sync-ad-search-terms-request",
       "schedule": "12 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ad-search-terms-request?account=hol",
+      "schedule": "16 3 * * *"
     },
     {
       "path": "/api/cron/sync-advertising-request-ca",
@@ -214,8 +222,16 @@
       "schedule": "15 4 * * *"
     },
     {
+      "path": "/api/cron/sync-advertising-process?account=hol",
+      "schedule": "5 4 * * *"
+    },
+    {
       "path": "/api/cron/sync-ad-search-terms-process",
       "schedule": "25 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ad-search-terms-process?account=hol",
+      "schedule": "31 4 * * *"
     },
     {
       "path": "/api/cron/sync-advertising-process-ca",
