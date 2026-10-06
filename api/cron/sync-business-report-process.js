@@ -54,6 +54,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
 
 // FIXED 2026-09-11 per Jaclyn — confirmed live in production logs: this
 // file's HEADERS only ever listed its OWN 10 columns, but the real sheet
@@ -80,7 +81,7 @@ const HEADERS = [
   'CANCELLED_UNITS_DEDUCTED', 'CANCELLED_SALES_DEDUCTED',
   'ORDERS_SHEET_UNITS', 'ORDERS_SHEET_SALES_EST', 'UNEXPLAINED_UNITS_GAP', 'UNEXPLAINED_SALES_GAP_EST', 'FLAG',
 ];
-const META_TAB     = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // Report should be ready after 15 min — short poll per report (same as sync-revenue-process.js)
@@ -91,6 +92,21 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Its report IDs/status
+  // live in _meta_hol. (clean-business-report-vine.js / qa-business-report.js
+  // read target_months from NewDerm's _meta — same months for both accounts,
+  // so that still covers High On Love's tab.)
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   const now = new Date();
@@ -119,7 +135,7 @@ module.exports = async (req, res) => {
         dataStartTime:  start,
         dataEndTime:    end,
         reportOptions: { dateGranularity: 'MONTH', asinGranularity: 'CHILD' },
-      });
+      }, account);
       if (!createResp || !createResp.reportId) {
         console.error(`[sync-business-report-process] backfill ${req.query.month} — no reportId in response:`, JSON.stringify(createResp));
         return res.status(500).json({ error: `Amazon returned no reportId for ${req.query.month}`, detail: createResp });
@@ -176,7 +192,7 @@ module.exports = async (req, res) => {
     while (Date.now() < deadline) {
       await sleep(REPORT_POLL_INTERVAL_MS);
       try {
-        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`);
+        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`, {}, null, account);
         const status     = statusResp.processingStatus;
         console.log(`[sync-business-report-process] ${job.month} report ${job.reportId} status: ${status}`);
 
@@ -201,7 +217,7 @@ module.exports = async (req, res) => {
 
     // Download & decompress — this report is gzip JSON, not TSV
     try {
-      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
       const fileResp = await fetch(docResp.url);
       if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
@@ -244,7 +260,8 @@ module.exports = async (req, res) => {
   const targetMonths = jobs.map(j => j.month);
   const results       = [];
 
-  for (const brand of brands.filter(b => b.active)) {
+  // Only this seller account's brands (ADDED 2026-10-06).
+  for (const brand of accountBrands) {
     try {
       // Amazon's Sales and Traffic report has NO sku field — only
       // parentAsin/childAsin (confirmed via ?debug=true). Brand matching by
@@ -415,7 +432,7 @@ module.exports = async (req, res) => {
     }
   }
 
-  res.status(200).json({ synced: results });
+  res.status(200).json({ account, synced: results });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
