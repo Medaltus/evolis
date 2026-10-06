@@ -49,7 +49,8 @@
  * never touches unrelated dates.
  */
 
-const { getAdToken }                                   = require('../_spauth');
+const { getAdToken, getSellerId }                     = require('../_spauth');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { ensureTab, readRows, replaceRows }             = require('../config/_sheets_client');
 const https                                            = require('https');
 const zlib                                             = require('zlib');
@@ -57,7 +58,7 @@ const { sendCronFailureAlert }                         = require('../_alerts');
 
 const AD_API_HOST           = 'advertising-api.amazon.com';
 const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
-const META_TAB               = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 
 const HEADERS = [
   'search_term', 'keyword', 'match_type', 'ad_type',
@@ -155,6 +156,26 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Same Amazon Ads login
+  // for both; the account decides which ad PROFILE is used and which _meta
+  // tab this run's report IDs live in, so the two runs never collide.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-ad-search-terms-process', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
+  // Same rule as sync-advertising-process.js: a single-brand account (High On
+  // Love) owns every campaign in its own ad profile. (ADDED 2026-10-06)
+  const singleBrandTab = accountBrands.length === 1 ? accountBrands[0].tabName : null;
+  const matchBrand = singleBrandTab ? (() => singleBrandTab) : identifyBrand;
+
   const now = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
 
   let meta = {};
@@ -162,7 +183,7 @@ module.exports = async (req, res) => {
     const rawMeta = await readRows(SHEET_AD_SEARCH_TERMS, META_TAB);
     rawMeta.forEach(r => { if (r.KEY) meta[r.KEY] = r.VALUE; });
   } catch (err) {
-    await sendCronFailureAlert('sync-ad-search-terms-process', err.message, { Stage: 'reading _meta tab' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'reading _meta tab' });
     return res.status(500).json({ error: 'Failed to read _meta tab', detail: err.message });
   }
 
@@ -213,7 +234,7 @@ module.exports = async (req, res) => {
         continue; // don't mark processed — retry download next invocation
       }
 
-      const writeResult = await writeRowsForLabel(rows, adType, now);
+      const writeResult = await writeRowsForLabel(rows, adType, now, matchBrand);
       metaUpdates[`st_processed_${label}`] = 'true';
       results.push({ label, status: 'ok', ...writeResult });
 
@@ -249,8 +270,7 @@ module.exports = async (req, res) => {
 
     const failedLabels = results.filter(r => r.status === 'check_failed' || r.status === 'download_failed');
     if (failedLabels.length > 0) {
-      await sendCronFailureAlert(
-        'sync-ad-search-terms-process',
+      await sendCronFailureAlert(CRON,
         failedLabels.map(r => `${r.label} (${r.status}): ${r.error}`).join('\n')
       );
     }
@@ -258,20 +278,21 @@ module.exports = async (req, res) => {
     res.status(200).json({ checked: results, overallStatus: allProcessed ? 'PROCESSED' : 'REQUESTED', timestamp: now });
   } catch (err) {
     console.error('[sync-ad-search-terms-process] failed to persist _meta:', err.message);
-    await sendCronFailureAlert('sync-ad-search-terms-process', err.message, { Stage: 'persisting per-label status back to _meta' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'persisting per-label status back to _meta' });
     res.status(200).json({ checked: results, warning: 'meta persist failed: ' + err.message, timestamp: now });
   }
 };
 
 // ── Sheet writing ────────────────────────────────────────────────────────
 
-async function writeRowsForLabel(rawRows, adType, now) {
+// matchBrand ADDED 2026-10-06 — passed in by the handler (see there).
+async function writeRowsForLabel(rawRows, adType, now, matchBrand = identifyBrand) {
   const rows = (rawRows || []).map(r => ({ ...r, adType }));
 
   const byBrand = {};
   let unmatched = 0;
   rows.forEach(row => {
-    const tabName = identifyBrand(row.campaignName);
+    const tabName = matchBrand(row.campaignName);
     if (!tabName) { unmatched++; return; }
     if (!byBrand[tabName]) byBrand[tabName] = [];
     byBrand[tabName].push(row);
