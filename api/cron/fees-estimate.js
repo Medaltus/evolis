@@ -32,6 +32,7 @@ const { sendCronFailureAlert }             = require('../_alerts');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brandsConfig                         = require('../config/brands');
 const sheets                               = require('../config/sheets');
+const { accountForBrand }                  = require('../_account');
 
 // Must match sync-orders-process.js's HEADERS exactly — same tab, same shape.
 //
@@ -170,6 +171,10 @@ module.exports = async (req, res) => {
 // ── Per-brand core logic (same as the one-off backfill script) ──────────────
 
 async function processBrandFees({ brand, startRow, feeCallBudget, skuLookupBudget, feesCache, orderItemsCache, dryRun }) {
+  // ADDED 2026-10-06 — order lookups and fee estimates use the seller
+  // account this brand belongs to. High On Love's orders only exist on its
+  // own account, so looking them up with NewDerm's credentials would fail.
+  const account = accountForBrand(brand);
   const token           = await ensureTab(sheets.orders, brand.tabName, HEADERS);
   const existingRowsRaw = await readRows(sheets.orders, brand.tabName);
   const existingRowsObj = (existingRowsRaw || []).map(normalizeRow);
@@ -205,7 +210,7 @@ async function processBrandFees({ brand, startRow, feeCallBudget, skuLookupBudge
 
     let resolvedThisRow = false;
     if (!sku && orderId && skuLookupsMade < skuLookupBudget) {
-      const lookedUp = await getOrderItemSku(orderItemsCache, orderId, asin, () => skuLookupsMade++);
+      const lookedUp = await getOrderItemSku(orderItemsCache, orderId, asin, () => skuLookupsMade++, account);
       if (lookedUp) {
         sku = lookedUp;
         resolvedThisRow = true;
@@ -219,7 +224,7 @@ async function processBrandFees({ brand, startRow, feeCallBudget, skuLookupBudge
     const isAmazonFulfilled = !sku.toUpperCase().endsWith('-SF');
 
     callsMade++;
-    const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled);
+    const feePerUnit = await getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled, account);
 
     if (!dryRun) {
       if (feePerUnit != null) {
@@ -262,14 +267,14 @@ function normalizeRow(r) {
 const round2 = n => Math.round(n * 100) / 100;
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 
-async function getOrderItemSku(orderItemsCache, orderId, asin, onNewCall) {
+async function getOrderItemSku(orderItemsCache, orderId, asin, onNewCall, account = 'newderm') {
   let items;
   if (orderItemsCache.has(orderId)) {
     items = orderItemsCache.get(orderId);
   } else {
     onNewCall();
     try {
-      const resp = await spRequest('GET', `/orders/v0/orders/${orderId}/orderItems`);
+      const resp = await spRequest('GET', `/orders/v0/orders/${orderId}/orderItems`, {}, null, account);
       items = resp?.payload?.OrderItems || null;
       orderItemsCache.set(orderId, items);
       await sleep(SKU_LOOKUP_DELAY_MS);
@@ -285,11 +290,12 @@ async function getOrderItemSku(orderItemsCache, orderId, asin, onNewCall) {
   return match?.SellerSKU || null;
 }
 
-async function getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled) {
+async function getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled, account = 'newderm') {
   if (!asin || !unitPrice || unitPrice <= 0) return null;
 
   const cacheKey = `${asin}|${unitPrice}|${isAmazonFulfilled}`;
-  if (feesCache.has(cacheKey)) return feesCache.get(cacheKey);
+  const cacheKeyWithAccount = `${account}|${cacheKey}`; // ADDED 2026-10-06 — cache per account
+  if (feesCache.has(cacheKeyWithAccount)) return feesCache.get(cacheKeyWithAccount);
 
   try {
     const body = {
@@ -304,22 +310,22 @@ async function getFeesEstimate(feesCache, asin, unitPrice, isAmazonFulfilled) {
       },
     };
 
-    const resp   = await spRequest('POST', `/products/fees/v0/items/${asin}/feesEstimate`, {}, body);
+    const resp   = await spRequest('POST', `/products/fees/v0/items/${asin}/feesEstimate`, {}, body, account);
     const result = resp?.payload?.FeesEstimateResult;
 
     if (result?.Status !== 'Success' || !result?.FeesEstimate) {
       console.warn(`[fees-estimate] not available for ${asin} @ $${unitPrice} (isAmazonFulfilled=${isAmazonFulfilled}): ${result?.Status || 'no result'} — ${JSON.stringify(result?.Error || {})}`);
-      feesCache.set(cacheKey, null);
+      feesCache.set(cacheKeyWithAccount, null);
       return null;
     }
 
     const feePerUnit = result.FeesEstimate.TotalFeesEstimate?.Amount ?? null;
-    feesCache.set(cacheKey, feePerUnit);
+    feesCache.set(cacheKeyWithAccount, feePerUnit);
     await sleep(FEE_CALL_DELAY_MS);
     return feePerUnit;
   } catch (err) {
     console.warn(`[fees-estimate] failed for ${asin} @ $${unitPrice} (isAmazonFulfilled=${isAmazonFulfilled}): ${err.message}`);
-    feesCache.set(cacheKey, null);
+    feesCache.set(cacheKeyWithAccount, null);
     return null;
   }
 }
