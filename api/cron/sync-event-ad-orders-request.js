@@ -51,13 +51,14 @@
  *   Authorization: Bearer <CRON_SECRET>
  */
 
-const { getAdToken }                        = require('../_spauth');
+const { getAdToken, getSellerId }          = require('../_spauth');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                                = require('../config/sheets');
 const https                                 = require('https');
 
 const AD_API_HOST  = 'advertising-api.amazon.com';
-const META_TAB     = '_meta_events';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 const EVENTS_TAB   = 'Events';
 
@@ -94,6 +95,20 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Same Amazon Ads login
+  // for both; the account decides which ad PROFILE is used and which _meta
+  // tab this run's report IDs live in, so the two runs never collide.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account, '_meta_events');
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const now = new Date();
   const ts  = now.toISOString();
   const safeBefore = new Date(now.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19) + 'Z';
@@ -108,7 +123,7 @@ module.exports = async (req, res) => {
     let overrideToken, overrideProfileId;
     try {
       overrideToken     = await getAdToken();
-      overrideProfileId = await discoverProfileId(overrideToken);
+      overrideProfileId = await discoverProfileId(overrideToken, account);
     } catch (err) {
       return res.status(500).json({ error: 'Failed to auth/discover ad profile', detail: err.message });
     }
@@ -189,7 +204,7 @@ module.exports = async (req, res) => {
   let token, profileId;
   try {
     token     = await getAdToken();
-    profileId = await discoverProfileId(token);
+    profileId = await discoverProfileId(token, account);
   } catch (err) {
     return res.status(500).json({ error: 'Failed to auth/discover ad profile', detail: err.message });
   }
@@ -270,15 +285,23 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
   return null;
 }
 
-async function discoverProfileId(token) {
+async function discoverProfileId(token, account = 'newderm') {
   const profiles = await adRequest('GET', '/v2/profiles', token, null, null);
-  const newdermUS = profiles.find(p =>
+  // CHANGED 2026-10-06 — finds the ad profile for whichever seller account
+  // this run is for. NewDerm keeps its original match (name contains
+  // "newderm" OR its seller ID); other accounts (High On Love) match on
+  // their own seller ID (SP_SELLER_ID_HOL), since all accounts share one
+  // Amazon Ads login and the profile list contains every account's profile.
+  const sellerId = getSellerId(account);
+  const match = profiles.find(p =>
     p.countryCode === 'US' &&
     p.accountInfo?.type === 'seller' &&
-    (p.accountInfo?.name?.toLowerCase().includes('newderm') || p.accountInfo?.id === 'A25QTQX4QSLFM9')
+    (account === 'newderm'
+      ? (p.accountInfo?.name?.toLowerCase().includes('newderm') || p.accountInfo?.id === sellerId)
+      : p.accountInfo?.id === sellerId)
   );
-  if (!newdermUS) throw new Error('NewDerm US seller profile not found');
-  return newdermUS.profileId;
+  if (!match) throw new Error(`${account} US seller ad profile not found (looked for seller ID ${sellerId}) — check the account's SP_SELLER_ID env var and that its ads account is under this Amazon Ads login`);
+  return match.profileId;
 }
 
 function adRequest(method, path, token, profileId, body) {
