@@ -14,14 +14,30 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 
-const META_TAB     = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Each account keeps its
+  // report IDs/status in its own _meta tab so the two runs never overwrite
+  // each other's pending reports.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-revenue-request', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   const now = new Date();
@@ -52,7 +68,7 @@ module.exports = async (req, res) => {
     },
   ];
 
-  console.log(`[sync-revenue-request] requesting reports for ${ranges.map(r => r.month).join(', ')}`);
+  console.log(`[sync-revenue-request] (${account}) requesting reports for ${ranges.map(r => r.month).join(', ')}`);
 
   // ── Request one report per month ───────────────────────────────────────────
   const reportIds = {};
@@ -64,12 +80,12 @@ module.exports = async (req, res) => {
         marketplaceIds: [process.env.SP_MARKETPLACE_ID],
         dataStartTime:  range.start,
         dataEndTime:    range.end,
-      });
+      }, account);
       reportIds[range.month] = createResp.reportId;
       console.log(`[sync-revenue-request] ${range.month} report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error(`[sync-revenue-request] failed to request report for ${range.month}:`, err.message);
-      await sendCronFailureAlert('sync-revenue-request', err.message, { Stage: `requesting report for ${range.month}` });
+      await sendCronFailureAlert(CRON, err.message, { Stage: `requesting report for ${range.month}` });
       return res.status(500).json({ error: `Failed to request report for ${range.month}`, detail: err.message });
     }
   }
@@ -96,8 +112,8 @@ module.exports = async (req, res) => {
     console.log(`[sync-revenue-request] meta written`);
   } catch (err) {
     console.error('[sync-revenue-request] failed to write meta:', err.message);
-    await sendCronFailureAlert('sync-revenue-request', err.message, { Stage: 'writing reportIds to _meta' });
+    await sendCronFailureAlert(CRON, err.message, { Stage: 'writing reportIds to _meta' });
   }
 
-  res.status(200).json({ reportIds, targetMonths: Object.keys(reportIds) });
+  res.status(200).json({ account, reportIds, targetMonths: Object.keys(reportIds) });
 };
