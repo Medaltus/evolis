@@ -71,4 +71,13 @@ function sellingAccountLabel(account = DEFAULT_ACCOUNT) {
   return SELLING_ACCOUNT_LABELS[account] || account;
 }
 
-module.exports = { DEFAULT_ACCOUNT, getAccount, brandsForAccount, metaTabFor, cronLabel, sellingAccountLabel };
+// For crons whose Amazon calls are per brand / per SKU / per order (products,
+// SQP, fees): each call just uses the account its brand belongs to, inside
+// the normal run — no separate ?account= schedule entry needed. Crons that
+// request ONE report for a whole seller account (orders, revenue, returns,
+// business report) are the ones that need separate ?account= runs instead.
+function accountForBrand(brand) {
+  return (brand && brand.sellerAccount) || DEFAULT_ACCOUNT;
+}
+
+module.exports = { DEFAULT_ACCOUNT, getAccount, brandsForAccount, metaTabFor, cronLabel, sellingAccountLabel, accountForBrand };
