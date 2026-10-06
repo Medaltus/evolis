@@ -96,7 +96,8 @@
  * same return shape, just a cheaper, once-a-day-fresh data source.
  */
 
-const { spRequest }                                     = require('../_spauth');
+const { spRequest, getSellerId }                        = require('../_spauth');
+const { getAccount, accountForBrand }                   = require('../_account');
 const { ensureTab, readRows, replaceRows, updateRange, ensureRowCapacity } = require('../config/_sheets_client');
 const brands                                            = require('../config/brands');
 const sheets                                            = require('../config/sheets');
@@ -161,16 +162,19 @@ module.exports = async (req, res) => {
   // which for a brand sitting late in the master list could take several
   // real invocations.
   if (req.query.testSku && req.query.testAsin) {
-    const testItem = { sku: req.query.testSku, asin: req.query.testAsin, name: '(test mode)' };
+    let testAccount;
+    try { testAccount = getAccount(req); } // ?account=hol to test a High On Love SKU (ADDED 2026-10-06)
+    catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+    const testItem = { sku: req.query.testSku, asin: req.query.testAsin, name: '(test mode)', account: testAccount };
     try {
       const [listing, inventory, catalog, sfListing] = await Promise.all([
-        fetchListing(testItem.sku).catch(err => ({ __error: err.message })),
-        fetchInventory(testItem.sku).catch(err => ({ __error: err.message })),
-        fetchCatalog(testItem.asin).catch(err => ({ __error: err.message })),
-        fetchListing(`${testItem.sku}-SF`).catch(err => ({ __error: err.message })),
+        fetchListing(testItem.sku, testItem.account).catch(err => ({ __error: err.message })),
+        fetchInventory(testItem.sku, testItem.account).catch(err => ({ __error: err.message })),
+        fetchCatalog(testItem.asin, testItem.account).catch(err => ({ __error: err.message })),
+        fetchListing(`${testItem.sku}-SF`, testItem.account).catch(err => ({ __error: err.message })),
       ]);
       return res.status(200).json({
-        testMode: true, sku: testItem.sku, asin: testItem.asin,
+        testMode: true, account: testItem.account, sku: testItem.sku, asin: testItem.asin,
         listing, inventory, catalog, sfListing,
       });
     } catch (err) {
@@ -494,10 +498,10 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
   // Fire all 4 API calls in parallel — the SF listing call costs no extra
   // wall-clock time this way vs. the 3 we were already making.
   const [listing, inventory, catalog, sfListing] = await Promise.all([
-    fetchListing(sku).catch(err => ({ __error: err.message })),
-    fetchInventory(sku).catch(err => ({ __error: err.message })),
-    fetchCatalog(asin).catch(err => ({ __error: err.message })),
-    fetchListing(sfSku).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
+    fetchListing(sku, item.account).catch(err => ({ __error: err.message })),
+    fetchInventory(sku, item.account).catch(err => ({ __error: err.message })),
+    fetchCatalog(asin, item.account).catch(err => ({ __error: err.message })),
+    fetchListing(sfSku, item.account).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
   ]);
 
   // ADDED 2026-07-22: these three errors used to be captured into
@@ -617,18 +621,22 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
 
 // ── API calls ───────────────────────────────────────────────────────────────
 
-function fetchListing(sku) {
+// account ADDED 2026-10-06 — defaults to NewDerm. The seller ID in the
+// Listings path must be the SKU's own account's, or Amazon says not found.
+function fetchListing(sku, account = 'newderm') {
   return spRequest(
     'GET',
-    `/listings/2021-08-01/items/${process.env.SP_SELLER_ID}/${encodeURIComponent(sku)}`,
+    `/listings/2021-08-01/items/${getSellerId(account)}/${encodeURIComponent(sku)}`,
     {
       marketplaceIds: process.env.SP_MARKETPLACE_ID,
       includedData: 'summaries,attributes,issues,offers,fulfillmentAvailability,procurement',
-    }
+    },
+    null,
+    account
   );
 }
 
-function fetchInventory(sku) {
+function fetchInventory(sku, account = 'newderm') {
   return spRequest(
     'GET',
     '/fba/inventory/v1/summaries',
@@ -638,18 +646,22 @@ function fetchInventory(sku) {
       marketplaceIds:  process.env.SP_MARKETPLACE_ID,
       details:         'true',
       sellerSkus:      sku,
-    }
+    },
+    null,
+    account
   );
 }
 
-function fetchCatalog(asin) {
+function fetchCatalog(asin, account = 'newderm') {
   return spRequest(
     'GET',
     `/catalog/2022-04-01/items/${asin}`,
     {
       marketplaceIds: process.env.SP_MARKETPLACE_ID,
       includedData:   'attributes,images,productTypes,salesRanks,summaries,dimensions',
-    }
+    },
+    null,
+    account
   );
 }
 
@@ -743,7 +755,9 @@ async function fetchMasterSkuList() {
     );
     const matched = siblings.length > 1 ? resolveBrandForSku(sku, siblings) : nameMatched;
 
-    out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart });
+    // account ADDED 2026-10-06 — each SKU's Amazon calls use the seller
+    // account its brand belongs to (High On Love vs NewDerm).
+    out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart, account: accountForBrand(matched) });
   }
   return out;
 }
