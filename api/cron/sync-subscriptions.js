@@ -72,6 +72,7 @@ const { ensureTab, readRows, replaceRows }  = require('../config/_sheets_client'
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
 const { sendCronFailureAlert }              = require('../_alerts');
+const { accountForBrand }                   = require('../_account');
 
 const HEADERS = [
   'year', 'month', 'active_subscriptions',
@@ -190,8 +191,12 @@ module.exports = async (req, res) => {
 
 async function fetchSubscriptionRows(brand, brandAsins, now) {
   const { startDate, endDate } = trailingMonthRange(MONTHS_OF_HISTORY);
+  // ADDED 2026-10-06 — both Replenishment calls use the seller account this
+  // brand belongs to (High On Love's subscription data only exists on its
+  // own account). No separate ?account= run needed — calls are per brand.
+  const account = accountForBrand(brand);
 
-  const activeSeries = await fetchActiveSubscriptions(brandAsins, startDate, endDate);
+  const activeSeries = await fetchActiveSubscriptions(brandAsins, startDate, endDate, account);
 
   if (activeSeries.length === 0) {
     throw new Error('No ACTIVE_SUBSCRIPTIONS data returned — see logged raw response');
@@ -220,7 +225,7 @@ async function fetchSubscriptionRows(brand, brandAsins, now) {
   if (brand.amazonBrandName) {
     await sleep(RATE_LIMIT_DELAY_MS);
     try {
-      const value = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate);
+      const value = await fetchSubscriberRetention(brand.amazonBrandName, startDate, endDate, account);
       if (value == null) {
         console.warn(`[sync-subscriptions] ${brand.id} — SUBSCRIBER_RETENTION call succeeded but returned no value (writing null retention this run)`);
       } else {
@@ -244,7 +249,7 @@ async function fetchSubscriptionRows(brand, brandAsins, now) {
   ]);
 }
 
-async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
+async function fetchSubscriberRetention(amazonBrandName, startDate, endDate, account = 'newderm') {
   const body = {
     aggregationFrequency: 'MONTH',
     timeInterval: { startDate, endDate },
@@ -266,7 +271,7 @@ async function fetchSubscriberRetention(amazonBrandName, startDate, endDate) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let thrown = null;
     try {
-      resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+      resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body, account);
     } catch (err) {
       thrown = err;
     }
@@ -317,7 +322,7 @@ function currentRowKey() {
 // partition of a brand's ASIN list.
 const MAX_ASINS_PER_FILTER = 20;
 
-async function fetchActiveSubscriptions(brandAsins, startDate, endDate) {
+async function fetchActiveSubscriptions(brandAsins, startDate, endDate, account = 'newderm') {
   const chunks = chunkArray(brandAsins, MAX_ASINS_PER_FILTER);
   const monthTotals = {}; // 'YYYY-M' -> { year, month, value }
 
@@ -334,7 +339,7 @@ async function fetchActiveSubscriptions(brandAsins, startDate, endDate) {
       filters: { asins: chunks[i] },
     };
 
-    const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body);
+    const resp = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, body, account);
     const series = extractMetricSeries(resp, 'activeSubscriptions');
 
     series.forEach(({ year, month, value }) => {
