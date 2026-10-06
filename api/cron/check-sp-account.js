@@ -71,6 +71,19 @@ module.exports = async (req, res) => {
     refreshToken: describeVar(names.refreshToken, 'refreshToken'),
     sellerId:     describeVar(names.sellerId, 'sellerId'),
   };
+  // ADDED 2026-10-05 — catch a value accidentally copied from the OTHER
+  // account (e.g. NewDerm's secret pasted into the HOL variable). Compares
+  // values in memory and only reports true/false — never the values.
+  const otherAccount = account === 'newderm' ? 'hol' : 'newderm';
+  const other = ENV_NAMES[otherAccount];
+  for (const kind of ['clientId', 'clientSecret', 'refreshToken', 'sellerId']) {
+    const mine = (process.env[names[kind]] || '').trim();
+    const theirs = (process.env[other[kind]] || '').trim();
+    if (mine && theirs && mine === theirs) {
+      vars[kind].ok = false;
+      vars[kind].problem = [vars[kind].problem, `is IDENTICAL to ${other[kind]} — this looks like ${otherAccount}'s value pasted into the wrong variable`].filter(Boolean).join('; ');
+    }
+  }
   const badVars = Object.values(vars).filter(v => !v.ok);
   report.steps.push({ step: '1. env vars', ok: badVars.length === 0, vars });
   if (['clientId', 'clientSecret', 'refreshToken'].some(k => !vars[k].ok && /not set/.test(vars[k].problem || ''))) {
@@ -99,7 +112,7 @@ module.exports = async (req, res) => {
   if (lwa.body.error) {
     const code = lwa.body.error;
     const hint = {
-      invalid_client:         `${names.clientId} or ${names.clientSecret} is wrong — they must both come from High On Love's own SP-API app.`,
+      invalid_client:         `${names.clientId} or ${names.clientSecret} is wrong. Both must be copied from the SAME app's "LWA credentials" screen (Seller Central → Apps and Services → Develop Apps → View). If the secret was rotated recently, use the current one. The refresh token hasn't been checked yet — Amazon stops at the client credentials first.`,
       invalid_grant:          `${names.refreshToken} is wrong, expired, or was generated for a DIFFERENT app than ${names.clientId}. Re-authorize the app in High On Love's Seller Central and copy the new refresh token.`,
       unauthorized_client:    `The app behind ${names.clientId} isn't allowed to use this refresh token — the token likely belongs to a different app.`,
       invalid_request:        'Something is blank or malformed — check step 1.',
