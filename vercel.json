@@ -122,16 +122,32 @@
       "schedule": "20 6 * * *"
     },
     {
+      "path": "/api/cron/sync-returns-request?account=hol",
+      "schedule": "22 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-returns-process",
       "schedule": "35 6 * * *"
+    },
+    {
+      "path": "/api/cron/sync-returns-process?account=hol",
+      "schedule": "47 6 * * *"
     },
     {
       "path": "/api/cron/sync-fbm-returns-request",
       "schedule": "40 6 * * *"
     },
     {
+      "path": "/api/cron/sync-fbm-returns-request?account=hol",
+      "schedule": "42 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-fbm-returns-process",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-fbm-returns-process?account=hol",
+      "schedule": "10 7 * * *"
     },
     {
       "path": "/api/cron/sync-shopify-orders?mode=rolling30",
