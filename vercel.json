@@ -31,7 +31,11 @@
     },
     {
       "path": "/api/cron/sync-products",
-      "schedule": "8,23,38,53 2-4,14-19 * * *"
+      "schedule": "8,23,38,53 2-3,14-19 * * *"
+    },
+    {
+      "path": "/api/cron/sync-products?slot=4am",
+      "schedule": "8,38,53 4 * * *"
     },
     {
       "path": "/api/cron/sync-sqp-request",
