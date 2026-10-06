@@ -43,7 +43,17 @@ const HEADERS = [
   'Amazon Sale Promotions',
   'marketplace',
   'channel',
+  // ADDED 2026-10-06 — same bug a FOURTH time (see the 2026-08-14 note
+  // above): sync-orders-process.js added selling_account (column T) on
+  // 2026-08-21 and this list was never updated, so every daily trim
+  // rewrote each brand's orders tab without column T.
+  'selling_account',
 ];
+// HEADERS above is now only what ensureTab checks/creates a NEW tab with.
+// The rewrite below uses each tab's OWN header row instead (see
+// columnsForTab), so a column added to the orders sheet in the future can
+// never be silently wiped by this cron again, even if nobody remembers to
+// update this list.
 
 const RETENTION_DAYS = 120;
 
@@ -74,6 +84,16 @@ module.exports = async (req, res) => {
       const kept    = allRows.filter(r => (r.date || '') >= cutoffStr);
       const trimmed = allRows.length - kept.length;
 
+      // ADDED 2026-10-06 — safety valve. This cron deletes data, so if a
+      // trim would remove EVERY row, something is wrong (e.g. the date
+      // column switched to a format like 10/5/2026 that doesn't compare
+      // against YYYY-MM-DD) — skip the tab and alert instead of emptying it.
+      if (kept.length === 0) {
+        console.error(`[trim-orders] ${brand.id} — every row is older than ${cutoffStr}?! Skipping instead of emptying the tab. First date seen: "${allRows[0].date}"`);
+        results.push({ brand: brand.id, status: 'error', error: `trim would delete all ${allRows.length} rows — skipped (check the date column's format; first date seen: "${allRows[0].date}")` });
+        continue;
+      }
+
       if (trimmed === 0) {
         console.log(`[trim-orders] ${brand.id} — nothing to trim`);
         results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed: 0 });
@@ -86,7 +106,11 @@ module.exports = async (req, res) => {
         return d !== 0 ? d : (a.order_id || '').localeCompare(b.order_id || '');
       });
 
-      const rowArrays = kept.map(row => HEADERS.map(h => row[h] !== undefined ? row[h] : ''));
+      // Rewrite using this tab's ACTUAL columns, in its actual order (readRows
+      // keys every row by row 1), so every column survives — including ones
+      // added later that HEADERS doesn't know about. CHANGED 2026-10-06.
+      const columns   = columnsForTab(allRows);
+      const rowArrays = kept.map(row => columns.map(h => row[h] ?? ''));
       await replaceRows(sheets.orders, brand.tabName, HEADERS, rowArrays, token);
 
       console.log(`[trim-orders] ${brand.id} — trimmed ${trimmed} rows (${allRows.length} → ${kept.length})`);
@@ -116,3 +140,11 @@ module.exports = async (req, res) => {
     timestamp: new Date().toISOString(),
   });
 };
+
+// The tab's real header row, in order. readRows builds every row object from
+// row 1, so the first row's keys ARE the sheet's columns. Falls back to
+// HEADERS only if somehow nothing was read.
+function columnsForTab(allRows) {
+  const cols = allRows.length ? Object.keys(allRows[0]) : [];
+  return cols.length ? cols : HEADERS;
+}
