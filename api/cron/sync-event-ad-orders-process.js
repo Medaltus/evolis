@@ -41,7 +41,8 @@
  *   Authorization: Bearer <CRON_SECRET>
  */
 
-const { getAdToken }                        = require('../_spauth');
+const { getAdToken, getSellerId }          = require('../_spauth');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
@@ -49,7 +50,7 @@ const https                                  = require('https');
 const zlib                                   = require('zlib');
 
 const AD_API_HOST  = 'advertising-api.amazon.com';
-const META_TAB     = '_meta_events';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 const HEADERS = ['asin', 'brand', 'impressions', 'clicks', 'ad_units', 'purchases', 'spend', 'sales', 'acos', 'last_updated', 'purchase_date', 'year'];
@@ -58,6 +59,20 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Same Amazon Ads login
+  // for both; the account decides which ad PROFILE is used and which _meta
+  // tab this run's report IDs live in, so the two runs never collide.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account, '_meta_events');
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   const force = req.query.force === 'true';
@@ -87,7 +102,7 @@ module.exports = async (req, res) => {
   // ASINs repeat once per sync date — same pattern as
   // sync-business-report-process.js's getBrandAsinMap, just merged across
   // all brands here instead of kept per-brand).
-  const asinBrandMap = await buildAsinBrandMap();
+  const asinBrandMap = await buildAsinBrandMap(accountBrands); // this account's brands only (2026-10-06)
 
   const results = [];
   const metaUpdates = {};
@@ -183,7 +198,7 @@ module.exports = async (req, res) => {
     console.warn('[sync-event-ad-orders-process] failed to persist meta:', err.message);
   }
 
-  res.status(200).json({ checked: results, timestamp: now });
+  res.status(200).json({ account, checked: results, timestamp: now });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -256,9 +271,9 @@ async function checkAndBuildRows(reportId, tabName, kind, token, profileId, asin
   });
 }
 
-async function buildAsinBrandMap() {
+async function buildAsinBrandMap(brandList = brands.filter(b => b.active)) {
   const map = {};
-  for (const brand of brands.filter(b => b.active)) {
+  for (const brand of brandList) {
     try {
       const rows = await readRows(sheets.products, brand.tabName);
       if (!rows || !rows.length) continue;
