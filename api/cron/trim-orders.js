@@ -119,7 +119,7 @@ module.exports = async (req, res) => {
 
       if (trimmed === 0) {
         console.log(`[trim-orders] ${brand.id} — nothing to trim`);
-        results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed: 0, dateFormats: formats });
+        results.push({ brand: brand.id, before: allRows.length, after: kept.length, trimmed: 0, dateFormats: formats, ...(dryRun ? { dryRun: true, ...duplicateStats(kept) } : {}) });
         continue;
       }
 
@@ -135,7 +135,7 @@ module.exports = async (req, res) => {
       const columns   = columnsForTab(allRows);
       if (dryRun) {
         const oldest = kept.reduce((m, r) => (r.__iso && (!m || r.__iso < m) ? r.__iso : m), null);
-        results.push({ brand: brand.id, dryRun: true, before: allRows.length, wouldKeep: kept.length, wouldTrim: trimmed, oldestKept: oldest, dateFormats: formats, unreadableDatesKept: unreadable });
+        results.push({ brand: brand.id, dryRun: true, before: allRows.length, wouldKeep: kept.length, wouldTrim: trimmed, oldestKept: oldest, dateFormats: formats, unreadableDatesKept: unreadable, ...duplicateStats(kept) });
         continue;
       }
 
@@ -177,4 +177,25 @@ module.exports = async (req, res) => {
 function columnsForTab(allRows) {
   const cols = allRows.length ? Object.keys(allRows[0]) : [];
   return cols.length ? cols : HEADERS;
+}
+
+// ADDED 2026-10-06 — dry-run diagnostic only (never changes data). Counts
+// rows that share an order_id + sku with an earlier row — the same key
+// sync-orders-process.js matches on — so duplicated orders show up
+// directly instead of being guessed at from row counts.
+function duplicateStats(rows) {
+  const seen = new Map();
+  let duplicateRows = 0;
+  const examples = [];
+  for (const r of rows) {
+    const key = `${r.order_id || ''}||${r.sku || ''}`;
+    if (key === '||') continue;
+    if (seen.has(key)) {
+      duplicateRows++;
+      if (examples.length < 3) examples.push({ order_id: r.order_id, sku: r.sku, dates: [seen.get(key), r.date] });
+    } else {
+      seen.set(key, r.date);
+    }
+  }
+  return duplicateRows ? { duplicateRows, duplicateExamples: examples } : { duplicateRows: 0 };
 }
