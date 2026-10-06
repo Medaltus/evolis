@@ -68,9 +68,10 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { sendCronFailureAlert }             = require('../_alerts');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 
 const HEADERS      = ['MONTH', 'YEAR', 'REVENUE', 'ORDERS', 'UNITS SOLD', 'FBA UNITS', 'FBM UNITS', 'Last Updated'];
-const META_TAB     = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 // ADDED 2026-08-13 — the per-brand loop below does 3 real Sheets reads per
@@ -99,6 +100,21 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Each account keeps its
+  // report IDs/status in its own _meta tab so the two runs never overwrite
+  // each other's pending reports.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-revenue-process', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const ts  = now.toISOString();
@@ -123,12 +139,12 @@ module.exports = async (req, res) => {
         marketplaceIds: [process.env.SP_MARKETPLACE_ID],
         dataStartTime:  start,
         dataEndTime:    end,
-      });
+      }, account);
       jobs = [{ month: req.query.month, reportId: createResp.reportId, start, end }];
       console.log(`[sync-revenue-process] backfill report requested: ${createResp.reportId}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to request backfill report:', err.message);
-      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'requesting backfill report', Month: req.query.month });
+      await sendCronFailureAlert(CRON, err.message, { Stage: 'requesting backfill report', Month: req.query.month });
       return res.status(500).json({ error: 'Failed to request report', detail: err.message });
     }
 
@@ -168,7 +184,7 @@ module.exports = async (req, res) => {
       console.log(`[sync-revenue-process] processing ${jobs.length} reports: ${jobs.map(j => j.month).join(', ')}`);
     } catch (err) {
       console.error('[sync-revenue-process] failed to read _meta:', err.message);
-      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'reading _meta tab' });
+      await sendCronFailureAlert(CRON, err.message, { Stage: 'reading _meta tab' });
       return res.status(500).json({ error: 'Failed to read _meta', detail: err.message });
     }
   }
@@ -185,7 +201,7 @@ module.exports = async (req, res) => {
     while (Date.now() < deadline) {
       await sleep(REPORT_POLL_INTERVAL_MS);
       try {
-        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`);
+        const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${job.reportId}`, {}, null, account);
         const status     = statusResp.processingStatus;
         console.log(`[sync-revenue-process] ${job.month} report ${job.reportId} status: ${status}`);
 
@@ -210,7 +226,7 @@ module.exports = async (req, res) => {
 
     // Download & decompress
     try {
-      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`);
+      const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
       const fileResp = await fetch(docResp.url);
       if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
@@ -243,7 +259,8 @@ module.exports = async (req, res) => {
   const results      = [];
   let brandIndex = 0;
 
-  for (const brand of brands.filter(b => b.active)) {
+  // Only this seller account's brands (ADDED 2026-10-06).
+  for (const brand of accountBrands) {
     if (brandIndex > 0) await sleep(BRAND_READ_STAGGER_MS);
     brandIndex++;
 
@@ -461,20 +478,20 @@ module.exports = async (req, res) => {
       await replaceRows(sheets.revenue, META_TAB, META_HEADERS, metaRows, token);
     } catch (err) {
       console.warn('[sync-revenue-process] failed to update _meta status:', err.message);
-      await sendCronFailureAlert('sync-revenue-process', err.message, { Stage: 'marking report processed in _meta' });
+      await sendCronFailureAlert(CRON, err.message, { Stage: 'marking report processed in _meta' });
     }
   }
 
   const failedBrands = results.filter(r => r.status === 'error');
   if (failedBrands.length > 0) {
     await sendCronFailureAlert(
-      'sync-revenue-process',
+      CRON,
       failedBrands.map(r => `${r.brand}: ${r.error}`).join('\n'),
       { 'Brands failed': String(failedBrands.length) }
     );
   }
 
-  res.status(200).json({ synced: results });
+  res.status(200).json({ account, synced: results });
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
