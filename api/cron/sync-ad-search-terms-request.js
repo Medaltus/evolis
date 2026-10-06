@@ -38,14 +38,15 @@
  * sync-advertising-request to avoid both hitting the Ads API at once.
  */
 
-const { getAdToken }                      = require('../_spauth');
+const { getAdToken, getSellerId }        = require('../_spauth');
+const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const https                               = require('https');
 const { sendCronFailureAlert }            = require('../_alerts');
 
 const AD_API_HOST           = 'advertising-api.amazon.com';
 const SHEET_AD_SEARCH_TERMS = process.env.SHEET_AD_SEARCH_TERMS;
-const META_TAB              = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS          = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 const SP_COLUMNS = [
@@ -68,6 +69,21 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Same Amazon Ads login
+  // for both; the account decides which ad PROFILE is used and which _meta
+  // tab this run's report IDs live in, so the two runs never collide.
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const CRON     = cronLabel('sync-ad-search-terms-request', account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  }
+
   const now = new Date().toISOString();
   const curr = getCurrentMonthRange();
   const prev = getLastMonthRange();
@@ -77,7 +93,7 @@ module.exports = async (req, res) => {
 
   try {
     const token     = await getAdToken();
-    const profileId = await discoverProfileId(token);
+    const profileId = await discoverProfileId(token, account);
     console.log(`[sync-ad-search-terms-request] using profileId=${profileId}`);
 
     const jobs = [
@@ -96,11 +112,11 @@ module.exports = async (req, res) => {
     }
 
     if (!reportIds.sp_curr && !reportIds.sb_curr) {
-      await sendCronFailureAlert('sync-ad-search-terms-request', 'All current month report requests failed (sp_curr and sb_curr both null)');
+      await sendCronFailureAlert(CRON, 'All current month report requests failed (sp_curr and sb_curr both null)');
       return res.status(500).json({ error: 'All current month report requests failed' });
     }
     if (!reportIds.sp_prev && !reportIds.sb_prev) {
-      await sendCronFailureAlert('sync-ad-search-terms-request', 'All previous month report requests failed (sp_prev and sb_prev both null)');
+      await sendCronFailureAlert(CRON, 'All previous month report requests failed (sp_prev and sb_prev both null)');
       return res.status(500).json({ error: 'All previous month report requests failed' });
     }
 
@@ -139,7 +155,7 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-ad-search-terms-request] fatal:', err.message);
-    await sendCronFailureAlert('sync-ad-search-terms-request', err.message);
+    await sendCronFailureAlert(CRON, err.message);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -189,16 +205,23 @@ async function requestReportWithRetry(token, profileId, reportTypeId, adProduct,
   return null;
 }
 
-async function discoverProfileId(token) {
+async function discoverProfileId(token, account = 'newderm') {
   const profiles = await adRequest('GET', '/v2/profiles', token, null, null);
-  const newdermUS = profiles.find(p =>
+  // CHANGED 2026-10-06 — finds the ad profile for whichever seller account
+  // this run is for. NewDerm keeps its original match (name contains
+  // "newderm" OR its seller ID); other accounts (High On Love) match on
+  // their own seller ID (SP_SELLER_ID_HOL), since all accounts share one
+  // Amazon Ads login and the profile list contains every account's profile.
+  const sellerId = getSellerId(account);
+  const match = profiles.find(p =>
     p.countryCode === 'US' &&
     p.accountInfo?.type === 'seller' &&
-    (p.accountInfo?.name?.toLowerCase().includes('newderm') ||
-     p.accountInfo?.id === 'A25QTQX4QSLFM9')
+    (account === 'newderm'
+      ? (p.accountInfo?.name?.toLowerCase().includes('newderm') || p.accountInfo?.id === sellerId)
+      : p.accountInfo?.id === sellerId)
   );
-  if (!newdermUS) throw new Error('NewDerm US seller profile not found');
-  return newdermUS.profileId;
+  if (!match) throw new Error(`${account} US seller ad profile not found (looked for seller ID ${sellerId}) — check the account's SP_SELLER_ID env var and that its ads account is under this Amazon Ads login`);
+  return match.profileId;
 }
 
 function getCurrentMonthRange() {
@@ -208,7 +231,15 @@ function getCurrentMonthRange() {
   const month = now.getMonth() + 1;
   const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
   const startDate = `${year}-${pad(month)}-01`;
-  const endDate   = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}`;
+  // FIXED 2026-10-06 (same fix as sync-ad-search-terms-request.js's from
+  // 2026-09-02, which never got deployed): on the 1st of a month,
+  // "yesterday" is in the PREVIOUS month, so endDate came out BEFORE
+  // startDate (e.g. 2026-09-01 → 2026-08-31) and Amazon rejected every
+  // current-month request that day. Use today as the end date on the 1st.
+  const yesterdayInSameMonth = yesterday.getFullYear() === year && yesterday.getMonth() + 1 === month;
+  const endDate = yesterdayInSameMonth
+    ? `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}`
+    : `${year}-${pad(month)}-${pad(now.getDate())}`;
   return { startDate, endDate };
 }
 
