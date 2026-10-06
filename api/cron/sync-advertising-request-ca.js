@@ -222,7 +222,15 @@ function getCurrentMonthRange() {
   const month = now.getMonth() + 1;
   const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
   const startDate = `${year}-${pad(month)}-01`;
-  const endDate   = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}`;
+  // FIXED 2026-10-06 (same fix as sync-ad-search-terms-request.js's from
+  // 2026-09-02, which never got deployed): on the 1st of a month,
+  // "yesterday" is in the PREVIOUS month, so endDate came out BEFORE
+  // startDate (e.g. 2026-09-01 → 2026-08-31) and Amazon rejected every
+  // current-month request that day. Use today as the end date on the 1st.
+  const yesterdayInSameMonth = yesterday.getFullYear() === year && yesterday.getMonth() + 1 === month;
+  const endDate = yesterdayInSameMonth
+    ? `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())}`
+    : `${year}-${pad(month)}-${pad(now.getDate())}`;
   return { startDate, endDate };
 }
 
