@@ -24,14 +24,30 @@
 const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
+const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
 
-const META_TAB     = '_meta';
+// META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Seller account (ADDED 2026-10-06) ─────────────────────────────────────
+  // NewDerm by default; ?account=hol runs the same job for High On Love on
+  // its own staggered schedule — see api/_account.js. Its report IDs/status
+  // live in _meta_hol. (clean-business-report-vine.js / qa-business-report.js
+  // read target_months from NewDerm's _meta — same months for both accounts,
+  // so that still covers High On Love's tab.)
+  let account;
+  try { account = getAccount(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const META_TAB = metaTabFor(account);
+  const accountBrands = brandsForAccount(account);
+  if (accountBrands.length === 0) {
+    return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
   }
 
   const now = new Date();
@@ -62,7 +78,7 @@ module.exports = async (req, res) => {
     },
   ];
 
-  console.log(`[sync-business-report-request] requesting reports for ${ranges.map(r => r.month).join(', ')}`);
+  console.log(`[sync-business-report-request] (${account}) requesting reports for ${ranges.map(r => r.month).join(', ')}`);
 
   // ── Request one report per month ───────────────────────────────────────────
   const reportIds = {};
@@ -78,7 +94,7 @@ module.exports = async (req, res) => {
           dateGranularity: 'MONTH', // we don't use salesAndTrafficByDate — asinGranularity is what we need
           asinGranularity: 'CHILD', // gives per-SKU sessions/units for brand matching, same skuPrefix pattern as revenue
         },
-      });
+      }, account);
       if (!createResp || !createResp.reportId) {
         // Amazon sometimes returns 200 with an error-shaped body instead of
         // throwing — don't silently store `undefined` as this month's reportId.
@@ -129,10 +145,11 @@ module.exports = async (req, res) => {
     return res.status(207).json({
       warning: 'Reports requested successfully, but failed to write _meta — check SHEET_BUSINESS_REPORT / config/sheets.js',
       metaWriteError,
+      account,
       reportIds,
       targetMonths: Object.keys(reportIds),
     });
   }
 
-  res.status(200).json({ reportIds, targetMonths: Object.keys(reportIds) });
+  res.status(200).json({ account, reportIds, targetMonths: Object.keys(reportIds) });
 };
