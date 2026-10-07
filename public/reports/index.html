@@ -2001,10 +2001,19 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div id="bm-cb-products-section" class="card" style="margin-bottom:18px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
           <div class="card-title" style="margin-bottom:0;">Performance by Product</div>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;flex-shrink:0;">
             <input type="checkbox" id="bm-hide-negative-bsr" style="margin:0;" onchange="window.bmRenderMomentumCards && window.bmRenderMomentumCards()">
             Hide negative BSR changes
           </label>
+          <!-- ADDED 2026-10-06 per Jaclyn — hides out-of-stock products'
+               cards. The PDF reuses these live cards via outerHTML, so the
+               export follows whatever is checked here automatically. -->
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;flex-shrink:0;margin-left:14px;">
+            <input type="checkbox" id="bm-hide-oos" style="margin:0;" onchange="window.bmRenderMomentumCards && window.bmRenderMomentumCards()">
+            Hide out-of-stock products
+          </label>
+          </div>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">
           Sessions measured vs. prior month; BSR change reflects total movement since first recorded.
@@ -16035,12 +16044,15 @@ window.initBrandMomentum = async function () {
   window._bmInit = true;
 
   try {
-    const [bizCsv, kwCsv, kwSummaryCsv, master, reviews] = await Promise.all([
+    const [bizCsv, kwCsv, kwSummaryCsv, master, reviews, oosBySku] = await Promise.all([
       fetch(ovCsvUrl(OV_BUSINESS_REPORT_SHEET_ID, OV_BUSINESS_REPORT_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(OV_KEYWORD_TRACKER_SHEET_ID, OV_KEYWORD_TRACKER_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       fetch(ovCsvUrl(KEYWORD_TRACKER_SUMMARY_SHEET_ID, KEYWORD_TRACKER_SUMMARY_GID) + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => ''),
       getProductMaster(),
       fetchAmazonReviews(),
+      // Same is_oos source Insights > Products already uses for its
+      // out-of-stock dimming, so both pages agree on what's OOS.
+      getOosStatusBySku().catch(() => ({})),
     ]);
 
     const bizRows = parseCsvToRows(bizCsv);
@@ -16233,7 +16245,7 @@ window.initBrandMomentum = async function () {
     // Cache everything bmRenderMomentumCards() needs to re-render without
     // re-fetching (same "hide negative" re-render pattern the old
     // bmRenderBsrTable used, now covering the whole card, not just BSR).
-    window._bmCardData = { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month };
+    window._bmCardData = { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month, oosBySku: oosBySku || {} };
     window.bmRenderMomentumCards();
 
   } catch (err) {
@@ -16257,8 +16269,12 @@ window.initBrandMomentum = async function () {
 window.bmRenderMomentumCards = function () {
   const grid = document.getElementById('bm-momentum-cards-grid');
   if (!grid || !window._bmCardData) return;
-  const { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month } = window._bmCardData;
+  const { master, currSessionsBySku, prevMonthSessionsBySku, kwCountBySku, reviewStatsBySku, year, month, oosBySku } = window._bmCardData;
   const hideNegativeBsr = document.getElementById('bm-hide-negative-bsr')?.checked;
+  const hideOos = document.getElementById('bm-hide-oos')?.checked;
+  // ppc_strategy SKUs may carry the -SF seller-fulfilled suffix; card SKUs
+  // never do (getProductMaster strips it), so normalize before matching.
+  const isOosSku = sku => !!(oosBySku && (oosBySku[sku] || oosBySku[sku + '-SF']));
 
   const skus = Object.keys(currSessionsBySku).sort((a, b) => currSessionsBySku[b] - currSessionsBySku[a]);
   if (!skus.length) {
@@ -16267,6 +16283,7 @@ window.bmRenderMomentumCards = function () {
   }
 
   const cardsHtml = skus.map(sku => {
+    if (hideOos && isOosSku(sku)) return '';
     const entry = master.bySku[sku];
     const name = entry ? entry.name : sku;
 
