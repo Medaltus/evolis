@@ -20724,9 +20724,14 @@ async function loadAuditResultsFromSheet() {
     });
     const cards = [1, 2, 3, 4].map(function (n) { return slots[n]; }).join('');
     if (!cards.trim()) return '';
-    return '<div class="pdfx-card" style="margin-top:14px;">' +
+    // CHANGED 2026-10-07 per Jaclyn — borderless, unpadded block and a
+    // 36px column gap, matching Vivian Valenty's Opportunities page. The
+    // bordered/padded card left ~323px per column, so a 3rd 108px image
+    // wrapped to a second row and stretched the page; this gives ~344px,
+    // enough for 3 across (3 x 108 + 2 x 6 = 336).
+    return '<div class="pdfx-card" style="border:none;padding:0;margin-top:14px;margin-bottom:14px;">' +
       '<span class="pdfx-pill pdfx-pill-sand" style="margin-bottom:16px;">What\'s Been Accomplished</span>' +
-      '<div class="pdfx-cover-cols">' + cards + '</div>' +
+      '<div class="pdfx-cover-cols" style="gap:36px;">' + cards + '</div>' +
       '</div>';
   }
 
@@ -20752,9 +20757,11 @@ async function loadAuditResultsFromSheet() {
     // Same pill-badge + headline pattern as Executive Summary on the cover
     // page (.pdfx-pill / .pdfx-cover-cols), so the two sections match
     // exactly as designed on the live dashboard. Per Jaclyn 2026-07-14.
-    return '<div class="pdfx-card" style="margin-top:14px;">' +
+    // Same borderless treatment as What's Been Accomplished above, with a
+    // single top rule separating the two sections — matches VVS.
+    return '<div class="pdfx-card" style="border:none;padding:0;border-top:1px solid var(--border);padding-top:12px;">' +
       '<span class="pdfx-pill" style="margin-bottom:16px;">Future Opportunities</span>' +
-      '<div class="pdfx-cover-cols">' + cards + '</div>' +
+      '<div class="pdfx-cover-cols" style="gap:36px;">' + cards + '</div>' +
       '</div>';
   }
 
@@ -21163,7 +21170,12 @@ async function loadAuditResultsFromSheet() {
   // points at live on fonts.gstatic.com, which render-pdf.js allows.
   // Fallback if that fetch fails: load Gelasio by its own name and put
   // it ahead of Georgia in the heading font variable.
-  const PDFX_GELASIO_CSS_URL = 'https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&display=swap';
+  // CHANGED 2026-10-07 per Jaclyn — Regular (400) ONLY, matching Skinside
+  // SEOUL's export (pdffonts on her PDF: Gelasio-Regular is the only serif
+  // embedded). Loading the real Bold/SemiBold made bold KPI values switch
+  // to Gelasio's actual Bold design, which reads as a different font;
+  // with Regular only, Chrome synthesizes bold from Regular, as Skinside's does.
+  const PDFX_GELASIO_CSS_URL = 'https://fonts.googleapis.com/css2?family=Gelasio&display=swap';
   async function pdfxGetGeorgiaAliasCss() {
     try {
       const res = await fetch(PDFX_GELASIO_CSS_URL);
