@@ -6276,6 +6276,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       // Skip year if it has no data at all
       if (data.every(v => v === null)) continue;
       datasets.push({
@@ -6853,6 +6867,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       if (data.every(v => v === null)) continue;
       datasets.push({
         label: String(yr), data,
@@ -7749,6 +7777,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       if (data.every(v => v === null)) continue;
       datasets.push({
         label:           String(yr),
@@ -8333,6 +8375,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       // Skip year if it has no data at all
       if (data.every(v => v === null)) continue;
       datasets.push({
@@ -8849,6 +8905,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       if (data.every(v => v === null)) continue;
       datasets.push({
         label: String(yr), data,
@@ -9346,6 +9416,20 @@ async function initSns() {
         const row = parsed.find(r => r.year === yr && r.month === mo);
         return row ? row.revenue : null;
       });
+      // ADDED 2026-10-07 per Jaclyn — a month with zero sales has NO row in
+      // the revenue sheet (e.g. Walmart, August 2026), which used to come
+      // back null and break the line. Once this year has its first real
+      // month, every later missing month through the last full month (or
+      // December, for past years) is treated as $0 so the line drops to
+      // zero and continues. Months before the first real one stay blank,
+      // so a channel's pre-launch months don't draw as a flat zero line.
+      {
+        const firstIdx = data.findIndex(v => v !== null);
+        if (firstIdx !== -1) {
+          const lastIdx = (yr === stopYear) ? stopMonth - 1 : 11;
+          for (let i = firstIdx; i <= lastIdx; i++) if (data[i] === null) data[i] = 0;
+        }
+      }
       if (data.every(v => v === null)) continue;
       datasets.push({
         label:           String(yr),
@@ -20446,7 +20530,7 @@ async function loadAuditResultsFromSheet() {
   function buildAmazonPage(monthYear) {
     const dateRange = pdfxText('#amazon-hdr-date').replace('📅', '').trim();
     const kpis = ['kpi-total-units', 'kpi-total-orders', 'kpi-avg-order', 'kpi-units-ads', 'kpi-units-organic'].map(pdfxKpi);
-    const rows = pdfxTableRows('tp-tbody');
+    const rows = pdfxTableRows('tp-tbody').slice(0, 7); // PDF: top 7 only, per Jaclyn 2026-10-07 (live table unchanged)
     const insight = pdfxText('#tp-insight-text');
     return '' +
       '<div class="pdfx-page">' +
@@ -20491,7 +20575,7 @@ async function loadAuditResultsFromSheet() {
   function buildWalmartPage(monthYear) {
     const dateRange = pdfxText('#walmart-hdr-date').replace('📅', '').trim();
     const kpis = ['wkpi-total-units', 'wkpi-total-orders', 'wkpi-avg-order'].map(pdfxKpi);
-    const rows = pdfxTableRows('wtp-tbody');
+    const rows = pdfxTableRows('wtp-tbody').slice(0, 7); // PDF: top 7 only, per Jaclyn 2026-10-07 (live table unchanged)
     const insight = pdfxText('#wtp-insight-text');
     return '' +
       '<div class="pdfx-page">' +
