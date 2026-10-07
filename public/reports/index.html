@@ -267,8 +267,13 @@ nav > .nav-btn:not(.active):hover{color:#fff;}
 
 /* ── Inline editor panel ── */
 .insight-editor{display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-top:8px;}
-.insight-editor textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(0,31,96,0.20);border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;color:var(--navy);resize:vertical;min-height:72px;background:var(--white);outline:none;line-height:1.6;}
-.insight-editor textarea:focus{border-color:var(--navy);}
+.insight-editor textarea,.insight-editor input[type="text"]{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(0,31,96,0.20);border-radius:var(--radius-sm);font-family:var(--font);font-size:12.5px;color:var(--navy);resize:vertical;min-height:72px;background:var(--white);outline:none;line-height:1.6;margin-bottom:10px;}
+.insight-editor input[type="text"]{min-height:auto;}
+.insight-editor textarea:focus,.insight-editor input[type="text"]:focus{border-color:var(--navy);}
+/* ADDED 2026-10-07 per Jaclyn — ported from Vivian Valenty's editor CSS.
+   évolis only ever styled textarea, so every title/subtitle/image-URL input
+   rendered as a bare browser-default box, and field labels had no style. */
+.insight-editor-label{font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;}
 .editor-footer{display:flex;gap:8px;margin-top:8px;justify-content:flex-end;align-items:center;}
 .editor-note{font-size:11px;color:var(--muted);flex:1;}
 .btn-cancel{padding:5px 13px;font-size:11px;border:1px solid var(--border);background:var(--white);border-radius:var(--radius-sm);cursor:pointer;color:var(--muted);font-family:var(--font);}
@@ -2489,42 +2494,50 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
       </div>
 
+      <!-- REBUILT 2026-10-07 per Jaclyn — matches Vivian Valenty's Opportunities
+           card: 6 cards (opp1-opp6, all real columns on the evolis tab) and a
+           static 2-column editor inside the same card. Cards with a blank
+           Title are hidden, live and in the PDF. -->
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <div style="display:inline-block;background:rgba(36,233,163,.12);border:1px solid rgba(36,233,163,.3);border-radius:4px;padding:3px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green);">Future Opportunities</div>
+          <div class="card-title" style="margin-bottom:0;">Future Opportunities</div>
           <button class="btn-edit" id="opp-edit-btn">✏️ Edit</button>
         </div>
-        <div class="opp-grid" id="opp-grid">
-          <div class="opp-card" id="opp-card-1" style="display:none;">
-            <div class="opp-title" id="opp-title-1"></div>
-            <div class="opp-subtitle" id="opp-subtitle-1"></div>
-            <div class="opp-body" id="opp-body-1"></div>
-          </div>
-          <div class="opp-card" id="opp-card-2" style="display:none;">
-            <div class="opp-title" id="opp-title-2"></div>
-            <div class="opp-subtitle" id="opp-subtitle-2"></div>
-            <div class="opp-body" id="opp-body-2"></div>
-          </div>
-          <div class="opp-card" id="opp-card-3" style="display:none;">
-            <div class="opp-title" id="opp-title-3"></div>
-            <div class="opp-subtitle" id="opp-subtitle-3"></div>
-            <div class="opp-body" id="opp-body-3"></div>
-          </div>
-          <div class="opp-card" id="opp-card-4" style="display:none;">
-            <div class="opp-title" id="opp-title-4"></div>
-            <div class="opp-subtitle" id="opp-subtitle-4"></div>
-            <div class="opp-body" id="opp-body-4"></div>
-          </div>
+        <div class="insight-grid" id="opp-grid">
+          <div class="opp-card" id="opp-card-1"><div class="opp-card-title" id="opp1-title-disp"></div><div class="opp-card-subtitle" id="opp1-subtitle-disp"></div><div class="opp-card-body" id="opp1-body-disp"></div></div>
+          <div class="opp-card" id="opp-card-2"><div class="opp-card-title" id="opp2-title-disp"></div><div class="opp-card-subtitle" id="opp2-subtitle-disp"></div><div class="opp-card-body" id="opp2-body-disp"></div></div>
+          <div class="opp-card" id="opp-card-3"><div class="opp-card-title" id="opp3-title-disp"></div><div class="opp-card-subtitle" id="opp3-subtitle-disp"></div><div class="opp-card-body" id="opp3-body-disp"></div></div>
+          <div class="opp-card" id="opp-card-4"><div class="opp-card-title" id="opp4-title-disp"></div><div class="opp-card-subtitle" id="opp4-subtitle-disp"></div><div class="opp-card-body" id="opp4-body-disp"></div></div>
+          <div class="opp-card" id="opp-card-5"><div class="opp-card-title" id="opp5-title-disp"></div><div class="opp-card-subtitle" id="opp5-subtitle-disp"></div><div class="opp-card-body" id="opp5-body-disp"></div></div>
+          <div class="opp-card" id="opp-card-6"><div class="opp-card-title" id="opp6-title-disp"></div><div class="opp-card-subtitle" id="opp6-subtitle-disp"></div><div class="opp-card-body" id="opp6-body-disp"></div></div>
         </div>
-        <div id="opp-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No opportunities added yet — click Edit to add up to 4.</div>
-      </div>
-      <div class="insight-editor" id="opp-editor">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Up to 4 opportunity cards. Leave a card's Title blank to leave it out of the report entirely. Subtitle is optional — if left blank, the body text sits directly under the title.</div>
-        <div id="opp-editor-slots"></div>
-        <div class="editor-footer" style="margin-top:10px;">
-          <span class="editor-note">Saves directly to the report sheet as a draft.</span>
-          <button class="btn-cancel" id="opp-cancel-btn">Cancel</button>
-          <button class="btn-save-stage" id="opp-save-btn">Save</button>
+        <div id="opp-empty-state" style="display:none;color:var(--muted);font-size:12px;padding:8px 0;">No opportunities added yet — click Edit to add up to 6.</div>
+        <div class="insight-editor" id="opp-editor">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div><div class="insight-editor-label">Opportunity 1 — Title</div><input type="text" id="opp1-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp1-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp1-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Opportunity 2 — Title</div><input type="text" id="opp2-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp2-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp2-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Opportunity 3 — Title</div><input type="text" id="opp3-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp3-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp3-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Opportunity 4 — Title</div><input type="text" id="opp4-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp4-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp4-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Opportunity 5 — Title</div><input type="text" id="opp5-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp5-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp5-body-input"></textarea></div>
+            <div><div class="insight-editor-label">Opportunity 6 — Title</div><input type="text" id="opp6-title-input">
+              <div class="insight-editor-label">Subtitle</div><input type="text" id="opp6-subtitle-input">
+              <div class="insight-editor-label">Body</div><textarea id="opp6-body-input"></textarea></div>
+          </div>
+          <div class="editor-footer">
+            <span class="editor-note">Saves all 6 cards together to this month's report row. Leave a Title blank to leave that card out.</span>
+            <button class="btn-cancel" id="opp-cancel-btn">Cancel</button>
+            <button class="btn-save-stage" id="opp-save-btn">Save</button>
+          </div>
         </div>
       </div>
 
@@ -13234,32 +13247,20 @@ document.addEventListener('DOMContentLoaded', function() {
     load();
   })();
 
-  // ── Future Opportunities: up to 4 cards, title/subtitle/body ────────────
-  // Bespoke rather than wireInsightBlock, since it needs to show/hide whole
-  // cards based on whether Title is filled, and collapse the Subtitle line
-  // when it's blank — not just fill-or-placeholder per field.
+  // ── Future Opportunities: 6 cards ──────────────────────────────────────
+  // REBUILT 2026-10-07 per Jaclyn to match Vivian Valenty's Opportunities
+  // card (static inputs, opp1-opp6). Same load/save shape as
+  // wireAccomplished above: last full month's row, blank Title hides card.
   (function wireOpportunities() {
     const BRAND = 'evolis';
     const editBtn = document.getElementById('opp-edit-btn');
     const saveBtn = document.getElementById('opp-save-btn');
     const cancelBtn = document.getElementById('opp-cancel-btn');
     const editorEl = document.getElementById('opp-editor');
-    const slotsEl = document.getElementById('opp-editor-slots');
-    if (!editBtn || !saveBtn || !editorEl || !slotsEl) return;
+    if (!editBtn || !saveBtn || !editorEl) return;
+    const SLOTS = [1, 2, 3, 4, 5, 6];
 
-    // Build the 4 editor slots once.
-    slotsEl.innerHTML = [1,2,3,4].map(n => `
-      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Opportunity ${n} — Title</div>
-        <textarea id="textarea-opp${n}-title" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:40px;margin-bottom:8px;"></textarea>
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Subtitle <span style="font-weight:400;color:var(--muted);">(optional)</span></div>
-        <textarea id="textarea-opp${n}-subtitle" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:none;height:40px;margin-bottom:8px;"></textarea>
-        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px;">Body</div>
-        <textarea id="textarea-opp${n}-body" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(0,31,96,.2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:60px;"></textarea>
-      </div>
-    `).join('');
-
-    function getLastFullMonthLocal2() {
+    function lastFullMonth() {
       const now = new Date();
       let year = now.getFullYear(), month = now.getMonth();
       if (month === 0) { month = 12; year--; }
@@ -13267,51 +13268,43 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     async function load() {
-      const { year, month } = getLastFullMonthLocal2();
+      const { year, month } = lastFullMonth();
       const row = await window.reportInsightsFetchRow(BRAND, { year: String(year), month: String(month) });
       let anyVisible = false;
-      [1,2,3,4].forEach(n => {
+      SLOTS.forEach(n => {
         const title    = row ? (row[`opp${n}_title`]    || '') : '';
         const subtitle = row ? (row[`opp${n}_subtitle`] || '') : '';
         const body     = row ? (row[`opp${n}_body`]     || '') : '';
         const card = document.getElementById(`opp-card-${n}`);
-        if (title) {
-          anyVisible = true;
-          card.style.display = '';
-          document.getElementById(`opp-title-${n}`).textContent = title;
-          const subEl = document.getElementById(`opp-subtitle-${n}`);
-          if (subtitle) { subEl.textContent = subtitle; subEl.style.display = ''; }
-          else { subEl.textContent = ''; subEl.style.display = 'none'; }
-          document.getElementById(`opp-body-${n}`).textContent = body;
-        } else {
-          card.style.display = 'none';
-        }
-        const taTitle = document.getElementById(`textarea-opp${n}-title`);
-        const taSub   = document.getElementById(`textarea-opp${n}-subtitle`);
-        const taBody  = document.getElementById(`textarea-opp${n}-body`);
-        if (taTitle) taTitle.value = title;
-        if (taSub)   taSub.value = subtitle;
-        if (taBody)  taBody.value = body;
+        document.getElementById(`opp${n}-title-disp`).textContent = title;
+        const subEl = document.getElementById(`opp${n}-subtitle-disp`);
+        subEl.textContent = subtitle;
+        subEl.style.display = subtitle ? '' : 'none';
+        document.getElementById(`opp${n}-body-disp`).textContent = body;
+        if (card) card.style.display = title ? '' : 'none';
+        if (title) anyVisible = true;
+        document.getElementById(`opp${n}-title-input`).value = title;
+        document.getElementById(`opp${n}-subtitle-input`).value = subtitle;
+        document.getElementById(`opp${n}-body-input`).value = body;
       });
       document.getElementById('opp-empty-state').style.display = anyVisible ? 'none' : 'block';
-      return row;
     }
 
     editBtn.addEventListener('click', () => {
-      editorEl.style.display = editorEl.style.display === 'none' ? 'block' : 'none';
+      editorEl.style.display = editorEl.style.display === 'block' ? 'none' : 'block';
     });
-    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; });
+    cancelBtn.addEventListener('click', () => { editorEl.style.display = 'none'; load(); });
 
     saveBtn.addEventListener('click', async () => {
       const origLabel = saveBtn.textContent;
       saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
       try {
-        const { year, month } = getLastFullMonthLocal2();
+        const { year, month } = lastFullMonth();
         const fields = {};
-        [1,2,3,4].forEach(n => {
-          fields[`opp${n}_title`]    = (document.getElementById(`textarea-opp${n}-title`).value || '').trim();
-          fields[`opp${n}_subtitle`] = (document.getElementById(`textarea-opp${n}-subtitle`).value || '').trim();
-          fields[`opp${n}_body`]     = (document.getElementById(`textarea-opp${n}-body`).value || '').trim();
+        SLOTS.forEach(n => {
+          fields[`opp${n}_title`]    = (document.getElementById(`opp${n}-title-input`).value || '').trim();
+          fields[`opp${n}_subtitle`] = (document.getElementById(`opp${n}-subtitle-input`).value || '').trim();
+          fields[`opp${n}_body`]     = (document.getElementById(`opp${n}-body-input`).value || '').trim();
         });
         await window.reportInsightsSaveFields({ scope: 'monthly', year, month, fields, action: 'save' });
         await load();
@@ -20661,10 +20654,10 @@ async function loadAuditResultsFromSheet() {
     // to #opp-grid specifically — the Future Opportunities cards' own
     // display container — so this only ever reads its own cards.
     const cards = Array.prototype.map.call(document.querySelectorAll('#opp-grid .opp-card'), function (card) {
-      const title = pdfxText('.opp-title', card);
+      const title = pdfxText('.opp-card-title', card);
       if (!title) return ''; // blank Title = this slot is unused, per Jaclyn 2026-07-18
-      const subtitle = pdfxText('.opp-subtitle', card);
-      const body = pdfxText('.opp-body', card);
+      const subtitle = pdfxText('.opp-card-subtitle', card);
+      const body = pdfxText('.opp-card-body', card);
       return '<div>' +
         '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">' + pdfxEscape(title) + '</div>' +
         (subtitle ? '<div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px;">' + pdfxEscape(subtitle) + '</div>' : '') +
