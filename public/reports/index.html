@@ -9556,15 +9556,36 @@ async function initSns() {
     out.push(cur);
     return out;
   }
+  // FIXED 2026-10-07 per Jaclyn — this used to split the whole CSV on
+  // line breaks BEFORE handling quotes. Report insights are free text, and
+  // a paragraph break inside a cell (e.g. exec_summary_left) cut that row
+  // in half: every column after the break spilled into a phantom row that
+  // never matched the month, so exec_summary_right read as blank even
+  // though the sheet had it. Now walks the text once, character by
+  // character, so line breaks inside quoted cells stay part of the cell.
   function parseCsv(text) {
-    const lines = text.trim().split('\n');
-    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const records = [];
+    let rec = [], cur = '', inQ = false;
+    const src = String(text || '').replace(/\r\n?/g, '\n');
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (inQ) {
+        if (c === '"') { if (src[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ',') { rec.push(cur); cur = ''; }
+      else if (c === '\n') { rec.push(cur); records.push(rec); rec = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || rec.length) { rec.push(cur); records.push(rec); }
+    if (!records.length) return [];
+    const headers = records[0].map(h => h.trim());
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const cols = parseCsvLine(lines[i]);
+    for (let i = 1; i < records.length; i++) {
+      const cols = records[i];
+      if (!cols.some(v => v.trim())) continue;
       const row = {};
-      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
       rows.push(row);
     }
     return rows;
@@ -11902,15 +11923,36 @@ async function initSnsExternal() {
     out.push(cur);
     return out;
   }
+  // FIXED 2026-10-07 per Jaclyn — this used to split the whole CSV on
+  // line breaks BEFORE handling quotes. Report insights are free text, and
+  // a paragraph break inside a cell (e.g. exec_summary_left) cut that row
+  // in half: every column after the break spilled into a phantom row that
+  // never matched the month, so exec_summary_right read as blank even
+  // though the sheet had it. Now walks the text once, character by
+  // character, so line breaks inside quoted cells stay part of the cell.
   function parseCsv(text) {
-    const lines = text.trim().split('\n');
-    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const records = [];
+    let rec = [], cur = '', inQ = false;
+    const src = String(text || '').replace(/\r\n?/g, '\n');
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (inQ) {
+        if (c === '"') { if (src[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ',') { rec.push(cur); cur = ''; }
+      else if (c === '\n') { rec.push(cur); records.push(rec); rec = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || rec.length) { rec.push(cur); records.push(rec); }
+    if (!records.length) return [];
+    const headers = records[0].map(h => h.trim());
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const cols = parseCsvLine(lines[i]);
+    for (let i = 1; i < records.length; i++) {
+      const cols = records[i];
+      if (!cols.some(v => v.trim())) continue;
       const row = {};
-      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
       rows.push(row);
     }
     return rows;
@@ -12196,15 +12238,36 @@ async function initSnsExternal() {
     out.push(cur);
     return out;
   }
+  // FIXED 2026-10-07 per Jaclyn — this used to split the whole CSV on
+  // line breaks BEFORE handling quotes. Report insights are free text, and
+  // a paragraph break inside a cell (e.g. exec_summary_left) cut that row
+  // in half: every column after the break spilled into a phantom row that
+  // never matched the month, so exec_summary_right read as blank even
+  // though the sheet had it. Now walks the text once, character by
+  // character, so line breaks inside quoted cells stay part of the cell.
   function parseCsv(text) {
-    const lines = text.trim().split('\n');
-    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const records = [];
+    let rec = [], cur = '', inQ = false;
+    const src = String(text || '').replace(/\r\n?/g, '\n');
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (inQ) {
+        if (c === '"') { if (src[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ',') { rec.push(cur); cur = ''; }
+      else if (c === '\n') { rec.push(cur); records.push(rec); rec = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || rec.length) { rec.push(cur); records.push(rec); }
+    if (!records.length) return [];
+    const headers = records[0].map(h => h.trim());
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const cols = parseCsvLine(lines[i]);
+    for (let i = 1; i < records.length; i++) {
+      const cols = records[i];
+      if (!cols.some(v => v.trim())) continue;
       const row = {};
-      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
       rows.push(row);
     }
     return rows;
@@ -12650,15 +12713,36 @@ async function initSnsExternal() {
     out.push(cur);
     return out;
   }
+  // FIXED 2026-10-07 per Jaclyn — this used to split the whole CSV on
+  // line breaks BEFORE handling quotes. Report insights are free text, and
+  // a paragraph break inside a cell (e.g. exec_summary_left) cut that row
+  // in half: every column after the break spilled into a phantom row that
+  // never matched the month, so exec_summary_right read as blank even
+  // though the sheet had it. Now walks the text once, character by
+  // character, so line breaks inside quoted cells stay part of the cell.
   function parseCsv(text) {
-    const lines = text.trim().split('\n');
-    const headers = parseCsvLine(lines[0]).map(h => h.replace(/^"|"$/g,'').trim());
+    const records = [];
+    let rec = [], cur = '', inQ = false;
+    const src = String(text || '').replace(/\r\n?/g, '\n');
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (inQ) {
+        if (c === '"') { if (src[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === ',') { rec.push(cur); cur = ''; }
+      else if (c === '\n') { rec.push(cur); records.push(rec); rec = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || rec.length) { rec.push(cur); records.push(rec); }
+    if (!records.length) return [];
+    const headers = records[0].map(h => h.trim());
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const cols = parseCsvLine(lines[i]);
+    for (let i = 1; i < records.length; i++) {
+      const cols = records[i];
+      if (!cols.some(v => v.trim())) continue;
       const row = {};
-      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g,'').trim(); });
+      headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
       rows.push(row);
     }
     return rows;
