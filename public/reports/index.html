@@ -5516,8 +5516,12 @@ async function initSns() {
   const RETENTION_SHEET_ID = '1i94keQYY21aSh8KP-ZpvqO1MF2g0nX5ThMD93y3wU48';  // Subscriptions cache — confirmed correct directly from Jaclyn's own URL text 2026-07-28 (my prior 'KR' correction was wrong — misread a screenshot; P and R look nearly identical in that font). The real bug was ONLY the gid below, which pointed at a tab with pbj's data instead of évolis's.
   const RETENTION_GID      = '1364801955';                                   // 'evolis' tab, confirmed directly from Jaclyn's screenshot 2026-07-28 (previous gid 1742224413 was also wrong — different tab in the wrong file entirely)
 
-  const kpiValues = document.querySelectorAll('#m-opportunities .kpi-value');
-  const subsKpiEl = kpiValues[0] || null;
+  // FIXED 2026-10-06 per Jaclyn — this used to grab the FIRST .kpi-value
+  // inside #m-opportunities. When Subscribe & Save moved to Sales >
+  // Insights (2026-09-28), that selector stopped matching anything, so the
+  // value was computed but never written and the card sat on "—". Now
+  // targets the card by its own id, the same way retention already does.
+  const subsKpiEl = document.querySelector('#kpi-active-subs .kpi-value') || null;
   const retentionKpiEl = document.querySelector('#kpi-retention .kpi-value') || null;
 
   try {
