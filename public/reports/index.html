@@ -20467,7 +20467,10 @@ async function loadAuditResultsFromSheet() {
   function buildWebsitePage(monthYear) {
     const dateRange = pdfxText('#web-hdr-date').replace('📅', '').trim();
     const kpis = ['web-kpi-total-units', 'web-kpi-total-orders', 'web-kpi-avg-order', 'web-kpi-units-ads', 'web-kpi-units-organic'].map(pdfxKpi);
-    const rows = pdfxTableRows('web-tp-tbody');
+    // CHANGED 2026-10-07 per Jaclyn — PDF shows the top 7 products only.
+    // The live dashboard table is untouched and still lists every product;
+    // its rows are already sorted by units, so the first 7 are the top 7.
+    const rows = pdfxTableRows('web-tp-tbody').slice(0, 7);
     const insight = pdfxText('#web-insight-text');
     return '' +
       '<div class="pdfx-page">' +
@@ -21149,45 +21152,55 @@ async function loadAuditResultsFromSheet() {
     }));
   }
 
-  // Server has no Georgia; the Plantin font file doesn't load there
-  // either, so headings fell back to a plain sans. Gelasio is a free
-  // Google font built with the same metrics as Georgia — loading it and
-  // renaming it "Georgia" in this render document only means every
-  // existing `font-family: Georgia` rule keeps the dashboard's real line
-  // breaks, with no CSS changes needed anywhere else.
-  // FIXED 2026-10-06 per Jaclyn — headings in the server-rendered PDF
-  // were coming out in the wrong font. The previous version of this
-  // function hardcoded a Gelasio .woff2 URL that returns 404 (checked
-  // directly), and its @import fallback sat AFTER an @font-face rule,
-  // where CSS ignores it. Net effect: no Georgia, so every serif heading
-  // fell through to headless Chrome's bare default serif.
+  // REPLACED 2026-10-07 per Jaclyn — the PDF must use GEORGIA, the font
+  // the live dashboard actually shows (its Plantin/GT Walsheim files 404,
+  // so headings and KPI numbers fall back to the viewer's own Georgia).
+  // The Gelasio stand-in is gone entirely.
   //
-  // Now fetches Google's real, current Gelasio stylesheet at export time
-  // and renames font-family 'Gelasio' -> 'Georgia' inside it, so every
-  // existing Georgia rule (directly, or via --font-subheader after the
-  // Plantin file fails to load) resolves to Gelasio — same metrics as
-  // Georgia, so line breaks match the dashboard. The .woff2 files it
-  // points at live on fonts.gstatic.com, which render-pdf.js allows.
-  // Fallback if that fetch fails: load Gelasio by its own name and put
-  // it ahead of Georgia in the heading font variable.
-  // CHANGED 2026-10-07 per Jaclyn — Regular (400) ONLY, matching Skinside
-  // SEOUL's export (pdffonts on her PDF: Gelasio-Regular is the only serif
-  // embedded). Loading the real Bold/SemiBold made bold KPI values switch
-  // to Gelasio's actual Bold design, which reads as a different font;
-  // with Regular only, Chrome synthesizes bold from Regular, as Skinside's does.
-  const PDFX_GELASIO_CSS_URL = 'https://fonts.googleapis.com/css2?family=Gelasio&display=swap';
-  async function pdfxGetGeorgiaAliasCss() {
-    try {
-      const res = await fetch(PDFX_GELASIO_CSS_URL);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const css = await res.text();
-      if (!/@font-face/.test(css)) throw new Error('no @font-face rules in response');
-      return css.replace(/font-family:\s*['"]Gelasio['"]/g, "font-family: 'Georgia'");
-    } catch (e) {
-      console.warn('[pdf-export] Gelasio alias fetch failed, using direct Gelasio fallback:', e.message);
-      return "@import url('" + PDFX_GELASIO_CSS_URL + "');" +
-        ":root{--font-subheader:'Plantin MT Pro Italic','Gelasio',Georgia,'Times New Roman',serif;}";
+  // The PDF server (render-pdf.js, headless Chrome on Linux) has no Georgia
+  // installed, so it can only print Georgia if Georgia's font files are
+  // served from this site. render-pdf.js already allows requests to this
+  // deployment's own host. Regular + Bold cover every weight the dashboard
+  // uses (600 resolves to Bold, same as Georgia on a Mac/PC).
+  //
+  // Returns the @font-face CSS when both files are reachable, or null.
+  // On null, pdfxRenderPagesToPdf skips the server and renders in the
+  // viewer's own browser instead, which has real Georgia — so the PDF is
+  // never printed in a substitute font.
+  // CHANGED 2026-10-07 per Jaclyn — the font files live in the repo's
+  // public/reports/ folder alongside index.html, not the site root. Each
+  // file is now looked for next to the dashboard page first (wherever it's
+  // served from), then /reports/, then the root — first one that answers
+  // with a real font file wins.
+  const PDFX_GEORGIA_FILES = [
+    { name: 'Georgia.ttf', weight: 400 },
+    { name: 'Georgia-Bold.ttf', weight: 700 },
+  ];
+  function pdfxGeorgiaCandidates(name) {
+    const urls = [
+      new URL(name, location.href).href,
+      location.origin + '/reports/' + name,
+      location.origin + '/' + name,
+    ];
+    return urls.filter((u, i) => urls.indexOf(u) === i);
+  }
+  async function pdfxFindFontUrl(name) {
+    for (const url of pdfxGeorgiaCandidates(name)) {
+      try {
+        const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+        const type = (res.headers.get('content-type') || '').toLowerCase();
+        if (res.ok && !type.includes('text/html') && !type.includes('text/plain')) return url;
+      } catch (e) { /* try the next location */ }
     }
+    return null;
+  }
+  async function pdfxGetGeorgiaFontCss() {
+    const found = await Promise.all(PDFX_GEORGIA_FILES.map(f => pdfxFindFontUrl(f.name)));
+    console.log('[pdf-export] Georgia font files:', PDFX_GEORGIA_FILES.map((f, i) => f.name + ' -> ' + (found[i] || 'NOT FOUND')).join(', '));
+    if (!found.every(Boolean)) return null;
+    return PDFX_GEORGIA_FILES.map((f, i) =>
+      "@font-face{font-family:'Georgia';src:url('" + found[i] + "') format('truetype');font-weight:" + f.weight + ";font-style:normal;}"
+    ).join('');
   }
 
 
@@ -21251,7 +21264,10 @@ async function loadAuditResultsFromSheet() {
     // handling of any kind.
 
     const styleBlocks = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('\n');
-    const georgiaAliasCss = await pdfxGetGeorgiaAliasCss();
+    const georgiaFontCss = await pdfxGetGeorgiaFontCss();
+    if (!georgiaFontCss) {
+      throw new Error('Georgia font files not found (looked next to this page, in /reports/, and at the site root) — rendering in the browser instead so headings stay in real Georgia');
+    }
     const linkBlocks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.outerHTML).join('\n');
 
     const printCss = `@page{size:8.5in 11in;margin:0}
@@ -21264,7 +21280,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       '<base href="' + pdfxEscape(location.href) + '">' +
       linkBlocks + styleBlocks +
       '<link rel="stylesheet" href="' + PDFX_SYMBOL_FONT_CSS + '">' +
-      '<style>' + georgiaAliasCss + '</style>' +
+      '<style>' + georgiaFontCss + '</style>' +
       '<style>' + printCss + '</style>' +
       '</head><body><div id="pdfx-root">' + clone.innerHTML + '</div></body></html>';
   }
