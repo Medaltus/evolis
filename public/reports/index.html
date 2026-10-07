@@ -6235,8 +6235,12 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols    = parseCsvLine(lines[i]);
-      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,''), 10);
-      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,''), 10);
+      // .replace(/,/g,'') added 2026-10-07 per Jaclyn — the revenue sheet
+      // started showing YEAR as "2,026" (thousands-comma number format),
+      // which parseInt read as 2 and the row was dropped. Same fix applied
+      // to every YEAR/MONTH parse in this file.
+      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,'').replace(/,/g, ''), 10);
+      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,'').replace(/,/g, ''), 10);
       const rev     = parseFloat((cols[revenueIdx] || '').replace(/^"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -6825,8 +6829,8 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
-      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -7210,8 +7214,8 @@ async function initSns() {
     if (monthIdx < 0 || yearIdx < 0 || revIdx < 0) return null;
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
-      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
+      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
       if (yy === year && mm === month) {
         return parseFloat((cols[revIdx] || '').replace(/^"|"$/g, '').replace(/[$,]/g, '')) || 0;
       }
@@ -7348,8 +7352,8 @@ async function initSns() {
         const rows = [];
         for (let i = 1; i < lines.length; i++) {
           const cols = splitLine(lines[i]);
-          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
-          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
+          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
           const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
           if (yr && mo >= 1 && mo <= 12) {
             if (yr < 2015 || yr > 2035) {
@@ -7738,8 +7742,8 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
-      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -8334,8 +8338,8 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols    = parseCsvLine(lines[i]);
-      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,''), 10);
-      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,''), 10);
+      const yr      = parseInt((cols[yearIdx]  || '').replace(/^"|"$/g,'').replace(/,/g, ''), 10);
+      const mo      = parseInt((cols[monthIdx] || '').replace(/^"|"$/g,'').replace(/,/g, ''), 10);
       const rev     = parseFloat((cols[revenueIdx] || '').replace(/^"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -8863,8 +8867,8 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
-      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -9377,8 +9381,8 @@ async function initSns() {
     const parsed = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,''), 10);
-      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,''), 10);
+      const yr   = parseInt((cols[yearIdx]  || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
+      const mo   = parseInt((cols[monthIdx] || '').replace(/^\"|"$/g,'').replace(/,/g, ''), 10);
       const rev  = parseFloat((cols[revenueIdx] || '').replace(/^\"|"$/g,'').replace(/[$,]/g,'')) || 0;
       if (yr && mo >= 1 && mo <= 12) {
         // Defensive: guards against corrupted YEAR cells at the source
@@ -10035,8 +10039,8 @@ async function initSns() {
     if (monthIdx < 0 || yearIdx < 0 || revIdx < 0) return null;
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
-      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+      const yy = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
+      const mm = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
       if (yy === year && mm === month) {
         return parseFloat((cols[revIdx] || '').replace(/^"|"$/g, '').replace(/[$,]/g, '')) || 0;
       }
@@ -10201,8 +10205,8 @@ async function initSns() {
         const rows = [];
         for (let i = 1; i < lines.length; i++) {
           const cols = splitLine(lines[i]);
-          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
-          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
+          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
           const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
           if (yr && mo >= 1 && mo <= 12) {
             if (yr < 2015 || yr > 2035) {
@@ -23243,8 +23247,8 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         const rows = [];
         for (let i = 1; i < lines.length; i++) {
           const cols = parseCsvLine(lines[i]);
-          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, ''), 10);
-          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, ''), 10);
+          const yr = parseInt((cols[yearIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
+          const mo = parseInt((cols[monthIdx] || '').replace(/^"|"$/g, '').replace(/,/g, ''), 10);
           const rev = parseAmt((cols[revenueIdx] || '').replace(/^"|"$/g, ''));
           if (yr && mo >= 1 && mo <= 12) {
             if (yr < 2015 || yr > 2035) {
