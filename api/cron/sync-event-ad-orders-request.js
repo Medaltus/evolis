@@ -77,7 +77,8 @@ async function requestBothReports(token, profileId, startDate, endDate, tabName)
   const spReportId = await requestReportWithRetry(
     token, profileId, 'spAdvertisedProduct', 'SPONSORED_PRODUCTS',
     { startDate, endDate }, ['advertiser'],
-    ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases14d', 'unitsSoldClicks14d', 'sales14d'],
+    // 7-day attribution (CHANGED 2026-10-08 — matches sync-advertising-request.js and the Ads console)
+    ['date', 'advertisedAsin', 'impressions', 'clicks', 'spend', 'purchases7d', 'unitsSoldClicks7d', 'sales7d'],
     `${tabName} (SP)`
   );
   // ADDED 2026-08-19 — see file header for the unverified 'date' column caveat.
