@@ -28,6 +28,7 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands                               = require('../config/brands');
 const sheets                               = require('../config/sheets');
 const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
+const { ptDate } = require('../_dates'); // ADDED 2026-10-06
 
 const HEADERS = [
   'order_id', 'date', 'status', 'order_total',
@@ -191,7 +192,9 @@ module.exports = async (req, res) => {
       const orderId = row['amazon-order-id'] || row['order-id'] || '';
       if (!orderId) continue;
 
-      const orderDate = (row['purchase-date'] || '').slice(0, 10);
+      // Pacific date of the order (CHANGED 2026-10-06 — was the UTC date, so
+      // an order at 9 PM Pacific was labeled the next day).
+      const orderDate = row['purchase-date'] ? ptDate(row['purchase-date']) : '';
       const year = orderDate ? parseInt(orderDate.slice(0, 4), 10) : '';
 
       outRows.push([
@@ -228,17 +231,35 @@ module.exports = async (req, res) => {
       const existingRaw = await readRows(sheets.orders, tabName);
       const key = r => `${Array.isArray(r) ? r[0] : r.order_id}||${Array.isArray(r) ? r[11] : r.sku}`;
 
+      // ADDED 2026-10-06 — a re-run REPLACES this event's year for this
+      // account's brands instead of only adding/updating. Needed because the
+      // request step used to use a UTC window: rows from the evening BEFORE
+      // the event got pulled in, and since this step never removed rows, a
+      // corrected (Pacific-time) re-run would have left them in place. Other
+      // years and the other account's brands are never touched, and nothing
+      // is cleared if this pull came back empty.
+      const eventYear     = String(metaMap[`report_start_${tabName}`] || '').slice(0, 4);
+      const ownBrandIds   = new Set(accountBrands.map(b => b.id));
+      const yearIdx       = HEADERS.indexOf('year');
+      const brandIdx      = HEADERS.indexOf('brand');
+      const replaceThisYear = outRows.length > 0 && /^\d{4}$/.test(eventYear);
+      let replacedCount = 0;
+
       const merged = new Map();
       (existingRaw || []).forEach(r => {
         const rowArr = Array.isArray(r) ? r : HEADERS.map(h => r[h] ?? '');
+        if (replaceThisYear && String(rowArr[yearIdx]) === eventYear && ownBrandIds.has(rowArr[brandIdx])) {
+          replacedCount++;
+          return; // replaced by this run's fresh pull below
+        }
         merged.set(key(rowArr), rowArr);
       });
       outRows.forEach(r => merged.set(key(r), r));
 
       const finalRows = Array.from(merged.values());
       await replaceRows(sheets.orders, tabName, HEADERS, finalRows, token);
-      console.log(`[sync-event-orders-process] ${tabName} — upserted ${outRows.length} rows this run, ${finalRows.length} total rows across all years`);
-      results.push({ tab: tabName, status: 'ok', rowsThisRun: outRows.length, totalRows: finalRows.length });
+      console.log(`[sync-event-orders-process] ${tabName} — replaced ${replacedCount} existing ${eventYear} rows with ${outRows.length} fresh, ${finalRows.length} total rows across all years`);
+      results.push({ tab: tabName, status: 'ok', year: eventYear, rowsThisRun: outRows.length, replacedExisting: replacedCount, totalRows: finalRows.length });
 
       metaMap[`processed_${tabName}`] = 'true';
     } catch (err) {
