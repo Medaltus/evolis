@@ -88,7 +88,19 @@ async function requestBothReports(token, profileId, startDate, endDate, tabName)
     ['date', 'campaignName', 'campaignId', 'adGroupName', 'promotedAsin', 'promotedSku', 'impressions', 'clicks', 'cost', 'purchases', 'sales', 'unitsSold'],
     `${tabName} (SD)`
   );
-  return { spReportId, sdReportId };
+  // ADDED 2026-10-08 — Sponsored Brands. SB has no per-ASIN report, so this is
+  // the CAMPAIGN-level report (spend, clicks, purchases, sales per campaign
+  // per day). sync-event-ad-orders-process.js matches each campaign to its
+  // brand and writes one "SB:<brand>" row per brand per day, so SB sales are
+  // reported even though they aren't tied to a specific ASIN. SB attribution
+  // is 14-day — Amazon offers no 7-day variant for Sponsored Brands.
+  const sbReportId = await requestReportWithRetry(
+    token, profileId, 'sbCampaigns', 'SPONSORED_BRANDS',
+    { startDate, endDate }, ['campaign'],
+    ['date', 'campaignName', 'impressions', 'clicks', 'cost', 'purchases', 'sales'],
+    `${tabName} (SB)`
+  );
+  return { spReportId, sdReportId, sbReportId };
 }
 
 module.exports = async (req, res) => {
@@ -134,8 +146,8 @@ module.exports = async (req, res) => {
     const overrideEnd = overrideEndRaw > safeBefore ? safeBefore.slice(0, 10) : req.query.endDate;
     const tabName = req.query.outTab;
 
-    const { spReportId, sdReportId } = await requestBothReports(overrideToken, overrideProfileId, req.query.startDate, overrideEnd, tabName);
-    if (!spReportId && !sdReportId) return res.status(500).json({ error: 'Both report requests failed for override' });
+    const { spReportId, sdReportId, sbReportId } = await requestBothReports(overrideToken, overrideProfileId, req.query.startDate, overrideEnd, tabName);
+    if (!spReportId && !sdReportId && !sbReportId) return res.status(500).json({ error: 'Both report requests failed for override' });
 
     try {
       const metaToken = await ensureTab(sheets.adOrders, META_TAB, META_HEADERS);
@@ -145,6 +157,7 @@ module.exports = async (req, res) => {
 
       metaMap2[`report_id_sp_${tabName}`] = [`report_id_sp_${tabName}`, spReportId || '', ts];
       metaMap2[`report_id_sd_${tabName}`] = [`report_id_sd_${tabName}`, sdReportId || '', ts];
+      metaMap2[`report_id_sb_${tabName}`] = [`report_id_sb_${tabName}`, sbReportId || '', ts];
       metaMap2[`processed_${tabName}`]    = [`processed_${tabName}`, 'false', ts];
       const existingTargets = ((metaMap2['target_tabs'] || [])[1] || '').split(',').filter(Boolean);
       metaMap2['target_tabs']  = ['target_tabs', Array.from(new Set([...existingTargets, tabName])).join(','), ts];
@@ -152,10 +165,10 @@ module.exports = async (req, res) => {
 
       await replaceRows(sheets.adOrders, META_TAB, META_HEADERS, Object.values(metaMap2), metaToken);
     } catch (err) {
-      return res.status(500).json({ error: 'Failed to write meta for override', detail: err.message, spReportId, sdReportId });
+      return res.status(500).json({ error: 'Failed to write meta for override', detail: err.message, spReportId, sdReportId, sbReportId });
     }
 
-    return res.status(200).json({ mode: 'manual_override', outTab: tabName, spReportId, sdReportId, start: req.query.startDate, end: overrideEnd });
+    return res.status(200).json({ mode: 'manual_override', outTab: tabName, spReportId, sdReportId, sbReportId, start: req.query.startDate, end: overrideEnd });
   }
 
   // ── 1. Read Events tab, apply optional ?tab= filter ─────────────────────
@@ -217,11 +230,11 @@ module.exports = async (req, res) => {
 
   const reportIdsByTab = {};
   for (const m of matched) {
-    const { spReportId, sdReportId } = await requestBothReports(token, profileId, m.startDate, m.endDate, m.tabName);
-    reportIdsByTab[m.tabName] = { spReportId, sdReportId };
+    const { spReportId, sdReportId, sbReportId } = await requestBothReports(token, profileId, m.startDate, m.endDate, m.tabName);
+    reportIdsByTab[m.tabName] = { spReportId, sdReportId, sbReportId };
   }
 
-  const anySucceeded = Object.values(reportIdsByTab).some(r => r.spReportId || r.sdReportId);
+  const anySucceeded = Object.values(reportIdsByTab).some(r => r.spReportId || r.sdReportId || r.sbReportId);
   if (!anySucceeded) return res.status(500).json({ error: 'All report requests failed', matched, skipped });
 
   // ── 3. Write meta (accumulates across separate single-event calls) ─────
@@ -232,14 +245,15 @@ module.exports = async (req, res) => {
     (rawMeta || []).forEach(r => { if (r.KEY) metaMap[r.KEY] = [r.KEY, r.VALUE, r.UPDATED_AT]; });
 
     for (const m of matched) {
-      const { spReportId, sdReportId } = reportIdsByTab[m.tabName] || {};
-      if (!spReportId && !sdReportId) continue;
+      const { spReportId, sdReportId, sbReportId } = reportIdsByTab[m.tabName] || {};
+      if (!spReportId && !sdReportId && !sbReportId) continue;
       metaMap[`report_id_sp_${m.tabName}`] = [`report_id_sp_${m.tabName}`, spReportId || '', ts];
       metaMap[`report_id_sd_${m.tabName}`] = [`report_id_sd_${m.tabName}`, sdReportId || '', ts];
+      metaMap[`report_id_sb_${m.tabName}`] = [`report_id_sb_${m.tabName}`, sbReportId || '', ts];
       metaMap[`processed_${m.tabName}`]    = [`processed_${m.tabName}`, 'false', ts];
     }
     const existingTargets = ((metaMap['target_tabs'] || [])[1] || '').split(',').filter(Boolean);
-    const newTargets = matched.filter(m => reportIdsByTab[m.tabName]?.spReportId || reportIdsByTab[m.tabName]?.sdReportId).map(m => m.tabName);
+    const newTargets = matched.filter(m => reportIdsByTab[m.tabName]?.spReportId || reportIdsByTab[m.tabName]?.sdReportId || reportIdsByTab[m.tabName]?.sbReportId).map(m => m.tabName);
     const allTargets = Array.from(new Set([...existingTargets, ...newTargets]));
     metaMap['target_tabs']  = ['target_tabs', allTargets.join(','), ts];
     metaMap['ad_profile_id'] = ['ad_profile_id', String(profileId), ts];
