@@ -12275,6 +12275,23 @@ async function initSnsExternal() {
       if (!rows.length) return; // leave the existing static text in place rather than blank it on a fetch failure
       const last = rows[rows.length - 1];
 
+      // ADDED 2026-10-08 per Jaclyn — each event's PDF page shows that
+      // event's MOST RECENT dates in its header band. The Events tab is one
+      // row per event per year, newest at the bottom, so the last row for
+      // each name wins. Keyed by the exact Event Name in the sheet (e.g.
+      // "Prime Big Deal Days"), which is also each event page's label.
+      const isTbdRaw = v => !v || /^tbd$/i.test(v);
+      const datesByName = {};
+      rows.forEach(r => {
+        const nm = (r['event name'] || '').trim();
+        if (!nm) return;
+        const st = (r.start_date || '').trim(), en = (r.end_date || '').trim();
+        if (isTbdRaw(st) || isTbdRaw(en)) { datesByName[nm] = 'Dates TBD'; return; }
+        const a = fmtStrategyDate(st), b = fmtStrategyDate(en);
+        datesByName[nm] = (a && b) ? `${a} \u2013 ${b}` : 'Dates TBD';
+      });
+      window._pdfxEventDatesByName = datesByName;
+
       const rawName = (last['event name'] || '').trim();
       if (rawName) {
         headlineEl.textContent = /^amazon\b/i.test(rawName) ? rawName : `Amazon ${rawName}`;
@@ -21065,14 +21082,7 @@ async function loadAuditResultsFromSheet() {
       pdfxStrategyItem('Review Acceleration', 'Activate follow-up sequences to drive <strong>organic review growth from event purchasers</strong> — the highest-quality acquisition window of the year.') +
       pdfxStrategyItem('Comprehensive Reporting', 'Deliver clear post-event analysis — <strong>what worked, what didn\u2019t, and how to capitalize</strong> on gains for the next event cycle.')
     );
-    // Green accent, matching .evs-outlook exactly — was wrongly using the
-    // orange/sand "key insight" treatment before. Those are two visually
-    // distinct callout styles on the live dashboard; this one was always
-    // meant to be green.
-    const outlook = '<div class="pdfx-card" style="background:rgba(36,233,163,.08);border:none;border-left:3px solid #1db88a;border-radius:6px;padding:10px 14px;margin-bottom:0;">' +
-      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#1db88a;margin-bottom:4px;">Strategic Outlook</div>' +
-      '<div style="font-size:9.5px;color:var(--navy);line-height:1.4;">Promotional events are the highest-traffic sales windows of the year. The brands that win invest in the 2–3 weeks prior and capitalize in the week after. <strong>Preparation, real-time agility, and disciplined follow-through are the three variables we control.</strong></div>' +
-      '</div>';
+    // Strategic Outlook card REMOVED 2026-10-08 per Jaclyn.
 
     // Combined onto ONE page — was 2 pages before. Fit is genuinely tight
     // with 16 total sub-items across 3 phases plus the outlook block;
@@ -21093,10 +21103,15 @@ async function loadAuditResultsFromSheet() {
     const eventHeaderTitle = pdfxText('#evs-headline') || monthYear;
     const eventHeaderDates = pdfxText('#evs-dates') || '';
 
-    const page1 = '<div class="pdfx-page"><div class="pdfx-inner">' +
+    // Footer ADDED 2026-10-08 per Jaclyn — Strategy is the report's last
+    // page now, so the medaltus footer sits at the bottom of it. The flex
+    // column pins the footer to the page bottom when there's room and lets
+    // it flow right after the content when there isn't.
+    const page1 = '<div class="pdfx-page" style="display:flex;flex-direction:column;"><div class="pdfx-inner" style="flex:1;display:flex;flex-direction:column;">' +
       pdfxHeaderBand(eventHeaderTitle, 'Events', eventHeaderDates) +
       '<div class="pdfx-chlabel">Event Strategy</div>' +
-      leadUp + during + leadOut + outlook +
+      leadUp + during + leadOut +
+      '<div style="margin-top:auto;">' + pdfxFooter(monthYear) + '</div>' +
       '</div></div>';
     return page1;
   }
@@ -21128,14 +21143,40 @@ async function loadAuditResultsFromSheet() {
             .map(pdfxKpiCardHtml).join('') +
         '</div>'
       : '';
-    const chartHtml = hasKpis
-      ? '<div class="pdfx-card" style="margin-top:14px;"><div class="pdfx-card-title">Top Sellers — Units Sold</div>' + pdfxChartBlock('_' + prefix + 'TopSellersChart', undefined, undefined, 'pdfx-img-' + prefix + 'topsellers') + '</div>'
+    // ADDED 2026-10-08 per Jaclyn — the 2025/2026 legend is separate HTML
+    // beside the live chart (#<prefix>-legend), not part of the canvas, so
+    // the captured chart image never had it. Rebuilt here from that same
+    // element, so the years and colors always match the bars.
+    const legendEl = pdfxById(prefix + '-legend');
+    const legendHtml = legendEl
+      ? '<div style="display:flex;align-items:center;gap:14px;font-size:11px;color:var(--muted);">' +
+          Array.from(legendEl.querySelectorAll('span')).map(function (sp) {
+            const sw = sp.querySelector('i');
+            const color = sw ? (sw.style.background || sw.style.backgroundColor) : '';
+            return '<span style="display:flex;align-items:center;gap:6px;"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:' + color + ';"></span>' + pdfxEscape(sp.textContent.trim()) + '</span>';
+          }).join('') +
+        '</div>'
       : '';
+    const chartHtml = hasKpis
+      ? '<div class="pdfx-card" style="margin-top:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+            '<div class="pdfx-card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>' + legendHtml +
+          '</div>' +
+          pdfxChartBlock('_' + prefix + 'TopSellersChart', undefined, undefined, 'pdfx-img-' + prefix + 'topsellers') +
+        '</div>'
+      : '';
+
+    // ADDED 2026-10-08 per Jaclyn — header band set up like the Strategy
+    // page: the event's name as the title (fixed per page, "Amazon"
+    // prefixed the same way Strategy does) and that event's most recent
+    // dates from the Events tab underneath, instead of the report month.
+    const eventTitle = /^amazon\b/i.test(eventLabel) ? eventLabel : 'Amazon ' + eventLabel;
+    const eventDatesLabel = (window._pdfxEventDatesByName && window._pdfxEventDatesByName[eventLabel]) || '';
 
     return '' +
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
-          pdfxHeaderBand(monthYear, 'Events') +
+          pdfxHeaderBand(eventTitle, 'Events', eventDatesLabel) +
           '<div class="pdfx-chlabel">' + pdfxEscape(eventLabel) + '</div>' +
           datesHtml +
           '<div class="pdfx-card"><div class="pdfx-card-title">' + pdfxEscape(headline) + '</div><div style="font-size:11.5px;color:#48557a;line-height:1.6;">' + body + '</div></div>' +
