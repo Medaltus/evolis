@@ -39,6 +39,7 @@ const { spRequest }                        = require('../_spauth');
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                               = require('../config/sheets');
 const { getAccount, brandsForAccount, metaTabFor } = require('../_account');
+const { ptStartOfDayUtc, ptEndOfDayUtc } = require('../_dates'); // ADDED 2026-10-06
 
 // META_TAB is per account — set inside the handler via metaTabFor().
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
@@ -150,20 +151,27 @@ module.exports = async (req, res) => {
 
     // Cap the end at "now minus buffer" if the event is still in progress or
     // hasn't happened yet — Amazon has no order data for the future.
-    const cappedEnd = `${endDate}T23:59:59Z` > safeBefore ? safeBefore : `${endDate}T23:59:59Z`;
+    // FIXED 2026-10-06 — event days are PACIFIC days (Amazon US runs its
+    // events on Pacific time). This used to request 00:00–23:59 UTC, which
+    // pulled in the evening before the event and dropped the last evening
+    // of it (7–8 hours each). Convert the event's dates to the exact UTC
+    // instants of Pacific midnight → 23:59:59, daylight saving included.
+    const ptStart   = ptStartOfDayUtc(startDate);
+    const ptEnd     = ptEndOfDayUtc(endDate);
+    const cappedEnd = ptEnd > safeBefore ? safeBefore : ptEnd;
 
     // FIXED 2026-10-05 — an event that hasn't STARTED yet (e.g. Prime Big
     // Deal Days on 2026-10-05, starting 10-06) had its end capped to "now"
     // while its start stayed in the future, producing an inverted range
     // (start after end) that Amazon rejects. Nothing to pull until it starts.
-    if (`${startDate}T00:00:00Z` >= cappedEnd) {
+    if (ptStart >= cappedEnd) {
       skipped.push({ tabName: target.tabName, reason: `"${best['Event Name']}" hasn't started yet (starts ${startDate})` });
       continue;
     }
 
     matched.push({
       tabName: target.tabName,
-      start: `${startDate}T00:00:00Z`,
+      start: ptStart,
       end: cappedEnd,
       matchedEventName: best['Event Name'],
     });
