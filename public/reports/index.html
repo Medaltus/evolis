@@ -12560,6 +12560,11 @@ async function initSnsExternal() {
     const legendEl = document.getElementById('pd-legend');
     if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>2025</span><span><i style="background:#1b2559;"></i>2026</span>`;
 
+    // ADDED 2026-10-08 per Jaclyn — the PDF draws this chart as HTML (real,
+    // selectable text) from these exact rows, instead of a canvas image.
+    window._pdfxTopSellers = window._pdfxTopSellers || {};
+    window._pdfxTopSellers['pd'] = entries.map(e => ({ name: e.name, prev: e.prev, curr: e.curr, pct: pct(e.curr, e.prev) }));
+
     // Custom plugin — Chart.js has no built-in per-bar label, and adding
     // chartjs-plugin-datalabels as a new dependency felt like more risk than
     // this needed, so this is scoped to just this one chart instance.
@@ -12654,8 +12659,8 @@ async function initSnsExternal() {
       data: {
         labels: entries.map(e => e.name),
         datasets: [
-          { label: 'Prime Day 2025', data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3 },
-          { label: 'Prime Day 2026', data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3 },
+          { label: 'Prime Day 2025', data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3, categoryPercentage: 0.6, barPercentage: 0.9 },
+          { label: 'Prime Day 2026', data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3, categoryPercentage: 0.6, barPercentage: 0.9 },
         ],
       },
       plugins: [yoyLabelPlugin],
@@ -13020,6 +13025,11 @@ async function initSnsExternal() {
     const legendEl = document.getElementById(`${prefix}-legend`);
     if (legendEl) legendEl.innerHTML = `<span><i style="background:#8a94a6;"></i>${prevYear}</span><span><i style="background:#1b2559;"></i>${currYear}</span>`;
 
+    // ADDED 2026-10-08 per Jaclyn — the PDF draws this chart as HTML (real,
+    // selectable text) from these exact rows, instead of a canvas image.
+    window._pdfxTopSellers = window._pdfxTopSellers || {};
+    window._pdfxTopSellers[prefix] = entries.map(e => ({ name: e.name, prev: e.prev, curr: e.curr, pct: pct(e.curr, e.prev) }));
+
     const yoyLabelPlugin = {
       id: `${prefix}YoyLabels`,
       afterDatasetsDraw(chart) {
@@ -13087,8 +13097,8 @@ async function initSnsExternal() {
       data: {
         labels: entries.map(e => e.name),
         datasets: [
-          { label: `${eventLabel} ${prevYear}`, data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3 },
-          { label: `${eventLabel} ${currYear}`, data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3 },
+          { label: `${eventLabel} ${prevYear}`, data: entries.map(e => e.prev), backgroundColor: '#8a94a6', borderRadius: 3, categoryPercentage: 0.6, barPercentage: 0.9 },
+          { label: `${eventLabel} ${currYear}`, data: entries.map(e => e.curr), backgroundColor: '#1b2559', borderRadius: 3, categoryPercentage: 0.6, barPercentage: 0.9 },
         ],
       },
       plugins: [yoyLabelPlugin],
@@ -21157,12 +21167,46 @@ async function loadAuditResultsFromSheet() {
           }).join('') +
         '</div>'
       : '';
+    // CHANGED 2026-10-08 per Jaclyn — Top Sellers is drawn as HTML in the
+    // PDF, so product names, bar values, legend and % pills all export as
+    // real text (on the canvas they were part of the image), with a clear
+    // gap between products. Built from the same rows the live chart uses
+    // (window._pdfxTopSellers, saved by buildTopSellersChart); falls back
+    // to the captured chart image if those rows aren't available.
+    const tsRows = (window._pdfxTopSellers && window._pdfxTopSellers[prefix]) || null;
+    let topSellersBody;
+    if (tsRows && tsRows.length) {
+      const maxV = Math.max(1, ...tsRows.map(r => Math.max(r.prev, r.curr)));
+      const bar = function (v, color) {
+        const w = (v / maxV) * 100;
+        const inside = w >= 12;
+        return '<div style="display:flex;align-items:center;height:12px;">' +
+          '<div style="width:' + w.toFixed(1) + '%;min-width:' + (v > 0 ? 2 : 0) + 'px;height:12px;background:' + color + ';border-radius:2px;' +
+            (inside ? 'display:flex;align-items:center;justify-content:flex-end;padding-right:5px;box-sizing:border-box;color:#fff;font-size:8.5px;font-weight:600;' : '') + '">' +
+            (inside ? v : '') + '</div>' +
+          (inside ? '' : '<span style="margin-left:5px;font-size:8.5px;font-weight:600;color:#8a94a6;">' + v + '</span>') +
+        '</div>';
+      };
+      topSellersBody = tsRows.map(function (r) {
+        const good = r.pct >= 0;
+        const pill = '<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:8.5px;font-weight:700;' +
+          (good ? 'background:rgba(36,233,163,.15);color:#1a9b6f;' : 'background:rgba(219,55,45,.12);color:#c0392b;') + '">' +
+          (r.pct > 0 ? '+' : '') + r.pct + '%</span>';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;">' +
+          '<div style="width:140px;flex-shrink:0;text-align:right;font-size:9.5px;color:#48557a;line-height:1.25;">' + pdfxEscape(r.name) + '</div>' +
+          '<div style="flex:1;display:flex;flex-direction:column;gap:3px;">' + bar(r.prev, '#8a94a6') + bar(r.curr, '#1b2559') + '</div>' +
+          '<div style="width:50px;flex-shrink:0;">' + pill + '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      topSellersBody = pdfxChartBlock('_' + prefix + 'TopSellersChart', undefined, undefined, 'pdfx-img-' + prefix + 'topsellers');
+    }
     const chartHtml = hasKpis
       ? '<div class="pdfx-card" style="margin-top:14px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
             '<div class="pdfx-card-title" style="margin-bottom:0;">Top Sellers — Units Sold</div>' + legendHtml +
           '</div>' +
-          pdfxChartBlock('_' + prefix + 'TopSellersChart', undefined, undefined, 'pdfx-img-' + prefix + 'topsellers') +
+          topSellersBody +
         '</div>'
       : '';
 
