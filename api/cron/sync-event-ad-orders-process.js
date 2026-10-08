@@ -44,7 +44,7 @@
 const { getAdToken, getSellerId }          = require('../_spauth');
 const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { isoDate } = require('../_dates'); // ADDED 2026-10-08
-const { identifyBrand } = require('./sync-advertising-process'); // ADDED 2026-10-08 — same campaign→brand list as the daily ads cron
+const { identifyBrand } = require('../_campaign-brands'); // ADDED 2026-10-08 — campaign→brand list (copy of sync-advertising-process.js's)
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
