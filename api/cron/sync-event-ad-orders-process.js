@@ -43,6 +43,7 @@
 
 const { getAdToken, getSellerId }          = require('../_spauth');
 const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
+const { isoDate } = require('../_dates'); // ADDED 2026-10-08
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
@@ -133,16 +134,23 @@ module.exports = async (req, res) => {
       });
     }
 
-    const bothPending = spOutRows === 'pending' && sdOutRows === 'pending';
     const bothMissingOrFailed = (!spReportId || spOutRows === 'failed') && (!sdReportId || sdOutRows === 'failed');
-
-    if (bothPending) { results.push({ tab: tabName, status: 'pending' }); continue; }
     if (bothMissingOrFailed) { results.push({ tab: tabName, status: 'failed' }); metaUpdates[`processed_${tabName}`] = 'true'; continue; }
 
-    const newRows = [
+    // CHANGED 2026-10-08 — wait until BOTH report types are finished (or
+    // definitively failed) before writing. Each ASIN/day row is now the SUM
+    // of SP + SD (see aggregateByAsinDate), so writing one type now and the
+    // other later would overwrite the first half of that sum.
+    if (spOutRows === 'pending' || sdOutRows === 'pending') {
+      results.push({ tab: tabName, status: 'pending', sp: Array.isArray(spOutRows) ? 'ready' : spOutRows, sd: Array.isArray(sdOutRows) ? 'ready' : sdOutRows });
+      continue;
+    }
+
+    const rawRowCount = (Array.isArray(spOutRows) ? spOutRows.length : 0) + (Array.isArray(sdOutRows) ? sdOutRows.length : 0);
+    const newRows = aggregateByAsinDate([
       ...(Array.isArray(spOutRows) ? spOutRows : []),
       ...(Array.isArray(sdOutRows) ? sdOutRows : []),
-    ];
+    ]);
 
     if (newRows.length === 0) {
       // Neither produced real rows this run (one or both still pending) —
@@ -151,12 +159,16 @@ module.exports = async (req, res) => {
       continue;
     }
 
-    // Upsert keyed by asin+purchase_date, NOT a full replace — same fix
-    // applied to sync-event-orders-process.js. A run for one year's
-    // event must never wipe out a different year's rows already sitting
-    // in this tab (e.g. a manually-merged 2025 backfill), and SP/SD rows
-    // for the same asin+date are independent entries (different ad
-    // products), not the same key — see keyOf below.
+    // Upsert keyed by asin+purchase_date, NOT a full replace — a run for
+    // one year's event must never wipe out a different year's rows already
+    // in this tab. newRows already has exactly one row per asin+date (all
+    // campaigns, SP + SD summed — see aggregateByAsinDate).
+    //
+    // ADDED 2026-10-08 — a re-run first removes this account's existing rows
+    // inside this pull's date window, so rows written by the old collapsing
+    // logic (one campaign's numbers per ASIN/day) are replaced rather than
+    // left behind. The other account's rows (different brands/ASINs) and
+    // other years are never touched.
     try {
       const tabToken = await ensureTab(sheets.adOrders, tabName, HEADERS);
       const existingRaw = await readRows(sheets.adOrders, tabName);
@@ -165,17 +177,30 @@ module.exports = async (req, res) => {
         return `${arr[0]}||${arr[10]}`; // asin||purchase_date
       };
 
+      const newDates   = newRows.map(r => isoDate(r[10])).filter(Boolean).sort();
+      const windowFrom = newDates[0], windowTo = newDates[newDates.length - 1];
+      const ownBrandIds = new Set(accountBrands.map(b => b.id));
+      const newAsins    = new Set(newRows.map(r => r[0]));
+      let replacedExisting = 0;
+
       const merged = new Map();
       (existingRaw || []).forEach(r => {
         const rowArr = Array.isArray(r) ? r : HEADERS.map(h => r[h] ?? '');
+        const d = isoDate(rowArr[10]);
+        const inWindow = d && windowFrom && d >= windowFrom && d <= windowTo;
+        if (inWindow && (ownBrandIds.has(rowArr[1]) || newAsins.has(String(rowArr[0]).toUpperCase()))) {
+          replacedExisting++;
+          return;
+        }
         merged.set(keyOf(rowArr), rowArr);
       });
       newRows.forEach(r => merged.set(keyOf(r), r));
 
       const finalRows = Array.from(merged.values());
       await replaceRows(sheets.adOrders, tabName, HEADERS, finalRows, tabToken);
-      console.log(`[sync-event-ad-orders-process] ${tabName} — upserted ${newRows.length} rows this run, ${finalRows.length} total across all years`);
-      results.push({ tab: tabName, status: 'ok', rowsThisRun: newRows.length, totalRows: finalRows.length });
+      const totalPurchases = newRows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+      console.log(`[sync-event-ad-orders-process] ${tabName} — ${rawRowCount} report rows → ${newRows.length} ASIN/day rows (${totalPurchases} purchases), replaced ${replacedExisting} existing, ${finalRows.length} total`);
+      results.push({ tab: tabName, status: 'ok', reportRows: rawRowCount, rowsThisRun: newRows.length, purchases: totalPurchases, replacedExisting, window: windowFrom ? `${windowFrom} → ${windowTo}` : null, totalRows: finalRows.length });
       // Only mark fully processed once BOTH report types have either
       // succeeded or definitively failed — a still-pending one means
       // there's more to merge in later.
@@ -244,9 +269,12 @@ async function checkAndBuildRows(reportId, tabName, kind, token, profileId, asin
       const impressions = parseInt(r.impressions || 0, 10) || 0;
       const clicks       = parseInt(r.clicks || 0, 10) || 0;
       const spend        = round2(parseFloat(r.spend || 0) || 0);
-      const purchases    = parseInt(r.purchases14d || 0, 10) || 0;
-      const adUnits       = parseInt(r.unitsSoldClicks14d || 0, 10) || 0;
-      const sales         = round2(parseFloat(r.sales14d || 0) || 0);
+      // 7-day attribution (CHANGED 2026-10-08 — matches sync-advertising-
+      // process.js and the Amazon Ads console). Falls back to the 14-day
+      // fields for any report requested before this change.
+      const purchases    = parseInt(r.purchases7d ?? r.purchases14d ?? 0, 10) || 0;
+      const adUnits       = parseInt(r.unitsSoldClicks7d ?? r.unitsSoldClicks14d ?? 0, 10) || 0;
+      const sales         = round2(parseFloat(r.sales7d ?? r.sales14d ?? 0) || 0);
       const acos          = sales > 0 ? round2((spend / sales) * 100) : '';
       const purchaseDate  = r.date || r.reportDate || '';
       if (!purchaseDate) console.warn(`[sync-event-ad-orders-process] ${tabName} (sp) — row for ${asin} has no date field. Raw keys: ${Object.keys(r).join(',')}`);
@@ -344,4 +372,28 @@ function toEstIso(date) {
   }).formatToParts(date);
   const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
+
+// ADDED 2026-10-08 — real incident: Skinuva showed 6 Prime Big Deal Days
+// ad purchases here vs 99 in the Ads console. Amazon's advertised-product
+// reports return one row per ASIN PER CAMPAIGN/AD GROUP per day, and rows
+// were written keyed by asin+date, so each campaign's row overwrote the
+// previous one and only the last campaign's numbers survived (SP and SD
+// rows for the same ASIN/day overwrote each other too). This sums every
+// row for an ASIN/day into one row before anything is written.
+// Row layout matches HEADERS: [asin, brand, impressions, clicks, ad_units,
+// purchases, spend, sales, acos, last_updated, purchase_date, year].
+function aggregateByAsinDate(rows) {
+  const byKey = new Map();
+  for (const r of rows) {
+    if (!r || !r[0]) continue;
+    const key = `${r[0]}||${r[10]}`;
+    const t = byKey.get(key);
+    if (!t) { byKey.set(key, [...r]); continue; }
+    for (const i of [2, 3, 4, 5]) t[i] = (Number(t[i]) || 0) + (Number(r[i]) || 0);
+    for (const i of [6, 7])       t[i] = round2((Number(t[i]) || 0) + (Number(r[i]) || 0));
+    if (t[1] === 'unknown' && r[1] !== 'unknown') t[1] = r[1];
+  }
+  for (const t of byKey.values()) t[8] = t[7] > 0 ? round2((t[6] / t[7]) * 100) : '';
+  return Array.from(byKey.values());
 }
