@@ -1289,6 +1289,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <!-- Sales pages — added 2026-08-05 per Jaclyn. Default CHECKED so
              anyone who doesn't touch these gets today's existing behavior
              (all three Sales channels always included). -->
+        <!-- ADDED 2026-10-08 per Jaclyn — Overview = the cover page + executive
+             summary. Uncheck it to export just an event page (and Strategy). -->
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-overview" checked style="margin:0;"> Overview</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-amazon" checked style="margin:0;"> Amazon</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-website" checked style="margin:0;"> Website</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-walmart" checked style="margin:0;"> Walmart</label>
@@ -20425,6 +20428,21 @@ async function loadAuditResultsFromSheet() {
   // change meaningfully between the two), not an exact prediction — this
   // is why pdfxFitChartsToPage above still runs as a real safety net on
   // the actual final page too, not just this.
+  // REWRITTEN 2026-10-08 per Jaclyn — Prime Big Deal Days' Top Sellers
+  // chart printed narrower than its card. Per the porting notes, that's the
+  // capture/display mismatch: the chart was captured at the DASHBOARD's
+  // height, the page then ran over 11in, and pdfxFitChartsToPage shrank the
+  // image afterwards (width + height together). The old planner here
+  // couldn't prevent it: it measured with the chart at whatever size the
+  // live canvas happened to be, credited the whole overflow after a single
+  // 15% step, and only planned anything for overflowing pages.
+  //
+  // Now: build each registered page with every chart image forced to its
+  // exact print box (686px wide x defaultHeightPx), measure, and if the
+  // page is over 11in, take exactly that many pixels (+4px cushion) out of
+  // the page's charts, split by how much each can give above its floor.
+  // EVERY registered chart gets a planned height — fitting or not — so it's
+  // always captured at the size it prints at and never resized afterwards.
   async function pdfxPlanChartHeights(pageBuilders, fitCharts) {
     const heightOverrides = {};
     const probe = document.createElement('div');
@@ -20438,21 +20456,27 @@ async function loadAuditResultsFromSheet() {
         probe.innerHTML = buildFn();
         const pageEl = probe.querySelector('.pdfx-page');
         if (!pageEl) continue;
-        let projectedHeight = pageEl.scrollHeight;
-        if (projectedHeight <= PDFX_TARGET_PAGE_HEIGHT_PX) continue;
-        console.log('[pdf-export][qa] pdfxPlanChartHeights: page', key, 'projected to overflow —', projectedHeight + 'px vs target', PDFX_TARGET_PAGE_HEIGHT_PX + 'px');
-        for (const c of charts) {
+        const present = charts.filter(c => {
+          const img = pageEl.querySelector('#' + c.id);
+          if (!img) return false;
+          img.style.display = 'block';
+          img.style.width = PDFX_CARD_WIDTH_PX + 'px';
+          img.style.height = c.defaultHeightPx + 'px';
+          return true;
+        });
+        if (!present.length) continue;
+        const overflow = pageEl.scrollHeight - PDFX_TARGET_PAGE_HEIGHT_PX;
+        const room = present.reduce((a, c) => a + (c.defaultHeightPx - c.minHeightPx), 0);
+        present.forEach(c => {
           let h = c.defaultHeightPx;
-          let guard = 0;
-          while (projectedHeight > PDFX_TARGET_PAGE_HEIGHT_PX && h > c.minHeightPx && guard < 10) {
-            guard++;
-            h = Math.max(c.minHeightPx, Math.round(h * 0.85));
-            const gap = projectedHeight - PDFX_TARGET_PAGE_HEIGHT_PX;
-            projectedHeight -= gap; // this chart's shrink is credited toward closing the whole page's gap
+          if (overflow > 0 && room > 0) {
+            const share = (c.defaultHeightPx - c.minHeightPx) / room;
+            h = Math.max(c.minHeightPx, Math.floor(c.defaultHeightPx - overflow * share - 4));
           }
           heightOverrides[c.varName] = h;
-          console.log('[pdf-export][qa] pdfxPlanChartHeights: pre-sizing', c.varName, 'to', h + 'px (default was', c.defaultHeightPx + 'px)');
-        }
+        });
+        console.log('[pdf-export] chart heights planned to fit page', key, '— page', pageEl.scrollHeight + 'px vs', PDFX_TARGET_PAGE_HEIGHT_PX + 'px →',
+          present.map(c => c.varName + '=' + heightOverrides[c.varName] + 'px').join(', '));
       }
     } finally {
       probe.remove();
@@ -21522,6 +21546,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       // doesn't touch the picker gets today's existing "always included"
       // behavior; Events keys still default unchecked, unchanged.
       const includeSections = {
+        overview:      !!document.getElementById('pdf-include-overview')      && document.getElementById('pdf-include-overview').checked,
         amazon:        !!document.getElementById('pdf-include-amazon')        && document.getElementById('pdf-include-amazon').checked,
         website:       !!document.getElementById('pdf-include-website')       && document.getElementById('pdf-include-website').checked,
         walmart:       !!document.getElementById('pdf-include-walmart')       && document.getElementById('pdf-include-walmart').checked,
@@ -21654,15 +21679,23 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         includeSections.opportunities ? buildOpportunitiesPage(monthYear) : '',
       ].join('');
 
+      // CHANGED 2026-10-08 per Jaclyn — Strategy now comes AFTER the event
+      // pages, so an event + Strategy export reads event first, Strategy second.
       const eventPages = [
-        includeSections.strategy ? buildStrategyPage(monthYear) : '',
         includeSections.bss  ? buildEventPage('bss',  'Big Spring Sale',             monthYear) : '',
         includeSections.pd   ? buildEventPage('pd',   'Prime Day',                   monthYear) : '',
         includeSections.pbdd ? buildEventPage('pbdd', 'Prime Big Deal Days',         monthYear) : '',
         includeSections.bfcm ? buildEventPage('bfcm', 'Black Friday & Cyber Monday', monthYear) : '',
+        includeSections.strategy ? buildStrategyPage(monthYear) : '',
       ].join('');
 
-      root.innerHTML = buildCoverPage(monthYear) + salesMarketingPages + eventPages;
+      root.innerHTML = (includeSections.overview ? buildCoverPage(monthYear) : '') + salesMarketingPages + eventPages;
+      if (!root.querySelector('.pdfx-page')) {
+        alert('Nothing is checked under "Include in PDF" — check at least one page, then export again.');
+        root.style.display = 'none';
+        if (btn) { btn.disabled = false; btn.classList.remove('pdfx-loading'); }
+        return;
+      }
 
       // Positioned off-screen (not display:none, so it still has real layout
       // for html2canvas to measure/paint) rather than visible on top of
