@@ -53,6 +53,7 @@
 
 const { getAdToken, getSellerId }          = require('../_spauth');
 const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
+const { ptDate } = require('../_dates'); // ADDED 2026-10-06
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets                                = require('../config/sheets');
 const https                                 = require('https');
@@ -193,7 +194,11 @@ module.exports = async (req, res) => {
       continue;
     }
 
-    const cappedEnd = `${endDate}T23:59:59Z` > safeBefore ? safeBefore.slice(0, 10) : endDate;
+    // Ads reports use the ad profile's own (Pacific) calendar days, so cap a
+    // still-running event at TODAY IN PACIFIC. FIXED 2026-10-06 — this used
+    // the UTC date, which on a Pacific evening is already tomorrow.
+    const ptToday   = ptDate(new Date(safeBefore));
+    const cappedEnd = endDate > ptToday ? ptToday : endDate;
     matched.push({ tabName: target.tabName, startDate, endDate: cappedEnd, matchedEventName: best['Event Name'] });
   }
 
