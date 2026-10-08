@@ -74,4 +74,42 @@ function isoDate(value) {
   return normalizeOrderDate(value).iso || '';
 }
 
-module.exports = { normalizeOrderDate, isoDate };
+// ── Pacific time (ADDED 2026-10-06) ─────────────────────────────────────────
+// Amazon US runs its events (Prime Day, Prime Big Deal Days, BFCM…) and its
+// Seller Central/ads day boundaries on Pacific time. These convert a Pacific
+// calendar date to the exact UTC instants Amazon's APIs expect, handling
+// daylight saving (PDT = UTC-7, PST = UTC-8) per date.
+const PT = 'America/Los_Angeles';
+
+// Hours Pacific is behind UTC on a given YYYY-MM-DD (7 in PDT, 8 in PST).
+// Checked at noon UTC so the answer isn't thrown off by the 2 AM switch.
+function ptOffsetHours(isoDay) {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: PT, timeZoneName: 'shortOffset' })
+    .formatToParts(new Date(`${isoDay}T12:00:00Z`)).find(p => p.type === 'timeZoneName').value; // "GMT-7"
+  return -parseInt(name.replace('GMT', ''), 10) || 8;
+}
+
+function addDays(isoDay, n) {
+  const d = new Date(`${isoDay}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// 00:00:00 Pacific on isoDay, as a UTC timestamp string ("…Z").
+function ptStartOfDayUtc(isoDay) {
+  return new Date(Date.parse(`${isoDay}T00:00:00Z`) + ptOffsetHours(isoDay) * 3600000).toISOString().slice(0, 19) + 'Z';
+}
+
+// 23:59:59 Pacific on isoDay, as a UTC timestamp string ("…Z").
+function ptEndOfDayUtc(isoDay) {
+  return new Date(Date.parse(ptStartOfDayUtc(addDays(isoDay, 1))) - 1000).toISOString().slice(0, 19) + 'Z';
+}
+
+// The Pacific calendar date (YYYY-MM-DD) of a timestamp — e.g. an order's
+// purchase-date of "2026-10-07T04:10:00+00:00" is 2026-10-06 in Pacific.
+function ptDate(timestamp) {
+  const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (isNaN(d)) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: PT, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+module.exports = { normalizeOrderDate, isoDate, ptStartOfDayUtc, ptEndOfDayUtc, ptDate };
