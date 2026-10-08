@@ -44,6 +44,7 @@
 const { getAdToken, getSellerId }          = require('../_spauth');
 const { getAccount, brandsForAccount, metaTabFor, cronLabel } = require('../_account');
 const { isoDate } = require('../_dates'); // ADDED 2026-10-08
+const { identifyBrand } = require('./sync-advertising-process'); // ADDED 2026-10-08 — same campaign→brand list as the daily ads cron
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const brands                                = require('../config/brands');
 const sheets                                = require('../config/sheets');
@@ -105,13 +106,22 @@ module.exports = async (req, res) => {
   // all brands here instead of kept per-brand).
   const asinBrandMap = await buildAsinBrandMap(accountBrands); // this account's brands only (2026-10-06)
 
+  // Sponsored Brands campaign → brand (ADDED 2026-10-08). Same rule as the
+  // daily ads cron: a single-brand account (High On Love) owns every
+  // campaign in its own ad profile; NewDerm matches by campaign name.
+  const ownIds = new Set(accountBrands.map(b => b.id));
+  const campaignBrand = accountBrands.length === 1
+    ? (() => accountBrands[0].id)
+    : (name => { const t = identifyBrand(name); return t && ownIds.has(t) ? t : null; });
+
   const results = [];
   const metaUpdates = {};
 
   for (const tabName of targetTabs) {
     const spReportId = metaMap[`report_id_sp_${tabName}`];
     const sdReportId = metaMap[`report_id_sd_${tabName}`];
-    if (!spReportId && !sdReportId) { results.push({ tab: tabName, status: 'skipped', reason: 'no reportId of either type' }); continue; }
+    const sbReportId = metaMap[`report_id_sb_${tabName}`]; // ADDED 2026-10-08
+    if (!spReportId && !sdReportId && !sbReportId) { results.push({ tab: tabName, status: 'skipped', reason: 'no reportId of any type' }); continue; }
 
     if (metaMap[`processed_${tabName}`] === 'true' && !force) {
       results.push({ tab: tabName, status: 'already_processed' });
@@ -123,33 +133,37 @@ module.exports = async (req, res) => {
     // merges in additively on a later run once it's ready.
     const spOutRows = await checkAndBuildRows(spReportId, tabName, 'sp', token, metaMap['ad_profile_id'], asinBrandMap, now, req.query.debug === 'true');
     const sdOutRows = await checkAndBuildRows(sdReportId, tabName, 'sd', token, metaMap['ad_profile_id'], asinBrandMap, now, req.query.debug === 'true');
+    const sbOutRows = await checkAndBuildRows(sbReportId, tabName, 'sb', token, metaMap['ad_profile_id'], asinBrandMap, now, req.query.debug === 'true', campaignBrand);
 
-    if (req.query.debug === 'true' && (spOutRows?.debug || sdOutRows?.debug)) {
+    if (req.query.debug === 'true' && (spOutRows?.debug || sdOutRows?.debug || sbOutRows?.debug)) {
       return res.status(200).json({
         debug: true,
         tab: tabName,
         sp: spOutRows?.debug || null,
         sd: sdOutRows?.debug || null,
+        sb: sbOutRows?.debug || null,
         note: 'Check whether SD\'s first row has a real "date" field (see file header — this was never directly confirmed) before trusting purchase_date for SD in the real write path.',
       });
     }
 
-    const bothMissingOrFailed = (!spReportId || spOutRows === 'failed') && (!sdReportId || sdOutRows === 'failed');
+    const bothMissingOrFailed = (!spReportId || spOutRows === 'failed') && (!sdReportId || sdOutRows === 'failed') && (!sbReportId || sbOutRows === 'failed');
     if (bothMissingOrFailed) { results.push({ tab: tabName, status: 'failed' }); metaUpdates[`processed_${tabName}`] = 'true'; continue; }
 
     // CHANGED 2026-10-08 — wait until BOTH report types are finished (or
     // definitively failed) before writing. Each ASIN/day row is now the SUM
     // of SP + SD (see aggregateByAsinDate), so writing one type now and the
     // other later would overwrite the first half of that sum.
-    if (spOutRows === 'pending' || sdOutRows === 'pending') {
-      results.push({ tab: tabName, status: 'pending', sp: Array.isArray(spOutRows) ? 'ready' : spOutRows, sd: Array.isArray(sdOutRows) ? 'ready' : sdOutRows });
+    if (spOutRows === 'pending' || sdOutRows === 'pending' || sbOutRows === 'pending') {
+      const st = x => Array.isArray(x) ? 'ready' : (x || 'none');
+      results.push({ tab: tabName, status: 'pending', sp: st(spOutRows), sd: st(sdOutRows), sb: st(sbOutRows) });
       continue;
     }
 
-    const rawRowCount = (Array.isArray(spOutRows) ? spOutRows.length : 0) + (Array.isArray(sdOutRows) ? sdOutRows.length : 0);
+    const rawRowCount = [spOutRows, sdOutRows, sbOutRows].reduce((n, x) => n + (Array.isArray(x) ? x.length : 0), 0);
     const newRows = aggregateByAsinDate([
       ...(Array.isArray(spOutRows) ? spOutRows : []),
       ...(Array.isArray(sdOutRows) ? sdOutRows : []),
+      ...(Array.isArray(sbOutRows) ? sbOutRows : []),
     ]);
 
     if (newRows.length === 0) {
@@ -206,7 +220,8 @@ module.exports = async (req, res) => {
       // there's more to merge in later.
       const spDone = !spReportId || Array.isArray(spOutRows) || spOutRows === 'failed';
       const sdDone = !sdReportId || Array.isArray(sdOutRows) || sdOutRows === 'failed';
-      if (spDone && sdDone) metaUpdates[`processed_${tabName}`] = 'true';
+      const sbDone = !sbReportId || Array.isArray(sbOutRows) || sbOutRows === 'failed';
+      if (spDone && sdDone && sbDone) metaUpdates[`processed_${tabName}`] = 'true';
     } catch (err) {
       results.push({ tab: tabName, status: 'write_failed', error: err.message });
     }
@@ -234,7 +249,7 @@ module.exports = async (req, res) => {
 //   'failed'   — terminal FAILED/CANCELLED status, or no reportId at all
 //   [...]      — array of row arrays, ready to merge
 //   {debug: {...}} — only when debugMode is true and the report is COMPLETED
-async function checkAndBuildRows(reportId, tabName, kind, token, profileId, asinBrandMap, now, debugMode) {
+async function checkAndBuildRows(reportId, tabName, kind, token, profileId, asinBrandMap, now, debugMode, campaignBrand = () => null) {
   if (!reportId) return 'failed';
 
   let statusResp;
@@ -280,6 +295,22 @@ async function checkAndBuildRows(reportId, tabName, kind, token, profileId, asin
       if (!purchaseDate) console.warn(`[sync-event-ad-orders-process] ${tabName} (sp) — row for ${asin} has no date field. Raw keys: ${Object.keys(r).join(',')}`);
       const year = purchaseDate ? parseInt(purchaseDate.slice(0, 4), 10) : '';
       return [asin, asinBrandMap[asin] || 'unknown', impressions, clicks, adUnits, purchases, spend, sales, acos, now, purchaseDate, year];
+    } else if (kind === 'sb') {
+      // ADDED 2026-10-08 — Sponsored Brands campaign rows. No ASIN exists at
+      // this level, so the row is labeled "SB:<brand>" and summed per brand
+      // per day by aggregateByAsinDate. ad_units uses purchases, same
+      // convention as the daily ads cron (SB reports no separate units).
+      const brandId     = campaignBrand(r.campaignName) || 'unknown';
+      if (brandId === 'unknown') console.log(`[sync-event-ad-orders-process] ${tabName} (sb) unmatched campaign: "${r.campaignName}"`);
+      const impressions = parseInt(r.impressions || 0, 10) || 0;
+      const clicks      = parseInt(r.clicks || 0, 10) || 0;
+      const spend       = round2(parseFloat(r.cost || 0) || 0);
+      const purchases   = parseInt(r.purchases || 0, 10) || 0;
+      const sales       = round2(parseFloat(r.sales || 0) || 0);
+      const acos        = sales > 0 ? round2((spend / sales) * 100) : '';
+      const purchaseDate = r.date || '';
+      const year = purchaseDate ? parseInt(purchaseDate.slice(0, 4), 10) : '';
+      return [`SB:${brandId}`, brandId, impressions, clicks, purchases, purchases, spend, sales, acos, now, purchaseDate, year];
     } else {
       // kind === 'sd' — different real field names, confirmed via
       // test-sd-connection.js: promotedAsin/cost/sales/unitsSold/purchases.
