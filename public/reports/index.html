@@ -966,6 +966,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 .la-audit-note{font-size:12.5px;color:var(--navy);line-height:1.65;padding:10px 14px;}
 .la-audit-note strong{color:var(--danger);}
 .la-audit-rewrite{padding:10px 14px 12px;font-size:12.5px;color:var(--navy);line-height:1.65;background:rgba(36,233,163,.05);border-top:1px solid rgba(36,233,163,.15);position:relative;}
+/* ADDED 2026-10-09 — from Just Bjorn: a rewrite identical to the live copy
+   is shown as "Optimized" in muted styling, not as a change to push. */
+.la-audit-rewrite.optimized{background:var(--bg);border-top:1px solid var(--border);}
+.la-audit-rewrite.optimized .la-audit-rewrite-label{color:var(--muted);}
 .la-audit-rewrite-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#1db88a;margin-bottom:4px;}
 .la-audit-copy-btn{position:absolute;top:10px;right:12px;background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--muted);}
 .la-audit-copy-btn:hover{background:var(--white);}
@@ -13574,6 +13578,15 @@ const SKU_KW_GID_MAP = {
   'EVO0009': '1211203597',
 };
 const LISTING_AUDIT_EVOLIS_GID = '2075287627';
+// ADDED 2026-10-09 per Jaclyn — run-listing-audit.js was updated to Just
+// Bjorn's version, which also reads the master SKU list (categories +
+// status). Product Short Name sheet, same file/gid getProductMaster() uses.
+const MASTER_SKU_SHEET_ID = '1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA';
+const MASTER_SKU_GID      = '164358627';
+// évolis Brand Insights tab, per Jaclyn 2026-10-09 — the listing audit's
+// brandInsightsSheetId/Gid input (same role as Just Bjorn's SHEET_BRAND_INSIGHTS).
+const BRAND_INSIGHTS_SHEET_ID = '1yOpmA31g6VLceXI2fOoM-0-P_IaCqS5h7Gz5cqVT8NM';
+const BRAND_INSIGHTS_GID      = '357088907';
 
 // ═══════════════════════════════════════════════════════════════════
 // INSIGHTS OVERVIEW — units chart, Active/Peak/Total SKU KPIs, and
@@ -19145,6 +19158,14 @@ function extractAllListingCopy() {
 }
 
 // ── Main listing audit runner ─────────────────────────────────────
+// REPLACED 2026-10-09 per Jaclyn with Just Bjorn's runListingAudit, to match
+// the updated run-listing-audit.js. Key fix: the listings sheet is a DAILY
+// snapshot (one row per SKU per day); the old évolis loop queued every row,
+// so each real SKU was audited once per day of history (the "12/137 ...
+// 12/520" status). Now dedups to each SKU's latest row, groups by Product
+// Short Name column K category, skips DELETED SKUs, and sends the backend
+// its extra data sources (master SKU list, Business Report, ad search
+// terms, Amazon reviews) using évolis's own sheet IDs.
 async function runListingAudit() {
   const btn = document.getElementById('run-audit-btn');
   const st  = document.getElementById('upload-status');
@@ -19152,7 +19173,7 @@ async function runListingAudit() {
   st.className = 'upload-status';
 
   try {
-    // ── Step 1: Read source sheet to group SKUs by item_type_keyword ──────────
+    // ── Step 1: Read source sheet + category assignment, group SKUs ────
     st.textContent = 'Reading listing sheet…';
     const srcUrl = 'https://docs.google.com/spreadsheets/d/' + SHEET_LISTINGS_ID +
       '/export?format=csv&id=' + SHEET_LISTINGS_ID +
@@ -19161,22 +19182,91 @@ async function runListingAudit() {
     if (!srcRes.ok) throw new Error('Could not read source listings sheet');
     const srcRows = parseCsvToRows(await srcRes.text());
 
+    // Category assignment — added 2026-09-25 per Jaclyn: Just Bjorn now
+    // has 2 real categories (Stick Packs get their own keyword targeting,
+    // separate from the general Collagen line), tracked per-SKU on the
+    // Product Short Name sheet's column K. Read POSITIONALLY (by column
+    // index, not by header text) rather than trusting whatever that
+    // column happens to be labeled — the exact header text was never
+    // confirmed, and this codebase has hit real "the header lies" bugs
+    // more than once already (the Goal Tracker's own column-position
+    // gotchas). Column B = SKU, column K = category name, per Jaclyn.
+    const skuToCategory = {};
+    // évolis: Status = DELETED products are excluded from everything on the dashboard
+    const deletedSkus = new Set();
+    try {
+      const catUrl = 'https://docs.google.com/spreadsheets/d/' + MASTER_SKU_SHEET_ID +
+        '/export?format=csv&gid=' + MASTER_SKU_GID + '&_cb=' + Date.now();
+      const catRes = await fetch(catUrl);
+      if (catRes.ok) {
+        const catText = await catRes.text();
+        const catLines = catText.replace(/\r/g, '').split('\n').filter(l => l.trim());
+        function parseRow(line) {
+          const out = []; let cur = '', inQ = false;
+          for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (inQ) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+            else { if (c === '"') inQ = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; }
+          }
+          out.push(cur);
+          return out;
+        }
+        catLines.slice(1).forEach(line => {
+          const cells = parseRow(line);
+          const sku = (cells[1] || '').trim();       // column B
+          // évolis: column K reads like "EVO • Shampoo" — strip the brand code
+          const category = (cells[10] || '').trim().replace(/^[A-Za-z0-9]+\s*[•\-–]\s*/, ''); // column K
+          const status = (cells[7] || '').trim().toUpperCase();                                  // column H
+          if (sku && status === 'DELETED') deletedSkus.add(sku);
+          if (sku && category) skuToCategory[sku] = category;
+        });
+      }
+    } catch (err) {
+      console.warn('[listing-audit] category lookup failed, falling back to item_type_keyword grouping:', err.message);
+    }
+
     // Group SKUs by item_type_keyword (col 14 = index 14, 0-based)
+    // FIXED 2026-09-04 per Jaclyn — srcRows is a DAILY snapshot sheet (one
+    // row per SKU per day), and this loop was iterating every row with no
+    // dedup, so the same handful of real SKUs got queued for audit dozens
+    // of times over (matching however many days of history exist) instead
+    // of once each. That's what produced "92 batches" for one product
+    // type and "13" for another on a brand with only 5 real catalog SKUs.
+    // Deduplicated to each SKU's single latest-dated row first.
+    const latestRowBySku = {};
+    for (const row of srcRows) {
+      const sku = (row['sku'] || '').trim();
+      if (!sku) continue;
+      const date = row['date'] || '';
+      if (!latestRowBySku[sku] || date > (latestRowBySku[sku]['date'] || '')) {
+        latestRowBySku[sku] = row;
+      }
+    }
+
     // Travel SKUs grouped with their parent type by stripping "travel" from name
     const groups = {};
-    for (const row of srcRows) {
-      const sku  = (row['sku'] || '').trim();
+    for (const sku of Object.keys(latestRowBySku)) {
+      if (deletedSkus.has(sku)) continue;
+      const row  = latestRowBySku[sku];
       const name = (row['name'] || '').trim().toLowerCase();
-      if (!sku) continue;
-      // Determine group key — use item_type_keyword, fall back to name-based guess
-      let groupKey = (row['item_type_keyword'] || '').trim();
+      // UPDATED 2026-09-25 per Jaclyn — prefer the real category from the
+      // Product Short Name sheet (skuToCategory, built above) over
+      // item_type_keyword, since that's what actually distinguishes
+      // Stick Packs (their own keyword targeting) from the general
+      // Collagen line. Falls back to the old item_type_keyword/SKU logic
+      // only when a SKU has no category assignment yet, rather than
+      // failing the whole run.
+      let groupKey = skuToCategory[sku] || (row['item_type_keyword'] || '').trim();
       if (!groupKey) {
-        // Fallback: derive from name
-        if (name.includes('shampoo'))     groupKey = 'shampoo';
-        else if (name.includes('conditioner')) groupKey = 'conditioner';
-        else if (name.includes('mask'))   groupKey = 'mask';
-        else if (name.includes('dry'))    groupKey = 'dry-shampoo';
-        else                              groupKey = 'activator';
+        // FIXED 2026-09-04 — this fallback chain was évolis's own hair-care
+        // taxonomy (shampoo/conditioner/mask/dry-shampoo), defaulting to
+        // "activator" for anything that matched none of those. For a
+        // brand with none of those product types, EVERY SKU with a blank
+        // item_type_keyword silently landed in a meaningless "activator"
+        // bucket. Falls back to the SKU itself now — still groups nothing
+        // together falsely, and is honest about not having a real
+        // classification for that row.
+        groupKey = sku;
       }
       // Normalize travel SKUs to same group as full size
       groupKey = groupKey.replace(/[-_\s]?(travel|size|mini)/gi, '').trim() || groupKey;
@@ -19228,8 +19318,19 @@ async function runListingAudit() {
             brand:          INSIGHTS_BRAND_TAB,
             sourceSheetId:  SHEET_PRODUCT_INVENTORY_ID,
             auditSheetId:   LISTING_AUDIT_SHEET_ID,
+            auditGid:       LISTING_AUDIT_EVOLIS_GID,
             keywordSheetId: KEYWORD_STRATEGY_SHEET_ID,
             skuGidMap:      SKU_KW_GID_MAP,
+            masterSkuSheetId:     MASTER_SKU_SHEET_ID,
+            masterSkuGid:         MASTER_SKU_GID,
+            brandInsightsSheetId: BRAND_INSIGHTS_SHEET_ID,
+            brandInsightsGid:     BRAND_INSIGHTS_GID,
+            businessReportSheetId: OV_BUSINESS_REPORT_SHEET_ID,
+            businessReportGid:     OV_BUSINESS_REPORT_GID,
+            adSearchTermsSheetId:  PPC_SEARCH_TERMS_SHEET_ID,
+            adSearchTermsGid:      PPC_SEARCH_TERMS_GID,
+            amazonReviewsSheetId:  SHEET_AMAZON_REVIEWS_ID,
+            amazonReviewsGid:      SHEET_AMAZON_REVIEWS_GID,
             uploadsSheetId: UPLOADS_SHEET_ID,
             uploadsGid:     UPLOADS_EVOLIS_GID,
             skuFilter:      skuList   // NEW: only audit these SKUs
@@ -19241,7 +19342,7 @@ async function runListingAudit() {
         }
         const data = await res.json();
         totalSkus += (data.skuCount || 0);
-        st.textContent = '✓ ' + groupKey + ' done (' + (i+1) + '/' + groupList.length + ') — ' + totalSkus + ' SKUs complete so far…';
+        st.textContent = '✓ ' + groupKey + ' done (' + (i+1) + '/' + batchList.length + ') — ' + totalSkus + ' SKUs complete so far…';
       } catch(err) {
         console.error('[listing-audit] Group ' + groupKey + ' failed:', err.message);
         failedGroups.push(groupKey + ': ' + err.message);
@@ -19321,27 +19422,47 @@ function injectAuditResults(results) {
         nb.textContent = note;
         zone.appendChild(nb);
       }
-      // Rewrite section
+      // Rewrite section — FIXED 2026-09-04 per Jaclyn: this always showed
+      // a green "Suggested Rewrite" whenever the AI returned any rewrite
+      // text at all, even when that text was identical to what's already
+      // live — which undercuts the whole point of the hold-steady
+      // philosophy elsewhere in this audit (don't push a change just
+      // because an audit ran; only push one if something's actually
+      // different). Now compares the rewrite against the current live
+      // text already sitting in this same card's .la-copy-block (or
+      // .la-backend-block for the Backend Keywords card) and, when they
+      // match (whitespace-normalized — not chasing a false "different"
+      // over spacing alone), shows a grey "Optimized" state instead: no
+      // "Suggested Rewrite" label, no Copy button, nothing implying a
+      // change is needed.
       if (rewrite) {
+        const currentEl = card.querySelector('.la-copy-block') || card.querySelector('.la-backend-block');
+        const normalize = s => (s || '').replace(/\s+/g, ' ').trim();
+        const isSameAsLive = currentEl && normalize(currentEl.textContent) === normalize(rewrite);
+
         const rw = document.createElement('div');
-        rw.className = 'la-audit-rewrite';
+        rw.className = 'la-audit-rewrite' + (isSameAsLive ? ' optimized' : '');
         const rl = document.createElement('div');
         rl.className = 'la-audit-rewrite-label';
-        rl.textContent = '\u2192 Suggested Rewrite';
+        rl.textContent = isSameAsLive
+          ? '\u2714 ' + fieldLabel + (/s$/i.test(fieldLabel) ? ' are' : ' is') + ' Optimized'
+          : '\u2192 Suggested Rewrite';
         rw.appendChild(rl);
-        const cp = document.createElement('button');
-        cp.className = 'la-audit-copy-btn';
-        cp.textContent = 'Copy';
-        cp.addEventListener('click', function() { navigator.clipboard.writeText(rewrite); });
-        rw.appendChild(cp);
-        const p = document.createElement('p');
-        p.style.margin = '0';
-        p.textContent = rewrite;
-        rw.appendChild(p);
-        if (charInfo) {
-          const ci = document.createElement('div');
-          ci.innerHTML = charInfo;
-          rw.appendChild(ci);
+        if (!isSameAsLive) {
+          const cp = document.createElement('button');
+          cp.className = 'la-audit-copy-btn';
+          cp.textContent = 'Copy';
+          cp.addEventListener('click', function() { navigator.clipboard.writeText(rewrite); });
+          rw.appendChild(cp);
+          const p = document.createElement('p');
+          p.style.margin = '0';
+          p.textContent = rewrite;
+          rw.appendChild(p);
+          if (charInfo) {
+            const ci = document.createElement('div');
+            ci.innerHTML = charInfo;
+            rw.appendChild(ci);
+          }
         }
         zone.appendChild(rw);
       }
