@@ -808,7 +808,11 @@ BULLET FORMATTING RULES (apply to all bullet rewrites):
 - For genuinely related variations, align parallel bullet positions when doing so improves comparison and consistency. Use B1 = hero value/proof, B2 = science/mechanism, B3 = key ingredients, B4 = intended user/use case, and B5 = credentials/formula as a flexible starting framework, not a mandatory template. Reorder or replace topics when PRODUCT CONTEXT, customer evidence or keyword strategy shows a different sequence is more valuable.
 - When shortening a bullet, do not merely compress its existing sentences. Reassess the current bullet against all unused and used evidence, retain only concepts that deserve bullet-level prominence, and relocate worthwhile supporting detail to the description or another appropriate field.
 - Within a single SKU, bullet headers should not repeat the same keyword root — vary to maximize keyword coverage.
-- Bullet rewrites must be max 200 chars including the ALL-CAPS header.
+- BULLET LENGTH (beauty & wellness standard, Jaclyn 2026-10-09 — replaces the old 200-char max). Count characters including the ALL-CAPS header:
+  - 200–250 characters: the preferred writing range. Aim here by default.
+  - 250–300 characters: use when the bullet genuinely needs the extra space for ingredients, product benefits or differentiators.
+  - 300+ characters: only when truly necessary and the product type's bullet limit allows it; never exceed 500 characters.
+  - A bullet under 200 characters is usually underusing the space — expand it with real, supported benefits, ingredients or differentiators (never filler or unsupported claims).
 
 OUTPUT FORMAT — use exactly these labels, one per line, no JSON, no markdown:
 TITLE_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
@@ -816,11 +820,11 @@ TITLE_REWRITE: [compliant rewrite, max 75 chars. If clean, repeat original trimm
 IH_NOTES: [violations found, or generated if missing. Max 300 chars.]
 IH_REWRITE: [compliant rewrite or new copy, max 125 chars.]
 BULLETS_NOTES: [key violations across all bullets, noted by bullet number. Max 500 chars. Empty string if travel SKU.]
-BULLET_1_REWRITE: [compliant rewrite of bullet 1, max 200 chars. Empty string if travel SKU.]
-BULLET_2_REWRITE: [compliant rewrite of bullet 2, max 200 chars. Empty string if travel SKU.]
-BULLET_3_REWRITE: [compliant rewrite of bullet 3, max 200 chars. Empty string if travel SKU.]
-BULLET_4_REWRITE: [compliant rewrite of bullet 4, max 200 chars. Empty string if travel SKU.]
-BULLET_5_REWRITE: [compliant rewrite of bullet 5, max 200 chars. Empty string if travel SKU.]
+BULLET_1_REWRITE: [compliant rewrite of bullet 1, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
+BULLET_2_REWRITE: [compliant rewrite of bullet 2, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
+BULLET_3_REWRITE: [compliant rewrite of bullet 3, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
+BULLET_4_REWRITE: [compliant rewrite of bullet 4, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
+BULLET_5_REWRITE: [compliant rewrite of bullet 5, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
 DESC_NOTES: [violations found in description, or "No violations" if clean. Max 300 chars. Empty string if travel SKU.]
 DESC_REWRITE: [compliant rewrite of description, max 400 chars, plain sentences no bullets. Empty string if travel SKU.]
 BACKEND_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
@@ -861,7 +865,7 @@ AUDIT GUARDRAILS: ${auditGuardrails || 'NOT AVAILABLE'}
 PREVIOUS AUDIT (${previousAudit.date}):
 Title recommendation: ${san(previousAudit.titleRewrite, 300) || 'None'}
 Item Highlights recommendation: ${san(previousAudit.ihRewrite, 300) || 'None'}
-Bullet recommendations: ${[previousAudit.bullet1Rewrite, previousAudit.bullet2Rewrite, previousAudit.bullet3Rewrite, previousAudit.bullet4Rewrite, previousAudit.bullet5Rewrite].map((x,i)=>`${i+1}. ${san(x,250) || 'None'}`).join(' | ')}
+Bullet recommendations: ${[previousAudit.bullet1Rewrite, previousAudit.bullet2Rewrite, previousAudit.bullet3Rewrite, previousAudit.bullet4Rewrite, previousAudit.bullet5Rewrite].map((x,i)=>`${i+1}. ${san(x,500) || 'None'}`).join(' | ')}
 Description recommendation: ${san(previousAudit.descRewrite, 450) || 'None'}
 Backend recommendation: ${san(previousAudit.backendRewrite, 250) || 'None'}
 Prior notes: ${san([previousAudit.titleNotes, previousAudit.ihNotes, previousAudit.bulletsNotes, previousAudit.descNotes, previousAudit.backendNotes].filter(Boolean).join(' | '), 1000) || 'None'}
@@ -993,7 +997,7 @@ Ingredients: ${ingredients || 'NOT AVAILABLE'}`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: travel ? 600 : 2500,
+            max_tokens: travel ? 600 : 3200, // raised from 2500 — bullets now run 200–300+ chars each
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }]
           })
