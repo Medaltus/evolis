@@ -91,8 +91,9 @@
  */
 
 const XLSX = require('xlsx');
-const { ensureTab, readRows, replaceRows } = require('./config/_sheets_client');
+const { ensureTab, readRows, replaceRows, updateRange } = require('./config/_sheets_client');
 const brands = require('./config/brands');
+const { isoDate } = require('./_dates'); // ADDED 2026-10-13 — reads "August 9, 2026", "8/9/2026", ISO…
 
 // ADDED 2026-08-14 — HighOnLove is deliberately NOT in config/brands.js
 // (separate Amazon seller account — same reasoning documented in
@@ -112,6 +113,9 @@ const HEADERS = [
   'sku', 'asin', 'product_name', 'product_category', 'reviewer_name',
   'star_rating', 'review_title', 'date', 'review_text', 'purchase_type',
   'date_logged', 'last_synced',
+  // ADDED 2026-10-13 — Amazon's own review ID, present in the Voice of the
+  // Customer export. Appended at the end so existing columns don't move.
+  'review_id',
 ];
 
 // ADDED 2026-08-14 — see file header. Same two-stage disambiguation
@@ -129,8 +133,11 @@ function resolveBrandForSku(sku, candidates) {
 }
 
 function matchBrandForSku(sku) {
-  const candidates = [...brands, ...EXTRA_BRANDS_NOT_IN_REGISTRY]
-    .filter(b => b.active && sku.startsWith(b.skuPrefix.toUpperCase()));
+  // High On Love is now in config/brands.js too (2026-10-05) — skip the
+  // extra entry when the registry already has the same id.
+  const pool = [...brands, ...EXTRA_BRANDS_NOT_IN_REGISTRY.filter(x => !brands.some(b => b.id === x.id))];
+  const candidates = pool
+    .filter(b => b.active && b.skuPrefix && sku.startsWith(b.skuPrefix.toUpperCase()));
   if (candidates.length === 0) return null;
   return resolveBrandForSku(sku, candidates);
 }
@@ -149,13 +156,24 @@ module.exports = async (req, res) => {
   const { filename, contentBase64 } = req.body || {};
   if (!contentBase64) return res.status(400).json({ error: 'Missing contentBase64' });
 
+  // CHANGED 2026-10-13 — the Voice of the Customer export is ONE workbook
+  // with a "Summary" tab first and one tab per brand. Reads every tab that
+  // has a SKU column (so the Summary and any other non-review tab are
+  // skipped automatically) and combines them. The old single-tab exports
+  // still work: their one "Reviews" tab has a SKU column too.
   let rows;
+  const tabsRead = [];
   try {
     const buffer = Buffer.from(contentBase64, 'base64');
     const workbook  = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames.includes('Reviews') ? 'Reviews' : workbook.SheetNames[0];
-    rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
-    console.log(`[upload-amazon-reviews] ${filename || '(no filename)'} — sheet "${sheetName}", ${rows.length} rows`);
+    rows = [];
+    for (const sheetName of workbook.SheetNames) {
+      const tabRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+      if (!tabRows.length || !Object.keys(tabRows[0]).some(k => k.trim().toLowerCase() === 'sku')) continue;
+      rows.push(...tabRows);
+      tabsRead.push(`${sheetName} (${tabRows.length})`);
+    }
+    console.log(`[upload-amazon-reviews] ${filename || '(no filename)'} — ${rows.length} rows from ${tabsRead.length} tab(s): ${tabsRead.join(', ')}`);
   } catch (err) {
     console.error('[upload-amazon-reviews] failed to parse workbook:', err.message);
     return res.status(400).json({ error: 'Could not parse file as xlsx', detail: err.message });
@@ -169,11 +187,19 @@ module.exports = async (req, res) => {
   // sync-fbm-returns-process.js / sync-returns-process.js earlier this
   // project — reused here rather than inventing a new approach.
   const nowIso = toEstIso(new Date());
+
+  // ADDED 2026-10-13 — reads a field under either naming style: the old
+  // H10 exports ("SKU", "Product Name", "Star Rating") or the Voice of the
+  // Customer export ("sku", "product_name", "star_rating").
+  const field = (r, ...names) => {
+    for (const n of names) if (r[n] !== undefined && r[n] !== '') return r[n];
+    return '';
+  };
   const unmatchedSkus = new Set();
   const rowsByBrandTab = {};
 
   rows.forEach(r => {
-    const sku = String(r['SKU'] || '').trim().toUpperCase();
+    const sku = String(field(r, 'SKU', 'sku')).trim().toUpperCase();
     if (!sku) return;
     const matched = matchBrandForSku(sku);
     if (!matched) { unmatchedSkus.add(sku); return; }
@@ -187,38 +213,56 @@ module.exports = async (req, res) => {
       const token    = await ensureTab(SHEET_ID, tabName, HEADERS);
       const existing = await readRows(SHEET_ID, tabName);
 
-      // Merge by composite key — see file header for why this key shape
-      // was chosen and its one known collision risk. Map naturally
-      // gives incoming rows priority over existing ones on a key match
-      // (existing populated first, incoming processed after), which is
-      // exactly the desired "refresh on re-upload" behavior.
-      const reviewKey = r => [
-        String(r['SKU'] ?? r.sku ?? '').trim().toUpperCase(),
-        String(r['Date'] ?? r.date ?? '').trim(),
-        String(r['Reviewer Name'] ?? r.reviewer_name ?? '').trim().toLowerCase(),
-        String(r['Review Title'] ?? r.review_title ?? '').trim().toLowerCase(),
+      // CHANGED 2026-10-13 — how a review is recognized as "already in the
+      // sheet". Two keys, tried in order:
+      //   1. review_id — Amazon's own ID (Voice of the Customer exports).
+      //   2. identity: ASIN + date + reviewer + title, each NORMALIZED, so
+      //      the same review matches across sources even though the old H10
+      //      scrape and the new export format things differently (date
+      //      "8/9/2026" vs "August 9, 2026"; SKU "SVA0003" vs
+      //      "SVA0003-stickerless" — ASIN is used instead of SKU for that
+      //      reason; curly vs straight quotes; spacing/case).
+      // Rows already in the sheet from older uploads have no review_id, so
+      // the first upload of the new export matches them by identity and
+      // fills in their review_id — after that, review_id does the matching.
+      const norm = v => String(v ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g, '');
+      const identityKey = r => [
+        norm(field(r, 'asin', 'ASIN') || field(r, 'sku', 'SKU')),
+        isoDate(field(r, 'date', 'Date')) || norm(field(r, 'date', 'Date')),
+        norm(field(r, 'reviewer_name', 'Reviewer Name')),
+        norm(field(r, 'review_title', 'Review Title')),
       ].join('||');
+      const idOf = r => String(field(r, 'review_id', 'Review ID') || '').trim();
 
-      const merged = new Map();
-      (existing || []).forEach(r => merged.set(reviewKey(r), r));
+      const merged  = new Map(); // identityKey → row
+      const byId    = new Map(); // review_id   → identityKey
+      (existing || []).forEach(r => {
+        const k = identityKey(r);
+        merged.set(k, r);
+        const id = idOf(r); if (id) byId.set(id, k);
+      });
 
+      let updated = 0, added = 0;
       brandRows.forEach(r => {
-        merged.set(reviewKey(r), {
-          sku:              String(r['SKU'] || '').trim().toUpperCase(),
-          asin:             r['ASIN'] || '',
-          product_name:     r['Product Name'] || '',
-          // Blank until Cowork's next export actually sends this column
-          // — see file header. Not an error, not guessed at.
-          product_category: r['Product Category'] ?? '',
-          reviewer_name:    r['Reviewer Name'] || '',
-          star_rating:      r['Star Rating'] ?? '',
-          review_title:     r['Review Title'] || '',
-          date:             r['Date'] || '',
-          review_text:      r['Review Text'] || '',
-          purchase_type:    r['Purchase Type'] || '',
-          date_logged:      r['Date Logged'] || '',
+        const id = idOf(r);
+        const k  = (id && byId.get(id)) || identityKey(r);
+        if (merged.has(k)) updated++; else added++;
+        merged.set(k, {
+          sku:              String(field(r, 'sku', 'SKU')).trim().toUpperCase(),
+          asin:             field(r, 'asin', 'ASIN'),
+          product_name:     field(r, 'product_name', 'Product Name'),
+          product_category: field(r, 'product_category', 'Product Category'),
+          reviewer_name:    field(r, 'reviewer_name', 'Reviewer Name'),
+          star_rating:      field(r, 'star_rating', 'Star Rating'),
+          review_title:     field(r, 'review_title', 'Review Title'),
+          date:             field(r, 'date', 'Date'),
+          review_text:      field(r, 'review_text', 'Review Text'),
+          purchase_type:    field(r, 'purchase_type', 'Purchase Type'),
+          date_logged:      field(r, 'date_logged', 'Date Logged'),
           last_synced:      nowIso,
+          review_id:        id,
         });
+        if (id) byId.set(id, k);
       });
 
       // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
@@ -233,9 +277,13 @@ module.exports = async (req, res) => {
         return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
       }));
       await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token, 'USER_ENTERED');
+      // ADDED 2026-10-13 — replaceRows never rewrites row 1, so tabs created
+      // before review_id existed would never get its header (and its values
+      // would be unreadable by name on the next upload). Write it every time.
+      await updateRange(SHEET_ID, `${tabName}!A1`, [HEADERS], token, 'RAW');
 
-      console.log(`[upload-amazon-reviews] ${tabName} — ${brandRows.length} incoming rows, ${outRows.length} total rows after merge`);
-      results.push({ brand: tabName, status: 'ok', incomingRows: brandRows.length, totalRows: outRows.length });
+      console.log(`[upload-amazon-reviews] ${tabName} — ${brandRows.length} incoming (${updated} already in sheet, ${added} new), ${outRows.length} total rows after merge`);
+      results.push({ brand: tabName, status: 'ok', incomingRows: brandRows.length, alreadyInSheet: updated, newReviews: added, totalRows: outRows.length });
     } catch (err) {
       console.error(`[upload-amazon-reviews] ${tabName} failed:`, err.message);
       results.push({ brand: tabName, status: 'error', error: err.message });
@@ -245,6 +293,7 @@ module.exports = async (req, res) => {
   res.status(200).json({
     ok: true,
     filename: filename || null,
+    tabsRead,
     results,
     ...(unmatchedSkus.size ? { unmatchedSkus: Array.from(unmatchedSkus) } : {}),
   });
