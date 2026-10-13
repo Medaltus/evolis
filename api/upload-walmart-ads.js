@@ -392,7 +392,14 @@ module.exports = async (req, res) => {
     for (const [tabName, rows] of Object.entries(rowsByBrand)) {
       try {
         const token = await ensureTab(sheetId, tabName, headers);
-        const existing = await readRows(sheetId, tabName);
+        // CHANGED 2026-10-13 — read the STORED values, not the displayed ones.
+        // Real incident: year cells that had picked up a date format showed
+        // 2026 as "7/18/1905" (Sheets counts dates in days, and day 2,026 is
+        // 1905-07-18). Read as displayed, that text never matched a fresh
+        // 2026, so the row was duplicated instead of replaced. Stored values
+        // give back 2026 regardless of format. Real date cells come back as
+        // day counts, so 'date' / 'last_updated' are turned back into text.
+        const existing = (await readRows(sheetId, tabName, 'UNFORMATTED_VALUE')).map(serialDatesToText);
         // FIXED 2026-08-14 — real incident: 'date' was left IN the key
         // despite the comment saying "everything but last_updated." Both
         // AD_ORDERS_HEADERS and SEARCH_TERMS_HEADERS include a 'date'
@@ -457,6 +464,9 @@ module.exports = async (req, res) => {
           return (textColSet.has(h) && v !== '') ? `'${v}` : v;
         }));
         await replaceRows(sheetId, tabName, headers, outRows, token, 'USER_ENTERED');
+        // ADDED 2026-10-13 — force year/month columns to plain-number format so
+        // a leftover date format can never show 2026 as a 1905 date again.
+        await setPlainNumberColumns(sheetId, tabName, headers, ['year', 'month'], token);
         results.push({ brand: tabName, status: 'ok', incomingRows: rows.length, totalRows: outRows.length, ...(duplicatesRemoved ? { duplicatesRemoved } : {}) });
       } catch (err) {
         console.error(`[upload-walmart-ads] ${label} ${tabName} failed:`, err.message);
@@ -494,4 +504,54 @@ function toEstIso(date) {
   }).formatToParts(date);
   const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
+
+// ── Date-format helpers (ADDED 2026-10-13) ─────────────────────────────────
+// Sheets stores a date as days since 1899-12-30.
+const SHEETS_EPOCH_MS = Date.UTC(1899, 11, 30);
+
+// When read with UNFORMATTED_VALUE, a real date cell comes back as a day
+// count (e.g. 46278). Turn those back into the text form this file writes,
+// for the two date-ish columns only. Every other column is left untouched.
+function serialDatesToText(row) {
+  const out = { ...row };
+  if (typeof out.date === 'number') {
+    out.date = new Date(SHEETS_EPOCH_MS + Math.round(out.date * 86400000)).toISOString().slice(0, 10);
+  }
+  if (typeof out.last_updated === 'number') {
+    out.last_updated = new Date(SHEETS_EPOCH_MS + Math.round(out.last_updated * 86400000)).toISOString();
+  }
+  return out;
+}
+
+// Sets the given columns (by header name) to plain whole-number format for
+// every data row. Never throws — a formatting hiccup shouldn't fail an
+// upload whose data was already written correctly.
+async function setPlainNumberColumns(spreadsheetId, tabName, headers, columnNames, token) {
+  try {
+    const meta = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`,
+      { headers: { Authorization: `Bearer ${token}` } });
+    if (!meta.ok) throw new Error(`metadata ${meta.status}`);
+    const tab = ((await meta.json()).sheets || []).find(sh => sh.properties.title === tabName);
+    if (!tab) throw new Error(`tab "${tabName}" not found`);
+    const requests = columnNames
+      .map(name => headers.indexOf(name))
+      .filter(i => i >= 0)
+      .map(i => ({
+        repeatCell: {
+          range: { sheetId: tab.properties.sheetId, startRowIndex: 1, startColumnIndex: i, endColumnIndex: i + 1 },
+          cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '0' } } },
+          fields: 'userEnteredFormat.numberFormat',
+        },
+      }));
+    if (!requests.length) return;
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+    if (!res.ok) throw new Error(`batchUpdate ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  } catch (err) {
+    console.warn(`[upload-walmart-ads] couldn't set year/month number format on "${tabName}" (data was still written):`, err.message);
+  }
 }
