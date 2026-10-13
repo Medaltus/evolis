@@ -48,6 +48,13 @@
  *                   runs once per account (?account=hol for High On Love,
  *                   on its own staggered schedule) and only processes the
  *                   brands whose sellerAccount matches — see api/_account.js.
+ * productsSyncGroup: 'A' | 'B' — splits brands into two groups so heavy
+ *                   per-brand sweeps can run each half at a different time
+ *                   (?group=A / ?group=B). Used by sync-products.js (manual
+ *                   runs), and since 2026-10-12 by fees-estimate.js and
+ *                   sale-promotions.js on their schedules. A brand without a
+ *                   group is skipped by any ?group= run — give every active
+ *                   brand one.
  * excludedReports: ADDED 2026-09-18 — OPTIONAL array of report keys this
  *                   brand should be skipped for (e.g. ['sqp']). A cron that
  *                   honors it skips the brand cleanly, the same way it
@@ -159,7 +166,7 @@ module.exports = [
   },
   {
     id:              'cloud-cafe',
-    productsSyncGroup: 'A', // used by sync-products.js's ?group= split — see that file's header comment
+    productsSyncGroup: 'B', // CHANGED 2026-10-12 (was A) — rebalances orders-tab volume between the groups for fees-estimate / sale-promotions (A ~11.1k rows, B ~9.4k); scheduled sync-products runs don't use groups
     tabName:         'cloud-cafe',
     skuPrefix:       'CLC',
     displayName:     'Cloud Cafe',
@@ -284,8 +291,9 @@ module.exports = [
     // (SP_CLIENT_ID_HOL / SP_CLIENT_SECRET_HOL / SP_REFRESH_TOKEN_HOL /
     // SP_SELLER_ID_HOL); ads are under the same Amazon Ads login as NewDerm.
     sellerAccount:   'hol',
-    // No productsSyncGroup on purpose: sync-products' High On Love run is
-    // its own scheduled invocation (?account=hol), not part of group A/B.
+    // ADDED 2026-10-12 — group B for the brand-group splits of fees-estimate
+    // and sale-promotions (see productsSyncGroup in the file header area).
+    productsSyncGroup: 'B',
     //
     // ACTIVATED 2026-10-05. Crons already updated for sellerAccount
     // (orders, orders backfill, event orders) run High On Love on its own
