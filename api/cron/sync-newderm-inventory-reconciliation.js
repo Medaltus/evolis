@@ -151,13 +151,40 @@ module.exports = async (req, res) => {
 
   // ── 1. Cin7 Core — find + read the file once, shared across all brands ──
   let fileInfo, cin7Rows;
+  let skippedFiles = []; // newer files passed over because they aren't this report (2026-10-12)
   try {
-    fileInfo = targetDate
-      ? await findFileByDate(DRIVE_FOLDER_ID, targetDate)
-      : await findNewestFile(DRIVE_FOLDER_ID);
-    if (!fileInfo) throw new Error(targetDate ? `No file found matching date ${targetDate}` : 'No files found in folder');
-    const buffer = await downloadFile(fileInfo.id);
-    cin7Rows = parseWorkbook(buffer);
+    if (targetDate) {
+      fileInfo = await findFileByDate(DRIVE_FOLDER_ID, targetDate);
+      if (!fileInfo) throw new Error(`No file found matching date ${targetDate}`);
+      cin7Rows = parseWorkbook(await downloadFile(fileInfo.id), fileInfo.name);
+    } else {
+      // CHANGED 2026-10-12 — real incident (2026-09-29): the run failed with
+      // "No Quantity on hand column found". This folder is shared with the
+      // Cin7 consignment cron, and the run only ever read the single
+      // newest file — so one different export (or a renamed column) failed
+      // the whole run. Now it tries the newest few files in order and uses
+      // the first one that is actually this inventory report, reporting any
+      // it skipped and why.
+      const candidates = await findRecentFiles(DRIVE_FOLDER_ID, MAX_FILES_TO_TRY);
+      if (!candidates.length) throw new Error('No files found in folder');
+      const skipped = [];
+      for (const f of candidates) {
+        try {
+          cin7Rows = parseWorkbook(await downloadFile(f.id), f.name);
+          fileInfo = f;
+          break;
+        } catch (e) {
+          skipped.push(`"${f.name}" (${f.modifiedTime}): ${e.message}`);
+        }
+      }
+      if (!fileInfo) {
+        throw new Error(`None of the ${candidates.length} newest files is a usable Cin7 inventory export:\n- ${skipped.join('\n- ')}`);
+      }
+      if (skipped.length) {
+        console.warn(`[inventory-reconciliation] skipped ${skipped.length} newer file(s) that aren't this report:\n- ${skipped.join('\n- ')}`);
+        skippedFiles = skipped;
+      }
+    }
   } catch (err) {
     console.error('[inventory-reconciliation] failed to read Cin7 export:', err.message);
     await sendCronFailureAlert('sync-newderm-inventory-reconciliation', err.message, { Stage: 'finding/reading Cin7 export' });
@@ -315,6 +342,7 @@ module.exports = async (req, res) => {
     targetDate: targetDate || null,
     sourceFile: fileInfo.name,
     sourceFileModified: fileInfo.modifiedTime,
+    ...(skippedFiles.length ? { skippedNewerFiles: skippedFiles } : {}), // ADDED 2026-10-12
     sourceRowsProcessed: cin7Rows.length,
     synced: results,
     unassignedSkuCount: unassigned.length,
@@ -455,7 +483,18 @@ async function fetchMasterSkuList() {
 
 // ── Workbook parsing — same approach as the consignment cron, plus Location ──
 
-function parseWorkbook(buffer) {
+// ADDED 2026-10-12 — accepted header names per column, compared after
+// lower-casing and removing spaces/punctuation (so "Qty On-Hand", "QTY ON
+// HAND" and "qtyonhand" all match). Exact names only — "On hand value"
+// will NOT be mistaken for a quantity.
+const COLUMN_NAMES = {
+  qtyOnHand: ['quantityonhand', 'qtyonhand', 'onhand', 'stockonhand', 'soh', 'onhandquantity', 'onhandqty'],
+  allocated: ['allocated', 'qtyallocated', 'quantityallocated', 'allocatedqty', 'allocatedquantity'],
+  available: ['available', 'qtyavailable', 'quantityavailable', 'availableqty', 'availablequantity'],
+};
+const squash = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+function parseWorkbook(buffer, fileName = '') {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
@@ -470,17 +509,21 @@ function parseWorkbook(buffer) {
     const locationIdx = cells.indexOf('location');
     if (skuIdx !== -1 && productIdx !== -1 && locationIdx !== -1) {
       headerRowIdx = i;
-      const qtyIdx = cells.findIndex(c => c === 'quantity on hand' || c === 'qty on hand');
-      const allocIdx = cells.indexOf('allocated');
-      const availIdx = cells.indexOf('available');
-      colIdx = { sku: skuIdx, product: productIdx, location: locationIdx, qtyOnHand: qtyIdx, allocated: allocIdx, available: availIdx };
+      const squashed = raw[i].map(squash);
+      const find = key => squashed.findIndex(c => COLUMN_NAMES[key].includes(c));
+      const qtyIdx = find('qtyOnHand');
+      const allocIdx = find('allocated');
+      const availIdx = find('available');
+      colIdx.__headers = raw[i].map(c => String(c || '').trim()).filter(Boolean);
+      colIdx = { ...colIdx, sku: skuIdx, product: productIdx, location: locationIdx, qtyOnHand: qtyIdx, allocated: allocIdx, available: availIdx };
       break;
     }
   }
-  if (headerRowIdx === -1) throw new Error('Could not locate header row (need SKU, Product, and Location columns all present)');
-  if (colIdx.qtyOnHand === -1) throw new Error('No "Quantity on hand" / "Qty on hand" column found');
-  if (colIdx.allocated === -1) throw new Error('No "Allocated" column found');
-  if (colIdx.available === -1) throw new Error('No "Available" column found');
+  if (headerRowIdx === -1) throw new Error('Could not locate header row (need SKU, Product, and Location columns all present) — probably not the inventory report');
+  const cols = ` — columns found: ${(colIdx.__headers || []).join(' | ')}`;
+  if (colIdx.qtyOnHand === -1) throw new Error(`No quantity-on-hand column found${cols}`);
+  if (colIdx.allocated === -1) throw new Error(`No "Allocated" column found${cols}`);
+  if (colIdx.available === -1) throw new Error(`No "Available" column found${cols}`);
 
   const out = [];
   for (let i = headerRowIdx + 1; i < raw.length; i++) {
@@ -560,6 +603,20 @@ async function getGoogleDriveToken() {
   const data = await res.json();
   _driveTokenCache = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
   return _driveTokenCache.token;
+}
+
+const MAX_FILES_TO_TRY = 5; // ADDED 2026-10-12
+
+async function findRecentFiles(folderId, n) {
+  const accessToken = await getGoogleDriveToken();
+  const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=${n}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) throw new Error(`Drive files.list failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return data.files || [];
 }
 
 async function findNewestFile(folderId) {
