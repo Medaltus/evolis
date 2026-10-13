@@ -2,12 +2,20 @@
   "version": 2,
   "crons": [
     {
-      "path": "/api/cron/sale-promotions",
+      "path": "/api/cron/sale-promotions?group=A",
       "schedule": "5 * * * *"
     },
     {
-      "path": "/api/cron/fees-estimate",
-      "schedule": "10,40 * * * *"
+      "path": "/api/cron/sale-promotions?group=B",
+      "schedule": "33 * * * *"
+    },
+    {
+      "path": "/api/cron/fees-estimate?group=A",
+      "schedule": "18 * * * *"
+    },
+    {
+      "path": "/api/cron/fees-estimate?group=B",
+      "schedule": "48 * * * *"
     },
     {
       "path": "/api/cron/sync-orders-request",
@@ -19,7 +27,7 @@
     },
     {
       "path": "/api/cron/sync-90d-units-cache",
-      "schedule": "0 7 * * *"
+      "schedule": "22 9 * * *"
     },
     {
       "path": "/api/cron/sync-orders-process",
@@ -115,7 +123,7 @@
     },
     {
       "path": "/api/cron/qa-business-report",
-      "schedule": "5 7 * * *"
+      "schedule": "30 7 * * *"
     },
     {
       "path": "/api/cron/sync-walmart-orders",
