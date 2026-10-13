@@ -336,8 +336,15 @@ function parseDelimited(text) {
     'BACKEND_NOTES', 'BACKEND_REWRITE',
   ];
 
+  // Fields whose line breaks are kept (CHANGED 2026-10-13): the description
+  // is now 2–3 paragraphs, and joining every continuation line with a space
+  // (as for the other fields) flattened it into one block. A blank line in
+  // the response becomes a paragraph break in the sheet cell.
+  const MULTILINE_KEYS = new Set(['DESC_REWRITE']);
+
   const result = {};
   let currentKey = null;
+  let blankSinceLast = false;
 
   for (const line of text.split('\n')) {
     const upper = line.toUpperCase();
@@ -346,13 +353,20 @@ function parseDelimited(text) {
       if (upper.startsWith(key + ':')) {
         currentKey = key;
         result[currentKey] = line.slice(key.length + 1).trim();
+        blankSinceLast = false;
         matched = true;
         break;
       }
     }
-    if (!matched && currentKey && line.trim()) {
+    if (matched || !currentKey) continue;
+    if (!line.trim()) { blankSinceLast = true; continue; }
+    if (MULTILINE_KEYS.has(currentKey)) {
+      const sep = !result[currentKey] ? '' : (blankSinceLast ? '\n\n' : '\n');
+      result[currentKey] += sep + line.trim();
+    } else {
       result[currentKey] += ' ' + line.trim();
     }
+    blankSinceLast = false;
   }
 
   return {
@@ -762,7 +776,7 @@ HOLISTIC PDP STRATEGY — REQUIRED BEFORE WRITING ANY FIELD:
 - Do not silently discard meaningful information. If a product fact, customer need, differentiator, proof point or targeted keyword is removed from one field, determine whether it warrants relocation elsewhere in the PDP. State material relocations or intentional omissions concisely in the relevant NOTES field.
 - Do not assume all five current bullet topics deserve to survive. Select the five highest-value, nonredundant messages for this specific SKU from all available evidence. Likewise, do not omit a stronger unused message merely because no current bullet contains it.
 - Before finalizing, perform a whole-PDP coverage check: confirm the rewrites collectively communicate what the product is, why it matters, its strongest supported differentiators, the most important customer information, and the deliberate keyword strategy without avoidable duplication.
-- INPUT AND OUTPUT LENGTHS ARE SEPARATE: The current live title, Item Highlights, bullets, description, backend terms and ingredients are supplied for complete analysis and are not constrained by the rewrite limits. Read and assess the full supplied field. The 75/125/200/400-character limits apply only to the corresponding generated rewrites.
+- INPUT AND OUTPUT LENGTHS ARE SEPARATE: The current live title, Item Highlights, bullets, description, backend terms and ingredients are supplied for complete analysis and are not constrained by the rewrite limits. Read and assess the full supplied field. The title (75), Item Highlights (125), bullet and description length targets apply only to the corresponding generated rewrites.
 - Do not say that a live field was truncated merely because it exceeds the allowed rewrite length. Only report input truncation if the prompt explicitly labels the field as truncated or includes a truncation marker.
 
 KEYWORD TIER CLASSIFICATION — DO NOT CONFUSE STRATEGY WITH PERFORMANCE:
@@ -813,6 +827,11 @@ BULLET FORMATTING RULES (apply to all bullet rewrites):
   - 250–300 characters: use when the bullet genuinely needs the extra space for ingredients, product benefits or differentiators.
   - 300+ characters: only when truly necessary and the product type's bullet limit allows it; never exceed 500 characters.
   - A bullet under 200 characters is usually underusing the space — expand it with real, supported benefits, ingredients or differentiators (never filler or unsupported claims).
+- PRODUCT DESCRIPTION LENGTH & STYLE (Jaclyn 2026-10-13 — replaces the old 400-char max). Most of our listings have A+ Content, so the description is usually not shown to shoppers, but Amazon still indexes it and it carries some SEO weight. Treat it as real, readable copy that also earns search relevance:
+  - Write 2–3 paragraphs, roughly 1,000–1,800 characters. Never exceed 2,000 characters (Amazon's description limit). A description under about 800 characters is underusing the field unless the product genuinely has little more to say.
+  - A natural flow works well: what the product is and who it's for → how it works / key ingredients and benefits → how to use it and what sets it apart. Use it for supporting detail, education and ingredient context that didn't fit the bullets — don't just restate the bullets.
+  - Work in Tier 1 / Tier 2 and other relevant strategy keywords ONLY where they read naturally in a sentence. Never stuff keywords, list them, or repeat the same phrase; it must read like copy a person wrote, not an SEO block.
+  - Complete sentences in paragraphs — no bullets, no HTML, no ALL-CAPS headers. All the same compliance rules apply (claims, timeline qualifiers, ingredient accuracy).
 
 OUTPUT FORMAT — use exactly these labels, one per line, no JSON, no markdown:
 TITLE_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
@@ -826,7 +845,7 @@ BULLET_3_REWRITE: [compliant rewrite of bullet 3, 200–250 chars preferred, up 
 BULLET_4_REWRITE: [compliant rewrite of bullet 4, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
 BULLET_5_REWRITE: [compliant rewrite of bullet 5, 200–250 chars preferred, up to 300 when needed, 300+ only if necessary. Empty string if travel SKU.]
 DESC_NOTES: [violations found in description, or "No violations" if clean. Max 300 chars. Empty string if travel SKU.]
-DESC_REWRITE: [compliant rewrite of description, max 400 chars, plain sentences no bullets. Empty string if travel SKU.]
+DESC_REWRITE: [compliant rewrite of description: 2–3 natural paragraphs, about 1,000–1,800 chars, never over 2,000. Separate paragraphs with one blank line. No keyword stuffing, no bullets, no HTML. Empty string if travel SKU.]
 BACKEND_NOTES: [violations found, or "No violations" if clean. Max 300 chars.]
 BACKEND_REWRITE: [compliant backend keywords, max 200 chars, spaces only no commas.]
 
@@ -866,7 +885,7 @@ PREVIOUS AUDIT (${previousAudit.date}):
 Title recommendation: ${san(previousAudit.titleRewrite, 300) || 'None'}
 Item Highlights recommendation: ${san(previousAudit.ihRewrite, 300) || 'None'}
 Bullet recommendations: ${[previousAudit.bullet1Rewrite, previousAudit.bullet2Rewrite, previousAudit.bullet3Rewrite, previousAudit.bullet4Rewrite, previousAudit.bullet5Rewrite].map((x,i)=>`${i+1}. ${san(x,500) || 'None'}`).join(' | ')}
-Description recommendation: ${san(previousAudit.descRewrite, 450) || 'None'}
+Description recommendation: ${san(previousAudit.descRewrite, 2000) || 'None'}
 Backend recommendation: ${san(previousAudit.backendRewrite, 250) || 'None'}
 Prior notes: ${san([previousAudit.titleNotes, previousAudit.ihNotes, previousAudit.bulletsNotes, previousAudit.descNotes, previousAudit.backendNotes].filter(Boolean).join(' | '), 1000) || 'None'}
 ` : '\nPREVIOUS AUDIT: No previous audit is available for this SKU.\n';
@@ -997,7 +1016,7 @@ Ingredients: ${ingredients || 'NOT AVAILABLE'}`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: travel ? 600 : 3200, // raised from 2500 — bullets now run 200–300+ chars each
+            max_tokens: travel ? 600 : 3800, // 2500 → 3200 (longer bullets) → 3800 (2026-10-13: description is now 2–3 paragraphs, up to 2,000 chars)
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }]
           })
