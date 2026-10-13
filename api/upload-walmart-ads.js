@@ -387,7 +387,7 @@ module.exports = async (req, res) => {
   // free text that could coincidentally look numeric too, e.g. someone
   // searching a UPC) — everything else in the row gets real number/date
   // treatment under USER_ENTERED.
-  async function writeSheet(sheetId, headers, rowsByBrand, label, textColumns = []) {
+  async function writeSheet(sheetId, headers, rowsByBrand, label, textColumns = [], keyColumns = []) {
     const results = [];
     for (const [tabName, rows] of Object.entries(rowsByBrand)) {
       try {
@@ -408,9 +408,32 @@ module.exports = async (req, res) => {
         // 'last_updated') fixes this for both affected sheets.
         // ADVERTISING_HEADERS has no 'date' column at all, so it was
         // never affected by this specific bug.
-        const keyOf = r => headers.filter(h => h !== 'last_updated' && h !== 'date').map(h => r[h]).join('||');
+        //
+        // FIXED 2026-10-13 — real incident: the Advertising Cache had 3 rows
+        // for August, 3 for September and 2 for October. The key was built
+        // from EVERY column except last_updated/date — including the metrics
+        // (impressions, clicks, spend, sales…). A month that's still running
+        // gets new numbers on every upload, so its key changed every time and
+        // the old row was kept alongside the new one instead of replaced.
+        // The key is now only the columns that IDENTIFY a row (keyColumns,
+        // per sheet — e.g. brand + year + month for the Advertising Cache).
+        // Values are compared as trimmed text, since rows read back from the
+        // sheet come back as text ("2026") while fresh rows are numbers (2026).
+        //
+        // Existing duplicates left behind by the old key are collapsed on the
+        // next upload, keeping the copy with the most recent last_updated.
+        const keyOf = r => keyColumns.map(h => String(r[h] ?? '').trim()).join('||');
         const merged = new Map();
-        (existing || []).forEach(r => merged.set(keyOf(r), r));
+        let duplicatesRemoved = 0;
+        (existing || []).forEach(r => {
+          const k = keyOf(r);
+          const prev = merged.get(k);
+          if (prev) {
+            duplicatesRemoved++;
+            if (String(r.last_updated || '') < String(prev.last_updated || '')) return; // keep the newer one
+          }
+          merged.set(k, r);
+        });
         rows.forEach(r => merged.set(keyOf(r), r));
 
         // Added 2026-08-06 per Jaclyn: sort by year ascending, then month
@@ -434,7 +457,7 @@ module.exports = async (req, res) => {
           return (textColSet.has(h) && v !== '') ? `'${v}` : v;
         }));
         await replaceRows(sheetId, tabName, headers, outRows, token, 'USER_ENTERED');
-        results.push({ brand: tabName, status: 'ok', incomingRows: rows.length, totalRows: outRows.length });
+        results.push({ brand: tabName, status: 'ok', incomingRows: rows.length, totalRows: outRows.length, ...(duplicatesRemoved ? { duplicatesRemoved } : {}) });
       } catch (err) {
         console.error(`[upload-walmart-ads] ${label} ${tabName} failed:`, err.message);
         results.push({ brand: tabName, status: 'error', error: err.message });
@@ -443,9 +466,13 @@ module.exports = async (req, res) => {
     return results;
   }
 
-  const adOrdersResults   = await writeSheet(SHEET_AD_ORDERS, AD_ORDERS_HEADERS, adOrdersByBrand, 'ad-orders', ['item_id']);
-  const advertisingResults = await writeSheet(SHEET_ADVERTISING, ADVERTISING_HEADERS, advertisingByBrand, 'advertising'); // no ID-like columns — plain USER_ENTERED is safe
-  const searchTermsResults = await writeSheet(SHEET_SEARCH_TERMS, SEARCH_TERMS_HEADERS, searchTermsByBrand, 'search-terms', ['search_term', 'keyword']);
+  // Last argument = the columns that identify a row (CHANGED 2026-10-13 — see writeSheet).
+  const adOrdersResults   = await writeSheet(SHEET_AD_ORDERS, AD_ORDERS_HEADERS, adOrdersByBrand, 'ad-orders', ['item_id'],
+    ['brand', 'year', 'month', 'item_id']);
+  const advertisingResults = await writeSheet(SHEET_ADVERTISING, ADVERTISING_HEADERS, advertisingByBrand, 'advertising', [], // no ID-like columns — plain USER_ENTERED is safe
+    ['brand', 'year', 'month']);
+  const searchTermsResults = await writeSheet(SHEET_SEARCH_TERMS, SEARCH_TERMS_HEADERS, searchTermsByBrand, 'search-terms', ['search_term', 'keyword'],
+    ['brand', 'year', 'month', 'search_term', 'keyword', 'match_type', 'campaign_name', 'ad_group_name']);
 
   res.status(200).json({
     ok: true,
