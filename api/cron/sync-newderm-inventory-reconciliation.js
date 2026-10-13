@@ -464,6 +464,7 @@ async function fetchMasterSkuList() {
   // standalone products ("CATALOG") from virtual bundles ("BUNDLE") —
   // only CATALOG rows are reconciled now.
   let skippedBundles = 0;
+  let skippedNotLive = 0;
   const out = [];
   for (const line of lines) {
     const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
@@ -473,10 +474,20 @@ async function fetchMasterSkuList() {
     const skuType  = (cols[9] || '').trim().toUpperCase();
     if (!sku) continue;
     if (skuType === 'BUNDLE') { skippedBundles++; continue; }
+    // ADDED 2026-10-12 per Jaclyn — only LIVE SKUs (column H "Status"),
+    // the same rule sync-products.js has used since 2026-08-31. Discontinued
+    // / deleted SKUs never get a Products Cache row, so including them here
+    // only produced a "no current-day record" log line and blank Amazon
+    // columns for each one (e.g. dozens of dearcloud SKUs daily).
+    const status = (cols[7] || '').trim().toUpperCase();
+    if (status !== 'LIVE') { skippedNotLive++; continue; }
     out.push({ sku, name, rawBrand });
   }
   if (skippedBundles > 0) {
     console.log(`[inventory-reconciliation] skipped ${skippedBundles} BUNDLE-type SKU(s) — no real standalone inventory to reconcile for these`);
+  }
+  if (skippedNotLive > 0) {
+    console.log(`[inventory-reconciliation] skipped ${skippedNotLive} non-LIVE SKU(s) (master list Status) — not reconciled, same rule as sync-products.js`);
   }
   return out;
 }
