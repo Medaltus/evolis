@@ -203,7 +203,7 @@
     },
     {
       "path": "/api/cron/sync-consignment-inventory",
-      "schedule": "17 22 * * *"
+      "schedule": "17 23 * * *"
     },
     {
       "path": "/api/cron/sync-advertising-request",
