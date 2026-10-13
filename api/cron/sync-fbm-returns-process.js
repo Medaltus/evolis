@@ -144,7 +144,15 @@ module.exports = async (req, res) => {
       const statusResp = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, account);
       console.log(`[sync-fbm-returns-process] report ${reportId} status: ${statusResp.processingStatus}`);
       if (statusResp.processingStatus === 'DONE') { documentId = statusResp.reportDocumentId; break; }
-      if (statusResp.processingStatus === 'FATAL' || statusResp.processingStatus === 'CANCELLED') {
+      // CHANGED 2026-10-12 — CANCELLED means Amazon had NO DATA for the
+      // window (zero seller-fulfilled returns), not a failure — see the same
+      // fix in sync-returns-process.js. FATAL still alerts.
+      if (statusResp.processingStatus === 'CANCELLED') {
+        console.log(`[sync-fbm-returns-process] report ${reportId} CANCELLED by Amazon — no FBM returns in this window`);
+        await markNoData(sheets.returns, META_TAB, META_HEADERS, { fbm_report_status: 'NO_DATA', fbm_last_processed_at: nowEst });
+        return res.status(200).json({ account, status: 'no_data', reason: 'Amazon returned no seller-fulfilled returns for this window', reportId });
+      }
+      if (statusResp.processingStatus === 'FATAL') {
         await sendCronFailureAlert(CRON, `report ${statusResp.processingStatus}`, { ReportId: reportId });
         return res.status(500).json({ error: `Report ${statusResp.processingStatus}`, reportId });
       }
@@ -356,3 +364,20 @@ function toEstIso(date) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ADDED 2026-10-12 — records a no-data result in _meta (keeps every other
+// key as-is). Never throws: failing to write this note shouldn't turn
+// "no returns" into an error.
+async function markNoData(sheetId, metaTab, metaHeaders, updates) {
+  try {
+    const token   = await ensureTab(sheetId, metaTab, metaHeaders);
+    const rawMeta = await readRows(sheetId, metaTab);
+    const metaMap = {};
+    for (const r of (rawMeta || [])) { if (r['KEY']) metaMap[r['KEY']] = r['VALUE']; }
+    Object.assign(metaMap, updates);
+    const ts = updates.last_processed_at || updates.fbm_last_processed_at || new Date().toISOString();
+    await replaceRows(sheetId, metaTab, metaHeaders, Object.entries(metaMap).map(([k, v]) => [k, v, ts]), token);
+  } catch (err) {
+    console.warn('[returns] could not record no-data status in _meta:', err.message);
+  }
+}
