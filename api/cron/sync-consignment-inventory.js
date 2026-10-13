@@ -41,12 +41,14 @@
  * Amazon-side Out-of-Stock Log — not built here, flagging as a possible
  * future ask rather than assuming it's wanted now.
  *
- * Runs manually for now — add to vercel.json once confirmed working.
+ * Scheduled daily at 23:17 UTC (MOVED 2026-10-12 from 22:17, which sat inside
+ * the VBC project's 22:00–22:40 ShipStation cluster on the same shared key).
  */
 
 const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client');
 const sheets = require('../config/sheets');
 const { sendCronFailureAlert } = require('../_alerts');
+const { ssFetch } = require('../_shipstation'); // ADDED 2026-10-12 — rate-limit-aware fetch (shared key with VBC)
 
 const SS_V2_BASE = 'https://api.shipstation.com';
 
@@ -105,7 +107,9 @@ module.exports = async (req, res) => {
 
   const results = [];
 
+  let brandIndex = 0;
   for (const { brandId, warehouseId, skuPrefix, tabName } of CONSIGNMENT_BRANDS) {
+    if (brandIndex++ > 0) await new Promise(r => setTimeout(r, 1000)); // small gap between warehouses (2026-10-12)
     try {
       const inventory = await fetchAllInventory(ssToken, warehouseId);
       const ssMap = {};
@@ -183,7 +187,10 @@ async function fetchAllInventory(token, warehouseId) {
   let all = [];
   let url = `${SS_V2_BASE}/v2/inventory?inventory_warehouse_id=${warehouseId}&limit=100`;
   while (url) {
-    const res = await fetch(url, { headers: { 'API-Key': token, 'Content-Type': 'application/json' } });
+    // CHANGED 2026-10-12 — ssFetch waits out a 429 (ShipStation's Retry-After)
+    // instead of failing the brand. The API key is shared with the VBC
+    // project, so its calls count against the same per-minute limit.
+    const res = await ssFetch(url, { headers: { 'API-Key': token, 'Content-Type': 'application/json' } }, `inventory ${warehouseId}`);
     if (!res.ok) throw new Error(`ShipStation V2 inventory HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const data = await res.json();
     all = all.concat(data.inventory || []);
