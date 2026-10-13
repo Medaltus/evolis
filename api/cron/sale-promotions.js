@@ -66,6 +66,11 @@ module.exports = async (req, res) => {
 
   const dryRun    = req.query.dryRun === 'true';
   const onlyBrand = req.query.brand || null;
+  // ADDED 2026-10-12 — ?group=A / ?group=B runs only that brand group
+  // (brands.js productsSyncGroup), so the two halves run at different times
+  // instead of every brand's orders tab being read in one burst. No group =
+  // every brand, same as before.
+  const onlyGroup = (req.query.group || '').trim().toUpperCase() || null;
   const rowLimit  = parseInt(req.query.rowLimit, 10) || DEFAULT_ROW_LIMIT_PER_BRAND;
 
   // ── Load Events + price reference (same source as the old inline logic) ──
@@ -113,10 +118,21 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to load events/price reference', detail: err.message });
   }
 
-  const activeBrands = brandsConfig.filter(b => b.active && (!onlyBrand || b.id === onlyBrand));
+  const activeBrands = brandsConfig.filter(b =>
+    b.active && (!onlyBrand || b.id === onlyBrand) && (!onlyGroup || b.productsSyncGroup === onlyGroup));
+  if (onlyGroup && activeBrands.length === 0) {
+    return res.status(400).json({ error: `No active brand has productsSyncGroup="${onlyGroup}" — check config/brands.js` });
+  }
   const results = [];
 
+  // ADDED 2026-10-12 — short pause between brands so one run doesn't read
+  // every orders tab in a single burst (Sheets read/write quota is
+  // per-minute and shared by every cron — see the 2026-10-10 7:00 UTC
+  // read-quota incident). Adds ~2s per brand.
+  const BRAND_STAGGER_MS = 2000;
+  let brandIndex = 0;
   for (const brand of activeBrands) {
+    if (brandIndex++ > 0) await new Promise(r => setTimeout(r, BRAND_STAGGER_MS));
     try {
       const outcome = await processBrandPromos({ brand, eventWindows, priceRef, rowLimit, dryRun });
       results.push({ brand: brand.id, status: 'ok', ...outcome });
