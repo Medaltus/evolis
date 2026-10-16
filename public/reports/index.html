@@ -1193,6 +1193,13 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   .asn-grid{grid-template-columns:1fr;}
   .asn-meta-form-grid{grid-template-columns:1fr;}
 }
+/* Brand Manager KPIs tab (Overview) — ported 2026-10-14 from skinside SEOUL */
+#ov-bm-kpis .kpi-card.bmk-pending .kpi-value{color:var(--muted);font-size:18px;}
+#ov-bm-kpis .bmk-needs{display:inline-block;font-size:11px;color:var(--warn);background:rgba(244,223,208,.55);border:1px solid rgba(200,125,47,.25);border-radius:4px;padding:2px 8px;}
+#ov-bm-kpis .bmk-scored-tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);background:rgba(36,233,163,.12);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;}
+#ov-bm-kpis .data-table td.bmk-calc{color:var(--muted);font-size:11px;}
+#ov-bm-kpis .bmk-cat-note{font-size:11px;color:var(--muted);margin:-6px 0 12px;line-height:1.5;}
+#ov-bm-kpis .kpi-sub{font-size:11px;color:var(--muted);margin-top:5px;} /* from MiGuard's global .kpi-sub (Skinside has none) */
 </style>
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -1452,6 +1459,18 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
     </div>
 
+    <!-- Overview tabs — added 2026-10-14 per Jaclyn, matching skinside SEOUL:
+         everything already on this page lives in the first tab ("Overview"),
+         plus "Projections & Goals" and "Brand Manager KPIs". -->
+    <div class="channel-tabs-row">
+      <div class="channel-tabs">
+        <button class="ch-tab active" onclick="showChannel('overview','ov-main',this)">Overview</button>
+        <button class="ch-tab" onclick="showChannel('overview','ov-projections',this)">Projections &amp; Goals</button>
+        <button class="ch-tab" onclick="showChannel('overview','ov-bm-kpis',this)">Brand Manager KPIs</button>
+      </div>
+    </div>
+
+    <div class="channel-page active" id="ov-main">
     <!-- MTD/Last Month toggle — added 2026-08-28 per Jaclyn, ported from
          Skinuva's proven architecture (getOverviewPeriodConfig /
          window.__overviewSelectPeriod / renderOverviewPeriodPills). -->
@@ -1561,6 +1580,57 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </thead>
         <tbody id="ov-products-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
       </table>
+    </div>
+
+    </div><!-- /ov-main -->
+
+    <!-- Projections & Goals — added 2026-10-05 per Jaclyn. Rendered by
+         window.initProjections(). -->
+    <div class="channel-page" id="ov-projections">
+      <div class="card">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="card-title" style="margin-bottom:0;">Share of Sales</div>
+          <div id="legend-proj-ads" style="display:flex;align-items:center;"></div>
+        </div>
+        <div style="height:10px;"></div>
+        <div style="position:relative;height:300px;"><canvas id="proj-ads-pct-chart"></canvas></div>
+        <div class="ppc-note" id="proj-ads-note"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+          <div class="card-title" style="margin-bottom:0;">Sales by Quarter <span style="font-weight:400;color:var(--muted);">(completed quarters)</span></div>
+          <div class="period-pills" id="proj-quarter-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="proj-quarter-table">
+            <thead id="proj-quarter-thead"></thead>
+            <tbody id="proj-quarter-tbody"><tr><td style="color:var(--muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="ppc-note">ℹ Amazon orders, excluding cancelled, pending and Vine — same rules as the Sales &gt; Amazon tab. Inventory Available is today's figure (FBA + inbound receiving + seller-fulfilled − reserved), same as the Inventory page. The quarter in progress appears once it ends.</div>
+      </div>
+    </div>
+
+    <!-- Brand Manager KPIs — added 2026-10-05 per Jaclyn, from her 5-category
+         framework (Organic Performance, Conversion, SEO / Discoverability,
+         Strategic Execution, Retail Readiness / Risk). Top row = the 5 scored
+         KPIs; below, every supporting metric with its calculation. Metrics
+         that depend on data that isn't in any sheet yet (initiatives, issue
+         log, promo plan, CVR target, SMART goals) are shown as "Needs input"
+         rather than guessed. Rendered by window.initBmKpis(). -->
+    <div class="channel-page" id="ov-bm-kpis">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="card-title" style="margin-bottom:0;font-size:16px;">Brand Manager KPIs</div>
+        <div class="period-pills" id="bmk-quarter-pills" style="display:flex;background:var(--white);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;"></div>
+      </div>
+      <div class="section-label" style="margin-top:0;">Scored KPIs</div>
+      <div class="kpi-row" id="bmk-scored" style="grid-template-columns:repeat(5,1fr);"><div style="color:var(--muted);font-size:12px;">Loading…</div></div>
+      <div id="bmk-categories"></div>
+      <div class="card" id="bmk-smart">
+        <div class="card-title">Brand-Specific SMART KPIs <span style="font-weight:400;color:var(--muted);">(2–3 per quarter)</span></div>
+        <div class="bmk-needs">Needs input — the quarter's 2–3 SMART goals from the strategy sheet (goal, target, due date, status).</div>
+      </div>
     </div>
 
   </div>
@@ -5216,6 +5286,8 @@ function showChannel(page, channelId, btn) {
     // lazy init evolis data — each initXLive() is now idempotent (caches its
     // own in-flight promise), so calling it again on repeat tab visits is
     // just a cheap early-return, not a duplicate fetch.
+    if (channelId === 'ov-projections')  window.initProjections();
+    if (channelId === 'ov-bm-kpis')      window.initBmKpis();
     if (channelId === 's-amazon')        initAmazonLive();
     if (channelId === 's-website')       initWebLive();
     if (channelId === 's-walmart')       initWalmartLive();
@@ -11797,8 +11869,16 @@ async function initSnsExternal() {
       : new Date(new Date(newestDateOverall + 'T00:00:00').getTime() - windowDays * 86400000).toISOString().slice(0, 10);
 
     if (dateRangeEl) dateRangeEl.textContent = `${targetOlderDate} → ${newestDateOverall}`;
-    if (colOlderEl) colOlderEl.textContent = targetOlderDate;
-    if (colNewerEl) colNewerEl.textContent = newestDateOverall;
+    // CHANGED 2026-10-14 — set only the label text, so the sortable header's
+    // ▲/▼ arrow span (added on page load) isn't wiped out.
+    const setHeaderLabel = (el, text) => {
+      if (!el) return;
+      const arrow = el.querySelector('.rt-sort-arrow');
+      el.textContent = text;
+      if (arrow) el.appendChild(arrow);
+    };
+    setHeaderLabel(colOlderEl, targetOlderDate);
+    setHeaderLabel(colNewerEl, newestDateOverall);
 
     let improved = 0, declined = 0, newlyRanking = 0, droppedOut = 0, notRanking = 0, steady = 0, urgentCount = 0;
     const tableRows = [];
@@ -11902,18 +11982,30 @@ async function initSnsExternal() {
         const actionCell = r.aiRecommendation
           ? `<span style="color:var(--navy);font-weight:600;">✨ ${escapeHtml(r.aiRecommendation)}</span>`
           : `<span style="${r.action.cls ? `color:${r.action.cls === 'rank-top' ? '#1db88a' : r.action.cls === 'rank-low' ? 'var(--danger)' : 'var(--navy)'};` : ''}">${escapeHtml(r.action.text)}</span>`;
+        // ADDED 2026-10-14 per Jaclyn — sortable headers. data-sort holds the
+        // real value each column sorts by; blank = always sorts to the bottom
+        // (unranked keyword, no comparison, etc.).
+        const rankSort = rk => (rk && rk.ranked && rk.numeric != null) ? rk.numeric : '';
+        let changeSort = '';
+        if (r.olderObs && r.olderRank && r.newerRank) {
+          if (r.olderRank.ranked && r.newerRank.ranked) changeSort = r.olderRank.numeric - r.newerRank.numeric;
+          else if (!r.olderRank.ranked && r.newerRank.ranked) changeSort = 100000;   // New: above any gain
+          else if (r.olderRank.ranked && !r.newerRank.ranked) changeSort = -100000; // Dropped: below any loss
+        }
+        const attr = v => escapeHtml(String(v == null ? '' : v));
         return `<tr${rowStyle}>
-          <td>${escapeHtml(product)}</td>
-          <td>${escapeHtml(r.keyword)}</td>
-          <td>${r.searchVolume.toLocaleString()}</td>
-          <td>${rankPillHtml(r.olderRank)}</td>
-          <td>${rankPillHtml(r.newerRank)}</td>
-          <td>${changeCell}</td>
+          <td data-sort="${attr(product)}">${escapeHtml(product)}</td>
+          <td data-sort="${attr(r.keyword)}">${escapeHtml(r.keyword)}</td>
+          <td data-sort="${attr(r.searchVolume)}">${r.searchVolume.toLocaleString()}</td>
+          <td data-sort="${attr(rankSort(r.olderRank))}">${rankPillHtml(r.olderRank)}</td>
+          <td data-sort="${attr(rankSort(r.newerRank))}">${rankPillHtml(r.newerRank)}</td>
+          <td data-sort="${attr(changeSort)}">${changeCell}</td>
           <td style="font-size:11.5px;">${escapeHtml(r.whereInListing)}</td>
           <td style="font-size:11.5px;">${r.ppc.label}</td>
-          <td style="font-size:11.5px;">${actionCell}</td>
+          <td style="font-size:11.5px;" data-sort="${attr(r.aiRecommendation || (r.action && r.action.text) || '')}">${actionCell}</td>
         </tr>`;
       }).join('');
+      if (typeof window.rtApplySort === 'function') window.rtApplySort(tbody);
     }
 
     if (bannerText) {
@@ -14276,6 +14368,737 @@ function getProductMaster() {
   })();
   return _productMasterPromise;
 }
+
+// ADDED 2026-10-14 per Jaclyn — click any Rank Tracker column header to sort:
+// first click ascending, second descending. Sorts by each cell's data-sort
+// value (numbers numerically, text A–Z); rows with no value always go last.
+// The chosen sort is remembered per table and re-applied after a re-render.
+// Before any header is clicked, the table keeps its priority order.
+window._rtSortState = window._rtSortState || {};
+window.rtApplySort = function (tbody) {
+  if (!tbody) return;
+  const st = window._rtSortState[tbody.id];
+  const table = tbody.closest('table');
+  if (table) table.querySelectorAll('thead th').forEach((th, i) => {
+    const arrow = th.querySelector('.rt-sort-arrow');
+    if (arrow) arrow.textContent = (st && st.col === i) ? (st.dir === 1 ? ' ▲' : ' ▼') : '';
+  });
+  if (!st) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  if (rows.length < 2 || rows.some(tr => tr.children.length <= st.col)) return;
+  const val = tr => { const td = tr.children[st.col]; const v = td.getAttribute('data-sort'); return v == null ? td.textContent.trim() : v; };
+  rows.sort((a, b) => {
+    const va = val(a), vb = val(b);
+    if (va === '' && vb === '') return 0;
+    if (va === '') return 1;
+    if (vb === '') return -1;
+    const na = Number(va), nb = Number(vb);
+    const cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb, undefined, { sensitivity: 'base' });
+    return cmp * st.dir;
+  });
+  rows.forEach(tr => tbody.appendChild(tr));
+};
+document.addEventListener('click', function (e) {
+  const th = e.target.closest('th');
+  if (!th) return;
+  const table = th.closest('table');
+  const tbody = table && table.querySelector('tbody[id$="-rt-tbody"]');
+  if (!tbody) return;
+  const col = Array.from(th.parentNode.children).indexOf(th);
+  const cur = window._rtSortState[tbody.id];
+  window._rtSortState[tbody.id] = { col, dir: (cur && cur.col === col) ? -cur.dir : 1 };
+  window.rtApplySort(tbody);
+});
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('tbody[id$="-rt-tbody"]').forEach(tbody => {
+    const table = tbody.closest('table');
+    if (!table) return;
+    table.querySelectorAll('thead th').forEach(th => {
+      th.style.cursor = 'pointer';
+      th.style.userSelect = 'none';
+      th.title = 'Click to sort';
+      if (!th.querySelector('.rt-sort-arrow')) th.insertAdjacentHTML('beforeend', '<span class="rt-sort-arrow"></span>');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// OVERVIEW > PROJECTIONS & GOALS and BRAND MANAGER KPIs — ported
+// 2026-10-14 per Jaclyn from skinside SEOUL's dashboard (which ported them
+// from MiGuard's). Logic unchanged; only the data sources are évolis's.
+// Amazon-only, like the original (same scope as Sales > Amazon).
+// ═══════════════════════════════════════════════════════════════════
+window.getAmazonMonthlySales = function () {
+  if (window._amzMonthlySalesPromise) return window._amzMonthlySalesPromise;
+  window._amzMonthlySalesPromise = (async function () {
+    const amt = v => parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')) || 0;
+    const nd = v => {
+      v = String(v || '').trim();
+      if (/^\d{4}-\d{2}/.test(v)) return v.substring(0, 10);
+      const p = v.split('/');
+      if (p.length === 3) return `${p[2].length === 2 ? '20' + p[2] : p[2]}-${p[0].padStart(2, '0')}-${p[1].padStart(2, '0')}`;
+      return '';
+    };
+    // évolis sources (the skinside SEOUL original reads these through its
+    // runtime sheet config, which évolis doesn't have) — same sheets/tabs the
+    // rest of this dashboard already uses.
+    const EVO = {
+      SHEET_ORDERS:              { fileId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', gid: '1163928587' },
+      SHEET_ORDERS_HISTORICAL:   { fileId: '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU', gid: '1798449240' },
+      SHEET_STEWARDSHIP_SUMMARY: { fileId: '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0', gid: '1762221100' },
+      SHEET_PRODUCT_INVENTORY:   { fileId: '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s', gid: '1672819862' },
+      SHEET_BUSINESS_REPORT:     { fileId: '1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww', gid: '310979287' },
+      SHEET_KEYWORD_TRACKER:     { fileId: '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4', gid: '898118227' },
+      SHEET_COMPETITOR:          { fileId: '1B50P142KObEcwtgxzNzofRAidZ9efePts0_8RSnt5mg', gid: '' },
+    };
+    const cfgOf = k => EVO[k] || {};
+    const csvOf = k => fetch(ovCsvUrl(cfgOf(k).fileId || '', cfgOf(k).gid || '') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const [master, syncCsv, histCsv] = await Promise.all([getProductMaster(), csvOf('SHEET_ORDERS'), csvOf('SHEET_ORDERS_HISTORICAL')]);
+    const products = Object.values(master.bySku)
+      // évolis: brand is "évolis" (accent stripped to match), Amazon catalog
+      // SKUs only; DELETED SKUs are already dropped by getProductMaster().
+      .filter(e => (e.brand || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase() === 'evolis' && (e.channel || '').toLowerCase().includes('amazon') && (!e.skuType || e.skuType.toUpperCase() === 'CATALOG'))
+      .sort((a, b) => a.sku.localeCompare(b.sku));
+    const asinToSku = {};
+    products.forEach(p => { if (p.asin) asinToSku[p.asin] = p.sku; });
+    const valid = r => {
+      const s = (r.status || '').trim().toLowerCase();
+      if (s === 'cancelled' || s === 'pending') return false;
+      if ((r.promotion_ids || '').toLowerCase().includes('vine')) return false;
+      const b = (r.brand || '').trim().toLowerCase();
+      return !b || b === 'evolis';
+    };
+    const prep = rows => rows.map(r => ({ r, d: nd(r.date) })).filter(x => x.d);
+    const sync = prep(parseCsvToRows(syncCsv)), hist = prep(parseCsvToRows(histCsv));
+    const syncStart = sync.reduce((m, x) => (!m || x.d < m ? x.d : m), '');
+    const bySkuMonth = {}, monthTotal = {}, monthUnits = {};
+    const add = (list, useMonth) => list.forEach(({ r, d }) => {
+      const ym = d.substring(0, 7);
+      if (!useMonth(ym) || !valid(r)) return;
+      const sku = asinToSku[(r.asin || '').trim().toUpperCase()];
+      if (!sku) return; // not an évolis US Amazon catalog product (bundles have no ASIN)
+      const units = parseInt(r.unit_count, 10) || 0, sales = amt(r.item_price);
+      const m = bySkuMonth[ym] = bySkuMonth[ym] || {};
+      const s = m[sku] = m[sku] || { units: 0, sales: 0 };
+      s.units += units; s.sales += sales;
+      monthTotal[ym] = (monthTotal[ym] || 0) + sales;
+      monthUnits[ym] = (monthUnits[ym] || 0) + units;
+    });
+    const syncCovers = ym => !!syncStart && `${ym}-01` >= syncStart;
+    add(sync, ym => syncCovers(ym));
+    add(hist, ym => !syncCovers(ym));
+    return { products, bySkuMonth, monthTotal, monthUnits, syncStart };
+  })().catch(err => { window._amzMonthlySalesPromise = null; throw err; });
+  return window._amzMonthlySalesPromise;
+};
+
+window.initProjections = function () {
+  if (window._projPromise) return window._projPromise;
+  window._projPromise = (async function () {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const amt = v => parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')) || 0;
+    const nd = v => {
+      v = String(v || '').trim();
+      if (/^\d{4}-\d{2}/.test(v)) return v.substring(0, 10);
+      const p = v.split('/');
+      if (p.length === 3) return `${p[2].length === 2 ? '20' + p[2] : p[2]}-${p[0].padStart(2, '0')}-${p[1].padStart(2, '0')}`;
+      return '';
+    };
+    // évolis sources (the skinside SEOUL original reads these through its
+    // runtime sheet config, which évolis doesn't have) — same sheets/tabs the
+    // rest of this dashboard already uses.
+    const EVO = {
+      SHEET_ORDERS:              { fileId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', gid: '1163928587' },
+      SHEET_ORDERS_HISTORICAL:   { fileId: '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU', gid: '1798449240' },
+      SHEET_STEWARDSHIP_SUMMARY: { fileId: '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0', gid: '1762221100' },
+      SHEET_PRODUCT_INVENTORY:   { fileId: '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s', gid: '1672819862' },
+      SHEET_BUSINESS_REPORT:     { fileId: '1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww', gid: '310979287' },
+      SHEET_KEYWORD_TRACKER:     { fileId: '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4', gid: '898118227' },
+      SHEET_COMPETITOR:          { fileId: '1B50P142KObEcwtgxzNzofRAidZ9efePts0_8RSnt5mg', gid: '' },
+    };
+    const cfgOf = k => EVO[k] || {};
+    const csvOf = k => fetch(ovCsvUrl(cfgOf(k).fileId || '', cfgOf(k).gid || '') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const tbody = document.getElementById('proj-quarter-tbody');
+    try {
+      const [sales, adCsv, invCsv] = await Promise.all([
+        window.getAmazonMonthlySales(), csvOf('SHEET_STEWARDSHIP_SUMMARY'), csvOf('SHEET_PRODUCT_INVENTORY'),
+      ]);
+      const { products, bySkuMonth, monthTotal, syncStart } = sales;
+
+
+      // Last full month (the month before today's).
+      const now = new Date();
+      const lastFull = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const ymOf = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+
+      // ── 1) Ad vs. Organic share of sales ──
+      // CHANGED 2026-10-05 per Jaclyn: ad sales now come from the Stewardship
+      // Summary sheet's ad_sales column (col O), which has history back to
+      // 2025 — not the Amazon ad summary sheet (May 2026 on only). Total sales
+      // is unchanged (the order-based monthly totals the table uses).
+      // Organic share = (total − ad sales) ÷ total. A month with a blank
+      // ad_sales cell is left as a gap on both lines rather than shown as 0%.
+      const adByMonth = {};
+      parseCsvToRows(adCsv).forEach(r => {
+        const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
+        const raw = String(r.ad_sales == null ? '' : r.ad_sales).trim();
+        if (!y || !m || raw === '') return;
+        adByMonth[`${y}-${String(m).padStart(2, '0')}`] = amt(raw);
+      });
+      const months12 = [];
+      for (let i = 11; i >= 0; i--) months12.push(new Date(lastFull.getFullYear(), lastFull.getMonth() - i, 1));
+      const pts = months12.map(dt => {
+        const ym = ymOf(dt), total = monthTotal[ym] || 0;
+        const adSales = ym in adByMonth ? adByMonth[ym] : null;
+        let pct = null, orgPct = null;
+        if (adSales != null && total > 0) {
+          pct = Math.round((adSales / total) * 1000) / 10;
+          orgPct = Math.round((Math.max(0, total - adSales) / total) * 1000) / 10;
+        }
+        return { label: `${MONTHS[dt.getMonth()]} '${String(dt.getFullYear()).slice(2)}`, ym, pct, orgPct, adSales, total };
+      });
+      const canvas = document.getElementById('proj-ads-pct-chart');
+      if (canvas && typeof Chart === 'function') {
+        if (window._projAdsPctChart) window._projAdsPctChart.destroy();
+        const fmt$ = v => '$' + Math.round(v || 0).toLocaleString();
+        window._projAdsPctChart = new Chart(canvas, {
+          type: 'line',
+          data: { labels: pts.map(p => p.label), datasets: [
+            { label: 'Ad sales %', data: pts.map(p => p.pct), borderColor: '#24e9a3', backgroundColor: 'rgba(36,233,163,0.08)', fill: true, pointRadius: 3, tension: 0.3, borderWidth: 2.5, spanGaps: false },
+            { label: 'Organic sales %', data: pts.map(p => p.orgPct), borderColor: '#001f60', backgroundColor: 'transparent', fill: false, pointRadius: 3, tension: 0.3, borderWidth: 2.5, spanGaps: false },
+          ] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false }, // external legend in #legend-proj-ads
+              tooltip: { callbacks: { label: ctx => {
+                const p = pts[ctx.dataIndex];
+                if (ctx.datasetIndex === 0) return ` Ad: ${p.pct}% (${fmt$(p.adSales)})`;
+                return ` Organic: ${p.orgPct}% (${fmt$(Math.max(0, p.total - p.adSales))} of ${fmt$(p.total)})`;
+              } } },
+            },
+            scales: {
+              x: { grid: { color: 'rgba(0,0,0,0.04)' } },
+              y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { callback: v => v + '%' } },
+            },
+          },
+        });
+        if (typeof window.renderExternalLegend === 'function') window.renderExternalLegend(window._projAdsPctChart, 'legend-proj-ads');
+      }
+      const gaps = pts.filter(p => p.pct == null).map(p => p.label);
+      const noteEl = document.getElementById('proj-ads-note');
+      if (noteEl) noteEl.textContent = 'ℹ Ad sales from the Stewardship Summary sheet (ad_sales, column O); total sales from Amazon orders, same as the table below.' + (gaps.length ? ' No ad_sales value yet for: ' + gaps.join(', ') + ' — those months are left blank.' : '');
+
+      // ── 2) Sales by Quarter ──
+      // Inventory Available = latest Products Cache snapshot, same formula as the Inventory page.
+      const invRows = parseCsvToRows(invCsv);
+      const latestInvDate = invRows.reduce((m, r) => ((r.date || '') > m ? r.date : m), '');
+      const availBySku = {};
+      invRows.filter(r => r.date === latestInvDate).forEach(r => {
+        const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+        const a = (parseInt(r.fulfillable_quantity, 10) || 0) + (parseInt(r.inbound_receiving_quantity != null ? r.inbound_receiving_quantity : r.inbound_receiving, 10) || 0)
+                + (parseInt(r.seller_fulfilled_quantity, 10) || 0) - (parseInt(r.reserved_quantity, 10) || 0);
+        availBySku[sku] = (availBySku[sku] || 0) + a;
+      });
+
+      // Completed quarters that are fully covered by order data.
+      const dataMonths = Object.keys(bySkuMonth).sort();
+      const firstDataMonth = dataMonths[0];
+      const quarters = [];
+      const lastQ = Math.floor(lastFull.getMonth() / 3); // quarter index of the last full month
+      let qy = lastFull.getFullYear(), qi = (lastFull.getMonth() % 3 === 2) ? lastQ : lastQ - 1;
+      if (qi < 0) { qi = 3; qy--; }
+      for (let n = 0; n < 8; n++) {
+        const ms = [0, 1, 2].map(k => `${qy}-${String(qi * 3 + k + 1).padStart(2, '0')}`);
+        if (!firstDataMonth || ms[0] < firstDataMonth) break;
+        quarters.unshift({ label: `Q${qi + 1} ${qy}`, months: ms });
+        qi--; if (qi < 0) { qi = 3; qy--; }
+      }
+      const pills = document.getElementById('proj-quarter-pills');
+      const fmtMoney = v => '$' + (v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      function renderQuarter(idx) {
+        const q = quarters[idx];
+        if (pills) pills.innerHTML = quarters.map((qq, i) => `<button class="period-pill${i === idx ? ' active' : ''}" onclick="window._projSelectQuarter(${i})">${esc(qq.label)}</button>`).join('');
+        const mLabel = ym => MONTHS[parseInt(ym.substring(5, 7), 10) - 1];
+        document.getElementById('proj-quarter-thead').innerHTML = '<tr><th>SKU</th><th>Product</th><th>Inventory Available</th>' +
+          q.months.map(ym => `<th>${mLabel(ym)} Units</th><th>${mLabel(ym)} Sales $</th>`).join('') +
+          `<th>Q${q.label.substring(1, 2)} Units</th><th>Q${q.label.substring(1, 2)} Sales $</th></tr>`;
+        const totals = { avail: 0, months: q.months.map(() => ({ units: 0, sales: 0 })), units: 0, sales: 0 };
+        const rowsHtml = products.map(p => {
+          const avail = availBySku[p.sku];
+          if (avail != null) totals.avail += avail;
+          let qu = 0, qs = 0;
+          const cells = q.months.map((ym, i) => {
+            const v = (bySkuMonth[ym] && bySkuMonth[ym][p.sku]) || { units: 0, sales: 0 };
+            qu += v.units; qs += v.sales;
+            totals.months[i].units += v.units; totals.months[i].sales += v.sales;
+            return `<td>${v.units.toLocaleString()}</td><td>${fmtMoney(v.sales)}</td>`;
+          }).join('');
+          totals.units += qu; totals.sales += qs;
+          return `<tr><td style="font-family:var(--mono);">${esc(p.sku)}</td><td>${esc((p.name || '').trim())}</td><td>${avail == null ? '—' : avail.toLocaleString()}</td>${cells}<td><strong>${qu.toLocaleString()}</strong></td><td><strong>${fmtMoney(qs)}</strong></td></tr>`;
+        }).join('');
+        const totalRow = products.length > 1
+          ? `<tr style="background:var(--bg2);font-weight:700;"><td colspan="2">Total</td><td>${totals.avail.toLocaleString()}</td>${totals.months.map(m => `<td>${m.units.toLocaleString()}</td><td>${fmtMoney(m.sales)}</td>`).join('')}<td>${totals.units.toLocaleString()}</td><td>${fmtMoney(totals.sales)}</td></tr>`
+          : '';
+        tbody.innerHTML = rowsHtml + totalRow || '<tr><td style="color:var(--muted);">No products found.</td></tr>';
+      }
+      window._projSelectQuarter = renderQuarter;
+      if (!quarters.length) {
+        tbody.innerHTML = '<tr><td style="color:var(--muted);">No completed quarter with order data yet.</td></tr>';
+      } else {
+        renderQuarter(quarters.length - 1);
+      }
+      console.log('[Projections][qa] sync covers from', syncStart, '| months w/ data:', dataMonths.join(', '), '| quarters:', quarters.map(q => q.label).join(', '), '| ad/organic % :', pts.map(p => p.label + '=' + p.pct + '/' + p.orgPct).join(', '));
+    } catch (err) {
+      console.error('[Projections]', err);
+      window._projPromise = null; // allow retry
+      if (tbody) tbody.innerHTML = '<tr><td style="color:var(--danger);">Could not load — ' + esc(err.message || '') + '</td></tr>';
+    }
+  })();
+  return window._projPromise;
+};
+
+window.initBmKpis = function () {
+  if (window._bmkPromise) return window._bmkPromise;
+  window._bmkPromise = (async function () {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const amt = v => parseFloat(String(v == null ? '' : v).replace(/[$,()]/g, '')) || 0;
+    // évolis sources (the skinside SEOUL original reads these through its
+    // runtime sheet config, which évolis doesn't have) — same sheets/tabs the
+    // rest of this dashboard already uses.
+    const EVO = {
+      SHEET_ORDERS:              { fileId: '1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok', gid: '1163928587' },
+      SHEET_ORDERS_HISTORICAL:   { fileId: '1T5y-EOs21s9evwR4SR58EYsM2Vyk0awBqpE-kEnBlQU', gid: '1798449240' },
+      SHEET_STEWARDSHIP_SUMMARY: { fileId: '16QNnDh7-dTDzI-O7UI-WlzMtOmovssV23nd-quiYPR0', gid: '1762221100' },
+      SHEET_PRODUCT_INVENTORY:   { fileId: '1cdqKzqaUFr8MFDWkskpGJ5NQSv9QjVv64ab8P_PPr6s', gid: '1672819862' },
+      SHEET_BUSINESS_REPORT:     { fileId: '1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww', gid: '310979287' },
+      SHEET_KEYWORD_TRACKER:     { fileId: '1geNDQgd_1ensLDyZOuXZBnvQrFT_RC85l9rHHGpgJe4', gid: '898118227' },
+      SHEET_COMPETITOR:          { fileId: '1B50P142KObEcwtgxzNzofRAidZ9efePts0_8RSnt5mg', gid: '' },
+    };
+    const cfgOf = k => EVO[k] || {};
+    const csvOf = (fid, gid) => fetch(ovCsvUrl(fid || '', gid || '') + `&_cb=${Date.now()}`).then(r => r.ok ? r.text() : '').catch(() => '');
+    const csvKey = k => csvOf(cfgOf(k).fileId, cfgOf(k).gid);
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const scoredEl = document.getElementById('bmk-scored');
+    const catsEl = document.getElementById('bmk-categories');
+    try {
+      // Quarterly strategy sheets — one workbook per quarter, this brand's tab
+      // (named "skinisde SEOUL" in the workbook — gid is what's used, so the
+      // tab-name spelling doesn't matter).
+      // Add a line here when next quarter's workbook exists. Sections and
+      // columns are found by their header text, so row positions can move.
+      const STRATEGY_SHEETS = {
+        '2026-Q4': { fileId: '1jPHJv05jfck8yM8L_6-g8vO5Sz4vEaGD8SZBxQzlPFQ', gid: '871756410', label: "Q4' 2026 Strategies" }, // évolis tab
+      };
+      const stratKeys = Object.keys(STRATEGY_SHEETS);
+      const stratCsvs = await Promise.all(stratKeys.map(k => csvOf(STRATEGY_SHEETS[k].fileId, STRATEGY_SHEETS[k].gid)));
+      const [sales, stewCsv, goalsCsv, bizCsv, compCsv, kwCsv, pcCsv] = await Promise.all([
+        window.getAmazonMonthlySales(),
+        csvKey('SHEET_STEWARDSHIP_SUMMARY'),
+        csvOf('1trsHDgVSLprsOOjOuFWGZRDqVOV-eII3', '154860784'), // évolis Amazon+Walmart goals tab (same one the Goal Tracker reads)
+        csvKey('SHEET_BUSINESS_REPORT'),
+        // Competitor Research — this brand has one tab per product (7), so all
+        // of COMPETITOR_GID_BY_PRODUCT_TYPE is read (SHEET_COMPETITOR's own gid
+        // is blank in the config). Resolves to an array of CSVs.
+        // évolis: the 3 competitor research tabs referenced by SKU_KW_GID_MAP
+        Promise.all([...new Set(Object.values(SKU_KW_GID_MAP))].map(g => csvOf(cfgOf('SHEET_COMPETITOR').fileId, g))),
+        csvKey('SHEET_KEYWORD_TRACKER'),
+        csvKey('SHEET_PRODUCT_INVENTORY'),
+      ]);
+      const { products, monthTotal, monthUnits } = sales;
+      const ymKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+
+      // Stewardship: ad_sales (col O) + ad_units per month. Blank ad_sales = unknown.
+      const adSales = {}, adUnits = {};
+      parseCsvToRows(stewCsv).forEach(r => {
+        const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
+        if (!y || !m) return;
+        const k = ymKey(y, m);
+        if (String(r.ad_sales || '').trim() !== '') adSales[k] = amt(r.ad_sales);
+        if (String(r.ad_units || '').trim() !== '') adUnits[k] = amt(r.ad_units);
+      });
+      // Goals: row label "Sep-26" in col A; this brand's tab has col S (18)
+      // organic $ goal and col T (19) organic units goal (MiGuard: Q/R).
+      const goals = {};
+      parseCsvFull(goalsCsv).forEach(row => {
+        const lab = (row[0] || '').trim();
+        const mm = lab.match(/^([A-Za-z]{3})-(\d{2})$/);
+        if (!mm) return;
+        const mi = MONTHS.indexOf(mm[1].charAt(0).toUpperCase() + mm[1].slice(1, 3).toLowerCase());
+        if (mi < 0) return;
+        // évolis tab: col T (19) = "Organic Goal" ($); there's no organic UNITS
+        // goal column, so orgU stays null and that KPI shows "Needs input".
+        const g$ = String(row[19] || '').trim(), gU = '';
+        goals[ymKey(2000 + parseInt(mm[2], 10), mi + 1)] = { org$: g$ ? amt(g$) : null, orgU: gU ? amt(gU) : null };
+      });
+      // Business Report: sessions + units ordered per month.
+      const biz = {};
+      parseCsvToRows(bizCsv).forEach(r => {
+        const y = parseInt(r.year, 10), m = parseInt(r.month, 10);
+        if (!y || !m) return;
+        const k = ymKey(y, m), b = biz[k] = biz[k] || { sessions: 0, units: 0 };
+        b.sessions += parseInt(String(r.sessions || '').replace(/,/g, ''), 10) || 0;
+        b.units += parseInt(String(r.units_ordered || '').replace(/,/g, ''), 10) || 0;
+      });
+      // Priority keywords = "Top 20 Keywords" (header row found by name) — the
+      // first 20 from EACH product tab, combined and de-duplicated (MiGuard has
+      // a single product tab and takes its first 20; the column continues
+      // with more keywords below the top 20 on these tabs).
+      const priorityKws = [];
+      compCsv.forEach(oneCsv => {
+        const comp = parseCsvFull(oneCsv);
+        const hIdx = comp.findIndex(r => r.some(c => (c || '').trim() === 'Top 20 Keywords'));
+        if (hIdx < 0) return;
+        const col = comp[hIdx].findIndex(c => (c || '').trim() === 'Top 20 Keywords');
+        const own = [];
+        comp.slice(hIdx + 1).forEach(r => String(r[col] || '').split(/[\n\r,]/).forEach(k => {
+          k = k.trim().toLowerCase(); if (k && !own.includes(k)) own.push(k);
+        }));
+        own.slice(0, 20).forEach(k => { if (!priorityKws.includes(k)) priorityKws.push(k); });
+      });
+      // Keyword Tracker: rank per keyword per snapshot date.
+      const rankAt = {}; // date -> {kw: rank|null}
+      parseCsvToRows(kwCsv).forEach(r => {
+        const d = (r.date || '').trim(), kw = (r.keyword || '').trim().toLowerCase();
+        if (!d || !kw) return;
+        const raw = String(r.organic_rank || '').trim();
+        const n = raw && !raw.startsWith('>') ? parseInt(raw.replace(/[^\d]/g, ''), 10) : NaN;
+        (rankAt[d] = rankAt[d] || {})[kw] = n >= 1 ? n : null;
+      });
+      const kwDates = Object.keys(rankAt).sort();
+      // Products Cache: one snapshot per SKU per day (last row wins).
+      const pcBy = {}; // date -> sku -> row
+      parseCsvToRows(pcCsv).forEach(r => {
+        const d = (r.date || '').trim(); const sku = (r.sku || '').trim().toUpperCase().replace(/-SF$/i, '');
+        if (!d || !sku) return; (pcBy[d] = pcBy[d] || {})[sku] = r;
+      });
+      const pcDates = Object.keys(pcBy).sort();
+
+      // Quarters: completed quarters overlapping tracker/snapshot data, + current QTD.
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const dataStart = [kwDates[0], pcDates[0]].filter(Boolean).sort()[0] || today;
+      const qOf = (y, qi) => {
+        const start = `${y}-${String(qi * 3 + 1).padStart(2, '0')}-01`;
+        const endD = new Date(y, qi * 3 + 3, 0);
+        const end = `${y}-${String(qi * 3 + 3).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`;
+        return { y, qi, label: `Q${qi + 1} ${y}`, start, end, months: [1, 2, 3].map(k => ymKey(y, qi * 3 + k)) };
+      };
+      const curQ = qOf(now.getFullYear(), Math.floor(now.getMonth() / 3));
+      curQ.isCurrent = true; curQ.label += ' (QTD)';
+      const quarters = [curQ];
+      for (let n = 1; n <= 6; n++) {
+        let qi = curQ.qi - n, y = curQ.y;
+        while (qi < 0) { qi += 4; y--; }
+        const q = qOf(y, qi);
+        if (q.end < dataStart) break;
+        quarters.unshift(q);
+      }
+      const prevQOf = q => { let qi = q.qi - 1, y = q.y; if (qi < 0) { qi = 3; y--; } return qOf(y, qi); };
+
+      // ── metric engine for one quarter ──
+      function compute(q) {
+        const dim = ym => new Date(parseInt(ym.slice(0, 4), 10), parseInt(ym.slice(5), 10), 0).getDate();
+        // months elapsed + share of the current month (QTD prorating)
+        const monthsIn = q.months.map(ym => {
+          if (!q.isCurrent) return { ym, frac: 1 };
+          const cur = today.slice(0, 7);
+          if (ym < cur) return { ym, frac: 1 };
+          if (ym === cur) return { ym, frac: Math.max(0, now.getDate() - 1) / dim(ym) }; // through yesterday
+          return { ym, frac: 0 };
+        }).filter(x => x.frac > 0);
+        const sum = (f) => monthsIn.reduce((s, x) => s + f(x), 0);
+        const missingAd = monthsIn.filter(x => !(x.ym in adSales)).map(x => MONTHS[parseInt(x.ym.slice(5), 10) - 1]);
+        const totalSales = sum(x => monthTotal[x.ym] || 0);
+        const totalUnits = sum(x => monthUnits[x.ym] || 0);
+        const orgSales = missingAd.length ? null : totalSales - sum(x => adSales[x.ym] || 0);
+        const orgUnits = monthsIn.some(x => !(x.ym in adUnits)) ? null : totalUnits - sum(x => adUnits[x.ym] || 0);
+        const goalMissing = monthsIn.some(x => !goals[x.ym] || goals[x.ym].org$ == null);
+        const orgGoal = goalMissing ? null : sum(x => goals[x.ym].org$ * x.frac);
+        const unitGoalMissing = monthsIn.some(x => !goals[x.ym] || goals[x.ym].orgU == null);
+        const orgUnitGoal = unitGoalMissing ? null : sum(x => goals[x.ym].orgU * x.frac);
+        const bizMonths = monthsIn.filter(x => biz[x.ym]);
+        const sessions = bizMonths.reduce((s, x) => s + biz[x.ym].sessions, 0);
+        const bUnits = bizMonths.reduce((s, x) => s + biz[x.ym].units, 0);
+        const cvr = sessions > 0 ? (bUnits / sessions) * 100 : null;
+        return { monthsIn, missingAd, totalSales, orgSales, orgUnits, orgGoal, orgUnitGoal, cvr, sessions, bUnits, bizMonths: bizMonths.map(x => x.ym) };
+      }
+      function seo(q) {
+        const inQ = kwDates.filter(d => d >= q.start && d <= (q.isCurrent ? today : q.end));
+        const before = kwDates.filter(d => d < q.start);
+        const boqDate = before.length ? before[before.length - 1] : inQ[0];
+        const eoqDate = inQ.length ? inQ[inQ.length - 1] : null;
+        if (!boqDate || !eoqDate) return null;
+        const tracked = priorityKws.filter(k => (rankAt[eoqDate] && k in rankAt[eoqDate]) || (rankAt[boqDate] && k in rankAt[boqDate]));
+        const rk = (d, k) => (rankAt[d] && rankAt[d][k] != null) ? rankAt[d][k] : null;
+        let improving = 0;
+        const rows = tracked.map(k => {
+          const a = rk(boqDate, k), b = rk(eoqDate, k);
+          const better = (b != null && (a == null || b < a));
+          if (better) improving++;
+          return { k, a, b, better, worse: (a != null && (b == null || b > a)) };
+        });
+        const bucket = d => {
+          const o = { p1: 0, p2: 0, mid: 0, low: 0 };
+          tracked.forEach(k => { const r = rk(d, k); if (r == null || r > 50) o.low++; else if (r <= 10) o.p1++; else if (r <= 20) o.p2++; else o.mid++; });
+          return o;
+        };
+        const bq = bucket(boqDate), eq = bucket(eoqDate);
+        const ranked = tracked.map(k => rk(eoqDate, k)).filter(v => v != null);
+        return {
+          boqDate, eoqDate, tracked: tracked.length, improving,
+          pctImproving: tracked.length ? (improving / tracked.length) * 100 : null,
+          page1: eq.p1, top20: eq.p1 + eq.p2, top20Start: bq.p1 + bq.p2,
+          netTop20: (eq.p1 + eq.p2) - (bq.p1 + bq.p2),
+          avgRank: ranked.length ? ranked.reduce((s, v) => s + v, 0) / ranked.length : null, rankedCount: ranked.length,
+          dist: { bq, eq }, rows,
+        };
+      }
+      function retail(q) {
+        const end = q.isCurrent ? today : q.end;
+        const days = pcDates.filter(d => d >= q.start && d <= end);
+        if (!days.length) return null;
+        let skuDays = 0, inStock = 0;
+        const skus = products.map(p => p.sku);
+        days.forEach(d => skus.forEach(s => {
+          const r = pcBy[d][s]; if (!r) return;
+          skuDays++;
+          const sellable = (parseInt(r.fulfillable_quantity, 10) || 0) + (parseInt(r.seller_fulfilled_quantity, 10) || 0);
+          if (sellable > 0) inStock++;
+        }));
+        const last = days[days.length - 1];
+        let healthy = 0;
+        skus.forEach(s => {
+          const r = pcBy[last][s]; if (!r) return;
+          const st = (r.status || '').toUpperCase();
+          if (st.includes('BUYABLE') && !String(r.issues || '').trim()) healthy++;
+        });
+        const startD = new Date(q.start + 'T00:00:00'), endD = new Date(end + 'T00:00:00');
+        const calDays = Math.round((endD - startD) / 86400000) + 1;
+        return { skuDays, inStock, inRate: skuDays ? (inStock / skuDays) * 100 : null, oosRate: skuDays ? ((skuDays - inStock) / skuDays) * 100 : null,
+                 days: days.length, calDays, healthy, expected: skus.length, lastDate: last };
+      }
+
+      // ── Strategy sheet parser ──
+      // Roles found by their heading in col A; the next "BRAND PRIORITY" row is
+      // that section's header, and every column is located by header name
+      // (STATUS, DUE DATE, COMPLETED DATE, SCORED?, TIMING/GOAL DATE, …).
+      // SMART goals: the "SUCCESS LOOKS LIKE" header row, if METRIC/TARGET
+      // columns have been added next to it.
+      const parseDate = v => {
+        v = String(v || '').trim();
+        if (!v) return null;
+        let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+        m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (m) return new Date(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[1] - 1, +m[2]);
+        const d = new Date(v); // "Oct 1, 2026"
+        return isNaN(d.getTime()) || !/\d{4}/.test(v) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      };
+      const fmtD = d => d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : '';
+      function parseStrategy(csv) {
+        const g = parseCsvFull(csv);
+        if (!g.length || /^\s*</.test(csv)) return null;
+        const norm = s => String(s || '').trim().toUpperCase();
+        const ROLES = { 'BRAND MANAGER': 'Brand Manager', 'ADVERTISING SPECIALIST': 'Advertising Specialist', 'CREATIVE MANAGER': 'Creative Manager' };
+        const items = [], smart = [], warnings = [];
+        let role = null, cols = null;
+        for (let i = 0; i < g.length; i++) {
+          const r = g[i], a = norm(r[0]);
+          if (ROLES[a]) { role = ROLES[a]; cols = null; continue; }
+          if (a === 'BRAND PRIORITY' && role) {
+            cols = {}; r.forEach((h, j) => { const k = norm(h); if (k) cols[k] = j; });
+            if (!('DUE DATE' in cols)) warnings.push(`${role} section has no DUE DATE column yet`);
+            continue;
+          }
+          if (!role || !cols) continue;
+          const get = k => (k in cols) ? String(r[cols[k]] || '').trim() : '';
+          const priority = String(r[0] || '').trim(), task = get('MY DELIVERABLE / TASK');
+          if (!priority && !task) continue;
+          const scoredRaw = norm(get('SCORED?'));
+          items.push({ role, priority, task, status: get('STATUS'), timing: get('TIMING') || get('GOAL DATE'),
+            due: parseDate(get('DUE DATE')), done: parseDate(get('COMPLETED DATE')),
+            scored: !(scoredRaw === 'N' || scoredRaw === 'NO' || scoredRaw === 'FALSE'), results: get('RESULTS') });
+        }
+        // SMART goals block
+        const sIdx = g.findIndex(r => r.some(c => norm(c) === 'SUCCESS LOOKS LIKE'));
+        if (sIdx >= 0) {
+          const h = {}; g[sIdx].forEach((c, j) => { const k = norm(c); if (k) h[k] = j; });
+          if ('TARGET' in h || 'METRIC' in h) {
+            for (let i = sIdx + 1; i < g.length; i++) {
+              const r = g[i]; const name = String(r[0] || '').trim();
+              // parseCsvFull drops blank rows, so stop at the first role
+              // heading / section header instead of relying on a blank line.
+              if (!name || ROLES[norm(name)] || norm(name) === 'BRAND PRIORITY') break;
+              const get = k => (k in h) ? String(r[h[k]] || '').trim() : '';
+              smart.push({ name, metric: get('METRIC'), baseline: get('BASELINE'), target: get('TARGET'), due: parseDate(get('DUE DATE')), status: get('STATUS'), result: get('RESULT') || get('RESULTS') });
+            }
+          }
+        }
+        return { items, smart, warnings };
+      }
+      const strategies = {};
+      stratKeys.forEach((k, i) => { strategies[k] = parseStrategy(stratCsvs[i]); });
+      const todayD = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      function execution(list) {
+        const scored = list.filter(x => x.scored);
+        const blocked = scored.filter(x => /blocked/i.test(x.status));
+        const live = scored.filter(x => !/blocked/i.test(x.status));
+        const isComplete = x => /^complete/i.test(x.status) || !!x.done;
+        const complete = live.filter(isComplete);
+        const noDue = live.filter(x => !x.due);
+        // "Due" = due date has passed, or already completed (with a due date).
+        const due = live.filter(x => x.due && (x.due < todayD || isComplete(x)));
+        const onTime = due.filter(x => x.done && x.done <= x.due);
+        const doneNoDate = due.filter(x => isComplete(x) && !x.done);
+        return { total: live.length, complete: complete.length, blocked: blocked.length, noDue: noDue.length,
+                 due: due.length, onTime: onTime.length, doneNoDate: doneNoDate.length,
+                 completion: live.length ? (complete.length / live.length) * 100 : null,
+                 onTimeRate: due.length ? (onTime.length / due.length) * 100 : null };
+      }
+
+      // ── rendering helpers ──
+      const fmt$ = v => '$' + Math.round(v).toLocaleString();
+      const pct = (v, d = 1) => v == null ? null : (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toFixed(d) + '%';
+      const needs = txt => `<span class="bmk-needs">Needs input${txt ? ' — ' + esc(txt) : ''}</span>`;
+      const na = txt => `<span style="color:var(--muted);">— ${esc(txt || '')}</span>`;
+      const card = (label, value, sub, pending) => `<div class="kpi-card${pending ? ' bmk-pending' : ''}"><div class="kpi-label">${esc(label)}</div><div class="kpi-value">${value}</div><div class="kpi-sub" style="line-height:1.45;">${sub}</div></div>`;
+      const table = (title, scoredNote, rows, note) => `<div class="card">
+          <div class="card-title">${esc(title)}</div>
+          ${note ? `<div class="bmk-cat-note">${note}</div>` : ''}
+          <div style="overflow-x:auto;"><table class="data-table">
+            <thead><tr><th style="width:24%;">Metric</th><th style="width:22%;">Value</th><th>Calculation</th></tr></thead>
+            <tbody>${rows.map(r => `<tr><td>${esc(r[0])}${r[3] ? '<span class="bmk-scored-tag">Scored</span>' : ''}</td><td>${r[1]}</td><td class="bmk-calc">${esc(r[2])}</td></tr>`).join('')}</tbody>
+          </table></div></div>`;
+      const pills = document.getElementById('bmk-quarter-pills');
+
+      function render(idx) {
+        const q = quarters[idx];
+        if (pills) pills.innerHTML = quarters.map((qq, i) => `<button class="period-pill${i === idx ? ' active' : ''}" onclick="window._bmkSelectQuarter(${i})">${esc(qq.label)}</button>`).join('');
+        const c = compute(q), pq = prevQOf(q), pc = compute(pq), s = seo(q), rt = retail(q);
+        const stratKey = `${q.y}-Q${q.qi + 1}`, strat = strategies[stratKey] || null, stratCfg = STRATEGY_SHEETS[stratKey];
+        const exAll = strat ? execution(strat.items) : null;
+        const exBm = strat ? execution(strat.items.filter(x => x.role === 'Brand Manager')) : null;
+        const smartDue = strat ? strat.smart.filter(x => x.target) : [];
+        const smartAch = smartDue.filter(x => /achieved|complete|met/i.test(x.status));
+        const cvrGoal = strat ? strat.smart.find(x => /unit session|cvr|conversion/i.test(x.metric)) : null;
+        const cvrTarget = cvrGoal ? parseFloat(String(cvrGoal.target).replace(/[^0-9.]/g, '')) : NaN;
+        const noStrat = stratCfg ? `couldn't read ${stratCfg.label}` : `no strategy sheet for ${q.label.replace(' (QTD)', '')}`;
+        const exVal = (ex, kind) => {
+          if (!ex) return null;
+          if (kind === 'completion') return ex.total ? `<strong>${pct(ex.completion, 0)}</strong> · ${ex.complete} of ${ex.total}${ex.blocked ? ` · ${ex.blocked} blocked` : ''}` : null;
+          if (!ex.due) return `<span style="color:var(--muted);">— nothing due yet${ex.noDue ? ` (${ex.noDue} without a DUE DATE)` : ''}</span>`;
+          return `<strong>${pct(ex.onTimeRate, 0)}</strong> · ${ex.onTime} of ${ex.due} on time${ex.doneNoDate ? ` · ${ex.doneNoDate} complete w/o COMPLETED DATE` : ''}${ex.blocked ? ` · ${ex.blocked} blocked (not counted)` : ''}`;
+        };
+        const goalWord = q.isCurrent ? 'goal to date' : 'goal';
+        const adGap = c.missingAd.length ? `ad_sales blank for ${c.missingAd.join(', ')}` : '';
+
+        // 1) Organic
+        const orgAtt = (c.orgSales != null && c.orgGoal) ? (c.orgSales / c.orgGoal) * 100 : null;
+        const orgUAtt = (c.orgUnits != null && c.orgUnitGoal) ? (c.orgUnits / c.orgUnitGoal) * 100 : null;
+        const orgGrowth = (c.orgSales != null && pc.orgSales) ? ((c.orgSales - pc.orgSales) / pc.orgSales) * 100 : null;
+        const orgShare = (c.orgSales != null && c.totalSales) ? (c.orgSales / c.totalSales) * 100 : null;
+        // 2) Conversion — baseline = prior quarter's CVR
+        const cvrDelta = (c.cvr != null && pc.cvr != null) ? c.cvr - pc.cvr : null;
+        const partialBiz = (cc, qq) => cc.bizMonths.length && cc.bizMonths.length < cc.monthsIn.length ? ` (${cc.bizMonths.map(k => MONTHS[parseInt(k.slice(5), 10) - 1]).join(', ')} only)` : '';
+
+        const cardsHtml = [
+          card('Organic Sales Attainment', orgAtt != null ? pct(orgAtt, 0) : '—',
+            orgAtt != null ? `${fmt$(c.orgSales)} of ${fmt$(c.orgGoal)} ${goalWord}` : esc(adGap || 'organic goal missing'), orgAtt == null),
+          card('Conversion Performance', c.cvr != null ? pct(c.cvr, 2) : '—',
+            (cvrDelta != null ? `${cvrDelta >= 0 ? '+' : ''}${cvrDelta.toFixed(2)} pts vs ${esc(pq.label)} baseline` : 'no baseline yet') + '<br>' +
+            (!isNaN(cvrTarget) && c.cvr != null ? `${pct((c.cvr / cvrTarget) * 100, 0)} of ${cvrTarget}% target` : needs('CVR target')), c.cvr == null),
+          card('SEO Visibility Growth', s && s.pctImproving != null ? pct(s.pctImproving, 0) + ' improving' : '—',
+            s ? `Net Top-20: ${s.netTop20 >= 0 ? '+' : ''}${s.netTop20} (${s.top20Start} → ${s.top20})` : 'no keyword tracker data', !s),
+          (exBm && exBm.due)
+            ? card('On-Time Strategic Execution', pct(exBm.onTimeRate, 0), `${exBm.onTime} of ${exBm.due} BM deliverables on time${exBm.blocked ? ` · ${exBm.blocked} blocked` : ''}`, false)
+            : card('On-Time Strategic Execution', '—', exBm ? `nothing due yet${exBm.noDue ? ` · ${exBm.noDue} BM rows need a DUE DATE` : ''}` : esc(noStrat), true),
+          card('Risk / Retail Readiness', '—', needs('issue log with SLA dates'), true),
+        ].join('');
+        scoredEl.innerHTML = cardsHtml;
+
+        const v = (val, why) => val != null ? val : na(why);
+        const orgNote = `Organic = total Amazon sales − ad-attributed sales (Stewardship Summary ad_sales). ${q.isCurrent ? 'Quarter to date through yesterday; goals prorated to the same point. ' : ''}Organic Share and Growth are diagnostic, not scored.`;
+        const cats = [
+          table('1. Organic Performance', true, [
+            ['Organic Sales Attainment', v(orgAtt != null ? `<strong>${pct(orgAtt, 0)}</strong> · ${fmt$(c.orgSales)} / ${fmt$(c.orgGoal)}` : null, adGap || 'organic $ goal missing'), 'Organic Sales ÷ Organic Sales Goal (Goals tab, col S) × 100', true],
+            ['Organic Unit Attainment', v(orgUAtt != null ? `${pct(orgUAtt, 0)} · ${Math.round(c.orgUnits).toLocaleString()} / ${Math.round(c.orgUnitGoal).toLocaleString()} units` : null, c.orgUnits == null ? 'ad_units blank for a month' : 'organic unit goal missing'), 'Organic Units ÷ Organic Unit Goal (Goals tab, col T) × 100'],
+            ['Organic Sales Growth', v(orgGrowth != null ? `${orgGrowth >= 0 ? '+' : ''}${pct(orgGrowth)} vs ${esc(pq.label)}` : null, pc.orgSales == null ? `${pq.label} organic sales unavailable` : adGap), '(Current − prior quarter organic sales) ÷ prior quarter × 100'],
+            ['Organic Share', v(orgShare != null ? pct(orgShare) : null, adGap), 'Organic Sales ÷ Total Sales × 100'],
+          ], orgNote),
+          table('2. Conversion', true, [
+            ['Unit Session % (CVR)', v(c.cvr != null ? `<strong>${pct(c.cvr, 2)}</strong> · ${c.bUnits.toLocaleString()} units / ${c.sessions.toLocaleString()} sessions${partialBiz(c, q)}` : null, 'no Business Report rows for this quarter'), 'Ordered Units ÷ Sessions × 100 (Business Report, raw units ordered)', true],
+            ['CVR vs. Baseline', v(cvrDelta != null ? `${cvrDelta >= 0 ? '+' : ''}${cvrDelta.toFixed(2)} pts (${esc(pq.label)}: ${pct(pc.cvr, 2)}${partialBiz(pc, pq)})` : null, 'no prior-quarter Business Report data'), 'Current CVR − prior quarter CVR'],
+            ['CVR Target Attainment', (!isNaN(cvrTarget) && c.cvr != null) ? `${pct((c.cvr / cvrTarget) * 100, 0)} · ${pct(c.cvr, 2)} vs ${cvrTarget}% target` : needs('Unit Session % row in the strategy sheet\'s SMART goals'), 'Current CVR ÷ Target CVR × 100'],
+          ], 'Brand-level CVR is the scored number; SKU CVR is diagnostic (see Conv% on the Overview tab\'s Top Selling Products).'),
+          table('3. SEO / Discoverability', true, [
+            ['Priority Keywords Improving', v(s && s.pctImproving != null ? `<strong>${pct(s.pctImproving, 0)}</strong> · ${s.improving} of ${s.tracked}` : null, 'no tracker data'), '# priority keywords with better organic rank than quarter start ÷ # tracked × 100', true],
+            ['Page 1 Keywords (1–10)', v(s ? String(s.page1) : null, 'no tracker data'), '# priority keywords ranking 1–10 at latest snapshot'],
+            ['Top 20 Keywords (1–20)', v(s ? String(s.top20) : null, 'no tracker data'), '# priority keywords ranking 1–20 at latest snapshot'],
+            ['Page 1/2 Expansion (Net Top-20)', v(s ? `<strong>${s.netTop20 >= 0 ? '+' : ''}${s.netTop20}</strong> (${s.top20Start} → ${s.top20})` : null, 'no tracker data'), 'Top-20 count now − Top-20 count at quarter start', true],
+            ['Average Priority Keyword Rank', v(s && s.avgRank != null ? `#${Math.round(s.avgRank)} (of ${s.rankedCount} ranked)` : null, 'no ranked keywords'), 'Sum of organic ranks ÷ # ranked priority keywords (unranked excluded)'],
+            ['Keyword Goal Attainment', needs('designated keyword objectives'), '# designated keyword objectives achieved ÷ # designated × 100'],
+          ], s ? `Priority list = the ${priorityKws.length} "Top 20 Keywords" on the Competitor Research sheet (first 20 of each of the 7 product tabs, combined); ${s.tracked} are in the Keyword Tracker. Quarter start = ${esc(s.boqDate)} snapshot, latest = ${esc(s.eoqDate)}.` : ''),
+          table('4. Strategic Execution', true, [
+            ['Initiative Completion', exAll ? (exVal(exAll, 'completion') || na('no initiatives listed')) : na(noStrat), 'Completed initiatives ÷ planned initiatives × 100 (all 3 roles, SCORED? ≠ N, Blocked excluded)'],
+            ['On-Time Completion', exAll ? exVal(exAll, 'ontime') : na(noStrat), 'Initiatives with COMPLETED DATE ≤ DUE DATE ÷ initiatives due × 100 (all roles)'],
+            ['BM Deliverable Completion', exBm ? exVal(exBm, 'ontime') : na(noStrat), 'BM deliverables completed on time ÷ BM deliverables due × 100 (Brand Manager section only)', true],
+            ['Strategic Goal Achievement', smartDue.length ? `${pct((smartAch.length / smartDue.length) * 100, 0)} · ${smartAch.length} of ${smartDue.length}` : needs('METRIC / TARGET / STATUS columns next to "Success Looks Like"'), 'SMART goals achieved ÷ SMART goals × 100'],
+          ], (stratCfg ? `Source: ${esc(stratCfg.label)} → évolis tab. ` : '') + '"Due" = DUE DATE has passed (or the item is already complete). Blocked by Dependency isn\'t counted as a miss; rows with SCORED? = N are tracked but not scored.' + (strat && strat.warnings.length ? ' <span style="color:var(--warn);">' + strat.warnings.map(esc).join(' · ') + '.</span>' : '')),
+          table('5. Retail Readiness / Risk Management', true, [
+            ['In-Stock Rate', v(rt && rt.inRate != null ? `${pct(rt.inRate)} · ${rt.inStock} of ${rt.skuDays} SKU-days` : null, 'no Products Cache snapshots'), 'In-stock SKU-days ÷ active SKU-days × 100 (FBA fulfillable + seller-fulfilled > 0)'],
+            ['OOS Rate', v(rt && rt.oosRate != null ? pct(rt.oosRate) : null, 'no Products Cache snapshots'), 'OOS SKU-days ÷ active SKU-days × 100'],
+            ['Listing Health', v(rt ? `${pct((rt.healthy / Math.max(1, rt.expected)) * 100, 0)} · ${rt.healthy} of ${rt.expected} (as of ${esc(rt.lastDate)})` : null, 'no Products Cache snapshots'), 'Listings BUYABLE with no issues ÷ expected active listings × 100'],
+            ['Issue Response SLA', needs('issue log (date found, action, stakeholders notified)'), 'Issues addressed within SLA ÷ actionable issues × 100', true],
+            ['Promo Readiness', needs('planned promo SKUs'), 'Promo-eligible/prepared SKUs ÷ planned promo SKUs × 100'],
+          ], rt ? `In-stock / OOS are business health, not scored against the BM. ${rt.days} daily snapshots in this ${q.isCurrent ? 'quarter so far' : 'quarter'} (${rt.calDays} calendar days).` : ''),
+        ];
+        // Deliverables from the strategy sheet
+        if (strat && strat.items.length) {
+          const stCell = x => {
+            const st = x.status || '—';
+            const col = /^complete/i.test(st) ? '#1db88a' : /late/i.test(st) ? 'var(--danger)' : /blocked/i.test(st) ? 'var(--warn)' : 'var(--muted)';
+            return `<span style="color:${col};font-weight:600;">${esc(st)}</span>`;
+          };
+          const ot = x => !x.due ? '<span style="color:var(--muted);">no due date</span>'
+            : x.done ? (x.done <= x.due ? '<span style="color:#1db88a;font-weight:700;">✓ on time</span>' : '<span style="color:var(--danger);font-weight:700;">late</span>')
+            : (x.due < todayD && !/blocked/i.test(x.status) ? '<span style="color:var(--danger);font-weight:700;">overdue</span>' : '<span style="color:var(--muted);">open</span>');
+          cats.push(`<div class="card"><div class="card-title">Deliverables <span style="font-weight:400;color:var(--muted);">(${esc(stratCfg.label)})</span></div>
+            <div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>Role</th><th>Priority</th><th>Deliverable / Task</th><th>Timing</th><th>Due</th><th>Completed</th><th>Status</th><th>On Time?</th></tr></thead><tbody>
+            ${strat.items.map(x => `<tr style="${x.scored ? '' : 'opacity:.6;'}"><td style="white-space:nowrap;">${esc(x.role)}</td><td>${esc(x.priority)}${x.scored ? '' : ' <span style="color:var(--muted);font-size:10px;">(not scored)</span>'}</td><td style="font-size:11.5px;color:var(--muted);max-width:420px;">${esc(x.task)}</td><td style="white-space:nowrap;">${esc(x.timing)}</td><td style="white-space:nowrap;">${fmtD(x.due) || '—'}</td><td style="white-space:nowrap;">${fmtD(x.done) || '—'}</td><td>${stCell(x)}</td><td style="white-space:nowrap;">${ot(x)}</td></tr>`).join('')}
+            </tbody></table></div></div>`);
+        }
+        // SEO keyword detail
+        if (s && s.rows.length) {
+          const rk = v2 => v2 == null ? '<span style="color:var(--muted);">Not ranking</span>' : '#' + v2;
+          const d = s.dist;
+          cats.push(`<div class="card"><div class="card-title">Priority Keyword Detail <span style="font-weight:400;color:var(--muted);">(${esc(s.boqDate)} → ${esc(s.eoqDate)})</span></div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+              ${[['Rank 1–10', 'p1'], ['Rank 11–20', 'p2'], ['Rank 21–50', 'mid'], ['>50 / unranked', 'low']].map(([l, k]) => `<div class="kpi-card" style="padding:12px 14px;"><div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:22px;">${d.eq[k]}</div><div class="kpi-sub">was ${d.bq[k]} at quarter start</div></div>`).join('')}
+            </div>
+            <div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>Keyword</th><th>Quarter Start</th><th>Latest</th><th>Change</th></tr></thead><tbody>
+            ${s.rows.slice().sort((a, b) => (a.b == null ? 999 : a.b) - (b.b == null ? 999 : b.b)).map(r => `<tr><td>${esc(r.k)}</td><td>${rk(r.a)}</td><td>${rk(r.b)}</td><td>${r.better ? '<span style="color:#1db88a;font-weight:700;">▲ improved</span>' : r.worse ? '<span style="color:var(--danger);font-weight:700;">▼ declined</span>' : '<span style="color:var(--muted);">—</span>'}</td></tr>`).join('')}
+            </tbody></table></div></div>`);
+        }
+        catsEl.innerHTML = cats.join('');
+      }
+      window._bmkSelectQuarter = render;
+      // default: most recent COMPLETED quarter if there is one, else QTD
+      // Default: the current quarter when it has a strategy sheet (execution is
+      // tracked live), otherwise the most recent completed quarter.
+      const curKey = `${curQ.y}-Q${curQ.qi + 1}`;
+      render(strategies[curKey] ? quarters.length - 1 : (quarters.length > 1 ? quarters.length - 2 : quarters.length - 1));
+      console.log('[BMKPIs][qa] quarters:', quarters.map(q => q.label).join(', '), '| strategy rows:', Object.keys(strategies).map(k => k + '=' + (strategies[k] ? strategies[k].items.length + ' items/' + strategies[k].smart.length + ' smart' : 'unreadable')).join(', '), '| priority kws:', priorityKws.length, '| kw dates:', kwDates[0], '→', kwDates[kwDates.length - 1], '| pc dates:', pcDates[0], '→', pcDates[pcDates.length - 1]);
+    } catch (err) {
+      console.error('[BMKPIs]', err);
+      window._bmkPromise = null;
+      if (scoredEl) scoredEl.innerHTML = '<div style="color:var(--danger);font-size:12px;">Could not load — ' + esc(err.message || '') + '</div>';
+    }
+  })();
+  return window._bmkPromise;
+};
 
 // UPDATED 2026-09-28 per Jaclyn — switched again, this time to the
 // historical-orders sheet Jaclyn pointed to directly (column L "skus"),
