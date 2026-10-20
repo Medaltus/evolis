@@ -1580,9 +1580,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
             <th style="text-align:left;padding:8px 10px;">Ads (Amazon)</th>
             <th style="text-align:left;padding:8px 10px;">Organic</th>
             <th style="text-align:left;padding:8px 10px;">Conv% (Amazon)</th>
+            <th style="text-align:left;padding:8px 10px;" title="Change in Amazon conversion rate vs the prior month, in percentage points">vs Prior Mo.</th>
           </tr>
         </thead>
-        <tbody id="ov-products-tbody"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
+        <tbody id="ov-products-tbody"><tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -23700,19 +23701,44 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       // silently inflate it against a denominator that only covers part
       // of the numerator. Column header says "(Amazon)" for the same
       // reason, rather than presenting it as a whole-business rate.
-      const sessionsByAsinCurr = {};
-      bizRows.forEach(r => {
-        if (parseInt(r.year, 10) === cfg.year && parseInt(r.month, 10) === cfg.month) {
+      // CHANGED 2026-10-19 per Jaclyn — Conv% now comes entirely from the
+      // Business Report (units ordered ÷ sessions, Amazon's own conversion
+      // figure), and a new "vs Prior Mo." column shows the change from the
+      // month before in percentage points. Previously units came from the
+      // orders sheet and sessions from the Business Report; comparing two
+      // months needs one consistent source. Year is comma-stripped ("2,026").
+      const brNum = v => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0;
+      function brByAsin(y, m) {
+        const out = {};
+        bizRows.forEach(r => {
+          if (parseInt(String(r.year || '').replace(/,/g, ''), 10) !== y || parseInt(r.month, 10) !== m) return;
           const asin = (r.asin || '').trim().toUpperCase();
-          if (asin) sessionsByAsinCurr[asin] = (sessionsByAsinCurr[asin] || 0) + (parseInt(r.sessions, 10) || 0);
-        }
-      });
+          if (!asin) return;
+          const o = out[asin] || (out[asin] = { sessions: 0, units: 0 });
+          o.sessions += brNum(r.sessions);
+          o.units += brNum(r.units_ordered);
+        });
+        return out;
+      }
+      let convPrevY = cfg.year, convPrevM = cfg.month - 1;
+      if (convPrevM === 0) { convPrevM = 12; convPrevY--; }
+      const brCurr = brByAsin(cfg.year, cfg.month);
+      const brPrev = brByAsin(convPrevY, convPrevM);
+      const convOf = o => (o && o.sessions > 0) ? (o.units / o.sessions) * 100 : null;
       function convCell(amazonUnits, asin) {
-        const sessions = sessionsByAsinCurr[asin] || 0;
-        if (!sessions) return '<span class="tp-dash">—</span>';
-        const conv = (amazonUnits / sessions) * 100;
+        const conv = convOf(brCurr[asin]);
+        if (conv == null) return '<span class="tp-dash">—</span>';
         const convClass = conv >= 15 ? 'rank-top' : (conv > 0 ? 'rank-low' : 'rank-none');
         return `<span class="rank-pill ${convClass}">${conv.toFixed(2)}%</span>`;
+      }
+      function convChangeCell(asin) {
+        const cur = convOf(brCurr[asin]), prev = convOf(brPrev[asin]);
+        if (cur == null) return '<span class="tp-dash">—</span>';
+        if (prev == null) return '<span style="font-size:11.5px;color:var(--muted);">New</span>';
+        const d = Math.round((cur - prev) * 10) / 10;
+        if (d === 0) return '<span style="font-size:11.5px;color:var(--muted);">0.0 pts</span>';
+        const color = d > 0 ? 'var(--green)' : 'var(--danger)';
+        return `<span style="font-size:11.5px;font-weight:600;color:${color};">${d > 0 ? '\u25b2' : '\u25bc'} ${Math.abs(d).toFixed(1)} pts</span>`;
       }
 
       function momBadge(curr, prevVal) {
@@ -23743,7 +23769,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       const tbody = document.getElementById('ov-products-tbody');
       if (tbody) {
         if (!productRows.length) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted);">No sales yet this month.</td></tr>';
         } else {
           tbody.innerHTML = productRows.map((r, i) => `
             <tr>
@@ -23756,6 +23782,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
               <td style="padding:7px 10px;">${r.adUnits > 0 ? `<span class="tp-units">${r.adUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
               <td style="padding:7px 10px;">${r.orgUnits > 0 ? `<span class="tp-units">${r.orgUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
               <td style="padding:7px 10px;">${convCell(r.amazon, r.asin)}</td>
+          <td style="padding:7px 10px;">${convChangeCell(r.asin)}</td>
             </tr>`).join('');
         }
       }
@@ -24628,5 +24655,4 @@ window.addEventListener('load', async () => {
 </script>
 </body>
 </html>
- 
  
