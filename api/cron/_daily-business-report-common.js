@@ -30,9 +30,9 @@
  * one total for the whole requested range, even with dateGranularity DAY. A
  * single-day range is the only way to get per-ASIN daily numbers.
  *
- * Days are Amazon US business days (Pacific). Unlike the VBC version
- * (00:00Z–23:59Z, which spills into the neighboring Pacific day), requests
- * use the exact UTC instants of Pacific midnight → 23:59:59.
+ * Days are Amazon US business days. Amazon reads only the calendar date of
+ * the requested range and applies its own business day, so each request is
+ * that date 00:00:00Z → 23:59:59Z (see dayRange below).
  *
  * Metrics match the monthly business report: SESSIONS = sessions +
  * sessionsB2B, CONVERSION_RATE = units ÷ sessions × 100.
@@ -40,7 +40,6 @@
 
 const { getSheetsToken } = require('../config/_sheets_client');
 const brands = require('../config/brands');
-const { ptStartOfDayUtc, ptEndOfDayUtc } = require('../_dates');
 
 const DAILY_SHEET_ID = '1QLjUvYg-JR6jQmdFlykypkNarqsZvTCOgA3bFagDlVg';
 const MASTER_GID = '164358627'; // Master SKU List "Product Short Name": A=asin, B=sku, D=brand
@@ -77,7 +76,13 @@ function normDate(v) {
   if (/^\d{5}(\.\d+)?$/.test(s)) return new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(s)) * 86400000).toISOString().slice(0, 10);
   return '';
 }
-const dayRange = date => ({ start: ptStartOfDayUtc(date), end: ptEndOfDayUtc(date) });
+// FIXED 2026-10-21 — for this report Amazon reads only the CALENDAR DATE of
+// dataStartTime / dataEndTime (it applies its own marketplace business day).
+// Pacific-midnight instants (07:00Z → next day 06:59Z) were read as TWO
+// dates, so one "day" combined two days. Confirmed live: a request for
+// 2024-10-23 came back covering 2024-10-23 and 2024-10-24. Same-date
+// T00:00:00Z → T23:59:59Z (what the VBC version uses) is one day.
+const dayRange = date => ({ start: `${date}T00:00:00Z`, end: `${date}T23:59:59Z` });
 
 // ── Sheets REST with retry (429 / 5xx) ─────────────────────────────────────
 async function gs(method, path, body, attempt = 0) {
