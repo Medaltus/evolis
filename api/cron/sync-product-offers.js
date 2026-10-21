@@ -145,7 +145,9 @@ module.exports = async (req, res) => {
         if (!byAsin.has(asin)) byAsin.set(asin, []);
         byAsin.get(asin).push(i + 2);
       });
-      for (const [asin, rows] of byAsin) work.push({ brand, account: accountForBrand(brand), asin, rows });
+      // Brand's own marketplace when it has one (e.g. skinuva-ca → Amazon.ca), else US. ADDED 2026-10-21
+      const market = brand.marketplaceId || marketplaceId;
+      for (const [asin, rows] of byAsin) work.push({ brand, account: accountForBrand(brand), market, asin, rows });
     } catch (err) {
       console.warn(`[sync-product-offers] ${brand.id} — could not read tab:`, err.message);
       errors.push(`${brand.id} tab read: ${err.message}`);
@@ -156,24 +158,33 @@ module.exports = async (req, res) => {
   // ── Fetch offers, 20 ASINs per call, per seller account ──────────────────
   const results = {}; // asin|account → summary
   let calls = 0, stoppedEarly = false;
-  for (const account of [...new Set(work.map(w => w.account))]) {
-    const asins = [...new Set(work.filter(w => w.account === account).map(w => w.asin))];
+  const keyOf = w => `${w.asin}|${w.account}|${w.market}`;
+  const groups = [...new Set(work.map(w => `${w.account}|${w.market}`))];
+  for (const g of groups) {
+    const [account, market] = g.split('|');
+    const asins = [...new Set(work.filter(w => w.account === account && w.market === market).map(w => w.asin))];
     for (let i = 0; i < asins.length; i += BATCH_SIZE) {
       if (Date.now() - started > TIME_BUDGET_MS) { stoppedEarly = true; break; }
       if (calls++ > 0) await sleep(CALL_GAP_MS);
       const chunk = asins.slice(i, i + BATCH_SIZE);
       try {
-        const { byAsin, failed } = await fetchOffersBatch(chunk, marketplaceId, account);
+        const { byAsin, failed } = await fetchOffersBatch(chunk, market, account);
         for (const asin of chunk) {
           if (byAsin[asin]) {
             const s = summarizeOffers(byAsin[asin], ourSellerIds, names);
             s.sellerIds.forEach(id => { if (!names[id] && !newSellerIds.has(id)) newSellerIds.set(id, asin); });
-            results[`${asin}|${account}`] = s;
+            results[`${asin}|${account}|${market}`] = s;
           }
         }
-        failed.forEach(f => errors.push(f));
+        // ADDED 2026-10-21 — Amazon says this ASIN doesn't exist in this
+        // marketplace (retired / merged listing). That won't change on a
+        // retry, so record it on the row instead of retrying + alerting daily.
+        failed.forEach(f => {
+          if (f.invalidAsin) results[`${f.asin}|${account}|${market}`] = { invalid: true };
+          else errors.push(f.text);
+        });
       } catch (err) {
-        errors.push(`${account} batch starting ${chunk[0]}: ${err.message}`);
+        errors.push(`${account} ${market} batch starting ${chunk[0]}: ${err.message}`);
       }
     }
     if (stoppedEarly) break;
@@ -190,9 +201,12 @@ module.exports = async (req, res) => {
     }
     let rowsWritten = 0;
     for (const w of work.filter(x => x.brand.id === brand.id)) {
-      const s = results[`${w.asin}|${w.account}`];
+      const s = results[keyOf(w)];
       if (!s) continue;
-      const values = {
+      const values = s.invalid ? {
+        alt_seller_count: '', alt_sellers: '', alt_seller_links: '',
+        buybox_owner: 'ASIN not found on Amazon', lowest_alt_price: '', offers_synced_at: nowEt,
+      } : {
         alt_seller_count: s.altCount,
         alt_sellers: s.altLabels.join(' | '),
         alt_seller_links: s.altLinks.join(' | '),
@@ -226,13 +240,15 @@ module.exports = async (req, res) => {
     }
   }
 
-  const remaining = work.filter(w => !results[`${w.asin}|${w.account}`]).length;
+  const remaining = work.filter(w => !results[keyOf(w)]).length;
+  const invalidAsins = [...new Set(work.filter(w => results[keyOf(w)]?.invalid).map(w => `${w.asin} (${w.brand.id})`))];
   if (errors.length) {
     await sendCronFailureAlert('sync-product-offers', errors.slice(0, 15).join('\n'), { 'ASINs left for later runs': String(remaining) });
   }
   res.status(200).json({
     date: today, asinsNeeded: work.length, asinsDone: Object.keys(results).length, asinsRemaining: remaining,
     amazonCalls: calls, stoppedEarly, rowsWrittenByBrand: written, newSellerIdsAdded: newSellerIds.size,
+    ...(invalidAsins.length ? { asinsNotOnAmazon: invalidAsins } : {}),
     ...(errors.length ? { errors: errors.slice(0, 15) } : {}),
   });
 };
@@ -262,8 +278,10 @@ async function fetchOffersBatch(asins, marketplaceId, account) {
     const payload = r?.body?.payload;
     const asin = String(r?.request?.Asin || payload?.ASIN || asins[i] || '').toUpperCase();
     const code = r?.status?.statusCode;
-    if (payload && (!code || code < 300)) byAsin[asin] = payload;
-    else failed.push(`${asin}: ${code || ''} ${JSON.stringify(r?.body?.errors || r?.body || '').slice(0, 160)}`);
+    if (payload && (!code || code < 300)) { byAsin[asin] = payload; return; }
+    const errs = r?.body?.errors || [];
+    const invalidAsin = errs.some(e => e.code === 'InvalidInput' && /invalid ASIN/i.test(e.message || ''));
+    failed.push({ asin, invalidAsin, text: `${asin}: ${code || ''} ${JSON.stringify(errs.length ? errs : (r?.body || '')).slice(0, 160)}` });
   });
   return { byAsin, failed, raw: resp };
 }
