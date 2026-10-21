@@ -80,7 +80,7 @@ module.exports = async (req, res) => {
         reportOptions: { dateGranularity: 'DAY', asinGranularity: 'CHILD' },
       }, account);
       if (resp && resp.reportId) {
-        requested.push({ date, reportId: resp.reportId, requestedAt: new Date().toISOString() });
+        requested.push({ date, reportId: resp.reportId, requestedAt: new Date().toISOString(), window: `${start} → ${end}` }); // window: exactly what Amazon was asked for (ADDED 2026-10-21)
       } else {
         const msg = JSON.stringify((resp && resp.errors) || resp).slice(0, 300);
         failed.push({ date, error: msg });
