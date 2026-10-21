@@ -252,6 +252,22 @@
     {
       "path": "/api/cron/trim-orders",
       "schedule": "42 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-product-offers?pass=1",
+      "schedule": "10 20 * * *"
+    },
+    {
+      "path": "/api/cron/sync-product-offers?pass=2",
+      "schedule": "25 20 * * *"
+    },
+    {
+      "path": "/api/cron/sync-product-offers?pass=3",
+      "schedule": "40 20 * * *"
+    },
+    {
+      "path": "/api/cron/sync-product-offers?pass=4",
+      "schedule": "55 20 * * *"
     }
   ],
   "functions": {
