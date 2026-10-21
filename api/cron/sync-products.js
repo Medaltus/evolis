@@ -129,6 +129,14 @@ const HEADERS = [
   'purchased_units_90d', 'days_of_inventory', 'qty_on_hand',
 ];
 
+// ADDED 2026-10-20 — columns after qty_on_hand belong to
+// sync-product-offers.js (alt sellers / Buy Box). This cron never writes them
+// (its row writes stop at column AE), but its header check expects an exact
+// match, and its ?force=true clear step must keep them — so it needs to
+// know they exist.
+const { OFFER_HEADERS } = require('../config/product-offer-columns');
+const SHEET_HEADERS = [...HEADERS, ...OFFER_HEADERS];
+
 // Column letters for the formulas below — spelled out once here so a
 // future HEADERS reorder doesn't silently break the formula strings.
 const COL_FULFILLABLE      = 'D';
@@ -286,7 +294,7 @@ module.exports = async (req, res) => {
     const item = masterList[i];
     try {
       if (!tabTokens[item.brandTabName]) {
-        tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, HEADERS);
+        tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, SHEET_HEADERS);
         const existingRows = await readRows(sheets.products, item.brandTabName);
         tabNextRow[item.brandTabName] = existingRows.length + 2; // +1 for header row, +1 to move past the last existing row
 
@@ -851,12 +859,17 @@ function normalizeSheetDate(value) {
 async function clearRowsForDate(dateStr, brandList = brands.filter(b => b.active)) {
   for (const brand of brandList) {
     try {
-      const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
+      const token = await ensureTab(sheets.products, brand.tabName, SHEET_HEADERS);
       const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA'); // preserve formula text, not computed values
       const kept  = rows.filter(r => normalizeSheetDate(r.date) !== dateStr);
       if (kept.length !== rows.length) {
-        const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token, 'USER_ENTERED');
+        // CHANGED 2026-10-20 — rewrite using the tab's OWN columns (readRows
+        // keys every row by row 1), not this file's HEADERS: otherwise a
+        // force run wiped every column after qty_on_hand (the offer columns
+        // from sync-product-offers.js) on every row of the tab.
+        const cols = rows.length && HEADERS.every(h => h in rows[0]) ? Object.keys(rows[0]) : SHEET_HEADERS;
+        const rowArrays = kept.map(r => cols.map(h => r[h] ?? ''));
+        await replaceRows(sheets.products, brand.tabName, cols, rowArrays, token, 'USER_ENTERED');
         console.log(`[sync-products] ${brand.id} — cleared ${rows.length - kept.length} existing rows for ${dateStr}`);
       }
     } catch (err) {
