@@ -93,9 +93,24 @@ module.exports = async (req, res) => {
   }
   const newSellerIds = new Map(); // id → example ASIN
 
+  // ── Tab grid sizes (FIXED 2026-10-21) ────────────────────────────────────
+  // Google refuses to read or write past a tab's grid edge. The brand tabs
+  // were exactly as wide as sync-products' columns (e.g. Skinuva: 33), so
+  // the new offer columns (AF–AK) were off the grid: the read of
+  // offers_synced_at failed and the header write got a 400. Columns are now
+  // added to a tab before anything is read from or written to them.
+  let grids = {};
+  try {
+    const meta = await sheetsApi(token, 'GET', `/${sheets.products}?fields=sheets.properties(sheetId,title,gridProperties)`);
+    (meta.sheets || []).forEach(sh => { grids[sh.properties.title] = { sheetId: sh.properties.sheetId, cols: sh.properties.gridProperties?.columnCount || 0 }; });
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not read Products Cache sheet layout', detail: err.message });
+  }
+
   // ── Find today's rows still needing offer data, per brand ────────────────
   const work = [];      // { brand, account, asin, rows: [sheetRowNumber...] }
   const tabCols = {};   // brand.tabName → { colIndex by header, headerNeedsWrite }
+  const errors = [];
   for (const brand of activeBrands) {
     try {
       const head = await sheetsApi(token, 'GET', `/${sheets.products}/values/${rng(brand.tabName, 'A1:ZZ1')}`);
@@ -106,6 +121,16 @@ module.exports = async (req, res) => {
       OFFER_HEADERS.forEach(h => { const i = header.indexOf(h); if (i >= 0) idx[h] = i; else { idx[h] = next++; headerNeedsWrite = true; } });
       const dateCol = header.indexOf('date'), asinCol = header.indexOf('asin');
       if (dateCol < 0 || asinCol < 0) { console.warn(`[sync-product-offers] ${brand.id} — no date/asin column, skipping`); continue; }
+
+      const neededCols = Math.max(...Object.values(idx)) + 1;
+      const grid = grids[brand.tabName];
+      if (grid && grid.cols < neededCols) {
+        await sheetsApi(token, 'POST', `/${sheets.products}:batchUpdate`, { requests: [{
+          appendDimension: { sheetId: grid.sheetId, dimension: 'COLUMNS', length: neededCols - grid.cols },
+        }] });
+        console.log(`[sync-product-offers] ${brand.id} — widened tab from ${grid.cols} to ${neededCols} columns`);
+        grid.cols = neededCols;
+      }
       tabCols[brand.tabName] = { idx, headerNeedsWrite };
 
       const syncedCol = idx.offers_synced_at;
@@ -123,12 +148,13 @@ module.exports = async (req, res) => {
       for (const [asin, rows] of byAsin) work.push({ brand, account: accountForBrand(brand), asin, rows });
     } catch (err) {
       console.warn(`[sync-product-offers] ${brand.id} — could not read tab:`, err.message);
+      errors.push(`${brand.id} tab read: ${err.message}`);
+      delete tabCols[brand.tabName]; // don't write anything to a tab we couldn't read
     }
   }
 
   // ── Fetch offers, 20 ASINs per call, per seller account ──────────────────
   const results = {}; // asin|account → summary
-  const errors = [];
   let calls = 0, stoppedEarly = false;
   for (const account of [...new Set(work.map(w => w.account))]) {
     const asins = [...new Set(work.filter(w => w.account === account).map(w => w.asin))];
