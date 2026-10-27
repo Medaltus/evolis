@@ -13,16 +13,60 @@ const crypto = require('crypto');
 
 // ── JWT / OAuth ───────────────────────────────────────────────────────────────
 
-let _tokenCache = null;
+// ── Two Google service accounts (ADDED 2026-10-27) ───────────────────────
+// Google's Sheets write limit is 60 per minute PER SERVICE ACCOUNT (300 per
+// project). Every cron used to share one account and kept hitting it. A
+// second "writer" account (GOOGLE_WRITER_CLIENT_EMAIL / _PRIVATE_KEY, same
+// Google Cloud project) now handles the heavy sheets below — chosen by
+// SPREADSHEET, so any cron reading or writing those sheets uses it, with no
+// change needed in those crons:
+//   Products Cache (+ productInventory), NewDerm inventory reconciliation,
+//   advertising / ad orders / ad search terms, Daily Business Report.
+// Everything else stays on the original account. If the writer env vars
+// aren't set, everything uses the original account (same as before).
+// Safety net: if the writer account is refused access to a sheet (403 — not
+// shared with it yet), the call is retried once on the original account and
+// a warning names the sheet, so a missed share never breaks a cron.
+const DAILY_BUSINESS_REPORT_SHEET = '1QLjUvYg-JR6jQmdFlykypkNarqsZvTCOgA3bFagDlVg';
+let _writerSheetIds = null;
+function writerSheetIds() {
+  if (_writerSheetIds) return _writerSheetIds;
+  let cfg = {};
+  try { cfg = require('./sheets'); } catch (e) { console.warn('[sheets] could not load config/sheets.js for account routing:', e.message); }
+  _writerSheetIds = new Set([
+    cfg.products, cfg.productInventory, cfg.newdermInventory, cfg.adOrders,
+    process.env.SHEET_ADVERTISING, process.env.SHEET_AD_ORDERS, process.env.SHEET_AD_SEARCH_TERMS,
+    DAILY_BUSINESS_REPORT_SHEET,
+  ].filter(Boolean));
+  return _writerSheetIds;
+}
+const writerConfigured = () => !!(process.env.GOOGLE_WRITER_CLIENT_EMAIL && process.env.GOOGLE_WRITER_PRIVATE_KEY);
 
-async function getSheetsToken() {
+// 'writer' | 'primary' for a spreadsheet ID (or pass 'writer' / 'primary' directly).
+function accountForSheet(sheetIdOrAccount) {
+  if (sheetIdOrAccount === 'writer') return writerConfigured() ? 'writer' : 'primary';
+  if (sheetIdOrAccount === 'primary' || !sheetIdOrAccount) return 'primary';
+  return writerConfigured() && writerSheetIds().has(sheetIdOrAccount) ? 'writer' : 'primary';
+}
+
+const _tokenCache = { primary: null, writer: null };
+
+// getSheetsToken()            → original account (unchanged behavior)
+// getSheetsToken(sheetId)     → the account that handles that spreadsheet
+// getSheetsToken('writer')    → the writer account (falls back if not set up)
+async function getSheetsToken(sheetIdOrAccount) {
+  return tokenForAccount(accountForSheet(sheetIdOrAccount));
+}
+
+async function tokenForAccount(account) {
   const now = Date.now();
-  if (_tokenCache && _tokenCache.expiresAt > now + 60_000) {
-    return _tokenCache.token;
+  const cached = _tokenCache[account];
+  if (cached && cached.expiresAt > now + 60_000) {
+    return cached.token;
   }
 
-  const email = process.env.GOOGLE_CLIENT_EMAIL;
-  const rawKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+  const email = account === 'writer' ? process.env.GOOGLE_WRITER_CLIENT_EMAIL : process.env.GOOGLE_CLIENT_EMAIL;
+  const rawKey = (account === 'writer' ? process.env.GOOGLE_WRITER_PRIVATE_KEY : process.env.GOOGLE_PRIVATE_KEY).replace(/\\n/g, '\n');
 
   const header  = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const iat     = Math.floor(now / 1000);
@@ -47,9 +91,12 @@ async function getSheetsToken() {
     'Content-Type': 'application/x-www-form-urlencoded',
   });
 
-  _tokenCache = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
-  return _tokenCache.token;
+  if (!data.access_token) throw new Error(`Google auth failed for the ${account} service account (${email}): ${JSON.stringify(data).slice(0, 200)}`);
+  _tokenCache[account] = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
+  return _tokenCache[account].token;
 }
+const isWriterToken = token => !!(_tokenCache.writer && _tokenCache.writer.token === token);
+const sheetIdFromPath = path => (String(path).match(/^\/([^/?:]+)/) || [])[1] || '(unknown sheet)';
 
 // ── Tab management ────────────────────────────────────────────────────────────
 
@@ -104,7 +151,7 @@ function addTabToTitleCache(sheetId, tabName) {
  * silently corrupting every read for weeks.
  */
 async function ensureTab(sheetId, tabName, headers) {
-  const token = await getSheetsToken();
+  const token = await getSheetsToken(sheetId); // routed by spreadsheet (2026-10-27)
 
   // Get existing sheets (cached per sheetId — see getTabTitles above)
   const titles = await getTabTitles(sheetId, token);
@@ -303,7 +350,7 @@ async function replaceRows(sheetId, tabName, headers, rows, token, valueInputOpt
  * evaluated to. Added 2026-07-20.
  */
 async function readRows(sheetId, tabName, valueRenderOption = null) {
-  const token = await getSheetsToken();
+  const token = await getSheetsToken(sheetId); // routed by spreadsheet (2026-10-27)
   const range = encodeURIComponent(`${tabName}!A1:ZZ`);
   const suffix = valueRenderOption ? `?valueRenderOption=${valueRenderOption}` : '';
   const data  = await sheetsGet(token, `/${sheetId}/values/${range}${suffix}`);
@@ -406,6 +453,11 @@ function sheetsGet(token, path, retriesLeft = MAX_RETRIES) {
           // same class of reasoning already applied to 429 and 500/
           // INTERNAL above, just never extended to cover this specific
           // status code until it actually happened in production.
+          if (res.statusCode === 403 && isWriterToken(token)) {
+            console.warn(`[sheets] writer account has no access to sheet ${sheetIdFromPath(path)} — share it with ${process.env.GOOGLE_WRITER_CLIENT_EMAIL} (Editor). Using the original account for this call.`);
+            try { resolve(await sheetsGet(await tokenForAccount('primary'), path, retriesLeft)); } catch (err) { reject(err); }
+            return;
+          }
           const waitMs = retryWaitMs(res.statusCode, parsed, retriesLeft); // CHANGED 2026-10-27 — see retryWaitMs
           if (waitMs != null) {
             console.warn(`[sheets] retryable error (${res.statusCode}) on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
@@ -452,6 +504,11 @@ function sheetsPost(token, path, body, method = 'POST', retriesLeft = MAX_RETRIE
         if (res.statusCode < 200 || res.statusCode >= 300) {
           // CHANGED 2026-08-14 — see sheetsGet's identical fix above for
           // the full explanation.
+          if (res.statusCode === 403 && isWriterToken(token)) {
+            console.warn(`[sheets] writer account has no access to sheet ${sheetIdFromPath(path)} — share it with ${process.env.GOOGLE_WRITER_CLIENT_EMAIL} (Editor). Using the original account for this call.`);
+            try { resolve(await sheetsPost(await tokenForAccount('primary'), path, body, method, retriesLeft)); } catch (err) { reject(err); }
+            return;
+          }
           const waitMs = retryWaitMs(res.statusCode, parsed, retriesLeft); // CHANGED 2026-10-27 — see retryWaitMs
           if (waitMs != null) {
             console.warn(`[sheets] retryable error (${res.statusCode}) on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
@@ -510,4 +567,4 @@ function base64url(str) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-module.exports = { ensureTab, appendRows, replaceRows, readRows, updateRange, ensureRowCapacity, getSheetsToken, touchMeta };
+module.exports = { ensureTab, appendRows, replaceRows, readRows, updateRange, ensureRowCapacity, getSheetsToken, accountForSheet, touchMeta };
