@@ -10,12 +10,14 @@
  *      numbers keep settling for a few days.
  *   2. Gap-fill — any day in the last 730 (2 years) that this account doesn't have in
  *      Daily Totals yet (first-run backfill, or a missed day), newest first.
- * Capped at 6 requests per run: createReport is one shared allowance for
- * the whole seller account (burst 15, refills ~1/min), and this account's
- * orders / revenue / returns / SQP crons draw on it too.
+ * Capped per run (MAX_REQUESTS_PER_RUN), and in practice Amazon's own limit
+ * for THIS report type is tighter (~3 in a burst, then a slow refill — seen
+ * live 2026-10-27), so each run takes what Amazon allows and stops at the
+ * first QuotaExceeded; the next run (every 5 minutes) continues. It's a
+ * separate allowance from the account's other report types.
  *
- * The 730-day backfill takes ~122 rounds; the every-20-minutes schedule gets
- * through it in under two days. After that each run only checks for gaps.
+ * Backfill pace is set by Amazon's limit for this report type. After the
+ * backfill each run only checks for gaps (and writes nothing when there are none).
  *
  * Manual:
  *   GET /api/cron/sync-daily-business-report-request                 normal run (NewDerm)
@@ -90,11 +92,16 @@ module.exports = async (req, res) => {
 
     const reqDates = new Set(requested.map(r => r.date));
     const nextPending = [...pending.filter(p => !reqDates.has(p.date)), ...requested];
-    meta.pending = JSON.stringify(nextPending);
-    meta.last_request_at = new Date().toISOString();
-    if (!one && requested.some(r => C.RECENT_OFFSETS.map(n => C.addDays(today, -n)).includes(r.date))) meta.recent_requested_for = today;
-    meta.backfill_remaining = String(Math.max(0, missingTotal - requested.length));
-    await C.writeMeta(META_TAB, meta);
+    const remaining = String(Math.max(0, missingTotal - requested.length));
+    // ADDED 2026-10-27 — runs every 5 minutes now; when nothing was requested
+    // and nothing changed, skip the _meta write (saves Sheets write quota).
+    if (requested.length || meta.backfill_remaining !== remaining) {
+      meta.pending = JSON.stringify(nextPending);
+      meta.last_request_at = new Date().toISOString();
+      if (!one && requested.some(r => C.RECENT_OFFSETS.map(n => C.addDays(today, -n)).includes(r.date))) meta.recent_requested_for = today;
+      meta.backfill_remaining = remaining;
+      await C.writeMeta(META_TAB, meta);
+    }
 
     // Quota pushback alone isn't a failure (the next run continues); only alert on real errors.
     const realFailures = failed.filter(f => !/QuotaExceeded|429|TooManyRequests/i.test(f.error));
@@ -102,7 +109,7 @@ module.exports = async (req, res) => {
       await sendCronFailureAlert(CRON, `No reports could be requested. First error: ${realFailures[0].error}`, { Dates: realFailures.map(f => f.date).join(', ') });
     }
     console.log(`[daily-br-request] (${account}) requested ${requested.length} (${requested.map(r => r.date).join(', ')}), failed ${failed.length}, still to request ${meta.backfill_remaining}`);
-    return res.status(200).json({ success: true, account, requested, failed, pending: nextPending.length, backfill_remaining: Number(meta.backfill_remaining) });
+    return res.status(200).json({ success: true, account, requested, failed, pending: nextPending.length, backfill_remaining: Number(remaining) });
   } catch (err) {
     console.error('[daily-br-request]', err.message);
     await sendCronFailureAlert(CRON, err.message);
