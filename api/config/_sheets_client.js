@@ -332,7 +332,29 @@ async function touchMeta(sheetId, tabName, status, rowsWritten, token, errorMsg)
 const SHEETS_BASE = 'sheets.googleapis.com';
 const SHEETS_PATH = '/v4/spreadsheets';
 
-function sheetsGet(token, path, retriesLeft = 4) {
+// ADDED 2026-10-27 — real incident: sync-orders-process's final _meta write
+// failed after 4 retries (2+4+8+16s = 30s). Google's write quota is PER
+// MINUTE and shared by every cron in this project; 30s of waiting can end
+// before the minute rolls over. For quota errors (429 / RESOURCE_EXHAUSTED)
+// only, two more retries (20s, 30s) take the total to ~80s, which always
+// outlasts the window. Random jitter keeps crons that hit the limit together
+// from all retrying in the same instant. Other retryable errors (500/503)
+// keep the original 4 tries.
+const RETRY_WAITS_MS = [2000, 4000, 8000, 16000, 20000, 30000];
+const MAX_RETRIES = RETRY_WAITS_MS.length;
+const NON_QUOTA_MAX_RETRIES = 4;
+function retryWaitMs(statusCode, parsed, retriesLeft) {
+  const attempt = MAX_RETRIES - retriesLeft; // 0-based
+  if (retriesLeft <= 0) return null;
+  const isQuota = statusCode === 429 || parsed?.error?.status === 'RESOURCE_EXHAUSTED';
+  const isRetryable = isQuota || statusCode === 500 || statusCode === 503
+    || parsed?.error?.status === 'INTERNAL' || parsed?.error?.status === 'UNAVAILABLE';
+  if (!isRetryable) return null;
+  if (!isQuota && attempt >= NON_QUOTA_MAX_RETRIES) return null;
+  return RETRY_WAITS_MS[attempt] + Math.floor(Math.random() * 1500);
+}
+
+function sheetsGet(token, path, retriesLeft = MAX_RETRIES) {
   return new Promise((resolve, reject) => {
     const opts = {
       hostname: SHEETS_BASE,
@@ -384,10 +406,8 @@ function sheetsGet(token, path, retriesLeft = 4) {
           // same class of reasoning already applied to 429 and 500/
           // INTERNAL above, just never extended to cover this specific
           // status code until it actually happened in production.
-          const isRetryable = res.statusCode === 429 || res.statusCode === 500 || res.statusCode === 503
-            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL' || parsed?.error?.status === 'UNAVAILABLE';
-          if (isRetryable && retriesLeft > 0) {
-            const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s
+          const waitMs = retryWaitMs(res.statusCode, parsed, retriesLeft); // CHANGED 2026-10-27 — see retryWaitMs
+          if (waitMs != null) {
             console.warn(`[sheets] retryable error (${res.statusCode}) on GET ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
@@ -408,7 +428,7 @@ function sheetsGet(token, path, retriesLeft = 4) {
   });
 }
 
-function sheetsPost(token, path, body, method = 'POST', retriesLeft = 4) {
+function sheetsPost(token, path, body, method = 'POST', retriesLeft = MAX_RETRIES) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
     const opts = {
@@ -432,10 +452,8 @@ function sheetsPost(token, path, body, method = 'POST', retriesLeft = 4) {
         if (res.statusCode < 200 || res.statusCode >= 300) {
           // CHANGED 2026-08-14 — see sheetsGet's identical fix above for
           // the full explanation.
-          const isRetryable = res.statusCode === 429 || res.statusCode === 500 || res.statusCode === 503
-            || parsed?.error?.status === 'RESOURCE_EXHAUSTED' || parsed?.error?.status === 'INTERNAL' || parsed?.error?.status === 'UNAVAILABLE';
-          if (isRetryable && retriesLeft > 0) {
-            const waitMs = Math.min(2000 * Math.pow(2, 4 - retriesLeft), 16_000); // 2s, 4s, 8s, 16s — see sheetsGet
+          const waitMs = retryWaitMs(res.statusCode, parsed, retriesLeft); // CHANGED 2026-10-27 — see retryWaitMs
+          if (waitMs != null) {
             console.warn(`[sheets] retryable error (${res.statusCode}) on ${method} ${path}, retrying in ${waitMs}ms (${retriesLeft} left)`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
