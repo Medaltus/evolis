@@ -63,9 +63,15 @@ module.exports = async (req, res) => {
       if (!recentDone) wanted.push(...C.RECENT_OFFSETS.map(n => C.addDays(today, -n)));
       const have = new Set((await C.readTotals()).filter(r => r[1] === account).map(r => r[0]));
       const oldest = C.addDays(today, -C.BACKFILL_DAYS);
-      for (let d = C.addDays(today, -(Math.max(...C.RECENT_OFFSETS) + 1)); d >= oldest; d = C.addDays(d, -1)) {
+      // CHANGED 2026-10-27 — the gap-fill now starts at D-2 instead of D-5, so
+      // a recent day that couldn't be requested (Amazon's limit hit partway
+      // through the D-2..D-4 batch) is retried on the next run instead of
+      // waiting until it ages into the gap-fill window. Real case: NewDerm's
+      // 2026-10-23 was skipped on 2026-10-27.
+      for (let d = C.addDays(today, -Math.min(...C.RECENT_OFFSETS)); d >= oldest; d = C.addDays(d, -1)) {
         if (!have.has(d) && !pendingDates.has(d)) wanted.push(d);
       }
+      wanted = [...new Set(wanted)]; // a recent day can now appear in both lists
     }
     const missingTotal = wanted.length;
     wanted = wanted.slice(0, C.MAX_REQUESTS_PER_RUN);
