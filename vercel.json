@@ -3,19 +3,19 @@
   "crons": [
     {
       "path": "/api/cron/sale-promotions?group=A",
-      "schedule": "5 * * * *"
+      "schedule": "25 * * * *"
     },
     {
       "path": "/api/cron/sale-promotions?group=B",
-      "schedule": "33 * * * *"
+      "schedule": "55 * * * *"
     },
     {
       "path": "/api/cron/fees-estimate?group=A",
-      "schedule": "18 * * * *"
+      "schedule": "5 * * * *"
     },
     {
       "path": "/api/cron/fees-estimate?group=B",
-      "schedule": "48 * * * *"
+      "schedule": "35 * * * *"
     },
     {
       "path": "/api/cron/sync-orders-request",
@@ -255,23 +255,23 @@
     },
     {
       "path": "/api/cron/sync-product-offers?pass=1",
-      "schedule": "10 20 * * *"
+      "schedule": "5 20 * * *"
     },
     {
       "path": "/api/cron/sync-product-offers?pass=2",
-      "schedule": "25 20 * * *"
+      "schedule": "20 20 * * *"
     },
     {
       "path": "/api/cron/sync-product-offers?pass=3",
-      "schedule": "40 20 * * *"
+      "schedule": "35 20 * * *"
     },
     {
       "path": "/api/cron/sync-product-offers?pass=4",
-      "schedule": "55 20 * * *"
+      "schedule": "50 20 * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-request",
-      "schedule": "26,56 * * * *"
+      "schedule": "15,45 * * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-request?account=hol",
@@ -279,7 +279,7 @@
     },
     {
       "path": "/api/cron/sync-daily-business-report-process",
-      "schedule": "11,41 * * * *"
+      "schedule": "0,30 * * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-process?account=hol",
@@ -344,15 +344,6 @@
       "maxDuration": 900
     },
     "api/cron/*.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-daily-business-report-request.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-daily-business-report-process.js": {
-      "maxDuration": 300
-    },
-    "api/cron/sync-product-offers.js": {
       "maxDuration": 300
     }
   },
