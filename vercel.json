@@ -271,19 +271,19 @@
     },
     {
       "path": "/api/cron/sync-daily-business-report-request",
-      "schedule": "15,45 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-request?account=hol",
-      "schedule": "28,58 * * * *"
+      "schedule": "2-59/5 * * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-process",
-      "schedule": "0,30 * * * *"
+      "schedule": "0,20,40 * * * *"
     },
     {
       "path": "/api/cron/sync-daily-business-report-process?account=hol",
-      "schedule": "13,43 * * * *"
+      "schedule": "10,30,50 * * * *"
     }
   ],
   "functions": {
