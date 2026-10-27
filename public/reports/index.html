@@ -1200,6 +1200,30 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 #ov-bm-kpis .data-table td.bmk-calc{color:var(--muted);font-size:11px;}
 #ov-bm-kpis .bmk-cat-note{font-size:11px;color:var(--muted);margin:-6px 0 12px;line-height:1.5;}
 #ov-bm-kpis .kpi-sub{font-size:11px;color:var(--muted);margin-top:5px;} /* from MiGuard's global .kpi-sub (Skinside has none) */
+/* Traffic page — ported 2026-10-27 from the VB Cosmetics dashboard */
+.trf-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;}
+.trf-seg{display:inline-flex;background:var(--bg);border:1px solid var(--border2);border-radius:999px;padding:3px;gap:2px;}
+.trf-seg button{border:0;background:transparent;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit;}
+.trf-seg button.active{background:var(--navy);color:#fff;}
+.trf-seg-lg button{padding:8px 18px;font-size:12.5px;}
+.trf-source{font-size:11px;color:var(--muted);flex:1;min-width:220px;text-align:right;}
+.trf-card{margin-bottom:18px;}
+.trf-card-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.trf-card-ctrls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.trf-note{font-size:12px;color:var(--muted);}
+.trf-media{margin-top:12px;display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--navy);}
+.trf-media:empty{display:none;}
+.trf-media-item{display:flex;gap:8px;align-items:flex-start;line-height:1.45;}
+.trf-media-num{flex:0 0 18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:1px;}
+.trf-media-item a{color:var(--navy);font-weight:600;}
+.trf-ev-swatch{flex:0 0 18px;height:12px;border-radius:3px;margin-top:3px;}
+.trf-media-hd{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.trf-select{font-family:inherit;font-size:13px;padding:8px 12px;border:1px solid var(--border2);border-radius:8px;min-width:320px;max-width:100%;color:var(--navy);background:#fff;}
+@media (max-width:640px){ .trf-source{text-align:left;} .trf-select{min-width:0;width:100%;} }
+#page-traffic .dd-rev-cat-tabs{display:flex;gap:8px;flex-wrap:wrap;}
+#page-traffic .dd-rev-cat-tab{background:var(--bg);border:1px solid var(--border2);border-radius:999px;padding:8px 18px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .13s;font-family:inherit;}
+#page-traffic .dd-rev-cat-tab:hover{border-color:var(--navy);}
+#page-traffic .dd-rev-cat-tab.active{background:var(--navy);border-color:var(--navy);color:#fff;}
 </style>
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -1274,6 +1298,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
     <button class="nav-btn" onclick="showPage('insights',this)">
       <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5.5v.5"/></svg>Insights
       <span class="nav-badge">3</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('traffic',this)">
+      <svg viewBox="0 0 16 16"><polyline points="1,13 5,8 8,10 11,5 15,7"/><circle cx="11" cy="5" r="1.3"/></svg>Traffic
     </button>
     <button class="nav-btn" onclick="showPage('listing',this)">
       <svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z"/><path d="M5 6h6M5 9h4"/></svg>Listing Audit
@@ -3236,6 +3263,56 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
   </div>
 
   <!-- ══ INSIGHTS LOG (internal only) ══ -->
+  <!-- ══ TRAFFIC ══ added 2026-10-27 per Jaclyn — VBC's Insights > Traffic
+       as its own page: brand-wide, by category, and by product. -->
+  <div class="page" id="page-traffic">
+    <div class="page-hd">
+      <div><div class="page-title">Traffic</div><div class="page-sub">Amazon sessions and conversion — daily or monthly, with Amazon event periods shaded</div></div>
+    </div>
+    <div class="trf-toolbar">
+      <div class="trf-seg trf-seg-lg" id="trf-view"><button onclick="trfSetView('daily')">Daily</button><button onclick="trfSetView('monthly')">Monthly</button></div>
+      <div class="trf-seg" id="trf-window"><button data-days="7" onclick="trfSetWindow(7)">7 days</button><button data-days="30" onclick="trfSetWindow(30)">30 days</button><button data-days="60" onclick="trfSetWindow(60)">60 days</button><button data-days="90" onclick="trfSetWindow(90)">90 days</button><button data-days="180" onclick="trfSetWindow(180)">180 days</button><button data-days="365" onclick="trfSetWindow(365)">1 year</button></div>
+      <div class="trf-source" id="trf-source"></div>
+    </div>
+    <div class="card trf-card">
+      <div class="trf-card-hd">
+        <div><div class="card-title" style="margin-bottom:2px;" id="trf-overall-title">évolis — All Products</div><div class="trf-note" id="trf-overall-note">Loading…</div></div>
+        <div class="trf-card-ctrls">
+          <div class="trf-seg" id="trf-overall-metric"><button class="active" data-metric="sessions" onclick="trfSetMetric('overall','sessions')">Sessions</button><button data-metric="conv" onclick="trfSetMetric('overall','conv')">Conv Rate</button><button data-metric="units" onclick="trfSetMetric('overall','units')">Units</button></div>
+          <div id="trf-legend-overall" style="display:flex;align-items:center;"></div>
+        </div>
+      </div>
+      <div style="position:relative;height:300px;"><canvas id="trf-overall-chart"></canvas></div>
+      <div class="trf-media" id="trf-overall-media"></div>
+    </div>
+    <div class="card trf-card">
+      <div class="trf-card-hd">
+        <div><div class="card-title" style="margin-bottom:2px;" id="trf-cat-title">By Category</div><div class="trf-note" id="trf-cat-note">Loading…</div></div>
+        <div class="trf-card-ctrls">
+          <div class="trf-seg" id="trf-cat-metric"><button class="active" data-metric="sessions" onclick="trfSetMetric('cat','sessions')">Sessions</button><button data-metric="conv" onclick="trfSetMetric('cat','conv')">Conv Rate</button><button data-metric="units" onclick="trfSetMetric('cat','units')">Units</button></div>
+          <div id="trf-legend-cat" style="display:flex;align-items:center;"></div>
+        </div>
+      </div>
+      <div class="dd-rev-cat-tabs" id="trf-cat-tabs" style="margin:10px 0 14px;"></div>
+      <div style="position:relative;height:300px;"><canvas id="trf-cat-chart"></canvas></div>
+      <div class="trf-media" id="trf-cat-media"></div>
+    </div>
+    <div class="card trf-card">
+      <div class="trf-card-hd">
+        <div><div class="card-title" style="margin-bottom:2px;" id="trf-prod-title">By Product</div><div class="trf-note" id="trf-prod-note">Loading…</div></div>
+        <div class="trf-card-ctrls">
+          <div class="trf-seg" id="trf-prod-metric"><button class="active" data-metric="sessions" onclick="trfSetMetric('prod','sessions')">Sessions</button><button data-metric="conv" onclick="trfSetMetric('prod','conv')">Conv Rate</button><button data-metric="units" onclick="trfSetMetric('prod','units')">Units</button></div>
+          <div id="trf-legend-prod" style="display:flex;align-items:center;"></div>
+        </div>
+      </div>
+      <div style="margin:10px 0 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <select id="trf-prod-select" class="trf-select" onchange="trfSetProduct(this.value)"><option>Loading…</option></select>
+      </div>
+      <div style="position:relative;height:300px;"><canvas id="trf-prod-chart"></canvas></div>
+      <div class="trf-media" id="trf-prod-media"></div>
+    </div>
+  </div>
+
   <div class="page" id="page-insights">
     <div class="sheet-link-menu">
       <button class="sheet-link-btn" onclick="document.getElementById('insights-sheet-dropdown').classList.toggle('open')">🔗 Source Sheets <span style="font-size:9px;">▾</span></button>
@@ -5233,7 +5310,7 @@ const pageTitles = {
   home:'Home — Évolis',
   overview:'Overview — Évolis',sales:'Sales — Évolis','sales-external':'Sales — Évolis',marketing:'Marketing — Évolis','marketing-external':'Marketing — Évolis',
   events:'Events — Évolis',inventory:'Inventory — Évolis','inventory-external':'Inventory — Évolis',fulfillment:'Fulfillment — Évolis',
-  insights:'Insights — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
+  insights:'Insights — Évolis',traffic:'Traffic — Évolis',listing:'Listing Audit — Évolis',ppc:'PPC — Évolis',organic:'Organic — Évolis'
 };
 
 function showPage(id, btn) {
@@ -5250,6 +5327,7 @@ function showPage(id, btn) {
   // click into Rank Tracker first. initRankTracker caches internally, so
   // this is a no-op on subsequent visits to the page.
   if (id === 'organic' && typeof window.initRankTracker === 'function') window.initRankTracker('activators');
+  if (id === 'traffic' && typeof window.loadEvolisTraffic === 'function') window.loadEvolisTraffic();
 
   // Export PDF Report button — only shown on the three "performance" pages
   // (Sales, Marketing, Events). Hidden everywhere else (Overview, Inventory,
@@ -14378,6 +14456,395 @@ function getProductMaster() {
   })();
   return _productMasterPromise;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// TRAFFIC PAGE — added 2026-10-27 per Jaclyn. Ported from the VB
+// Cosmetics dashboard's Insights > Traffic tab (same three charts, toolbar,
+// metrics, event bands and styling), as its own top-level page here.
+// Everything runs inside this one scope, so VBC's helper names can't
+// collide with évolis's. Sources:
+//   • Daily:   NewDerm Daily Business Report, évolis tab (one NewDerm
+//              account, so no cross-account merging is needed)
+//   • Monthly: évolis Amazon Business Report (same sheet as Brand Momentum)
+//   • Products/categories: Product Short Name (évolis, Amazon, CATALOG)
+//   • Event bands: évolis Events tab (no "Amazon featured event" column,
+//              so every event is treated as an Amazon event)
+// VBC's media-mention overlay is left out — évolis has no media log.
+// ═══════════════════════════════════════════════════════════════════
+(function () {
+const TRF_DAILY_CSV   = 'https://docs.google.com/spreadsheets/d/1QLjUvYg-JR6jQmdFlykypkNarqsZvTCOgA3bFagDlVg/export?format=csv&gid=1788899355';
+const TRF_MONTHLY_CSV = 'https://docs.google.com/spreadsheets/d/1Jkx7Ztnt59eniYtvTnpXB8D7xMnCyjC8b49xB4J59ww/export?format=csv&gid=310979287';
+const TRF_EVENTS_CSV  = 'https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/export?format=csv&gid=347530381';
+const TRF_MEDIA_COLOR = '#FF4FA3';
+const TRF_EVENT_COLORS = { amazon:'#FF9900', ours:'#A66DFF' };
+const TRF_FINAL_AFTER = 4; // newest days are still settling in Amazon's report — drawn dashed
+// Category order for the tabs/dropdown; built from Product Short Name at load.
+const TRF_CAT_ORDER = ['Activator', 'Shampoo', 'Conditioner', 'Hair Mask', 'Dry Shampoo'];
+let TRF_CATS = [];
+const _trf = { loading:null, d:null, daily:null, view:null, win:90, cat:null, asin:null,
+               metric:{ overall:'sessions', cat:'sessions', prod:'sessions' }, charts:{} };
+
+// ── VBC chart/date helpers (verbatim) ──
+const YOY_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DDP_MONTH_ABBR = YOY_MONTHS;
+const YOY_LINE_DEFAULTS = { pointRadius:2, tension:0.3, borderWidth:2.5 };
+const YOY_COLORS = {
+  0: { border:'#24e9a3', bg:'rgba(36,233,163,0.08)', fill:true  },
+  1: { border:'#001f60', bg:'transparent',           fill:false },
+  2: { border:'#f4dfd0', bg:'transparent',           fill:false },
+  3: { border:'#ccd3d5', bg:'transparent',           fill:false },
+};
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function yoyChartOptions(fmt){
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display:false },
+      tooltip: {
+        backgroundColor:'#fff', borderColor:'rgba(0,31,96,0.1)', borderWidth:1,
+        titleColor:'#001F60', bodyColor:'#6B7BA2',
+        titleFont:{family:'DM Sans, sans-serif', size:11, weight:'600'},
+        bodyFont:{family:'DM Sans, sans-serif', size:11},
+        padding:12, boxWidth:8, boxHeight:8,
+        callbacks:{ label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` }
+      }
+    },
+    scales: {
+      x: { border:{display:false}, grid:{display:false}, ticks:{font:{family:'DM Sans, sans-serif', size:10}, color:'#6B7BA2'} },
+      y: { border:{display:false}, grid:{color:'rgba(0,31,96,0.05)'}, ticks:{font:{family:'DM Sans, sans-serif', size:10}, color:'#6B7BA2', callback:fmt} }
+    }
+  };
+}
+function renderYoyLegend(chart, containerId){
+  const el = document.getElementById(containerId);
+  if(!el || !chart) return;
+  let items = [];
+  try{ items = Chart.defaults.plugins.legend.labels.generateLabels(chart) || []; } catch(e){ items = []; }
+  el.innerHTML = items.map(it=>{
+    const color = it.strokeStyle || it.fillStyle || '#6B7BA2';
+    return '<span style="display:inline-flex;align-items:center;gap:6px;margin-left:16px;font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap;">'+
+      '<span style="width:16px;height:3px;border-radius:2px;background:'+color+';display:inline-block;flex-shrink:0;"></span>'+
+      escapeHtml(it.text) + '</span>';
+  }).join('');
+}
+function ddLastFullMonth(){ const d = new Date(); let y = d.getFullYear(), m = d.getMonth(); if(m === 0){ m = 12; y--; } return { year:y, month:m }; }
+const ddPrevMonth = (y,m) => m===1 ? { year:y-1, month:12 } : { year:y, month:m-1 };
+const ddYm = (y,m) => `${y}-${String(m).padStart(2,'0')}`;
+function ddNormDate(d){
+  d = String(d||'').trim();
+  let m = d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}` : '';
+}
+async function fetchCsvRows(url){
+  const res = await fetch(url + (url.includes('?')?'&':'?') + '_cb=' + Date.now(), {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = parseCsvFull(await res.text());
+  if(!rows.length) return [];
+  const headers = rows[0].map(h=>String(h).trim());
+  return rows.slice(1).map(r=>{ const o = {}; headers.forEach((h,i)=>{ o[h] = String(r[i]||'').trim(); }); return o; });
+}
+
+// ── évolis data loader (replaces VBC's ddpLoadData + two-account merge) ──
+function trfLoad(){
+  if(_trf.loading) return _trf.loading;
+  _trf.loading = (async ()=>{
+    const soft = (url, what) => fetchCsvRows(url).catch(e=>{ console.warn(`[Traffic] ${what}:`, e.message); return []; });
+    const [master, dailyRows, monRows, eventRows] = await Promise.all([
+      getProductMaster(), soft(TRF_DAILY_CSV, 'daily business report'),
+      soft(TRF_MONTHLY_CSV, 'monthly business report'), soft(TRF_EVENTS_CSV, 'events') ]);
+    const num = v => parseFloat(String(v||'0').replace(/[^0-9.-]/g,''))||0;
+    const strip = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+    // Products: évolis Amazon catalog SKUs with an ASIN (DELETED already dropped by getProductMaster)
+    const byCat = {}, catOf = {}, nameOf = {}, labels = {};
+    Object.values(master.bySku).forEach(e=>{
+      if(strip(e.brand) !== 'evolis' || !String(e.channel||'').toLowerCase().includes('amazon')) return;
+      if(e.skuType && e.skuType.toUpperCase() !== 'CATALOG') return;
+      if(!e.asin || !e.category) return;
+      const key = e.category.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+      labels[key] = e.category;
+      (byCat[key] = byCat[key] || []).push({ asin:e.asin, name:e.name || e.sku, sku:e.sku });
+      catOf[e.asin] = key; nameOf[e.asin] = e.name || e.sku;
+    });
+    TRF_CATS = Object.keys(byCat).map(k=>[k, labels[k]])
+      .sort((a,b)=>{ const ia = TRF_CAT_ORDER.indexOf(a[1]), ib = TRF_CAT_ORDER.indexOf(b[1]); return (ia<0?99:ia)-(ib<0?99:ib) || a[1].localeCompare(b[1]); });
+    if(!_trf.cat || !byCat[_trf.cat]) _trf.cat = TRF_CATS.length ? TRF_CATS[0][0] : null;
+    const add = (map, key, asin, s, u) => { const e = ((map[key] = map[key] || {})[asin] = map[key][asin] || { s:0, u:0 }); e.s += s; e.u += u; };
+    // daily: date -> asin -> { s, u }  (one account — sessions add normally)
+    const daily = {};
+    dailyRows.forEach(r=>{ const date = ddNormDate(r.DATE), asin = (r.ASIN||'').trim().toUpperCase(); if(!date || !asin) return; add(daily, date, asin, num(r.SESSIONS), num(r.UNITS_ORDERED)); });
+    const dates = Object.keys(daily).sort();
+    // monthly: "YYYY-MM" -> asin -> { s, u }  (YEAR may be "2,026"-formatted)
+    const br = {};
+    monRows.forEach(r=>{ const m = Math.round(num(r.MONTH)), y = Math.round(num(r.YEAR)), asin = (r.ASIN||'').trim().toUpperCase(); if(!m || !y || !asin) return; add(br, ddYm(y,m), asin, num(r.SESSIONS), num(r.UNITS_ORDERED)); });
+    const col = (r, ...names) => { const k = Object.keys(r).find(h => names.some(n => h.trim().toLowerCase() === n)); return k ? String(r[k]||'').trim() : ''; };
+    _trf.media = []; _trf.mediaLoaded = true;
+    _trf.events = eventRows.map(r=>{
+      const start = ddNormDate(col(r,'start_date','start date','start')), end = ddNormDate(col(r,'end_date','end date','end')) || start;
+      const flag = col(r,'amazon featured event','amazon event').toUpperCase();
+      return { name: col(r,'event name','event'), start, end: end < start ? start : end, amazon: flag ? flag.startsWith('Y') : true };
+    }).filter(e => e.name && e.start).sort((a,b)=>a.start.localeCompare(b.start));
+    _trf.d = { byCat, br }; _trf.br = br; _trf.daily = { byDate:daily, dates }; _trf.catOf = catOf; _trf.nameOf = nameOf;
+    return _trf;
+  })();
+  _trf.loading.catch(()=>{ _trf.loading = null; });
+  return _trf.loading;
+}
+async function loadDDTraffic(){
+  try{ await trfLoad(); }
+  catch(err){
+    ['overall','cat','prod'].forEach(k=>{ const n = document.getElementById(`trf-${k}-note`); if(n) n.textContent = 'Error loading traffic data: ' + err.message; });
+    return;
+  }
+  if(!_trf.view) _trf.view = _trf.daily.dates.length >= 7 ? 'daily' : 'monthly';
+  if(!_trf.asin) _trf.asin = trfDefaultProduct();
+  trfRenderControls();
+  trfRenderAll();
+}
+
+// Product dropdown: grouped by category, each group sorted by sessions in
+// the last full month, so the busiest products are at the top.
+function trfDefaultProduct(){
+  const { year, month } = ddLastFullMonth();
+  const cur = _trf.br[ddYm(year, month)] || {};
+  let best = null, bestS = -1;
+  Object.keys(_trf.catOf).forEach(a=>{ const s = (cur[a]||{}).s||0; if(s > bestS){ bestS = s; best = a; } });
+  return best;
+}
+function trfRenderControls(){
+  if(!_trf.daily) return; // clicked before the data finished loading — loadDDTraffic renders once it has
+  document.querySelectorAll('#trf-view button').forEach(b=>b.classList.toggle('active', b.textContent.toLowerCase() === _trf.view));
+  const win = document.getElementById('trf-window');
+  win.style.display = _trf.view === 'daily' ? '' : 'none';
+  win.querySelectorAll('button').forEach(b=>b.classList.toggle('active', Number(b.dataset.days) === _trf.win));
+  const dd = _trf.daily.dates;
+  document.getElementById('trf-source').textContent = _trf.view === 'daily'
+    ? (dd.length ? `Daily: NewDerm Daily Business Report (évolis tab) · ${dd.length} day${dd.length===1?'':'s'} available (${dd[0]} → ${dd[dd.length-1]}) · dashed = still settling` : 'Daily: no data in the NewDerm Daily Business Report yet')
+    : 'Monthly: évolis Amazon Business Report · current year runs through the last full month';
+  ['overall','cat','prod'].forEach(k=>document.querySelectorAll(`#trf-${k}-metric button`).forEach(b=>b.classList.toggle('active', b.dataset.metric === _trf.metric[k])));
+  document.getElementById('trf-cat-tabs').innerHTML = TRF_CATS.map(([k,l])=>`<button class="dd-rev-cat-tab${_trf.cat===k?' active':''}" onclick="trfSetCat('${k}')">${l}</button>`).join('');
+  const { year, month } = ddLastFullMonth();
+  const cur = _trf.br[ddYm(year, month)] || {};
+  const sel = document.getElementById('trf-prod-select');
+  sel.innerHTML = TRF_CATS.map(([k,l])=>{
+    const list = (_trf.d.byCat[k]||[]).slice().sort((a,b)=>((cur[b.asin]||{}).s||0)-((cur[a.asin]||{}).s||0));
+    return list.length ? `<optgroup label="${escapeHtml(l)}">${list.map(p=>`<option value="${p.asin}"${p.asin===_trf.asin?' selected':''}>${escapeHtml(p.name)} · ${escapeHtml(p.sku)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+}
+function trfSetView(v){ _trf.view = v; trfRenderControls(); trfRenderAll(); }
+function trfSetWindow(n){ _trf.win = n; trfRenderControls(); trfRenderAll(); }
+function trfSetMetric(k, m){ _trf.metric[k] = m; trfRenderControls(); trfRender(k); }
+function trfSetCat(k){ _trf.cat = k; trfRenderControls(); trfRender('cat'); }
+function trfSetProduct(a){ _trf.asin = a; trfRender('prod'); }
+function trfRenderAll(){ ['overall','cat','prod'].forEach(trfRender); }
+
+// asins: null = every DD ASIN (Overall), otherwise a Set
+function trfAsinSet(key){
+  if(key === 'overall') return null;
+  if(key === 'cat') return new Set((_trf.d.byCat[_trf.cat]||[]).map(p=>p.asin));
+  return new Set(_trf.asin ? [_trf.asin] : []);
+}
+function trfSum(obj, asins){
+  let s = 0, u = 0;
+  if(!obj) return null;
+  if(asins){ asins.forEach(a=>{ const r = obj[a]; if(r){ s += (r.s ?? r.sessions ?? 0); u += (r.u ?? r.units ?? 0); } }); }
+  else Object.values(obj).forEach(r=>{ s += (r.s ?? r.sessions ?? 0); u += (r.u ?? r.units ?? 0); });
+  return { s, u };
+}
+const trfVal = (t, metric) => !t ? null : metric === 'sessions' ? t.s : metric === 'units' ? t.u : (t.s ? t.u / t.s * 100 : null);
+const TRF_METRIC_LABEL = { sessions:'Sessions', conv:'Conv Rate', units:'Units' };
+const trfFmtNum = v => v==null ? '' : Math.abs(v)>=1000000 ? (v/1000000).toFixed(1).replace(/\.0$/,'')+'M' : Math.abs(v)>=1000 ? (v/1000).toFixed(v>=10000?0:1).replace(/\.0$/,'')+'k' : Math.round(v).toLocaleString();
+const trfFmtPct = v => v==null ? '' : v.toFixed(1)+'%';
+function trfPctChg(a, b, metric){
+  if(a==null || b==null || !b) return '';
+  if(metric === 'conv'){ const d = a - b; return `<b style="color:${d>0?'#1db88a':d<0?'#db372d':'var(--muted)'};">${d>0?'▲ +':d<0?'▼ ':''}${d.toFixed(1)} pts</b>`; }
+  const v = Math.round((a-b)/b*100); return `<b style="color:${v>0?'#1db88a':v<0?'#db372d':'var(--muted)'};">${v>0?'▲ +':v<0?'▼ ':''}${v}%</b>`;
+}
+
+function trfRender(key){
+  if(!_trf.d) return;
+  const metric = _trf.metric[key], asins = trfAsinSet(key);
+  const fmt = metric === 'conv' ? trfFmtPct : trfFmtNum;
+  const metricLbl = TRF_METRIC_LABEL[metric];
+  const fmtBig = v => metric === 'conv' ? fmt(v) : Math.round(v).toLocaleString() + (metric === 'units' ? ' units' : ' sessions');
+  const titleEl = document.getElementById(`trf-${key}-title`), noteEl = document.getElementById(`trf-${key}-note`);
+  if(key === 'cat') titleEl.textContent = `${(TRF_CATS.find(c=>c[0]===_trf.cat)||[])[1]} — ${metricLbl}`;
+  else if(key === 'prod') titleEl.textContent = `${_trf.nameOf[_trf.asin] || 'Product'} — ${metricLbl}`;
+  else titleEl.textContent = `évolis — All Products — ${metricLbl}`;
+
+  let labels, datasets, note = '', marks = [], bands = [];
+  if(_trf.view === 'monthly'){
+    const now = new Date(), cy = now.getFullYear(), stop = now.getMonth(); // months before the current one
+    datasets = [];
+    for(let off=0; off<=3; off++){
+      const yr = cy - off, c = YOY_COLORS[off];
+      const arr = YOY_MONTHS.map((_,i)=>{ if(yr===cy && i+1>stop) return null; const t = trfSum(_trf.br[ddYm(yr,i+1)], asins); return t && t.s ? trfVal(t, metric) : null; });
+      if(arr.every(v=>v==null)) continue;
+      datasets.push({ label:String(yr), data:arr, borderColor:c.border, backgroundColor:c.bg, fill:c.fill, ...YOY_LINE_DEFAULTS, spanGaps:false });
+    }
+    labels = YOY_MONTHS;
+    // A mention marks its month on the line for its year (if that year is drawn)
+    (_trf.media||[]).forEach(m=>{
+      const [y, mo] = m.date.split('-').map(Number);
+      const ds = datasets.find(x=>x.label === String(y));
+      if(ds && ds.data[mo-1] != null) marks.push({ idx: mo-1, value: ds.data[mo-1], color: ds.borderColor, m });
+    });
+    // An event shades the month(s) it falls in, for years that have a line
+    (_trf.events||[]).forEach(e=>{
+      const [y, m0] = e.start.split('-').map(Number), [y1, m1] = e.end.split('-').map(Number);
+      const ds = datasets.find(x=>x.label === String(y));
+      if(!ds) return;
+      const i0 = m0 - 1, i1 = y1 === y ? m1 - 1 : 11;
+      if(ds.data.slice(i0, i1+1).every(v=>v==null)) return;
+      bands.push({ i0, i1, e, ly: y !== new Date().getFullYear(), yr: y });
+    });
+    const { year, month } = ddLastFullMonth(), pm = ddPrevMonth(year, month);
+    const v = trfVal(trfSum(_trf.br[ddYm(year,month)], asins), metric), vp = trfVal(trfSum(_trf.br[ddYm(pm.year,pm.month)], asins), metric), vy = trfVal(trfSum(_trf.br[ddYm(year-1,month)], asins), metric);
+    const ab = DDP_MONTH_ABBR[month-1];
+    if(v != null) note = [`${ab} ${year}: <b>${fmtBig(v)}</b>`, vp!=null ? `${trfPctChg(v,vp,metric)} vs ${DDP_MONTH_ABBR[pm.month-1]}` : '', vy!=null ? `${trfPctChg(v,vy,metric)} vs ${ab} ${year-1}` : ''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  } else {
+    const all = _trf.daily.dates, byDate = _trf.daily.byDate;
+    if(!all.length){ labels = []; datasets = []; note = 'No daily data yet — the NewDerm Daily Business Report is still filling in.'; }
+    else {
+      const end = all[all.length-1];
+      // Window ends on the newest synced day and never starts before the first one
+      const start = [trfAddDays(end, -(_trf.win-1)), all[0]].sort()[1];
+      const days = []; for(let d=start; d<=end; d=trfAddDays(d, 1)) days.push(d);
+      const lyKey = d => trfShiftYear(d, -1); // same calendar date last year (day-over-day)
+      const cur = days.map(d=>{ const t = trfSum(byDate[d], asins); return t ? trfVal(t, metric) : null; });
+      const ly  = days.map(d=>{ const t = trfSum(byDate[lyKey(d)], asins); return t ? trfVal(t, metric) : null; });
+      const finalCut = trfAddDays(ddTodayPT(), -TRF_FINAL_AFTER);
+      const firstProv = days.findIndex(d=>d > finalCut);
+      labels = days.map(d=>{ const [y,m,dd] = d.split('-').map(Number); return `${DDP_MONTH_ABBR[m-1]} ${dd}` + (days.length > 120 ? ` '${String(y).slice(2)}` : ''); });
+      const c0 = YOY_COLORS[0], c1 = YOY_COLORS[1];
+      datasets = [{ label:'This year', data:cur, borderColor:c0.border, backgroundColor:c0.bg, fill:c0.fill, pointRadius:days.length>60?0:days.length>30?1.5:2.5, tension:0.25, borderWidth:2.5, spanGaps:false,
+                    segment:{ borderDash: ctx => (firstProv >= 0 && ctx.p1DataIndex >= firstProv) ? [5,4] : undefined } }];
+      // Mentions inside the window mark this year's line; mentions from a
+      // year earlier mark the "last year" line on the same calendar date.
+      (_trf.media||[]).forEach(m=>{
+        const i = days.indexOf(m.date);
+        if(i >= 0) marks.push({ idx:i, value:cur[i], color:TRF_MEDIA_COLOR, m });
+        const j = days.indexOf(trfShiftYear(m.date, 1));
+        if(j >= 0 && ly[j] != null) marks.push({ idx:j, value:ly[j], color:c1.border, m, ly:true });
+      });
+      // Events in the window shade this year's days; last year's events
+      // shade the same calendar dates (only when the last-year line is drawn)
+      const hasLy = ly.some(v=>v!=null);
+      const span = (a, b) => { const i0 = days.findIndex(d=>d >= a), last = days.length - 1 - [...days].reverse().findIndex(d=>d <= b);
+        return (i0 < 0 || last >= days.length || last < i0) ? null : [i0, last]; };
+      (_trf.events||[]).forEach(e=>{
+        const t = span(e.start, e.end); if(t) bands.push({ i0:t[0], i1:t[1], e });
+        if(hasLy){ const l = span(trfShiftYear(e.start, 1), trfShiftYear(e.end, 1)); if(l) bands.push({ i0:l[0], i1:l[1], e, ly:true }); }
+      });
+      if(ly.some(v=>v!=null)) datasets.push({ label:'Same days last year', data:ly, borderColor:c1.border, backgroundColor:'transparent', fill:false, pointRadius:0, tension:0.25, borderWidth:2, spanGaps:false });
+      // Note follows the selected window: this window vs the same number of
+      // days just before it (sessions summed; conversion pooled). The
+      // comparison only shows when that earlier stretch is fully synced.
+      const pool = arr => { let s=0,u=0,n=0; arr.forEach(d=>{ const t = trfSum(byDate[d], asins); if(t){ s+=t.s; u+=t.u; n++; } }); return n ? { s, u, n } : null; };
+      const N = days.length;
+      const prevDays = []; for(let i=N; i>=1; i--) prevDays.push(trfAddDays(days[0], -i));
+      const lw = pool(days), pw = pool(prevDays);
+      const fv = t => trfVal(t, metric);
+      const a = fv(lw), b = fv(pw);
+      const synced = lw ? lw.n : 0;
+      const short = synced < _trf.win ? ` <span style="color:var(--hint);">(${synced} of ${_trf.win} days synced so far)</span>` : '';
+      if(a != null) note = [`Last ${N} days: <b>${fmtBig(a)}</b>${short}`, (b!=null && pw.n===N) ? `${trfPctChg(a,b,metric)} vs the ${N} days before` : ''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+      if(!datasets[0].data.some(v=>v!=null)) note = key==='prod' ? 'No daily sessions for this product in this window.' : 'No daily data for this selection yet.';
+    }
+  }
+  if(!note) note = 'No data for this selection yet.';
+  noteEl.innerHTML = note;
+
+  const canvas = document.getElementById(`trf-${key}-chart`);
+  if(!canvas || typeof Chart === 'undefined') return;
+  const opts = yoyChartOptions(fmt);
+  opts.scales.y.beginAtZero = metric !== 'conv';
+  opts.scales.x.ticks.maxTicksLimit = _trf.view === 'daily' ? 12 : 12;
+  opts.scales.x.ticks.autoSkip = true;
+  opts.interaction = { mode:'index', intersect:false };
+  marks.sort((a,b)=>a.idx-b.idx || (a.ly?1:0)-(b.ly?1:0)); marks.forEach((mk,i)=>mk.n = i+1);
+  opts.layout = { padding:{ top: marks.length ? 22 : 4 } };
+  opts.plugins.trfMedia = { marks, bands };
+  const evYr = b => b.yr ? ` ${b.yr}` : (b.ly ? ' (last year)' : '');
+  opts.plugins.tooltip.callbacks.footer = items => {
+    const i = items.length ? items[0].dataIndex : -1;
+    return [
+      ...bands.filter(b=>i>=b.i0 && i<=b.i1).map(b=>`🛒 ${b.e.name}${evYr(b)} — ${b.e.amazon ? 'Amazon event' : 'our sale'}`),
+      ...marks.filter(mk=>mk.idx===i).map(mk=>`📰 ${mk.n}. ${mk.m.outlet}${mk.ly ? ' (last year)' : ''}: ${mk.m.title}`),
+    ];
+  };
+  opts.plugins.tooltip.footerColor = '#001F60';
+  const ch = _trf.charts[key];
+  if(ch){ ch.data.labels = labels; ch.data.datasets = datasets; ch.options = opts; ch.update(); }
+  else _trf.charts[key] = new Chart(canvas, { type:'line', data:{ labels, datasets }, options:opts, plugins:[TRF_MEDIA_PLUGIN] });
+  const mediaEl = document.getElementById(`trf-${key}-media`);
+  if(mediaEl){
+    const fmtD = iso => { const [y,m,d] = iso.split('-').map(Number); return `${DDP_MONTH_ABBR[m-1]} ${d}, ${y}`; };
+    mediaEl.innerHTML = marks.length
+      ? `<div class="trf-media-hd">Media mentions (amazon.com)</div>` + marks.map(mk=>`<div class="trf-media-item"><span class="trf-media-num" style="background:${mk.color};">${mk.n}</span><span>${fmtD(mk.m.date)}${mk.ly ? ' <span style="color:var(--muted);">(last year, on the dashed-navy line)</span>' : ''} · ${mk.m.url && /^https?:/i.test(mk.m.url) ? `<a href="${escapeHtml(mk.m.url)}" target="_blank" rel="noopener">${escapeHtml(mk.m.outlet)}</a>` : `<b>${escapeHtml(mk.m.outlet)}</b>`} — ${escapeHtml(mk.m.title)}${mk.m.notes ? ` <span style="color:var(--muted);">(${escapeHtml(mk.m.notes)})</span>` : ''}</span></div>`).join('')
+      : '';
+    // Events legend + list
+    const fmtR = e => { const a = fmtD(e.start), b = fmtD(e.end); return e.start === e.end ? a : `${a.replace(/, \d{4}$/,'')} – ${b}`; };
+    const seenEv = new Set(), evs = bands.slice().sort((x,y)=>x.i0-y.i0 || (x.yr||0)-(y.yr||0)).filter(b=>{ const k = b.e.name + b.e.start + (b.ly?'L':''); if(seenEv.has(k)) return false; seenEv.add(k); return true; });
+    if(evs.length) mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:${marks.length?6:0}px;">Amazon events &amp; sales</div>` + evs.map(b=>`<div class="trf-media-item"><span class="trf-ev-swatch" style="background:${b.e.amazon?TRF_EVENT_COLORS.amazon:TRF_EVENT_COLORS.ours};${b.ly?'opacity:.45;':''}"></span><span>${fmtR(b.e)}${b.ly && !b.yr ? ' <span style="color:var(--muted);">(last year, shaded on the same dates)</span>' : ''} · <b>${escapeHtml(b.e.name)}</b> <span style="color:var(--muted);">— ${b.e.amazon ? 'Amazon event' : 'our own sale (not an Amazon event)'}</span></span></div>`).join('');
+    if(!mediaEl.innerHTML) mediaEl.innerHTML = (_trf.mediaLoaded === false && key === 'overall' ? `<div class="trf-media-hd" style="text-transform:none;font-weight:500;">Media mentions couldn't load — the Media Features sheet needs link sharing set to "Anyone with the link can view".</div>` : '');
+  }
+  renderYoyLegend(_trf.charts[key], `trf-legend-${key}`);
+}
+// Draws a dashed vertical line + numbered pin for each media mention.
+const TRF_MEDIA_PLUGIN = {
+  id:'trfMedia',
+  beforeDatasetsDraw(chart, _args, opts){
+    const bands = (opts && opts.bands) || [];
+    if(!bands.length) return;
+    const { ctx, chartArea:{ top, bottom, left, right }, scales:{ x } } = chart;
+    const step = x.getPixelForValue(1) - x.getPixelForValue(0) || 0;
+    bands.forEach(b=>{
+      const x0 = Math.max(left, x.getPixelForValue(b.i0) - step/2), x1 = Math.min(right, x.getPixelForValue(b.i1) + step/2);
+      const col = b.e.amazon ? TRF_EVENT_COLORS.amazon : TRF_EVENT_COLORS.ours;
+      ctx.save();
+      ctx.globalAlpha = b.ly ? 0.08 : 0.16; ctx.fillStyle = col; ctx.fillRect(x0, top, Math.max(2, x1 - x0), bottom - top);
+      if(b.ly){ ctx.globalAlpha = 0.5; ctx.strokeStyle = col; ctx.setLineDash([3,3]); ctx.lineWidth = 1; ctx.strokeRect(x0, top, Math.max(2, x1 - x0), bottom - top); }
+      ctx.restore();
+    });
+  },
+  afterDatasetsDraw(chart, _args, opts){
+    const marks = (opts && opts.marks) || [];
+    if(!marks.length) return;
+    const { ctx, chartArea:{ top, bottom }, scales:{ x, y } } = chart;
+    const seen = {};
+    marks.forEach(mk=>{
+      const px = x.getPixelForValue(mk.idx);
+      const stack = seen[mk.idx] = (seen[mk.idx] || 0) + 1; // several mentions on one day stack sideways
+      const cx = px + (stack - 1) * 16;
+      ctx.save();
+      ctx.strokeStyle = mk.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      if(mk.value != null){ ctx.fillStyle = '#fff'; ctx.strokeStyle = mk.color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(px, y.getPixelForValue(mk.value), 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
+      ctx.fillStyle = mk.color; ctx.beginPath(); ctx.arc(cx, top - 11, 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '700 10px DM Sans, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(mk.n), cx, top - 10.5);
+      ctx.restore();
+    });
+  }
+};
+// Same month/day in another year; Feb 29 falls back to Feb 28.
+function trfShiftYear(iso, n){
+  const [y,m,d] = iso.split('-').map(Number), yy = y + n;
+  const last = new Date(Date.UTC(yy, m, 0)).getUTCDate();
+  return `${yy}-${String(m).padStart(2,'0')}-${String(Math.min(d, last)).padStart(2,'0')}`;
+}
+function trfAddDays(iso, n){ const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+function ddTodayPT(){ return new Intl.DateTimeFormat('en-CA', { timeZone:'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
+
+
+window.loadEvolisTraffic = loadDDTraffic;
+window.trfSetView = trfSetView; window.trfSetWindow = trfSetWindow; window.trfSetMetric = trfSetMetric;
+window.trfSetCat = trfSetCat; window.trfSetProduct = trfSetProduct;
+})();
 
 // ADDED 2026-10-14 per Jaclyn — click any Rank Tracker column header to sort:
 // first click ascending, second descending. Sorts by each cell's data-sort
