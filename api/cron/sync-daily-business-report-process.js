@@ -118,8 +118,8 @@ module.exports = async (req, res) => {
 
       const cutoff = C.addDays(today, -C.RETENTION_DAYS);
       const accountTabs = [...accountBrands.map(b => b.tabName), UNMATCHED];
-      written = { ...written, ...(await writeBrandTabs(tabs, accountTabs, freshByTab, new Set(days.keys()), cutoff)) };
-      written.days = days.size;
+      const plan = await planBrandTabs(tabs, accountTabs, freshByTab, new Set(days.keys()), cutoff);
+      written = { ...written, asinRows: plan.asinRows, rowsRemoved: plan.rowsRemoved, byTab: plan.byTab, days: days.size };
 
       // ── Daily Totals: replace only THIS account's rows for these days ──
       const finalCut = C.addDays(today, -C.FINAL_AFTER);
@@ -129,11 +129,18 @@ module.exports = async (req, res) => {
         return [date, account, brand, t.asins, t.s, t.pv, t.u, C.round2(t.rev), t.s ? C.round2(t.u / t.s * 100) : 0, date <= finalCut ? 'Y' : 'N', ts];
       });
       const allTotals = [...oldTotals, ...newTotals].sort((a, b) => a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1])) || String(a[2]).localeCompare(String(b[2])));
-      await C.gs('POST', `/values/${C.rng(`${C.q(C.TOTALS_TAB)}!A2:K`)}:clear`, {});
-      if (allTotals.length) {
-        await ensureRows(tabs, C.TOTALS_TAB, allTotals.length + 1);
-        await C.gs('PUT', `/values/${C.rng(`${C.q(C.TOTALS_TAB)}!A2`)}?valueInputOption=RAW`, { values: allTotals });
+
+      // ── All writes for this run: 1 structural + 1 values + 1 clear ───────
+      const totalsTab = tabs.find(t => t.title === C.TOTALS_TAB);
+      const totalsGrid = totalsTab?.gridProperties?.rowCount || 1000;
+      if (totalsTab && totalsGrid < allTotals.length + 1) {
+        plan.structural.push({ appendDimension: { sheetId: totalsTab.sheetId, dimension: 'ROWS', length: allTotals.length + 1 - totalsGrid + 500 } });
       }
+      for (let i = 0; i < plan.structural.length; i += 200) await C.gs('POST', ':batchUpdate', { requests: plan.structural.slice(i, i + 200) });
+      if (allTotals.length) plan.data.push({ range: `${C.q(C.TOTALS_TAB)}!A2`, values: allTotals });
+      if (plan.data.length) await C.gs('POST', '/values:batchUpdate', { valueInputOption: 'RAW', data: plan.data });
+      // Totals only shrink when days pass the 2-year cutoff; clear anything left below.
+      await C.gs('POST', `/values/${C.rng(`${C.q(C.TOTALS_TAB)}!A${allTotals.length + 2}:K`)}:clear`, {});
 
       // ── Space check (whole spreadsheet) ─────────────────────────────────
       const cells = (await C.getTabs()).reduce((n, t) => n + (t.gridProperties?.rowCount || 0) * (t.gridProperties?.columnCount || 0), 0);
@@ -176,38 +183,44 @@ async function downloadAsinRows(documentId, date, account, problems) {
 }
 
 // For every tab this account owns: delete the rows for the days being
-// rewritten and anything older than the cutoff, then append the fresh rows.
-async function writeBrandTabs(tabs, accountTabs, freshByTab, rewriteDates, cutoff) {
+// rewritten and anything older than the cutoff, then write the fresh rows.
+// CHANGED 2026-10-27 — real incident: sync-orders-process hit Google's
+// "write requests per minute" limit, which every cron in this project
+// shares. This used to make one write per brand tab (plus several more for
+// totals), ~20 per run. Now: ONE structural call (all row deletions + grid
+// growth, every tab) and the rows for every tab go into the caller's single
+// values:batchUpdate together with Daily Totals.
+async function planBrandTabs(tabs, accountTabs, freshByTab, rewriteDates, cutoff) {
   const byTitle = new Map(tabs.map(t => [t.title, t]));
   const present = accountTabs.filter(t => byTitle.has(t));
 
-  // Column A of every tab in one call.
+  // Column A of every tab in one read.
   const colA = await C.gs('GET', `/values:batchGet?majorDimension=COLUMNS&${present.map(t => `ranges=${C.rng(`${C.q(t)}!A2:A`)}`).join('&')}`);
-  const requests = [];
-  let rowsRemoved = 0;
+  const structural = [], data = [];
+  let rowsRemoved = 0, asinRows = 0;
+  const byTab = {};
   (colA.valueRanges || []).forEach((vr, i) => {
-    const title = present[i], sheetId = byTitle.get(title).sheetId;
+    const title = present[i], tab = byTitle.get(title), sheetId = tab.sheetId;
     const dates = ((vr.values || [])[0] || []).map(C.normDate);
     const del = [];
     dates.forEach((d, j) => { if (!d || d < cutoff || rewriteDates.has(d)) del.push(j + 1); }); // +1: header is row index 0
     const ranges = [];
     for (const idx of del) { const last = ranges[ranges.length - 1]; if (last && last[1] === idx) last[1] = idx + 1; else ranges.push([idx, idx + 1]); }
-    ranges.reverse().forEach(([s, e]) => requests.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: s, endIndex: e } } }));
+    ranges.reverse().forEach(([s, e]) => structural.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: s, endIndex: e } } }));
     rowsRemoved += del.length;
-  });
-  for (let i = 0; i < requests.length; i += 100) await C.gs('POST', ':batchUpdate', { requests: requests.slice(i, i + 100) });
 
-  const byTab = {};
-  let asinRows = 0;
-  for (const [title, rows] of freshByTab) {
-    if (!rows.length) continue;
-    for (let i = 0; i < rows.length; i += 5000) {
-      await C.gs('POST', `/values/${C.rng(`${C.q(title)}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: rows.slice(i, i + 5000) });
+    const fresh = freshByTab.get(title) || [];
+    if (!fresh.length) return;
+    const remaining = dates.length - del.length;           // data rows left after deletions
+    const gridAfterDeletes = (tab.gridProperties?.rowCount || 1000) - del.length;
+    const needed = 1 + remaining + fresh.length;           // header + data
+    if (gridAfterDeletes < needed) {
+      structural.push({ appendDimension: { sheetId, dimension: 'ROWS', length: needed - gridAfterDeletes + 500 } });
     }
-    byTab[title] = rows.length; asinRows += rows.length;
-    await C.sleep(300); // spread writes out a little (shared Sheets quota)
-  }
-  return { asinRows, rowsRemoved, byTab };
+    data.push({ range: `${C.q(title)}!A${remaining + 2}`, values: fresh });
+    byTab[title] = fresh.length; asinRows += fresh.length;
+  });
+  return { structural, data, rowsRemoved, asinRows, byTab };
 }
 
 async function ensureRows(tabs, title, minRows) {
