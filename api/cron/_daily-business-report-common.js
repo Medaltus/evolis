@@ -57,7 +57,7 @@ const RETENTION_DAYS = 730;        // CHANGED 2026-10-21 per Jaclyn: 2 years (wa
 const BACKFILL_DAYS  = 730;
 const RECENT_OFFSETS = [2, 3, 4];   // re-pull D-2..D-4 daily (numbers settle over ~48–72h)
 const FINAL_AFTER    = 4;           // a day is FINAL once it's D-4 or older
-const MAX_REQUESTS_PER_RUN = 6;     // shared createReport allowance (burst 15, ~1/min) with this account's other crons
+const MAX_REQUESTS_PER_RUN = 8;     // shared createReport allowance (burst 15, ~1/min) with this account's other crons; runs are 30 min apart (CHANGED 2026-10-27, was 6)
 const CELL_ALERT     = 9_000_000;
 
 // ── Dates (Pacific) ────────────────────────────────────────────────────────
@@ -151,11 +151,13 @@ async function readMeta(metaTab) {
   const m = {}; (d.values || []).forEach(r => { if (r[0]) m[r[0]] = r[1] || ''; });
   return m;
 }
+// One write (was clear + put — CHANGED 2026-10-27 to save write quota):
+// the rows are padded with blank rows so any leftover keys below get blanked.
 async function writeMeta(metaTab, meta) {
   const ts = new Date().toISOString();
   const rows = Object.entries(meta).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v), ts]);
-  await gs('POST', `/values/${rng(`${q(metaTab)}!A2:C`)}:clear`, {});
-  if (rows.length) await gs('PUT', `/values/${rng(`${q(metaTab)}!A2`)}?valueInputOption=RAW`, { values: rows });
+  const padded = [...rows, ...Array.from({ length: 10 }, () => ['', '', ''])];
+  await gs('PUT', `/values/${rng(`${q(metaTab)}!A2:C${padded.length + 1}`)}?valueInputOption=RAW`, { values: padded });
 }
 function readPending(meta) {
   try { const p = JSON.parse(meta.pending || '[]'); return Array.isArray(p) ? p : []; } catch { return []; }
