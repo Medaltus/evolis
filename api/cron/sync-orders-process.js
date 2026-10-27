@@ -227,7 +227,15 @@ module.exports = async (req, res) => {
 
   // Only this seller account's brands — High On Love's run never touches
   // NewDerm tabs and vice versa (ADDED 2026-10-05).
+  // ADDED 2026-10-27 — short pause between brands. This loop used to write
+  // every brand's tab back to back (all brands in ~6 seconds), a big burst
+  // against Google's per-minute write limit that every cron shares — the
+  // 2026-10-27 04:15 run then had its final _meta write refused (429).
+  // ~1.5s per brand spreads the same writes over ~20–25 seconds.
+  const BRAND_PAUSE_MS = 1500;
+  let brandIndex = 0;
   for (const brand of accountBrands) {
+    if (brandIndex++ > 0) await new Promise(r => setTimeout(r, BRAND_PAUSE_MS));
     try {
       // Brand is determined by SKU prefix — never by Amazon's brand field.
       // We intentionally do NOT filter out cancelled/pending orders here —
