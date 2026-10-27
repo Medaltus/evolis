@@ -268,6 +268,22 @@
     {
       "path": "/api/cron/sync-product-offers?pass=4",
       "schedule": "55 20 * * *"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-request",
+      "schedule": "26,56 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-request?account=hol",
+      "schedule": "28,58 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-process",
+      "schedule": "11,41 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-process?account=hol",
+      "schedule": "13,43 * * * *"
     }
   ],
   "functions": {
@@ -328,6 +344,15 @@
       "maxDuration": 900
     },
     "api/cron/*.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-daily-business-report-request.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-daily-business-report-process.js": {
+      "maxDuration": 300
+    },
+    "api/cron/sync-product-offers.js": {
       "maxDuration": 300
     }
   },
