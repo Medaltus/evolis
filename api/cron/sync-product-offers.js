@@ -79,7 +79,7 @@ module.exports = async (req, res) => {
   const today = easternDate(new Date());
   const nowEt = easternIso(new Date());
   let token;
-  try { token = await getSheetsToken(); }
+  try { token = await getSheetsToken(sheets.products); } // writer account for this sheet (2026-10-27)
   catch (err) { return res.status(500).json({ error: 'Google auth failed', detail: err.message }); }
 
   // ── Seller names lookup ──────────────────────────────────────────────────
