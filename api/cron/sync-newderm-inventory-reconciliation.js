@@ -558,7 +558,7 @@ function parseWorkbook(buffer, fileName = '') {
 // exported), just with a custom range. ─────────────────────────────────
 
 async function replaceDataRowsFrom3(sheetId, tabName, rows) {
-  const token = await getSheetsToken();
+  const token = await getSheetsToken(sheetId); // writer account for this sheet (2026-10-27)
   const clearRange = `${tabName}!A3:AC`;
   await sheetsRequest(token, `/${sheetId}/values/${encodeURIComponent(clearRange)}:clear`, 'POST', {});
   if (rows.length) {
