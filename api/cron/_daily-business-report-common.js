@@ -57,7 +57,7 @@ const RETENTION_DAYS = 730;        // CHANGED 2026-10-21 per Jaclyn: 2 years (wa
 const BACKFILL_DAYS  = 730;
 const RECENT_OFFSETS = [2, 3, 4];   // re-pull D-2..D-4 daily (numbers settle over ~48–72h)
 const FINAL_AFTER    = 4;           // a day is FINAL once it's D-4 or older
-const MAX_REQUESTS_PER_RUN = 8;     // shared createReport allowance (burst 15, ~1/min) with this account's other crons; runs are 30 min apart (CHANGED 2026-10-27, was 6)
+const MAX_REQUESTS_PER_RUN = 12;    // shared createReport allowance (burst 15, refills ~1/min) with this account's other crons; runs are 30 min apart, so 12 leaves headroom (CHANGED 2026-10-27: 6 → 8 → 12 to speed up the 2-year backfill)
 const CELL_ALERT     = 9_000_000;
 
 // ── Dates (Pacific) ────────────────────────────────────────────────────────
