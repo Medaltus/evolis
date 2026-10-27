@@ -86,7 +86,7 @@ const dayRange = date => ({ start: `${date}T00:00:00Z`, end: `${date}T23:59:59Z`
 
 // ── Sheets REST with retry (429 / 5xx) ─────────────────────────────────────
 async function gs(method, path, body, attempt = 0) {
-  const token = await getSheetsToken();
+  const token = await getSheetsToken(DAILY_SHEET_ID); // writer account for this sheet (2026-10-27)
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${DAILY_SHEET_ID}${path}`, {
     method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
