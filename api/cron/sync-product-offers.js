@@ -49,6 +49,7 @@ const NAMES_HEADERS  = ['seller_id', 'seller_name', 'first_seen', 'example_asin'
 const BATCH_SIZE     = 20;      // Amazon max per getItemOffersBatch call
 const CALL_GAP_MS    = 10_500;  // 0.1 calls/sec, with a little headroom
 const TIME_BUDGET_MS = 240_000; // stop starting new calls after 4 minutes
+const BRAND_PAUSE_MS = 500;     // between brands' sheet reads (2026-10-28)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -111,10 +112,22 @@ module.exports = async (req, res) => {
   const work = [];      // { brand, account, asin, rows: [sheetRowNumber...] }
   const tabCols = {};   // brand.tabName → { colIndex by header, headerNeedsWrite }
   const errors = [];
-  for (const brand of activeBrands) {
+  // CHANGED 2026-10-28 — real incident: this used to make 4 separate reads per
+  // brand (header row + 3 columns), ~72 reads in a few seconds, over Google's
+  // 60-reads-per-minute-per-account limit on its own ("cosmette tab read: 429").
+  // Now: every brand's header row in ONE call, then ONE call per brand for its
+  // three columns (~19 reads per run), with a short pause between brands.
+  const present = activeBrands.filter(b => grids[b.tabName]);
+  const headerByTab = {};
+  if (present.length) {
+    const hb = await sheetsApi(token, 'GET', `/${sheets.products}/values:batchGet?${present.map(b => `ranges=${rng(b.tabName, 'A1:ZZ1')}`).join('&')}`);
+    (hb.valueRanges || []).forEach((vr, i) => { headerByTab[present[i].tabName] = ((vr.values || [])[0] || []).map(h => String(h).trim()); });
+  }
+  let brandN = 0;
+  for (const brand of present) {
+    if (brandN++ > 0) await sleep(BRAND_PAUSE_MS);
     try {
-      const head = await sheetsApi(token, 'GET', `/${sheets.products}/values/${rng(brand.tabName, 'A1:ZZ1')}`);
-      const header = ((head.values || [])[0] || []).map(h => String(h).trim());
+      const header = headerByTab[brand.tabName] || [];
       if (!header.length) continue;
       // Offer columns: wherever they already are, else appended after the last column.
       const idx = {}; let next = header.length; let headerNeedsWrite = false;
@@ -134,8 +147,9 @@ module.exports = async (req, res) => {
       tabCols[brand.tabName] = { idx, headerNeedsWrite };
 
       const syncedCol = idx.offers_synced_at;
-      const [dates, asins, synced] = await Promise.all([dateCol, asinCol, syncedCol].map(c =>
-        sheetsApi(token, 'GET', `/${sheets.products}/values/${rng(brand.tabName, `${colLetter(c)}2:${colLetter(c)}`)}`).then(d => (d.values || []).map(r => r[0]))));
+      const cols = await sheetsApi(token, 'GET', `/${sheets.products}/values:batchGet?majorDimension=COLUMNS&${
+        [dateCol, asinCol, syncedCol].map(c => `ranges=${rng(brand.tabName, `${colLetter(c)}2:${colLetter(c)}`)}`).join('&')}`);
+      const [dates, asins, synced] = (cols.valueRanges || []).map(vr => (vr.values || [])[0] || []);
       const byAsin = new Map();
       dates.forEach((d, i) => {
         if (isoDate(d) !== today) return;
@@ -315,6 +329,11 @@ function summarizeOffers(payload, ourSellerIds, names) {
 }
 
 // ── Sheets helpers ─────────────────────────────────────────────────────────
+// Retries match config/_sheets_client.js (CHANGED 2026-10-28): Google's
+// quotas are per minute, so a 429 keeps waiting up to ~85s total (always past
+// the minute boundary); 5xx errors get the original 4 tries. Jitter keeps
+// crons that hit the limit together from retrying in the same instant.
+const RETRY_WAITS_MS = [2000, 4000, 8000, 16000, 20000, 30000];
 async function sheetsApi(token, method, path, body) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${SHEETS_API}${path}`, {
@@ -324,7 +343,12 @@ async function sheetsApi(token, method, path, body) {
     });
     if (res.ok) return res.json();
     const text = await res.text();
-    if ((res.status === 429 || res.status >= 500) && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
+    const retryable = res.status === 429 || (res.status >= 500 && attempt < 4);
+    if (retryable && attempt < RETRY_WAITS_MS.length) {
+      console.warn(`[sync-product-offers] Sheets ${res.status} on ${method}, retrying in ${RETRY_WAITS_MS[attempt] / 1000}s`);
+      await sleep(RETRY_WAITS_MS[attempt] + Math.floor(Math.random() * 1500));
+      continue;
+    }
     throw new Error(`Sheets ${method} ${res.status}: ${text.slice(0, 200)}`);
   }
 }
