@@ -1224,6 +1224,11 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 #page-traffic .dd-rev-cat-tab{background:var(--bg);border:1px solid var(--border2);border-radius:999px;padding:8px 18px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .13s;font-family:inherit;}
 #page-traffic .dd-rev-cat-tab:hover{border-color:var(--navy);}
 #page-traffic .dd-rev-cat-tab.active{background:var(--navy);border-color:var(--navy);color:#fff;}
+/* Overview LIVE tags + projections — ported 2026-11-02 from MiGuard */
+.kpi-live-tag{display:inline-flex;align-items:center;gap:4px;color:#1db88a;font-weight:700;}
+.gt-live-dot{width:7px;height:7px;border-radius:50%;background:#24e9a3;display:inline-block;animation:gtLivePulse 1.6s infinite;flex-shrink:0;}
+@keyframes gtLivePulse{0%{box-shadow:0 0 0 0 rgba(36,233,163,.6)}70%{box-shadow:0 0 0 6px rgba(36,233,163,0)}100%{box-shadow:0 0 0 0 rgba(36,233,163,0)}}
+.kpi-proj{font-size:14px;color:var(--navy);font-weight:600;margin-top:4px;cursor:help;}
 </style>
 <link rel="icon" type="image/png" href="/reports/evolis_favicon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -1552,6 +1557,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="kpi-card" id="ov-kpi-ad-orders"><div class="kpi-label">MTD Ad-Driven Units</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-ad-sales"><div class="kpi-label">MTD Ad Sales</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <div class="kpi-card" id="ov-kpi-pending"><div class="kpi-label">Pending Orders</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
+      <!-- ADDED 2026-11-02 per Jaclyn (ported from MiGuard) — the historical
+           Amazon cancel rate every projection on this page uses. -->
+      <div class="kpi-card" id="ov-kpi-cancel" title="Amazon cancelled orders ÷ all orders (unique order IDs, Vine excluded), pooled across past months. Used to discount pending orders in every projection on this page."><div class="kpi-label">Cancellation Rate</div><div class="kpi-value">—</div><div class="kpi-mom flat">Loading…</div></div>
       <!-- ADDED 2026-10-19 per Jaclyn — Amazon conversion rate (Business Report
            units ordered ÷ sessions) with the change vs the prior month, in
            percentage points, so it's clear whether conversion is improving. -->
@@ -14594,12 +14602,16 @@ function trfLoad(){
       const flag = col(r,'amazon featured event','amazon event').toUpperCase();
       return { name: col(r,'event name','event'), start, end: end < start ? start : end, amazon: flag ? flag.startsWith('Y') : true };
     }).filter(e => e.name && e.start).sort((a,b)=>a.start.localeCompare(b.start));
-    // Out-of-stock windows. Open ones (no end date) run through today.
-    const todayIso = ddTodayPT();
+    // Out-of-stock windows — CHANGED 2026-11-02 per Jaclyn: only dates the log
+    // itself records. An open stockout (no end date) runs through the log's
+    // most recent update (latest last_updated across the tab), NOT today —
+    // the log doesn't know about anything after its last check.
+    const logAsOf = oosRows.reduce((m, r) => { const d = ddNormDate(r.last_updated); return d > m ? d : m; }, '');
+    _trf.oosAsOf = logAsOf;
     _trf.oos = oosRows.map(r=>{
       const type = String(r.type||'').trim().toLowerCase();
       const start = ddNormDate(r.start_date);
-      const end = ddNormDate(r.end_date) || todayIso;
+      const end = ddNormDate(r.end_date) || logAsOf || start;
       return { asin:(r.asin||'').trim().toUpperCase(), sku:(r.sku||'').trim(), kind: type === 'fba' ? 'fba' : type === 'all_inventory' ? 'all' : '', start, end: end < start ? start : end, open: !String(r.end_date||'').trim() };
     }).filter(o => o.asin && o.kind && o.start);
     _trf.oosLoaded = oosRows.length > 0;
@@ -14780,8 +14792,12 @@ function trfRender(key){
     const cover = (a0, a1) => wins.filter(o => o.start <= a1 && o.end >= a0);
     let ranges = [];
     if(_trf.view === 'monthly'){
+      // Monthly view: list only, no shading — shading a whole month would
+      // mark days the log never recorded as out of stock.
       const now = new Date(), cy = now.getFullYear(), stop = now.getMonth();
-      ranges = YOY_MONTHS.map((_,i)=> i+1 > stop ? null : [ddYm(cy,i+1)+'-01', ddYm(cy,i+1)+'-31']);
+      const lo = ddYm(cy,1)+'-01', hi = ddYm(cy, Math.max(1, stop))+'-31';
+      wins.filter(o => o.start <= hi && o.end >= lo).sort((a,b)=>a.start.localeCompare(b.start) || a.kind.localeCompare(b.kind)).forEach(o => oosList.push(o));
+      ranges = [];
     } else {
       ranges = (labels||[]).map((_,i)=>{ const d = (window._trfDays||[])[i]; return d ? [d, d] : null; });
     }
@@ -14797,7 +14813,7 @@ function trfRender(key){
     }
     window._trfOosFlags = window._trfOosFlags || {}; window._trfOosFlags[key] = flags;
     const lo = ranges.find(Boolean), hi = [...ranges].reverse().find(Boolean);
-    if(lo && hi) wins.filter(o => o.start <= hi[1] && o.end >= lo[0])
+    if(_trf.view !== 'monthly' && lo && hi) wins.filter(o => o.start <= hi[1] && o.end >= lo[0])
       .sort((a,b)=>a.start.localeCompare(b.start) || a.kind.localeCompare(b.kind))
       .forEach(o => oosList.push(o));
   }
@@ -14846,8 +14862,8 @@ function trfRender(key){
       const sw = k => k === 'all'
         ? `<span class="trf-ev-swatch" style="background:${TRF_OOS_COLORS.all};opacity:.55;"></span>`
         : `<span class="trf-ev-swatch" style="background:repeating-linear-gradient(135deg, ${TRF_OOS_COLORS.fba} 0 2px, transparent 2px 6px);border:1px solid ${TRF_OOS_COLORS.fba};"></span>`;
-      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Out of stock</div>` + oosList.map(o =>
-        `<div class="trf-media-item">${sw(o.kind)}<span>${o.start === o.end ? fmtD(o.start) : `${fmtD(o.start).replace(/, \d{4}$/,'')} – ${o.open ? 'today (still out)' : fmtD(o.end)}`} · <b>${escapeHtml(_trf.nameOf[o.asin] || o.sku)}</b> <span style="color:var(--muted);">— ${o.kind === 'all' ? 'out of stock everywhere' : 'out at FBA (no Prime; still sellable)'}</span></span></div>`).join('');
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Out of stock${_trf.view === 'monthly' ? ' <span style="text-transform:none;font-weight:500;">— switch to Daily to see these shaded on their exact dates</span>' : ''}</div>` + oosList.map(o =>
+        `<div class="trf-media-item">${sw(o.kind)}<span>${o.start === o.end ? fmtD(o.start) : `${fmtD(o.start).replace(/, \d{4}$/,'')} – ${o.open ? `${fmtD(o.end)} (still out as of the log's last update)` : fmtD(o.end)}`} · <b>${escapeHtml(_trf.nameOf[o.asin] || o.sku)}</b> <span style="color:var(--muted);">— ${o.kind === 'all' ? 'out of stock everywhere' : 'out at FBA (no Prime; still sellable)'}</span></span></div>`).join('');
     } else if(key !== 'overall' && _trf.oosLoaded === false){
       mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;text-transform:none;font-weight:500;">Out-of-stock periods couldn't load — the Out Of Stock Historical Log needs link sharing set to "Anyone with the link can view".</div>`;
     }
@@ -23619,6 +23635,68 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
     window.initOverviewLive(key);
   };
 
+
+  // ═══ Overview LIVE tags + pending-inclusive projections — ported
+  // 2026-11-02 per Jaclyn from MiGuard's Overview. évolis differences:
+  //  • Cards here combine Amazon + Walmart + Website. Only AMAZON has
+  //    pending orders/cancellations, so only Amazon's pending orders are
+  //    added and cancel-discounted; Walmart/Website count at face value.
+  //  • Organic Units keeps évolis's per-ASIN ad-unit cap (multi-ASIN).
+  //  • Ad numbers stay on évolis's existing sources and are never discounted.
+  const OV_LIVE_CARDS = {
+    'ov-kpi-total-sales':    'Total Sales',
+    'ov-kpi-units':          'Total Units Sold',
+    'ov-kpi-orders':         'Total Orders',
+    'ov-kpi-aov':            'Blended AOV',
+    'ov-kpi-organic-orders': 'Organic Units',
+    'ov-kpi-organic-sales':  'Organic Sales',
+  };
+  function setKpiLiveLabel(cardId, text) {
+    const lbl = document.querySelector('#' + cardId + ' .kpi-label');
+    if (lbl) lbl.innerHTML = text + ' &bull; <span class="kpi-live-tag"><span class="gt-live-dot"></span>LIVE</span>';
+  }
+  function setKpiProjection(cardId, html, title) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    let el = card.querySelector('.kpi-proj');
+    if (!html) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.className = 'kpi-proj'; card.appendChild(el); }
+    el.innerHTML = html;
+    el.title = title || '';
+  }
+  // Pending (and not Vine) Amazon rows — the orders a projection adds back.
+  function ovIsPendingRow(row) {
+    if ((row.status || '').toLowerCase().trim() !== 'pending') return false;
+    return !(row.promotion_ids || '').toLowerCase().includes('vine');
+  }
+  // Same logic as the Goal Tracker's cancel rate: unique order_id (cancelled
+  // if ANY line is), Vine excluded. pooled = every month EXCEPT the one being
+  // viewed and the current in-progress month (still full of pending orders
+  // that haven't had a chance to cancel yet); month = the viewed month alone.
+  function ovCancelRate(rows, y, m) {
+    const orders = new Map();
+    rows.forEach(r => {
+      const id = (r.order_id || '').trim(); const d = normalizeDate(r.date);
+      if (!id || !d) return;
+      const vine = (r.promotion_ids || '').toLowerCase().includes('vine');
+      const canc = (r.status || '').toLowerCase().trim() === 'cancelled';
+      const o = orders.get(id);
+      if (!o) orders.set(id, { ym: d.slice(0, 7), vine, canc });
+      else { o.vine = o.vine || vine; o.canc = o.canc || canc; }
+    });
+    const viewed = `${y}-${String(m).padStart(2, '0')}`;
+    const now = new Date();
+    const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let pt = 0, pc = 0, mt = 0, mc = 0;
+    orders.forEach(o => {
+      if (o.vine) return;
+      if (o.ym === viewed) { mt++; if (o.canc) mc++; return; }
+      if (o.ym === current) return;
+      pt++; if (o.canc) pc++;
+    });
+    return { pooled: pt ? pc / pt : null, pooledN: pt, month: { rate: mt ? mc / mt : null, c: mc, n: mt } };
+  }
+
   window.initOverviewLive = async function (periodKey) {
     const activeKey = periodKey || window._overviewActivePeriod || 'mtd';
     window._overviewActivePeriod = activeKey;
@@ -23680,8 +23758,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
     // used by the setKpi() calls below (was hardcoded ' vs MTD last month
     // (Est.)' everywhere — only correct for the mtd period).
     const OV_KPI_LABELS = {
-      'ov-kpi-organic-orders': cfg.isPartial ? 'MTD Organic Units' : 'Organic Units',
-      'ov-kpi-organic-sales':  cfg.isPartial ? 'MTD Organic Sales' : 'Organic Sales',
+      // Organic Units/Sales moved to OV_LIVE_CARDS (LIVE tag, no MTD prefix) 2026-11-02
       'ov-kpi-ad-orders':      cfg.isPartial ? 'MTD Ad-Driven Units' : 'Ad-Driven Units',
       'ov-kpi-ad-sales':       cfg.isPartial ? 'MTD Ad Sales' : 'Ad Sales',
     };
@@ -23690,6 +23767,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       const lblEl = card && card.querySelector('.kpi-label');
       if (lblEl) lblEl.textContent = text;
     });
+    Object.entries(OV_LIVE_CARDS).forEach(([id, text]) => { setKpiLiveLabel(id, text); setKpiProjection(id, ''); });
     const ovMomSuffix = cfg.isPartial ? ' vs MTD last month (Est.)' : ' vs prior month';
     const ovMomSuffixReal = cfg.isPartial ? ' vs MTD last month' : ' vs prior month';
     const heroRevLblEl = document.getElementById('ov-hero-revenue-lbl');
@@ -23963,6 +24041,49 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       const aov = mtd.orders ? mtd.revenue / mtd.orders : 0;
       const aovPrev = prev.orders ? prev.revenue / prev.orders : 0;
 
+      // ── Pending-inclusive projection inputs (MiGuard port, 2026-11-02) ──
+      // Adjusted = settled (net of returns, all channels) + Amazon pending ×
+      // (1 − historical cancel rate). MTD run-rates the adjusted figure;
+      // Last Month uses it as-is. The bracketed % compares to the PRIOR
+      // month's full settled total (the change line above it still compares
+      // to last month through the same day).
+      const ovPrevFullEndStr = fmtDateStr(new Date(cfg.prevYear, cfg.prevMonth, 0));
+      const amzPrevFull = aggregateRange(amzRows, prevStartStr, ovPrevFullEndStr, isValidAmazonRow);
+      const webPrevFull = aggregateRange(webRows, prevStartStr, ovPrevFullEndStr, isValidWebRow, true);
+      const wmtPrevFull = aggregateRange(wmtRows, prevStartStr, ovPrevFullEndStr, isValidWalmartRow);
+      const amzRetPF = aggregateReturnsRange(amzReturnsCsv, prevStartStr, ovPrevFullEndStr, 'return_date', { useAsinPrice: true });
+      const wmtRetPF = aggregateReturnsRange(wmtReturnsCsv, prevStartStr, ovPrevFullEndStr, 'return_date');
+      const webRetPF = aggregateReturnsRange(webReturnsCsv, prevStartStr, ovPrevFullEndStr, 'refund_date');
+      const ovPrevFull = {
+        revenue: (amzPrevFull.totalRevenue - amzRetPF.totalAmt) + (webPrevFull.totalRevenue - webRetPF.totalAmt) + (wmtPrevFull.totalRevenue - wmtRetPF.totalAmt),
+        units: Math.max(0, amzPrevFull.totalUnits - amzRetPF.totalQty) + Math.max(0, webPrevFull.totalUnits - webRetPF.totalQty) + Math.max(0, wmtPrevFull.totalUnits - wmtRetPF.totalQty),
+        orders: amzPrevFull.totalOrders + webPrevFull.totalOrders + wmtPrevFull.totalOrders,
+      };
+      const ovPend = aggregateRange(amzRows, mtdStartStr, mtdEndStr, ovIsPendingRow);
+      const ovCR = ovCancelRate(amzRows, refYear, refMonth);
+      const ovKeep = 1 - (ovCR.pooled || 0);
+      const ovDim = new Date(cfg.year, cfg.month, 0).getDate();
+      const ovRun = (cfg.isPartial && cfg.day > 0) ? ovDim / cfg.day : 1;
+      const ovHasPending = ovPend.totalOrders > 0;
+      const ovAdj = {
+        revenue: mtd.revenue + ovPend.totalRevenue * ovKeep,
+        units: mtd.units + ovPend.totalUnits * ovKeep,
+        orders: mtd.orders + ovPend.totalOrders * ovKeep,
+      };
+      const ovPrevAbbr = monthNames[cfg.prevMonth - 1];
+      const ovBracket = (proj, base) => {
+        if (!base) return '';
+        const p = Math.round((proj - base) / base * 100);
+        return `(${p > 0 ? '\u25b2 ' : p < 0 ? '\u25bc ' : ''}${Math.abs(p)}% vs ${ovPrevAbbr})`;
+      };
+      const ovProjTitle = `Includes ${ovPend.totalOrders} pending Amazon order${ovPend.totalOrders === 1 ? '' : 's'}`
+        + (cfg.isPartial ? `, run-rate to ${ovDim} days` : '')
+        + (ovCR.pooled != null ? `, pending orders discounted by ${(ovCR.pooled * 100).toFixed(1)}% historical cancel rate` : ', no cancel-rate history yet so pending counted in full')
+        + '. Walmart and Website count at face value (no pending orders). Bracket compares to ' + ovPrevAbbr + '\u2019s full settled total.';
+      const ovFmt$ = v => '$' + Math.round(v).toLocaleString();
+      // Shared with the Goal Tracker further down this function.
+      window._ovProjCtx = { keep: ovKeep, run: ovRun, pend: ovPend, cancelRate: ovCR.pooled };
+
       // ADDED 2026-08-28 per Jaclyn/Skinuva parity — Total Sales KPI,
       // Amazon + Walmart + Website (mtd.revenue/prev.revenue already
       // include Website for évolis, see note above).
@@ -23970,6 +24091,14 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       setKpi('ov-kpi-units',  mtd.units.toLocaleString(),  pctChange(mtd.units, prev.units), ovMomSuffixReal);
       setKpi('ov-kpi-orders', mtd.orders.toLocaleString(), pctChange(mtd.orders, prev.orders), ovMomSuffixReal);
       setKpi('ov-kpi-aov',    '$' + aov.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), pctChange(Math.round(aov * 100), Math.round(aovPrev * 100)), ovMomSuffixReal);
+      if (ovHasPending) {
+        const pRev = ovAdj.revenue * ovRun, pUnits = ovAdj.units * ovRun, pOrders = ovAdj.orders * ovRun;
+        const pAov = pOrders ? pRev / pOrders : 0, prevAov = ovPrevFull.orders ? ovPrevFull.revenue / ovPrevFull.orders : 0;
+        setKpiProjection('ov-kpi-total-sales', `Projecting ${ovFmt$(pRev)} ${ovBracket(pRev, ovPrevFull.revenue)}`, ovProjTitle);
+        setKpiProjection('ov-kpi-units', `Projecting ${Math.round(pUnits).toLocaleString()} ${ovBracket(pUnits, ovPrevFull.units)}`, ovProjTitle);
+        setKpiProjection('ov-kpi-orders', `Projecting ${Math.round(pOrders).toLocaleString()} ${ovBracket(pOrders, ovPrevFull.orders)}`, ovProjTitle);
+        setKpiProjection('ov-kpi-aov', `Projecting $${pAov.toFixed(2)} ${ovBracket(pAov, prevAov)}`, ovProjTitle + ' AOV = projected revenue \u00f7 projected orders.');
+      }
 
       // -- MTD Ad-Driven Orders / Pending Orders --
       // Amazon: per Jaclyn (2026-07-24), the ad orders cron runs daily and
@@ -24074,6 +24203,11 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         }).map(r => r.order_id).filter(Boolean)
       );
       setKpiPlain('ov-kpi-pending', pendingOrderIds.size.toLocaleString(), cfg.isPartial ? 'Current month' : 'Last month');
+      {
+        const mo = ovCR.month;
+        const lbl = `${monthNames[refMonth - 1]}${cfg.isPartial ? ' so far' : ''}: ` + (mo.rate == null ? 'no orders yet' : `${(mo.rate * 100).toFixed(1)}% (${mo.c} of ${mo.n})`);
+        setKpiPlain('ov-kpi-cancel', ovCR.pooled == null ? '—' : (ovCR.pooled * 100).toFixed(1) + '%', lbl);
+      }
 
       // Amazon Conv. Rate — ADDED 2026-10-19 per Jaclyn. Business Report
       // (évolis tab, every ASIN, the whole Amazon store as Amazon reports it):
@@ -24233,6 +24367,22 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       const organicUnits = Math.max(0, mtd.units - totalAdUnitsCurr);
       const organicUnitsPrev = Math.max(0, prev.units - totalAdUnitsPrev);
       setKpi('ov-kpi-organic-orders', organicUnits.toLocaleString(), pctChange(organicUnits, organicUnitsPrev), ovMomSuffix);
+      if (ovHasPending) {
+        // Prior month's FULL organic units: full-month net units minus full-
+        // month ad units, capped per ASIN (same guard as the card itself).
+        const amzPFByAsin = netByAsin(unitsByAsin(amzPrevFull.filteredRows, skuToAsinMap), amzRetPF.byAsin);
+        const webPFByAsin = netByAsin(unitsByAsin(webPrevFull.filteredRows, skuToAsinMap), webRetPF.byAsin);
+        const wmtPFByAsin = netByAsin(unitsByAsin(wmtPrevFull.filteredRows, skuToAsinMap), wmtRetPF.byAsin);
+        const webShopPF = webShoppingUnitsByAsin(webShoppingRows, prevStartStr, ovPrevFullEndStr, skuToAsinMap);
+        const asinsPF = new Set([...Object.keys(amzPFByAsin), ...Object.keys(webPFByAsin), ...Object.keys(wmtPFByAsin)]);
+        const adUnitsPF = Array.from(asinsPF).reduce((t, a) => t
+          + Math.min(adUnitsByAsinPrev[a] || 0, amzPFByAsin[a] || 0)
+          + Math.min(webShopPF[a] || 0, webPFByAsin[a] || 0)
+          + Math.min(wmtAdUnitsByAsinPrev[a] || 0, wmtPFByAsin[a] || 0), 0);
+        const orgUnitsPrevFull = Math.max(0, ovPrevFull.units - adUnitsPF);
+        const pOrgUnits = (organicUnits + ovPend.totalUnits * ovKeep) * ovRun;
+        setKpiProjection('ov-kpi-organic-orders', `Projecting ${Math.round(pOrgUnits).toLocaleString()} ${ovBracket(pOrgUnits, orgUnitsPrevFull)}`, ovProjTitle + ' Ad units are never discounted.');
+      }
 
       // ADDED 2026-09-04 per Jaclyn — Conv% for Top Selling Products,
       // same styling as the PPC page's Product Performance table
@@ -24680,14 +24830,25 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
           </svg>`;
         }
 
-        function renderGoalsGroup(actualOverall, actualAds, actualOrganic, goalRow, cancelRate) {
+        // REWRITTEN 2026-11-02 per Jaclyn (MiGuard port). `actual*` are the
+        // ADJUSTED actuals (settled + pending × (1 − cancel rate)), so the
+        // MTD projection is now a plain run-rate with no second discount.
+        // `units` = { overall, ads, organic, pendingOrders } (Amazon + Walmart
+        // card only); dollar lines show units beside them when present.
+        function renderGoalsGroup(actualOverall, actualAds, actualOrganic, goalRow, cancelRate, units) {
           if (!goalRow) return `<div style="color:var(--muted);font-size:13px;flex:1;text-align:center;padding:20px;">No goals row found for this month.</div>`;
           const overallGoal = parseGoalsDollar(goalRow[14]);
           const organicGoal = parseGoalsDollar(goalRow[19]);
           const adsGoal = parseGoalsDollar(goalRow[29]);
-          const fmtD = n => '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+          const fmtD = n => '$' + Math.round(n).toLocaleString();
+          const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
+          const run = (cfg.isPartial && cfg.day > 0) ? daysInMonth / cfg.day : 1;
+          const withUnits = (dollars, u) => fmtD(dollars) + (u != null ? ` (${Math.round(u).toLocaleString()} units)` : '');
+          const pendingNote = (units && units.pendingOrders > 0)
+            ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${units.pendingOrders} pending &middot; ${cancelRate != null ? `adj. ${(cancelRate * 100).toFixed(1)}%` : 'no cancel history yet'}</div>`
+            : '';
 
-          function paceGauge(sublabel, actual, goal) {
+          function paceGauge(sublabel, actual, goal, u, showPending) {
             if (goal == null) {
               return `<div style="text-align:center;flex:1;">
                 <div style="font-size:15px;color:var(--muted);font-weight:700;margin-bottom:8px;">${sublabel}</div>
@@ -24702,49 +24863,17 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
                 <div style="font-size:13px;color:var(--muted);margin-top:8px;">Not available yet</div>
               </div>`;
             }
-            // FIXED 2026-09-10 per Jaclyn — the ring's fill and center
-            // number now reflect ACTUAL progress against the goal
-            // (actual ÷ goal), which is what "the circles should be
-            // showing actual versus goal" means — real progress so far,
-            // not a full/maxed-out ring that hides how far along we
-            // actually are. The projection is used ONLY to decide the
-            // ring's color (on-pace vs not), completely separate from
-            // what the ring is filled to. Simplified to a clean binary
-            // green/red for both periods, matching "green if projecting
-            // to meet goal and red if projecting to miss goal" exactly
-            // — no amber middle state.
+            // Ring fill + center % = adjusted actual ÷ goal; color = on pace or not.
             const actualPct = goal > 0 ? Math.round((actual / goal) * 100) : 0;
-            let projected = actual, statusText, statusColor, cancelRateLabel = '';
+            let lines, statusColor;
             if (cfg.isPartial) {
-              // MTD — project the full month from what we're averaging
-              // per day so far, to decide the color only.
-              const daysInMonth = new Date(cfg.year, cfg.month, 0).getDate();
-              const rawProjected = cfg.day > 0 ? (actual / cfg.day) * daysInMonth : actual;
-              // ADDED 2026-09-17 per Jaclyn — cancellation-rate-adjusted
-              // projection (spec ported from MiGuard's live
-              // implementation). ONLY the color/text below is affected —
-              // actualPct and the ring's fill above are untouched, real
-              // revenue-to-date. cancelRate is undefined for the Website
-              // card (no Amazon-style order-level cancellation data
-              // exists for Website in this codebase) — rawProjected
-              // passes through unadjusted in that case, same as before
-              // this feature existed.
-              projected = cancelRate != null ? rawProjected * (1 - cancelRate) : rawProjected;
-              const projectedPct = goal > 0 ? Math.round((projected / goal) * 100) : 0;
-              statusText = `Projecting ${fmtD(projected)}`;
-              statusColor = projectedPct >= 100 ? 'var(--green)' : 'var(--danger)';
-              if (cancelRate != null) {
-                cancelRateLabel = `<div style="font-size:10px;color:var(--muted);margin-top:2px;">adj. for ${Math.round(cancelRate * 100)}% avg. cancel rate</div>`;
-              } else if (cancelRate === null) {
-                cancelRateLabel = `<div style="font-size:10px;color:var(--muted);margin-top:2px;">no cancel-rate history yet</div>`;
-              }
+              const projected = actual * run;
+              statusColor = (goal > 0 && projected / goal >= 1) ? 'var(--green)' : 'var(--danger)';
+              lines = `<div style="font-size:14px;color:var(--navy);font-weight:700;margin-top:8px;">Projecting ${withUnits(projected, u != null ? u * run : null)}</div>
+                <div style="font-size:12px;color:var(--navy);margin-top:2px;"><span class="kpi-live-tag"><span class="gt-live-dot"></span>LIVE</span> ${withUnits(actual, u)}</div>`;
             } else {
-              // Last Full Month — the month is over, actual IS final, no separate projection.
-              // CHANGED 2026-10-02 per Jaclyn — show the real revenue hit for
-              // this ring (total/organic/ads) instead of "Hit goal"/"Missed
-              // goal". Ring color still carries hit vs missed.
-              statusText = `Actual ${fmtD(actual)}`;
               statusColor = actualPct >= 100 ? 'var(--green)' : 'var(--danger)';
+              lines = `<div style="font-size:14px;color:var(--navy);font-weight:700;margin-top:8px;">Actual ${withUnits(actual, u)}</div>`;
             }
             return `<div style="text-align:center;flex:1;">
               <div style="font-size:15px;color:var(--muted);font-weight:700;margin-bottom:8px;">${sublabel}</div>
@@ -24752,16 +24881,16 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
                 ${buildGaugeSvg(actualPct, statusColor)}
                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:${statusColor};">${actualPct}%</div>
               </div>
-              <div style="font-size:14px;color:var(--navy);font-weight:700;margin-top:8px;">${statusText}</div>
+              ${lines}
               <div style="font-size:14px;color:var(--navy);font-weight:700;">Goal ${fmtD(goal)}</div>
-              ${cancelRateLabel}
+              ${showPending ? pendingNote : ''}
             </div>`;
           }
 
           return `<div style="display:flex;gap:16px;flex:1;">
-            ${paceGauge('Total Sales', actualOverall, overallGoal)}
-            ${paceGauge('Organic Sales', actualOrganic, organicGoal)}
-            ${paceGauge('Ad Sales', actualAds, adsGoal)}
+            ${paceGauge('Total Sales', actualOverall, overallGoal, units ? units.overall : null, true)}
+            ${paceGauge('Organic Sales', actualOrganic, organicGoal, units ? units.organic : null, true)}
+            ${paceGauge('Ad Sales', actualAds, adsGoal, units ? units.ads : null, false)}
           </div>`;
         }
 
@@ -24782,7 +24911,20 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         // fabricated number the spec says never to default to.
         // Ads per the hub spec: Amazon+Walmart card = Ad Orders Cache sales
         // (2026-10-02 — replaces the earlier Amazon+Walmart-advertising blend).
-        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(amzWmtActual, amzWmtAdsActual, amzOrganicActual, goalsRowAmz, amzCancelRate);
+        // ADDED 2026-11-02 per Jaclyn (MiGuard port) — adjusted actuals:
+        // settled Amazon + Walmart (net of returns) + Amazon pending ×
+        // (1 − historical cancel rate). Only the pending part is discounted;
+        // shipped orders can't cancel. Ads are never discounted. Same pending
+        // set and cancel rate as the Overview cards above.
+        const gtAdjOverall = amzMtdNetRevenue + wmtMtdNetRevenue + ovPend.totalRevenue * ovKeep;
+        const gtAdjAds = amzWmtAdsActual;
+        const gtAdjOrganic = gtAdjAds != null ? Math.max(0, gtAdjOverall - gtAdjAds) : null;
+        const gtUnitsOverall = amzMtdNetUnits + wmtMtdNetUnits + ovPend.totalUnits * ovKeep;
+        const gtUnitsAds = adOrdersRowsForGoals
+          .filter(r => parseInt(String(r.year || '').replace(/,/g, ''), 10) === cfg.year && parseInt(r.month, 10) === cfg.month)
+          .reduce((t, r) => t + (parseFloat(String(r.ad_units || '0').replace(/,/g, '')) || 0), 0);
+        const gtUnits = { overall: gtUnitsOverall, ads: gtUnitsAds, organic: Math.max(0, gtUnitsOverall - gtUnitsAds), pendingOrders: ovPend.totalOrders };
+        if (goalsBodyAmzEl) goalsBodyAmzEl.innerHTML = renderGoalsGroup(gtAdjOverall, gtAdjAds, gtAdjOrganic, goalsRowAmz, ovCR.pooled, gtUnits);
         if (goalsBodyWebEl) goalsBodyWebEl.innerHTML = renderGoalsGroup(webGoalsActual, webAdsActual, webOrganicActual, goalsRowWeb);
       } catch (err) {
         console.warn('[GoalsTracker] failed:', err.message);
@@ -24807,6 +24949,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       // day-aligned MTD and prior-MTD sums. They're added directly to
       // Amazon's prorated figures for one blended Ad Spend / ACOS number.
       let proratedSpend = 0, proratedSales = 0, proratedSpendPrev = 0, proratedSalesPrev = 0;
+      let ovAmzAdSalesPrevFull = 0; // prior month's full Amazon ad sales, for the Organic Sales projection bracket
       if (isCsv(adOrdersCsv)) {
         const adRows = parseCsv(adOrdersCsv);
         if (cfg.isPartial) {
@@ -24831,6 +24974,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
           const daysInLastMonth = new Date(ly, lm, 0).getDate();
           const daysInTwoMonthsAgo = new Date(ly2, lm2, 0).getDate();
 
+          ovAmzAdSalesPrevFull = lastMonthSales; // "last month" here IS the prior month in MTD view
           proratedSpend = lastMonthSpend * (daysElapsed / daysInLastMonth);
           proratedSales = lastMonthSales * (daysElapsed / daysInLastMonth);
           proratedSpendPrev = twoMonthsAgoSpend * (daysElapsed / daysInTwoMonthsAgo);
@@ -24849,6 +24993,7 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
           proratedSales = curAdRows.reduce((s, r) => s + parseAmt(r.sales), 0);
           proratedSpendPrev = prevAdRows.reduce((s, r) => s + parseAmt(r.spend), 0);
           proratedSalesPrev = prevAdRows.reduce((s, r) => s + parseAmt(r.sales), 0);
+          ovAmzAdSalesPrevFull = proratedSalesPrev;
         }
       } else {
         console.warn('[Evolis][overview] ad orders sheet did not return CSV — Ad Spend/ACOS will reflect Website only.');
@@ -24899,6 +25044,12 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       const organicSalesPrev = Math.max(0, prev.revenue - blendedSalesPrev);
       setKpi('ov-kpi-ad-sales', '$' + blendedSales.toLocaleString(undefined, { maximumFractionDigits: 0 }), pctChange(blendedSales, blendedSalesPrev), ovMomSuffix);
       setKpi('ov-kpi-organic-sales', '$' + organicSales.toLocaleString(undefined, { maximumFractionDigits: 0 }), pctChange(organicSales, organicSalesPrev), ovMomSuffix);
+      if (ovHasPending) {
+        const webAdsPrevFull = sumWebAdsRange(webAdsRows, prevStartStr, ovPrevFullEndStr);
+        const orgSalesPrevFull = Math.max(0, ovPrevFull.revenue - (ovAmzAdSalesPrevFull + walmartSalesLastMonth + webAdsPrevFull.revenue));
+        const pOrgSales = (organicSales + ovPend.totalRevenue * ovKeep) * ovRun;
+        setKpiProjection('ov-kpi-organic-sales', `Projecting ${ovFmt$(pOrgSales)} ${ovBracket(pOrgSales, orgSalesPrevFull)}`, ovProjTitle + ' Ad sales are never discounted.');
+      }
 
       // -- Trend: trailing 6 COMPLETED months, blended revenue across channels --
       // ROOT CAUSE of the blank chart: these revenue-history sheets use
