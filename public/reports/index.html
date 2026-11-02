@@ -14477,6 +14477,14 @@ const TRF_MONTHLY_CSV = 'https://docs.google.com/spreadsheets/d/1Jkx7Ztnt59eniYt
 const TRF_EVENTS_CSV  = 'https://docs.google.com/spreadsheets/d/1NNRTRQxQl2r4XivAvH700CC39p49GD2xfZlyRNqahGA/export?format=csv&gid=347530381';
 const TRF_MEDIA_COLOR = '#FF4FA3';
 const TRF_EVENT_COLORS = { amazon:'#FF9900', ours:'#A66DFF' };
+// ADDED 2026-11-02 per Jaclyn — out-of-stock periods from the Newderm Out Of
+// Stock Historical Log (évolis tab). Needs the sheet link-shared ("Anyone with
+// the link can view") or this loads empty. Two kinds, styled differently:
+//   all_inventory → solid red: out everywhere, nobody can buy it
+//   fba           → gray diagonal stripes: out at Amazon's warehouse — loses
+//                   Prime, but still sellable (merchant-fulfilled)
+const TRF_OOS_CSV = 'https://docs.google.com/spreadsheets/d/1lbvdt8qcSRItrkWGjWnaJHcoBhjY275b1M6fM5_dKAM/export?format=csv&gid=1683244662';
+const TRF_OOS_COLORS = { all:'#DB372D', fba:'#6B7BA2' };
 const TRF_FINAL_AFTER = 4; // newest days are still settling in Amazon's report — drawn dashed
 // Category order for the tabs/dropdown; built from Product Short Name at load.
 const TRF_CAT_ORDER = ['Activator', 'Shampoo', 'Conditioner', 'Hair Mask', 'Dry Shampoo'];
@@ -14551,9 +14559,10 @@ function trfLoad(){
   if(_trf.loading) return _trf.loading;
   _trf.loading = (async ()=>{
     const soft = (url, what) => fetchCsvRows(url).catch(e=>{ console.warn(`[Traffic] ${what}:`, e.message); return []; });
-    const [master, dailyRows, monRows, eventRows] = await Promise.all([
+    const [master, dailyRows, monRows, eventRows, oosRows] = await Promise.all([
       getProductMaster(), soft(TRF_DAILY_CSV, 'daily business report'),
-      soft(TRF_MONTHLY_CSV, 'monthly business report'), soft(TRF_EVENTS_CSV, 'events') ]);
+      soft(TRF_MONTHLY_CSV, 'monthly business report'), soft(TRF_EVENTS_CSV, 'events'),
+      soft(TRF_OOS_CSV, 'out-of-stock log (needs link sharing)') ]);
     const num = v => parseFloat(String(v||'0').replace(/[^0-9.-]/g,''))||0;
     const strip = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
     // Products: évolis Amazon catalog SKUs with an ASIN (DELETED already dropped by getProductMaster)
@@ -14585,6 +14594,15 @@ function trfLoad(){
       const flag = col(r,'amazon featured event','amazon event').toUpperCase();
       return { name: col(r,'event name','event'), start, end: end < start ? start : end, amazon: flag ? flag.startsWith('Y') : true };
     }).filter(e => e.name && e.start).sort((a,b)=>a.start.localeCompare(b.start));
+    // Out-of-stock windows. Open ones (no end date) run through today.
+    const todayIso = ddTodayPT();
+    _trf.oos = oosRows.map(r=>{
+      const type = String(r.type||'').trim().toLowerCase();
+      const start = ddNormDate(r.start_date);
+      const end = ddNormDate(r.end_date) || todayIso;
+      return { asin:(r.asin||'').trim().toUpperCase(), sku:(r.sku||'').trim(), kind: type === 'fba' ? 'fba' : type === 'all_inventory' ? 'all' : '', start, end: end < start ? start : end, open: !String(r.end_date||'').trim() };
+    }).filter(o => o.asin && o.kind && o.start);
+    _trf.oosLoaded = oosRows.length > 0;
     _trf.d = { byCat, br }; _trf.br = br; _trf.daily = { byDate:daily, dates }; _trf.catOf = catOf; _trf.nameOf = nameOf;
     return _trf;
   })();
@@ -14711,6 +14729,7 @@ function trfRender(key){
       // Window ends on the newest synced day and never starts before the first one
       const start = [trfAddDays(end, -(_trf.win-1)), all[0]].sort()[1];
       const days = []; for(let d=start; d<=end; d=trfAddDays(d, 1)) days.push(d);
+      window._trfDays = days;
       const lyKey = d => trfShiftYear(d, -1); // same calendar date last year (day-over-day)
       const cur = days.map(d=>{ const t = trfSum(byDate[d], asins); return t ? trfVal(t, metric) : null; });
       const ly  = days.map(d=>{ const t = trfSum(byDate[lyKey(d)], asins); return t ? trfVal(t, metric) : null; });
@@ -14753,6 +14772,36 @@ function trfRender(key){
       if(!datasets[0].data.some(v=>v!=null)) note = key==='prod' ? 'No daily sessions for this product in this window.' : 'No daily data for this selection yet.';
     }
   }
+  // ── Out-of-stock bands (category + product charts) ──
+  const oosBands = [], oosList = [];
+  if(key !== 'overall' && asins && asins.size && (_trf.oos||[]).length){
+    const wins = _trf.oos.filter(o => asins.has(o.asin));
+    // per-index flags: 'all' wins over 'fba' so the two never stack
+    const cover = (a0, a1) => wins.filter(o => o.start <= a1 && o.end >= a0);
+    let ranges = [];
+    if(_trf.view === 'monthly'){
+      const now = new Date(), cy = now.getFullYear(), stop = now.getMonth();
+      ranges = YOY_MONTHS.map((_,i)=> i+1 > stop ? null : [ddYm(cy,i+1)+'-01', ddYm(cy,i+1)+'-31']);
+    } else {
+      ranges = (labels||[]).map((_,i)=>{ const d = (window._trfDays||[])[i]; return d ? [d, d] : null; });
+    }
+    const flags = ranges.map(r => { if(!r) return { k:null, names:[] }; const c = cover(r[0], r[1]);
+      const all = c.filter(o=>o.kind==='all'), fba = c.filter(o=>o.kind==='fba');
+      const k = all.length ? 'all' : fba.length ? 'fba' : null;
+      const names = [...new Set((k==='all'?all:fba).map(o=>_trf.nameOf[o.asin]||o.sku))];
+      return { k, names }; });
+    for(let i=0; i<flags.length; i++){
+      if(!flags[i].k) continue;
+      let j = i; while(j+1<flags.length && flags[j+1].k === flags[i].k) j++;
+      oosBands.push({ i0:i, i1:j, kind:flags[i].k }); i = j;
+    }
+    window._trfOosFlags = window._trfOosFlags || {}; window._trfOosFlags[key] = flags;
+    const lo = ranges.find(Boolean), hi = [...ranges].reverse().find(Boolean);
+    if(lo && hi) wins.filter(o => o.start <= hi[1] && o.end >= lo[0])
+      .sort((a,b)=>a.start.localeCompare(b.start) || a.kind.localeCompare(b.kind))
+      .forEach(o => oosList.push(o));
+  }
+
   if(!note) note = 'No data for this selection yet.';
   noteEl.innerHTML = note;
 
@@ -14765,13 +14814,15 @@ function trfRender(key){
   opts.interaction = { mode:'index', intersect:false };
   marks.sort((a,b)=>a.idx-b.idx || (a.ly?1:0)-(b.ly?1:0)); marks.forEach((mk,i)=>mk.n = i+1);
   opts.layout = { padding:{ top: marks.length ? 22 : 4 } };
-  opts.plugins.trfMedia = { marks, bands };
+  opts.plugins.trfMedia = { marks, bands, oos: oosBands };
   const evYr = b => b.yr ? ` ${b.yr}` : (b.ly ? ' (last year)' : '');
   opts.plugins.tooltip.callbacks.footer = items => {
     const i = items.length ? items[0].dataIndex : -1;
     return [
       ...bands.filter(b=>i>=b.i0 && i<=b.i1).map(b=>`🛒 ${b.e.name}${evYr(b)} — ${b.e.amazon ? 'Amazon event' : 'our sale'}`),
       ...marks.filter(mk=>mk.idx===i).map(mk=>`📰 ${mk.n}. ${mk.m.outlet}${mk.ly ? ' (last year)' : ''}: ${mk.m.title}`),
+      ...(() => { const f = ((window._trfOosFlags||{})[key]||[])[i]; if(!f || !f.k) return [];
+        return [`${f.k==='all' ? '⛔ Out of stock everywhere' : '📦 Out of stock at FBA (no Prime; still sellable)'}: ${f.names.join(', ')}`]; })(),
     ];
   };
   opts.plugins.tooltip.footerColor = '#001F60';
@@ -14788,6 +14839,18 @@ function trfRender(key){
     const fmtR = e => { const a = fmtD(e.start), b = fmtD(e.end); return e.start === e.end ? a : `${a.replace(/, \d{4}$/,'')} – ${b}`; };
     const seenEv = new Set(), evs = bands.slice().sort((x,y)=>x.i0-y.i0 || (x.yr||0)-(y.yr||0)).filter(b=>{ const k = b.e.name + b.e.start + (b.ly?'L':''); if(seenEv.has(k)) return false; seenEv.add(k); return true; });
     if(evs.length) mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:${marks.length?6:0}px;">Amazon events &amp; sales</div>` + evs.map(b=>`<div class="trf-media-item"><span class="trf-ev-swatch" style="background:${b.e.amazon?TRF_EVENT_COLORS.amazon:TRF_EVENT_COLORS.ours};${b.ly?'opacity:.45;':''}"></span><span>${fmtR(b.e)}${b.ly && !b.yr ? ' <span style="color:var(--muted);">(last year, shaded on the same dates)</span>' : ''} · <b>${escapeHtml(b.e.name)}</b> <span style="color:var(--muted);">— ${b.e.amazon ? 'Amazon event' : 'our own sale (not an Amazon event)'}</span></span></div>`).join('');
+    // Out-of-stock list (category + product charts); brand-wide gets a pointer instead
+    if(key === 'overall' && (_trf.oos||[]).length){
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Out of stock</div><div class="trf-media-item"><span style="color:var(--muted);">Several products have long-running stockouts, so out-of-stock periods are shaded on the category and product charts below rather than here.</span></div>`;
+    } else if(oosList.length){
+      const sw = k => k === 'all'
+        ? `<span class="trf-ev-swatch" style="background:${TRF_OOS_COLORS.all};opacity:.55;"></span>`
+        : `<span class="trf-ev-swatch" style="background:repeating-linear-gradient(135deg, ${TRF_OOS_COLORS.fba} 0 2px, transparent 2px 6px);border:1px solid ${TRF_OOS_COLORS.fba};"></span>`;
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Out of stock</div>` + oosList.map(o =>
+        `<div class="trf-media-item">${sw(o.kind)}<span>${o.start === o.end ? fmtD(o.start) : `${fmtD(o.start).replace(/, \d{4}$/,'')} – ${o.open ? 'today (still out)' : fmtD(o.end)}`} · <b>${escapeHtml(_trf.nameOf[o.asin] || o.sku)}</b> <span style="color:var(--muted);">— ${o.kind === 'all' ? 'out of stock everywhere' : 'out at FBA (no Prime; still sellable)'}</span></span></div>`).join('');
+    } else if(key !== 'overall' && _trf.oosLoaded === false){
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;text-transform:none;font-weight:500;">Out-of-stock periods couldn't load — the Out Of Stock Historical Log needs link sharing set to "Anyone with the link can view".</div>`;
+    }
     if(!mediaEl.innerHTML) mediaEl.innerHTML = (_trf.mediaLoaded === false && key === 'overall' ? `<div class="trf-media-hd" style="text-transform:none;font-weight:500;">Media mentions couldn't load — the Media Features sheet needs link sharing set to "Anyone with the link can view".</div>` : '');
   }
   renderYoyLegend(_trf.charts[key], `trf-legend-${key}`);
@@ -14796,10 +14859,22 @@ function trfRender(key){
 const TRF_MEDIA_PLUGIN = {
   id:'trfMedia',
   beforeDatasetsDraw(chart, _args, opts){
-    const bands = (opts && opts.bands) || [];
-    if(!bands.length) return;
+    const bands = (opts && opts.bands) || [], oos = (opts && opts.oos) || [];
+    if(!bands.length && !oos.length) return;
     const { ctx, chartArea:{ top, bottom, left, right }, scales:{ x } } = chart;
     const step = x.getPixelForValue(1) - x.getPixelForValue(0) || 0;
+    // Out-of-stock: solid red (everywhere) / gray diagonal stripes (FBA only)
+    oos.forEach(b=>{
+      const x0 = Math.max(left, x.getPixelForValue(b.i0) - step/2), x1 = Math.min(right, x.getPixelForValue(b.i1) + step/2), w = Math.max(2, x1 - x0);
+      ctx.save();
+      if(b.kind === 'all'){ ctx.globalAlpha = 0.14; ctx.fillStyle = TRF_OOS_COLORS.all; ctx.fillRect(x0, top, w, bottom - top); }
+      else {
+        ctx.beginPath(); ctx.rect(x0, top, w, bottom - top); ctx.clip();
+        ctx.globalAlpha = 0.35; ctx.strokeStyle = TRF_OOS_COLORS.fba; ctx.lineWidth = 1;
+        for(let sx = x0 - (bottom - top); sx < x1; sx += 7){ ctx.beginPath(); ctx.moveTo(sx, bottom); ctx.lineTo(sx + (bottom - top), top); ctx.stroke(); }
+      }
+      ctx.restore();
+    });
     bands.forEach(b=>{
       const x0 = Math.max(left, x.getPixelForValue(b.i0) - step/2), x1 = Math.min(right, x.getPixelForValue(b.i1) + step/2);
       const col = b.e.amazon ? TRF_EVENT_COLORS.amazon : TRF_EVENT_COLORS.ours;
