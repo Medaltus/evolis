@@ -1614,8 +1614,8 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
             <th style="text-align:left;padding:8px 10px;">Total Units</th>
             <th style="text-align:left;padding:8px 10px;">Ads (Amazon)</th>
             <th style="text-align:left;padding:8px 10px;">Organic</th>
-            <th style="text-align:left;padding:8px 10px;">Conv% (Amazon)</th>
-            <th style="text-align:left;padding:8px 10px;" title="Change in Amazon conversion rate vs the prior month, in percentage points">vs Prior Mo.</th>
+            <th style="text-align:left;padding:8px 10px;" title="Amazon sessions (Business Report) — MOM vs prior month, YOY vs same month last year">Sessions (Amazon)</th>
+            <th style="text-align:left;padding:8px 10px;" title="Amazon conversion (units ordered ÷ sessions, Business Report) — MOM/YOY change in percentage points">Conv Rate (Amazon)</th>
           </tr>
         </thead>
         <tbody id="ov-products-tbody"><tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted);">Loading…</td></tr></tbody>
@@ -14493,6 +14493,12 @@ const TRF_EVENT_COLORS = { amazon:'#FF9900', ours:'#A66DFF' };
 //                   Prime, but still sellable (merchant-fulfilled)
 const TRF_OOS_CSV = 'https://docs.google.com/spreadsheets/d/1lbvdt8qcSRItrkWGjWnaJHcoBhjY275b1M6fM5_dKAM/export?format=csv&gid=1683244662';
 const TRF_OOS_COLORS = { all:'#DB372D', fba:'#6B7BA2' };
+// ADDED 2026-11-02 per Jaclyn — listing changes (title, bullets, item
+// highlights, description, backend keywords, ingredients, price/offer)
+// from the listing-change log, évolis tab. Shown on the product chart.
+const TRF_LC_CSV = 'https://docs.google.com/spreadsheets/d/1UUBGtUsE_nUPBSH9MyuEu27CqJI-XWJBh5wpT2DsEOk/export?format=csv&gid=36886034';
+const TRF_LC_COLOR = '#3D6BFF';
+const TRF_LC_FIELD = { title:'Title', item_highlights:'Item highlights', description:'Description', backend_keywords:'Backend keywords', ingredients:'Ingredients', bullet_1:'Bullet 1', bullet_2:'Bullet 2', bullet_3:'Bullet 3', bullet_4:'Bullet 4', bullet_5:'Bullet 5', offers:'Price' };
 const TRF_FINAL_AFTER = 4; // newest days are still settling in Amazon's report — drawn dashed
 // Category order for the tabs/dropdown; built from Product Short Name at load.
 const TRF_CAT_ORDER = ['Activator', 'Shampoo', 'Conditioner', 'Hair Mask', 'Dry Shampoo'];
@@ -14567,10 +14573,11 @@ function trfLoad(){
   if(_trf.loading) return _trf.loading;
   _trf.loading = (async ()=>{
     const soft = (url, what) => fetchCsvRows(url).catch(e=>{ console.warn(`[Traffic] ${what}:`, e.message); return []; });
-    const [master, dailyRows, monRows, eventRows, oosRows] = await Promise.all([
+    const [master, dailyRows, monRows, eventRows, oosRows, lcRows] = await Promise.all([
       getProductMaster(), soft(TRF_DAILY_CSV, 'daily business report'),
       soft(TRF_MONTHLY_CSV, 'monthly business report'), soft(TRF_EVENTS_CSV, 'events'),
-      soft(TRF_OOS_CSV, 'out-of-stock log (needs link sharing)') ]);
+      soft(TRF_OOS_CSV, 'out-of-stock log (needs link sharing)'),
+      soft(TRF_LC_CSV, 'listing-change log (needs link sharing)') ]);
     const num = v => parseFloat(String(v||'0').replace(/[^0-9.-]/g,''))||0;
     const strip = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
     // Products: évolis Amazon catalog SKUs with an ASIN (DELETED already dropped by getProductMaster)
@@ -14615,6 +14622,45 @@ function trfLoad(){
       return { asin:(r.asin||'').trim().toUpperCase(), sku:(r.sku||'').trim(), kind: type === 'fba' ? 'fba' : type === 'all_inventory' ? 'all' : '', start, end: end < start ? start : end, open: !String(r.end_date||'').trim() };
     }).filter(o => o.asin && o.kind && o.start);
     _trf.oosLoaded = oosRows.length > 0;
+    // Bundles: their own group in the product dropdown (most listing
+    // changes are on bundles). Not added to the category tabs.
+    const bundles = [];
+    Object.values(master.bySku).forEach(e=>{
+      if(strip(e.brand) !== 'evolis' || !String(e.channel||'').toLowerCase().includes('amazon')) return;
+      if(!e.skuType || e.skuType.toUpperCase() !== 'BUNDLE' || !e.asin || nameOf[e.asin]) return;
+      bundles.push({ asin:e.asin, name:e.name || e.sku, sku:e.sku }); nameOf[e.asin] = e.name || e.sku;
+    });
+    _trf.bundles = bundles;
+    // Listing changes → one entry per product per day. Rows whose old and
+    // new text match once punctuation/spacing is ignored (encoding fixes)
+    // are skipped as not real changes.
+    const norm = v => String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    const money = v => { const m = String(v||'').match(/[\d.]+/); return m ? '$' + Number(m[0]).toFixed(2) : ''; };
+    const lcMap = {};
+    lcRows.forEach(r=>{
+      const date = ddNormDate(r.date), asin = (r.asin||'').trim().toUpperCase(), field = String(r.field||'').trim();
+      if(!date || !asin || !field) return;
+      if(field !== 'offers' && norm(r.old_value) === norm(r.new_value)) return;
+      let text;
+      if(field === 'offers'){
+        const o = money(r.old_value), n = money(r.new_value);
+        if(o === n) return;
+        text = !o ? `Price set to ${n}` : !n ? `Offer removed (was ${o})` : `Price ${o} \u2192 ${n}`;
+      } else text = TRF_LC_FIELD[field] || field.replace(/_/g,' ');
+      const k = asin + '|' + date;
+      (lcMap[k] = lcMap[k] || { asin, date, items:[] }).items.push({ field, text });
+    });
+    const order = Object.keys(TRF_LC_FIELD);
+    _trf.lc = Object.values(lcMap).map(g=>{
+      const price = g.items.filter(i=>i.field==='offers').map(i=>i.text);
+      const fields = g.items.filter(i=>i.field!=='offers').sort((a,b)=>order.indexOf(a.field)-order.indexOf(b.field)).map(i=>i.text);
+      // "Bullet 1, Bullet 2 … Bullet 5" → "Bullets 1–5" when all five changed together
+      const bl = fields.filter(f=>/^Bullet \d$/.test(f));
+      const flds = bl.length === 5 ? [...fields.filter(f=>!/^Bullet \d$/.test(f)).slice(0,2), 'Bullets 1\u20135', ...fields.filter(f=>!/^Bullet \d$/.test(f)).slice(2)] : fields;
+      const summary = [...price, ...(flds.length ? [flds.join(', ') + ' updated'] : [])].join(' \u00b7 ');
+      return { asin:g.asin, date:g.date, summary, count:g.items.length };
+    }).sort((a,b)=>a.date.localeCompare(b.date));
+    _trf.lcLoaded = lcRows.length > 0;
     _trf.d = { byCat, br }; _trf.br = br; _trf.daily = { byDate:daily, dates }; _trf.catOf = catOf; _trf.nameOf = nameOf;
     return _trf;
   })();
@@ -14660,7 +14706,7 @@ function trfRenderControls(){
   sel.innerHTML = TRF_CATS.map(([k,l])=>{
     const list = (_trf.d.byCat[k]||[]).slice().sort((a,b)=>((cur[b.asin]||{}).s||0)-((cur[a.asin]||{}).s||0));
     return list.length ? `<optgroup label="${escapeHtml(l)}">${list.map(p=>`<option value="${p.asin}"${p.asin===_trf.asin?' selected':''}>${escapeHtml(p.name)} · ${escapeHtml(p.sku)}</option>`).join('')}</optgroup>` : '';
-  }).join('');
+  }).join('') + ((_trf.bundles||[]).length ? `<optgroup label="Bundles">${_trf.bundles.slice().sort((a,b)=>((cur[b.asin]||{}).s||0)-((cur[a.asin]||{}).s||0)).map(p=>`<option value="${p.asin}"${p.asin===_trf.asin?' selected':''}>${escapeHtml(p.name)} · ${escapeHtml(p.sku)}</option>`).join('')}</optgroup>` : '');
 }
 function trfSetView(v){ _trf.view = v; trfRenderControls(); trfRenderAll(); }
 function trfSetWindow(n){ _trf.win = n; trfRenderControls(); trfRenderAll(); }
@@ -14720,6 +14766,11 @@ function trfRender(key){
       const ds = datasets.find(x=>x.label === String(y));
       if(ds && ds.data[mo-1] != null) marks.push({ idx: mo-1, value: ds.data[mo-1], color: ds.borderColor, m });
     });
+    if(key === 'prod') (_trf.lc||[]).filter(c=>c.asin === _trf.asin).forEach(c=>{
+      const [y, mo] = c.date.split('-').map(Number);
+      const ds = datasets.find(x=>x.label === String(y));
+      if(ds) marks.push({ idx: mo-1, value: ds.data[mo-1], color: TRF_LC_COLOR, lc:c, m:{ date:c.date } });
+    });
     // An event shades the month(s) it falls in, for years that have a line
     (_trf.events||[]).forEach(e=>{
       const [y, m0] = e.start.split('-').map(Number), [y1, m1] = e.end.split('-').map(Number);
@@ -14751,6 +14802,10 @@ function trfRender(key){
       const c0 = YOY_COLORS[0], c1 = YOY_COLORS[1];
       datasets = [{ label:'This year', data:cur, borderColor:c0.border, backgroundColor:c0.bg, fill:c0.fill, pointRadius:days.length>60?0:days.length>30?1.5:2.5, tension:0.25, borderWidth:2.5, spanGaps:false,
                     segment:{ borderDash: ctx => (firstProv >= 0 && ctx.p1DataIndex >= firstProv) ? [5,4] : undefined } }];
+      if(key === 'prod') (_trf.lc||[]).filter(c=>c.asin === _trf.asin).forEach(c=>{
+        const i = days.indexOf(c.date);
+        if(i >= 0) marks.push({ idx:i, value:cur[i], color:TRF_LC_COLOR, lc:c, m:{ date:c.date } });
+      });
       // Mentions inside the window mark this year's line; mentions from a
       // year earlier mark the "last year" line on the same calendar date.
       (_trf.media||[]).forEach(m=>{
@@ -14836,7 +14891,7 @@ function trfRender(key){
     const i = items.length ? items[0].dataIndex : -1;
     return [
       ...bands.filter(b=>i>=b.i0 && i<=b.i1).map(b=>`🛒 ${b.e.name}${evYr(b)} — ${b.e.amazon ? 'Amazon event' : 'our sale'}`),
-      ...marks.filter(mk=>mk.idx===i).map(mk=>`📰 ${mk.n}. ${mk.m.outlet}${mk.ly ? ' (last year)' : ''}: ${mk.m.title}`),
+      ...marks.filter(mk=>mk.idx===i).map(mk=> mk.lc ? `✏️ ${mk.n}. Listing change: ${mk.lc.summary}` : `📰 ${mk.n}. ${mk.m.outlet}${mk.ly ? ' (last year)' : ''}: ${mk.m.title}`),
       ...(() => { const f = ((window._trfOosFlags||{})[key]||[])[i]; if(!f || !f.k) return [];
         return [`${f.k==='all' ? '⛔ Out of stock everywhere' : '📦 Out of stock at FBA (no Prime; still sellable)'}: ${f.names.join(', ')}`]; })(),
     ];
@@ -14848,13 +14903,21 @@ function trfRender(key){
   const mediaEl = document.getElementById(`trf-${key}-media`);
   if(mediaEl){
     const fmtD = iso => { const [y,m,d] = iso.split('-').map(Number); return `${DDP_MONTH_ABBR[m-1]} ${d}, ${y}`; };
-    mediaEl.innerHTML = marks.length
-      ? `<div class="trf-media-hd">Media mentions (amazon.com)</div>` + marks.map(mk=>`<div class="trf-media-item"><span class="trf-media-num" style="background:${mk.color};">${mk.n}</span><span>${fmtD(mk.m.date)}${mk.ly ? ' <span style="color:var(--muted);">(last year, on the dashed-navy line)</span>' : ''} · ${mk.m.url && /^https?:/i.test(mk.m.url) ? `<a href="${escapeHtml(mk.m.url)}" target="_blank" rel="noopener">${escapeHtml(mk.m.outlet)}</a>` : `<b>${escapeHtml(mk.m.outlet)}</b>`} — ${escapeHtml(mk.m.title)}${mk.m.notes ? ` <span style="color:var(--muted);">(${escapeHtml(mk.m.notes)})</span>` : ''}</span></div>`).join('')
+    const mediaMarks = marks.filter(mk=>!mk.lc), lcMarks = marks.filter(mk=>mk.lc);
+    mediaEl.innerHTML = mediaMarks.length
+      ? `<div class="trf-media-hd">Media mentions (amazon.com)</div>` + mediaMarks.map(mk=>`<div class="trf-media-item"><span class="trf-media-num" style="background:${mk.color};">${mk.n}</span><span>${fmtD(mk.m.date)}${mk.ly ? ' <span style="color:var(--muted);">(last year, on the dashed-navy line)</span>' : ''} · ${mk.m.url && /^https?:/i.test(mk.m.url) ? `<a href="${escapeHtml(mk.m.url)}" target="_blank" rel="noopener">${escapeHtml(mk.m.outlet)}</a>` : `<b>${escapeHtml(mk.m.outlet)}</b>`} — ${escapeHtml(mk.m.title)}${mk.m.notes ? ` <span style="color:var(--muted);">(${escapeHtml(mk.m.notes)})</span>` : ''}</span></div>`).join('')
       : '';
     // Events legend + list
     const fmtR = e => { const a = fmtD(e.start), b = fmtD(e.end); return e.start === e.end ? a : `${a.replace(/, \d{4}$/,'')} – ${b}`; };
     const seenEv = new Set(), evs = bands.slice().sort((x,y)=>x.i0-y.i0 || (x.yr||0)-(y.yr||0)).filter(b=>{ const k = b.e.name + b.e.start + (b.ly?'L':''); if(seenEv.has(k)) return false; seenEv.add(k); return true; });
     if(evs.length) mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:${marks.length?6:0}px;">Amazon events &amp; sales</div>` + evs.map(b=>`<div class="trf-media-item"><span class="trf-ev-swatch" style="background:${b.e.amazon?TRF_EVENT_COLORS.amazon:TRF_EVENT_COLORS.ours};${b.ly?'opacity:.45;':''}"></span><span>${fmtR(b.e)}${b.ly && !b.yr ? ' <span style="color:var(--muted);">(last year, shaded on the same dates)</span>' : ''} · <b>${escapeHtml(b.e.name)}</b> <span style="color:var(--muted);">— ${b.e.amazon ? 'Amazon event' : 'our own sale (not an Amazon event)'}</span></span></div>`).join('');
+    // Listing changes (product chart) — numbered to match the pins
+    if(lcMarks.length){
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Listing changes</div>` + lcMarks.map(mk=>
+        `<div class="trf-media-item"><span class="trf-media-num" style="background:${TRF_LC_COLOR};">${mk.n}</span><span>${fmtD(mk.lc.date)} · ${escapeHtml(mk.lc.summary)}</span></div>`).join('');
+    } else if(key === 'prod' && _trf.lcLoaded === false){
+      mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;text-transform:none;font-weight:500;">Listing changes couldn't load — the listing-change log needs link sharing set to "Anyone with the link can view".</div>`;
+    }
     // Out-of-stock list (category + product charts); brand-wide gets a pointer instead
     if(key === 'overall' && (_trf.oos||[]).length){
       mediaEl.innerHTML += `<div class="trf-media-hd" style="margin-top:6px;">Out of stock</div><div class="trf-media-item"><span style="color:var(--muted);">Several products have long-running stockouts, so out-of-stock periods are shaded on the category and product charts below rather than here.</span></div>`;
@@ -24423,6 +24486,33 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
         const convClass = conv >= 15 ? 'rank-top' : (conv > 0 ? 'rank-low' : 'rank-none');
         return `<span class="rank-pill ${convClass}">${conv.toFixed(2)}%</span>`;
       }
+      // ADDED 2026-11-02 per Jaclyn — Sessions + Conv Rate styled with a small
+      // "MOM ▲x  YOY ▼y" line under each value (matches her reference table).
+      // Sessions changes are % changes; conversion changes are percentage
+      // points (5.6% -> 10.5% = +4.9 pts), same as the Amazon Conv. Rate card.
+      // YOY shows "—" until the Business Report has the same month last year.
+      const brYoy = brByAsin(cfg.year - 1, cfg.month);
+      const tpChg = (txt, dir) => dir == null
+        ? '<b style="color:var(--muted);font-weight:600;">—</b>'
+        : `<b style="color:${dir > 0 ? '#1db88a' : dir < 0 ? 'var(--danger)' : 'var(--muted)'};font-weight:700;">${dir > 0 ? '\u25b2' : dir < 0 ? '\u25bc' : ''}${txt}</b>`;
+      const tpSub = (mom, yoy) => `<div style="font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:.02em;white-space:nowrap;"><span style="font-weight:600;">MOM</span> ${mom}&nbsp;&nbsp;<span style="font-weight:600;">YOY</span> ${yoy}</div>`;
+      const pctTxt = (cur, base) => { if (!base) return [null, null]; const p = Math.round((cur - base) / base * 100); return [(p > 0 ? '+' : '') + p + '%', p]; };
+      const ptsTxt = (cur, base) => { if (cur == null || base == null) return [null, null]; const d = Math.round((cur - base) * 10) / 10; return [(d > 0 ? '+' : '') + d.toFixed(1) + ' pts', d]; };
+      function sessionsCell(asin) {
+        const c = brCurr[asin], cur = c ? c.sessions : 0;
+        if (!c || !cur) return '<span class="tp-dash">—</span>';
+        const [m, md] = pctTxt(cur, brPrev[asin] && brPrev[asin].sessions);
+        const [y, yd] = pctTxt(cur, brYoy[asin] && brYoy[asin].sessions);
+        return `<div style="font-weight:700;color:var(--navy);font-size:13px;">${Math.round(cur).toLocaleString()}</div>` + tpSub(tpChg(m, md), tpChg(y, yd));
+      }
+      function convStyledCell(asin) {
+        const cur = convOf(brCurr[asin]);
+        if (cur == null) return '<span class="tp-dash">—</span>';
+        const cls = cur >= 15 ? 'rank-top' : (cur > 0 ? 'rank-low' : 'rank-none');
+        const [m, md] = ptsTxt(cur, convOf(brPrev[asin]));
+        const [y, yd] = ptsTxt(cur, convOf(brYoy[asin]));
+        return `<span class="rank-pill ${cls}">${cur.toFixed(2)}%</span>` + tpSub(tpChg(m, md), tpChg(y, yd));
+      }
       function convChangeCell(asin) {
         const cur = convOf(brCurr[asin]), prev = convOf(brPrev[asin]);
         if (cur == null) return '<span class="tp-dash">—</span>';
@@ -24473,8 +24563,8 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
               <td style="padding:7px 10px;"><div class="tp-cell">${unitCell(r.total, r.totalPrev)}</div></td>
               <td style="padding:7px 10px;">${r.adUnits > 0 ? `<span class="tp-units">${r.adUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
               <td style="padding:7px 10px;">${r.orgUnits > 0 ? `<span class="tp-units">${r.orgUnits.toLocaleString()}</span>` : '<span class="tp-dash">—</span>'}</td>
-              <td style="padding:7px 10px;">${convCell(r.amazon, r.asin)}</td>
-          <td style="padding:7px 10px;">${convChangeCell(r.asin)}</td>
+              <td style="padding:9px 10px;">${sessionsCell(r.asin)}</td>
+          <td style="padding:9px 10px;">${convStyledCell(r.asin)}</td>
             </tr>`).join('');
         }
       }
