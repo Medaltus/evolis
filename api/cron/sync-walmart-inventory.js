@@ -47,7 +47,7 @@
  */
 
 const https = require('https');
-const { ensureTab, readRows, replaceRows, appendRows } = require('../config/_sheets_client');
+const { ensureTab, readRows, replaceRows, appendRows, updateRange } = require('../config/_sheets_client');
 const brands = require('../config/brands');
 const { sendCronFailureAlert } = require('../_alerts');
 
@@ -62,7 +62,18 @@ const MASTER_SHEET_GID = '164358627'; // "Product Short Name" tab: A=asin, B=sku
 const META_TAB     = '_meta';
 const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 
-const HEADERS = ['date', 'sku', 'product_name', 'wfs_on_hand', 'wfs_available', 'last_synced'];
+// CHANGED 2026-11-03 — six listing-status columns added at the END (existing
+// columns keep their positions). All come from the GET /v3/items/{itemId}
+// lookup this cron already makes for product_name, so no extra Walmart calls.
+const HEADERS = ['date', 'sku', 'product_name', 'wfs_on_hand', 'wfs_available', 'last_synced',
+  'published_status', 'lifecycle_status', 'availability', 'is_duplicate', 'unpublished_reasons', 'price'];
+
+// ADDED 2026-11-03 — account-wide Walmart listing health, one row per day,
+// written on the first run of each day (2 Walmart calls: Insights listing
+// quality score + unpublished counts by reason).
+const LQ_TAB = 'listing_quality';
+const LQ_HEADERS = ['date', 'listing_quality', 'offer_score', 'rating_review_score', 'content_score', 'price_score',
+  'shipping_score', 'transactibility_score', 'item_defect_count', 'defect_ratio', 'unpublished_total', 'unpublished_by_reason', 'last_synced'];
 
 const TIME_BUDGET_MS = 250_000; // stay safely under Vercel's 300s cap — same default as sync-products.js
 // UNCONFIRMED against Walmart's actual per-operation rate limit for this
@@ -289,6 +300,15 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'No access_token returned' });
   }
 
+  // ADDED 2026-11-03 — account-wide listing quality, once per day (first run).
+  let listingQuality = null;
+  if (cursor === 0) {
+    listingQuality = await writeListingQualitySnapshot(token, today).catch(err => {
+      console.warn('[sync-walmart-inventory] listing quality snapshot failed:', err.message);
+      return { error: err.message };
+    });
+  }
+
   const totalCount = masterList.length;
   const startTime  = Date.now();
   const nowIso     = toEstIso(new Date()); // FIXED 2026-08-19 -- was UTC
@@ -307,6 +327,11 @@ module.exports = async (req, res) => {
     try {
       if (!tabTokens[item.brandTabName]) {
         tabTokens[item.brandTabName] = await ensureTab(SHEET_ID, item.brandTabName, HEADERS);
+        // ADDED 2026-11-03 — keep row 1 equal to HEADERS: adds the new
+        // listing-status columns to existing tabs, and repairs any tab whose
+        // header drifted (dearcloud's was missing product_name).
+        await updateRange(SHEET_ID, `${item.brandTabName}!A1`, [HEADERS], tabTokens[item.brandTabName], 'RAW')
+          .catch(err => console.warn(`[sync-walmart-inventory] ${item.brandTabName} — header refresh failed:`, err.message));
         const existingRows = await readRows(SHEET_ID, item.brandTabName);
         tabNextRow[item.brandTabName] = existingRows.length + 2;
       }
@@ -332,9 +357,10 @@ module.exports = async (req, res) => {
       // before it ever gets here (see 2026-08-04 change above). Left in
       // place as a defensive guard rather than removed, in case that
       // filter ever changes; not dead logic, just currently unconditional.
+      let itemRecord = null; // kept for the listing-status columns (2026-11-03)
       if (item.walmartItemId) {
         await sleep(INTER_SKU_DELAY_MS);
-        const itemRecord = await fetchItemByItemId(item.walmartItemId, token).catch(err => ({ __error: err.message }));
+        itemRecord = await fetchItemByItemId(item.walmartItemId, token).catch(err => ({ __error: err.message }));
 
         if (itemRecord?.__error) {
           console.warn(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — productName lookup via itemId ${item.walmartItemId} failed:`, itemRecord.__error);
@@ -357,7 +383,7 @@ module.exports = async (req, res) => {
         console.log(`[sync-walmart-inventory] ${item.sku} (${item.brandTabName}) — used itemId-resolved SKU successfully`);
       }
 
-      const row = buildInventoryRow(item, wfs, productName, today, nowIso);
+      const row = buildInventoryRow(item, wfs, productName, today, nowIso, itemRecord);
       // FIXED 2026-08-14 — was defaulting to valueInputOption=RAW, same
       // forced-text issue found and fixed elsewhere today. 'date' now
       // writes as a real date, wfs_on_hand/wfs_available as real numbers.
@@ -391,8 +417,33 @@ module.exports = async (req, res) => {
     );
   }
 
-  res.status(200).json({ date: today, processedThisRun: processed, cursor: i, totalCount, complete });
+  res.status(200).json({ date: today, processedThisRun: processed, cursor: i, totalCount, complete, ...(listingQuality ? { listingQuality } : {}) });
 };
+
+// ── Account-wide listing quality (ADDED 2026-11-03) ─────────────────────
+// Walmart Insights: GET /v3/insights/items/listingQuality/score and
+// GET /v3/insights/items/unpublished/counts — both confirmed working on this
+// account 2026-11-03. Upserts one row per date in the listing_quality tab.
+async function writeListingQualitySnapshot(token, today) {
+  const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const lq = await wmRequest('GET', '/v3/insights/items/listingQuality/score', token);
+  const up = await wmRequest('GET', `/v3/insights/items/unpublished/counts?fromDate=${fromDate}`, token).catch(() => null);
+  const p = lq?.payload;
+  if (!p) throw new Error(`no listing quality payload: ${JSON.stringify(lq).slice(0, 200)}`);
+  const sc = p.score || {}, pp = p.postPurchaseQuality || {};
+  const reasons = Array.isArray(up?.payload) ? up.payload : [];
+  const unpublishedTotal = reasons.reduce((n, r) => n + (parseInt(r.unpublishedCount, 10) || 0), 0);
+  const byReason = reasons.map(r => `${r.unpublishedReasonCode}: ${r.unpublishedCount}`).join(' | ');
+  const row = [today, p.listingQuality ?? '', sc.offerScore ?? '', sc.ratingReviewScore ?? '', sc.contentScore ?? '', sc.priceScore ?? '',
+    sc.shippingScore ?? '', sc.transactibilityScore ?? '', pp.itemDefectCnt ?? '', pp.defectRatio ?? '',
+    up ? unpublishedTotal : '', byReason, toEstIso(new Date())];
+
+  const sheetToken = await ensureTab(SHEET_ID, LQ_TAB, LQ_HEADERS);
+  const existing = (await readRows(SHEET_ID, LQ_TAB)).filter(r => String(r.date || '').slice(0, 10) !== today);
+  const rows = [...existing.map(r => LQ_HEADERS.map(h => r[h] ?? '')), row];
+  await replaceRows(SHEET_ID, LQ_TAB, LQ_HEADERS, rows, sheetToken, 'USER_ENTERED');
+  return { date: today, listingQuality: p.listingQuality, unpublishedTotal, byReason };
+}
 
 // ── Row building ────────────────────────────────────────────────────────
 
@@ -413,7 +464,7 @@ function parseWfsShipNode(raw) {
   return { onHand, available, matchedNodes: wfsNodes.length };
 }
 
-function buildInventoryRow(item, wfs, productName, dateStr, nowIso) {
+function buildInventoryRow(item, wfs, productName, dateStr, nowIso, itemRecord = null) {
   // REVISED 2026-08-04 per Jaclyn: now that fetchMasterSkuList() only
   // ever hands this function a SKU confirmed to be sold on Walmart (has
   // a Walmart Item ID on the master list), the old ambiguity between
@@ -434,10 +485,28 @@ function buildInventoryRow(item, wfs, productName, dateStr, nowIso) {
   // own force-text convention under USER_ENTERED) since it can look
   // numeric and risk reinterpretation or lost leading zeros.
   const protectedSku = `'${item.sku}`;
-  if (wfs?.__error) return [dateStr, protectedSku, productName, '', '', nowIso];
+  const status = listingStatusCells(itemRecord); // ADDED 2026-11-03
+  if (wfs?.__error) return [dateStr, protectedSku, productName, '', '', nowIso, ...status];
   const { onHand, available, matchedNodes } = parseWfsShipNode(wfs);
-  if (matchedNodes === 0) return [dateStr, protectedSku, productName, 0, 0, nowIso];
-  return [dateStr, protectedSku, productName, onHand, available, nowIso];
+  if (matchedNodes === 0) return [dateStr, protectedSku, productName, 0, 0, nowIso, ...status];
+  return [dateStr, protectedSku, productName, onHand, available, nowIso, ...status];
+}
+
+// ADDED 2026-11-03 — the six listing-status cells, from Walmart's item record.
+// Blank (not guessed) when the lookup failed. unpublished_reasons only
+// appears on unpublished items; Walmart sends it as a list of reason texts.
+function listingStatusCells(rec) {
+  if (!rec || rec.__error) return ['', '', '', '', '', ''];
+  const reasons = rec.unpublishedReasons?.reason ?? rec.unpublishedReasons ?? '';
+  const reasonText = Array.isArray(reasons) ? reasons.join(' | ') : (typeof reasons === 'object' ? JSON.stringify(reasons) : String(reasons || ''));
+  return [
+    rec.publishedStatus || '',
+    rec.lifecycleStatus || '',
+    rec.availability || '',
+    rec.isDuplicate === undefined ? '' : String(rec.isDuplicate).toUpperCase(),
+    reasonText,
+    rec.price?.amount ?? '',
+  ];
 }
 
 // ── Walmart auth — copied verbatim from sync-walmart-orders.js (proven working) ──
@@ -593,6 +662,24 @@ function parseCsvLine(line) {
   return cols.map(c => c.trim());
 }
 
+// Whole-file, quote-aware CSV parse (ADDED 2026-11-03): commas AND line
+// breaks inside quoted cells stay inside the cell.
+function parseCsv(text) {
+  const rows = []; let row = [], cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(cur.trim()); cur = ''; }
+    else if (c === '\n') { row.push(cur.trim()); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
+  return rows;
+}
+
 async function fetchMasterSkuList() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
   const resp   = await fetch(csvUrl);
@@ -605,11 +692,17 @@ async function fetchMasterSkuList() {
   // confirmed fixed; embedded newlines are a separate, rarer edge case
   // not addressed here — flagging rather than silently assuming it's
   // covered too.
-  const lines = csv.trim().split('\n').slice(1);
+  // FIXED 2026-11-03 — real incident: a master-list note with a LINE BREAK
+  // inside a quoted cell (eraclea, from ~2026-10-30) was cut into extra
+  // "rows" by the old split('\n'), putting note text in the SKU and Item ID
+  // columns; those fragments were logged daily in the eraclea tab as if
+  // they were products. The whole file is now parsed quote-aware, so a line
+  // break inside a quoted cell stays inside that cell.
+  const table = parseCsv(csv).slice(1);
 
   const out = [];
-  for (const line of lines) {
-    const cols      = parseCsvLine(line);
+  for (const cols of table) {
+    if (!cols.some(c => c.trim())) continue;
     const asin      = cols[0] || '';
     const sku       = cols[1] || '';
     const rawBrand  = (cols[3] || '').trim();
@@ -623,6 +716,18 @@ async function fetchMasterSkuList() {
     const walmartItemId = (cols[8] || '').trim();
 
     if (!sku) continue;
+
+    // ADDED 2026-11-03 — sanity checks, so a misparsed or malformed row can
+    // never be logged as a product: Walmart Item IDs are all digits, and
+    // SKUs never contain spaces.
+    if (walmartItemId && !/^\d+$/.test(walmartItemId)) {
+      console.warn(`[sync-walmart-inventory] skipped master-list row: Walmart Item ID "${walmartItemId.slice(0, 40)}" is not numeric (SKU "${sku.slice(0, 40)}")`);
+      continue;
+    }
+    if (/\s/.test(sku)) {
+      console.warn(`[sync-walmart-inventory] skipped master-list row: SKU "${sku.slice(0, 60)}" contains spaces`);
+      continue;
+    }
 
     // Added 2026-08-04 per Jaclyn: skip this SKU ENTIRELY if it has no
     // Walmart Item ID — a blank column I means this product isn't sold on
