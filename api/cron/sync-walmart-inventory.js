@@ -66,7 +66,8 @@ const META_HEADERS = ['KEY', 'VALUE', 'UPDATED_AT'];
 // columns keep their positions). All come from the GET /v3/items/{itemId}
 // lookup this cron already makes for product_name, so no extra Walmart calls.
 const HEADERS = ['date', 'sku', 'product_name', 'wfs_on_hand', 'wfs_available', 'last_synced',
-  'published_status', 'lifecycle_status', 'availability', 'is_duplicate', 'unpublished_reasons', 'price'];
+  'published_status', 'lifecycle_status', 'availability', 'is_duplicate', 'unpublished_reasons', 'price',
+  'walmart_item_id']; // ADDED 2026-11-03 per Jaclyn — Walmart's Item ID (master list column I), for looking items up in Seller Center
 
 // ADDED 2026-11-03 — account-wide Walmart listing health, one row per day,
 // written on the first run of each day (2 Walmart calls: Insights listing
@@ -485,7 +486,9 @@ function buildInventoryRow(item, wfs, productName, dateStr, nowIso, itemRecord =
   // own force-text convention under USER_ENTERED) since it can look
   // numeric and risk reinterpretation or lost leading zeros.
   const protectedSku = `'${item.sku}`;
-  const status = listingStatusCells(itemRecord); // ADDED 2026-11-03
+  // ADDED 2026-11-03 — listing-status cells + Walmart Item ID (kept as text
+  // with a leading apostrophe so Sheets never turns it into a number format).
+  const status = [...listingStatusCells(itemRecord), item.walmartItemId ? `'${item.walmartItemId}` : ''];
   if (wfs?.__error) return [dateStr, protectedSku, productName, '', '', nowIso, ...status];
   const { onHand, available, matchedNodes } = parseWfsShipNode(wfs);
   if (matchedNodes === 0) return [dateStr, protectedSku, productName, 0, 0, nowIso, ...status];
@@ -496,7 +499,7 @@ function buildInventoryRow(item, wfs, productName, dateStr, nowIso, itemRecord =
 // Blank (not guessed) when the lookup failed. unpublished_reasons only
 // appears on unpublished items; Walmart sends it as a list of reason texts.
 function listingStatusCells(rec) {
-  if (!rec || rec.__error) return ['', '', '', '', '', ''];
+  if (!rec || rec.__error) return ['', '', '', '', '', ''];  // walmart_item_id is added by the caller
   const reasons = rec.unpublishedReasons?.reason ?? rec.unpublishedReasons ?? '';
   const reasonText = Array.isArray(reasons) ? reasons.join(' | ') : (typeof reasons === 'object' ? JSON.stringify(reasons) : String(reasons || ''));
   return [
