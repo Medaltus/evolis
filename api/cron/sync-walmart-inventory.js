@@ -132,6 +132,54 @@ module.exports = async (req, res) => {
     }
   }
 
+
+  // ── Compliance / listing-health probe (ADDED 2026-11-03) ─────────────────
+  // GET /api/cron/sync-walmart-inventory?testCompliance=<Walmart Item ID>
+  // Reads only, writes nothing. Calls Walmart's Insights endpoints (unpublished
+  // items + listing quality) and returns each raw response, trimmed, so we can
+  // see exactly which compliance fields this account gets before building
+  // anything. The item-level Listing Quality request format isn't confirmed,
+  // so a few likely request shapes are tried side by side.
+  if (req.query.testCompliance) {
+    const itemId = String(req.query.testCompliance).trim();
+    try {
+      const tokenData = await getWalmartToken();
+      const token = tokenData.access_token;
+      if (!token) return res.status(500).json({ testMode: 'compliance', error: 'No access_token in Walmart token response' });
+      const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+      const trim = (raw) => {
+        // Keep responses readable: up to 5 list entries, plus any entry about this item.
+        const clone = JSON.parse(JSON.stringify(raw ?? null));
+        const walk = o => {
+          if (Array.isArray(o)) {
+            const hits = o.filter(x => JSON.stringify(x).includes(itemId));
+            return [...o.slice(0, 5), ...hits.filter(h => !o.slice(0, 5).includes(h))].map(walk);
+          }
+          if (o && typeof o === 'object') { for (const k of Object.keys(o)) o[k] = walk(o[k]); }
+          return o;
+        };
+        return walk(clone);
+      };
+      const probes = {
+        item_record:                 () => wmRequest('GET', `/v3/items/${encodeURIComponent(itemId)}?productIdType=ITEM_ID`, token),
+        unpublished_counts:          () => wmRequest('GET', `/v3/insights/items/unpublished/counts?fromDate=${fromDate}`, token),
+        unpublished_items:           () => wmRequest('GET', `/v3/insights/items/unpublished/items?fromDate=${fromDate}&limit=50`, token),
+        listing_quality_score:       () => wmRequest('GET', `/v3/insights/items/listingQuality/score`, token),
+        listing_quality_categories:  () => wmRequest('GET', `/v3/insights/items/listingQuality/categories`, token),
+        listing_quality_items_any:   () => wmRequest('POST', `/v3/insights/items/listingQuality/items?limit=5`, token, {}),
+        listing_quality_item_query:  () => wmRequest('POST', `/v3/insights/items/listingQuality/items?limit=5`, token, { query: { field: 'itemId', value: itemId } }),
+        listing_quality_item_filter: () => wmRequest('POST', `/v3/insights/items/listingQuality/items?limit=5`, token, { filters: [{ field: 'itemId', op: 'equals', values: [itemId] }] }),
+      };
+      const results = {};
+      for (const [name, fn] of Object.entries(probes)) {
+        results[name] = await fn().then(trim).catch(err => ({ __error: err.message }));
+      }
+      return res.status(200).json({ testMode: 'compliance', itemId, unpublishedSince: fromDate, results });
+    } catch (err) {
+      return res.status(500).json({ testMode: 'compliance', error: err.message });
+    }
+  }
+
   if (req.query.testListingSku) {
     const sku = req.query.testListingSku;
     const wpid = req.query.wpid || '';     // pass the wpid from a prior testSku-adjacent item_lookup, if you have one, for the by-ID probes below
@@ -428,7 +476,7 @@ function getWalmartToken() {
   });
 }
 
-function wmRequest(method, path, token) {
+function wmRequest(method, path, token, body = null) { // body: optional JSON, ADDED 2026-11-03 for the Insights POST probes
   return new Promise((resolve, reject) => {
     const clientId  = process.env.WALMART_CLIENT_ID;
     const partnerId = process.env.WALMART_PARTNER_ID;
@@ -452,6 +500,7 @@ function wmRequest(method, path, token) {
       });
     });
     req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
     req.end();
   });
 }
