@@ -286,7 +286,7 @@ module.exports = [
     tabName:         'high-on-love',
     skuPrefix:       'HOL',
     displayName:     'High On Love',
-    amazonBrandName: 'HIGHONLOVE', // still unverified against Brand Registry — see file header
+    amazonBrandName: 'HIGH ON LOVE', // VERIFIED 2026-11-04 via sync-subscriptions ?testRetention — Amazon's registered name has spaces; 'HIGHONLOVE' returned no retention. Used only by sync-subscriptions (SUBSCRIBER_RETENTION).
     // ADDED 2026-10-05 — its own seller account and SP-API app
     // (SP_CLIENT_ID_HOL / SP_CLIENT_SECRET_HOL / SP_REFRESH_TOKEN_HOL /
     // SP_SELLER_ID_HOL); ads are under the same Amazon Ads login as NewDerm.
