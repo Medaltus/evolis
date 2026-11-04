@@ -108,6 +108,43 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Failed to load ASIN→brand map', detail: err.message });
   }
 
+  // ── Test mode (ADDED 2026-11-03) ────────────────────────────────────────
+  // GET /api/cron/sync-subscriptions?testRetention=high-on-love
+  // Writes nothing. For one brand: how many ASINs the master sheet maps to it,
+  // which seller account its calls use, its active-subscriptions result, and
+  // Amazon's RAW retention answer for the configured amazonBrandName plus a
+  // few spelling variants (retention only matches Amazon's exact registered
+  // brand name; a wrong name succeeds but comes back empty).
+  if (req.query.testRetention) {
+    const brand = brands.find(b => b.id === String(req.query.testRetention).trim());
+    if (!brand) return res.status(400).json({ error: `No brand "${req.query.testRetention}" in brands.js` });
+    const account = accountForBrand(brand);
+    const brandAsins = Object.entries(asinBrandMap).filter(([, tab]) => tab === brand.tabName).map(([asin]) => asin);
+    const { startDate, endDate } = trailingMonthRange(MONTHS_OF_HISTORY);
+    const out = { testMode: 'retention', brand: brand.id, account, configuredAmazonBrandName: brand.amazonBrandName || null,
+      asinsMapped: brandAsins.length, window: { startDate, endDate } };
+    try {
+      out.activeSubscriptions = brandAsins.length
+        ? await fetchActiveSubscriptions(brandAsins, startDate, endDate, account)
+        : 'skipped — no ASINs mapped to this brand in the master sheet';
+    } catch (err) { out.activeSubscriptions = { error: err.message }; }
+    const base = String(brand.amazonBrandName || brand.id);
+    const words = base.replace(/([a-z])([A-Z])/g, '$1 $2');
+    const variants = [...new Set([brand.amazonBrandName, base.toUpperCase(), words.toUpperCase(), 'HIGH ON LOVE', 'HighOnLove', 'High On Love'].filter(Boolean))];
+    out.retentionByBrandName = {};
+    for (const name of variants) {
+      await sleep(RATE_LIMIT_DELAY_MS);
+      try {
+        out.retentionByBrandName[name] = await spRequest('POST', `${REPLENISHMENT_BASE}/sellingPartners/metrics/search`, {}, {
+          aggregationFrequency: 'MONTH', timeInterval: { startDate, endDate }, metrics: ['SUBSCRIBER_RETENTION'],
+          timePeriodType: 'PERFORMANCE', marketplaceId: process.env.SP_MARKETPLACE_ID, programTypes: ['SUBSCRIBE_AND_SAVE'],
+          filters: { brandNames: [name] },
+        }, account);
+      } catch (err) { out.retentionByBrandName[name] = { error: err.message }; }
+    }
+    return res.status(200).json(out);
+  }
+
   let isFirstBrand = true;
 
   for (const brand of brands.filter(b => b.active)) {
