@@ -2494,7 +2494,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="section-label">Key Performance Metrics</div>
       <div class="kpi-row">
         <div class="kpi-card" id="kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">5%</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="kpi-amazon-fees"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">$613.86</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="kpi-amazon-fees" title="Sum of Amazon Estimated fees (orders sheet, column P) for the month — cancelled orders excluded"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">26%</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">272</div><div class="kpi-mom flat">0% MOM</div></div>
         <div class="kpi-card" id="kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">85K</div><div class="kpi-mom dn">▼ 38% MOM</div></div>
@@ -2774,7 +2774,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="section-label">Key Performance Metrics</div>
       <div class="kpi-row">
         <div class="kpi-card" id="mx-kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="mx-kpi-amazon-fees"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">$613.86</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-amazon-fees" title="Sum of Amazon Estimated fees (orders sheet, column P) for the month — cancelled orders excluded"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
@@ -7580,9 +7580,14 @@ async function initSns() {
         ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
       }
 
-      // Amazon Fees KPI intentionally left as-is — pending a Finances/Product Fees
-      // API sync (net-new backend job), same shape as AD_SUMMARY. Do not overwrite
-      // with a guess in the meantime.
+      // Amazon Fees — column P of the orders sheet (see window.evolisAmazonFees). 2026-11-03
+      try {
+        const fees = await window.evolisAmazonFees(year, month, prevYear, prevMonth);
+        setKpiVal('kpi-amazon-fees', '$' + fees.curr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        setKpiMom('kpi-amazon-fees', pct(fees.curr, fees.prev));
+      } catch (e) {
+        console.warn('[Evolis] Amazon Fees KPI could not load:', e.message);
+      }
 
     } catch (err) {
       console.warn('[Evolis] initStewardshipLive failed, charts/KPIs remain at last rendered values:', err.message);
@@ -10462,9 +10467,14 @@ async function initSns() {
         ltdEl.textContent = '$' + Math.round(ltdTotal).toLocaleString();
       }
 
-      // Amazon Fees KPI intentionally left as-is — pending a Finances/Product Fees
-      // API sync (net-new backend job), same shape as AD_SUMMARY. Do not overwrite
-      // with a guess in the meantime.
+      // Amazon Fees — column P of the orders sheet (see window.evolisAmazonFees). 2026-11-03
+      try {
+        const fees = await window.evolisAmazonFees(year, month, prevYear, prevMonth);
+        setKpiVal('mx-kpi-amazon-fees', '$' + fees.curr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        setKpiMom('mx-kpi-amazon-fees', pct(fees.curr, fees.prev));
+      } catch (e) {
+        console.warn('[Evolis] Amazon Fees KPI could not load:', e.message);
+      }
 
     } catch (err) {
       console.warn('[Evolis] initStewardshipExternal failed, charts/KPIs remain at last rendered values:', err.message);
@@ -14464,6 +14474,50 @@ function getProductMaster() {
   })();
   return _productMasterPromise;
 }
+
+// ADDED 2026-11-03 per Jaclyn — Amazon Fees KPI (Brand Stewardship, internal
+// + external). Was hard-coded at $613.86. Now sums the orders sheet's
+// "Amazon Estimated fees" column (column P) for évolis rows dated in the
+// month. Cancelled orders are excluded: their rows still carry a fee
+// estimate, but Amazon doesn't charge fees on cancelled orders. Pending
+// orders are included (they're estimates for orders still shipping).
+// The sheet is fetched once and shared by both copies of the card.
+window.evolisAmazonFees = (function () {
+  let rowsPromise = null;
+  const nd = v => {
+    v = String(v || '').trim();
+    let m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}`;
+    m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? `${m[3]}-${m[1].padStart(2, '0')}` : '';
+  };
+  function load() {
+    if (!rowsPromise) {
+      rowsPromise = fetch('https://docs.google.com/spreadsheets/d/1SiYu8e2-Pfi14Aiuf6SAFytWVXb4_dtdNFT6wvLFPok/export?format=csv&gid=1163928587&_cb=' + Date.now(), { cache: 'no-store' })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(txt => {
+          const rows = parseCsvFull(txt);
+          const h = (rows[0] || []).map(x => String(x).trim().toLowerCase());
+          const iDate = h.indexOf('date'), iStatus = h.indexOf('status'), iBrand = h.indexOf('brand');
+          let iFee = h.indexOf('amazon estimated fees'); if (iFee < 0) iFee = 15; // column P
+          const byMonth = {};
+          rows.slice(1).forEach(r => {
+            if (String(r[iBrand] || '').trim().toLowerCase() !== 'evolis') return;
+            if (String(r[iStatus] || '').trim().toLowerCase() === 'cancelled') return;
+            const ym = nd(r[iDate]); if (!ym) return;
+            const fee = parseFloat(String(r[iFee] || '').replace(/[$,]/g, '')) || 0;
+            byMonth[ym] = (byMonth[ym] || 0) + fee;
+          });
+          return byMonth;
+        });
+      rowsPromise.catch(() => { rowsPromise = null; });
+    }
+    return rowsPromise;
+  }
+  return async function (year, month, prevYear, prevMonth) {
+    const byMonth = await load();
+    const k = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+    return { curr: byMonth[k(year, month)] || 0, prev: byMonth[k(prevYear, prevMonth)] || 0 };
+  };
+})();
 
 // ═══════════════════════════════════════════════════════════════════
 // TRAFFIC PAGE — added 2026-10-27 per Jaclyn. Ported from the VB
