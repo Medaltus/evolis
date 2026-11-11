@@ -89,7 +89,24 @@ module.exports = async (req, res) => {
       const asinMap = await C.loadAsinMap(accountBrands);
       const freshByTab = new Map();   // tab -> rows
       const totals = new Map();       // `${date}|${brandTab}` -> acc
-      for (const [date, rows] of days) {
+
+      // ── Vine / cancelled cleanup inputs (ADDED 2026-11-10) ─────────────
+      // Cleaned at WRITE time, from Amazon's fresh numbers, so a re-pulled
+      // day is cleaned again from raw — never subtracted twice.
+      const accountTabNames = accountBrands.map(b => b.tabName);
+      let orderFacts = {};
+      try { orderFacts = await C.loadOrderFacts(accountTabNames, new Set(days.keys())); }
+      catch (e) { problems.push(`orders sheet unreadable — days written without Vine/cancelled cleanup: ${e.message}`); }
+      for (const [tab, f] of Object.entries(orderFacts)) {
+        if (f.error) problems.push(`${tab}: orders tab unreadable — written without Vine/cancelled cleanup: ${f.error}`);
+      }
+      const priorVine = await readPriorVine(tabs, accountTabNames, new Set(days.keys()))
+        .catch(e => { problems.push(`could not read earlier Vine deductions (30-unit cap uses this run only): ${e.message}`); return new Map(); });
+      const vineUsed = new Map(); // `${tab}|${asin}` -> units deducted this run (draws on the 30-unit budget)
+      const cleaning = { cleaned: 0, notCovered: 0, vineUnits: 0, cancelledUnits: 0 };
+
+      for (const date of [...days.keys()].sort()) { // chronological, so the Vine budget is used in order
+        const rows = days.get(date);
         const perAsin = new Map();
         for (const r of rows) {
           const asin = (r.childAsin || r.parentAsin || '').toUpperCase(); if (!asin) continue;
@@ -105,11 +122,14 @@ module.exports = async (req, res) => {
         for (const [asin, a] of perAsin) {
           const m = asinMap.get(asin);
           const tab = m ? m.brandTab : UNMATCHED;
+          const c = cleanRow({ date, asin, tab, raw: a, info: m, facts: orderFacts[tab], priorVine, vineUsed });
+          if (c.covered) { cleaning.cleaned++; cleaning.vineUnits += c.vineUnits; cleaning.cancelledUnits += c.cancelledUnits; } else cleaning.notCovered++;
           if (!freshByTab.has(tab)) freshByTab.set(tab, []);
-          freshByTab.get(tab).push([date, asin, a.parent, m ? m.sku : '', a.s, a.pv, a.u, C.round2(a.rev), a.s ? C.round2(a.u / a.s * 100) : 0, a.bb == null ? '' : C.round2(a.bb)]);
+          freshByTab.get(tab).push([date, asin, a.parent, m ? m.sku : '', a.s, a.pv, c.units, c.sales, a.s ? C.round2(c.units / a.s * 100) : 0, a.bb == null ? '' : C.round2(a.bb),
+            c.covered ? c.vineUnits : '', c.covered ? c.cancelledUnits : '', c.covered ? c.salesDeducted : '']);
           const k = `${date}|${tab}`;
           const tt = totals.get(k) || { asins: 0, s: 0, pv: 0, u: 0, rev: 0 };
-          tt.asins++; tt.s += a.s; tt.pv += a.pv; tt.u += a.u; tt.rev += a.rev; totals.set(k, tt);
+          tt.asins++; tt.s += a.s; tt.pv += a.pv; tt.u += c.units; tt.rev += c.sales; totals.set(k, tt); // totals use the cleaned numbers
         }
         // A no-data day still gets a totals row, so the gap-fill knows it's done.
         if (!perAsin.size) totals.set(`${date}|${notAvailable.has(date) ? C.NOT_AVAILABLE_BRAND : C.NO_DATA_BRAND}`, { asins: 0, s: 0, pv: 0, u: 0, rev: 0 });
@@ -119,7 +139,7 @@ module.exports = async (req, res) => {
       const cutoff = C.addDays(today, -C.RETENTION_DAYS);
       const accountTabs = [...accountBrands.map(b => b.tabName), UNMATCHED];
       const plan = await planBrandTabs(tabs, accountTabs, freshByTab, new Set(days.keys()), cutoff);
-      written = { ...written, asinRows: plan.asinRows, rowsRemoved: plan.rowsRemoved, byTab: plan.byTab, days: days.size };
+      written = { ...written, asinRows: plan.asinRows, rowsRemoved: plan.rowsRemoved, byTab: plan.byTab, days: days.size, cleaning };
 
       // ── Daily Totals: replace only THIS account's rows for these days ──
       const finalCut = C.addDays(today, -C.FINAL_AFTER);
@@ -209,6 +229,12 @@ async function planBrandTabs(tabs, accountTabs, freshByTab, rewriteDates, cutoff
     ranges.reverse().forEach(([s, e]) => structural.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: s, endIndex: e } } }));
     rowsRemoved += del.length;
 
+    // ADDED 2026-11-10 — make sure the tab is wide enough for the deduction
+    // columns and its header row lists them (tabs were created 10 columns wide).
+    const cols = tab.gridProperties?.columnCount || 0;
+    if (cols < C.BRAND_HEADERS.length) structural.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: C.BRAND_HEADERS.length - cols } });
+    data.push({ range: `${C.q(title)}!A1`, values: [C.BRAND_HEADERS] });
+
     const fresh = freshByTab.get(title) || [];
     if (!fresh.length) return;
     const remaining = dates.length - del.length;           // data rows left after deletions
@@ -221,6 +247,76 @@ async function planBrandTabs(tabs, accountTabs, freshByTab, rewriteDates, cutoff
     byTab[title] = fresh.length; asinRows += fresh.length;
   });
   return { structural, data, rowsRemoved, asinRows, byTab };
+}
+
+// ── Vine / cancelled cleanup (ADDED 2026-11-10) ────────────────────────────
+// Same rules as clean-business-report-vine.js (monthly), applied per day:
+//   cancelled = the orders sheet's cancelled units / dollars for that ASIN + day
+//   Vine      = Amazon units − orders-sheet units (orders leave Vine out) −
+//               cancelled units, only if the ASIN was enrolled in Vine that
+//               month or the next two (master list column F), capped at the
+//               30-unit enrollment budget; Vine dollars = units × list price (E).
+// Two fixes vs. the monthly cleaner: dates are compared as real dates (it
+// compares raw text), and cancelled units are taken out of the Vine delta
+// (it subtracts them in both places for Vine-enrolled ASINs).
+// A day older than the orders sheet's coverage can't be checked → raw numbers,
+// deduction cells left blank ("not cleaned").
+function cleanRow({ date, asin, tab, raw, info, facts, priorVine, vineUsed }) {
+  const rawUnits = raw.u, rawSales = raw.rev;
+  if (!facts || facts.error || !facts.coverageStart || date < facts.coverageStart) {
+    return { covered: false, units: rawUnits, sales: C.round2(rawSales), vineUnits: 0, cancelledUnits: 0, salesDeducted: 0 };
+  }
+  const f = facts.byKey.get(`${asin}|${date}`) || { units: 0, cancelledUnits: 0, cancelledSales: 0 };
+  const cancelledUnits = Math.min(f.cancelledUnits, rawUnits);
+  const cancelledSales = f.cancelledUnits ? f.cancelledSales * (cancelledUnits / f.cancelledUnits) : 0;
+
+  let vineUnits = 0, vineSales = 0;
+  const vm = info?.vineMonth;
+  if (vm) {
+    const window = [vm, addMonth(vm, 1), addMonth(vm, 2)];
+    if (window.includes(date.slice(0, 7))) {
+      const key = `${tab}|${asin}`;
+      const earlier = (priorVine.get(key) || []).filter(x => window.includes(x.date.slice(0, 7))).reduce((n, x) => n + x.units, 0);
+      const budget = Math.max(0, C.VINE_BUDGET - earlier - (vineUsed.get(key) || 0));
+      const delta = rawUnits - f.units - cancelledUnits;
+      vineUnits = Math.max(0, Math.min(delta, budget));
+      vineSales = (info.price || 0) * vineUnits;
+      if (vineUnits) vineUsed.set(key, (vineUsed.get(key) || 0) + vineUnits);
+    }
+  }
+  const units = Math.max(0, rawUnits - vineUnits - cancelledUnits);
+  const sales = Math.max(0, C.round2(rawSales - vineSales - cancelledSales));
+  return { covered: true, units, sales, vineUnits, cancelledUnits, salesDeducted: C.round2(Math.min(rawSales, vineSales + cancelledSales)) };
+}
+function addMonth(ym, n) {
+  const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+// Vine units already deducted on OTHER days (not being rewritten this run),
+// per tab + ASIN, so the 30-unit budget spans runs. Skips tabs that don't
+// have the Vine column yet (nothing deducted there before).
+async function readPriorVine(tabs, tabNames, rewriteDates) {
+  const byTitle = new Map(tabs.map(t => [t.title, t]));
+  const present = tabNames.filter(t => (byTitle.get(t)?.gridProperties?.columnCount || 0) > C.VINE_COL_INDEX);
+  const out = new Map();
+  if (!present.length) return out;
+  const L = String.fromCharCode(65 + C.VINE_COL_INDEX);
+  const ranges = present.flatMap(t => [`${C.q(t)}!A2:B`, `${C.q(t)}!${L}2:${L}`]);
+  const d = await C.gs('GET', `/values:batchGet?${ranges.map(r => `ranges=${C.rng(r)}`).join('&')}`);
+  const vr = d.valueRanges || [];
+  present.forEach((t, i) => {
+    const ab = vr[2 * i]?.values || [], k = vr[2 * i + 1]?.values || [];
+    ab.forEach((row, j) => {
+      const date = C.normDate(row[0]), asin = String(row[1] || '').toUpperCase();
+      const units = parseInt((k[j] || [])[0], 10) || 0;
+      if (!date || !asin || !units || rewriteDates.has(date)) return;
+      const key = `${t}|${asin}`;
+      if (!out.has(key)) out.set(key, []);
+      out.get(key).push({ date, units });
+    });
+  });
+  return out;
 }
 
 async function ensureRows(tabs, title, minRows) {
