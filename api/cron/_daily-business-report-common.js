@@ -38,13 +38,22 @@
  * sessionsB2B, CONVERSION_RATE = units ÷ sessions × 100.
  */
 
-const { getSheetsToken } = require('../config/_sheets_client');
+const { getSheetsToken, readRows } = require('../config/_sheets_client');
+const sheetsConfig = require('../config/sheets'); // orders sheet, for the Vine / cancelled cleanup (2026-11-10)
 const brands = require('../config/brands');
 
 const DAILY_SHEET_ID = '1QLjUvYg-JR6jQmdFlykypkNarqsZvTCOgA3bFagDlVg';
 const MASTER_GID = '164358627'; // Master SKU List "Product Short Name": A=asin, B=sku, D=brand
 
-const BRAND_HEADERS  = ['DATE', 'ASIN', 'PARENT_ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE', 'BUY_BOX_PCT'];
+// UNITS_ORDERED / ORDERED_PRODUCT_SALES / CONVERSION_RATE are written already
+// CLEANED of Vine and cancelled orders (CHANGED 2026-11-10 per Jaclyn — reports
+// read these columns directly). The three columns at the end record what was
+// taken out; BLANK there means the day is older than the orders data, so it
+// could not be cleaned and holds Amazon's raw numbers.
+const BRAND_HEADERS  = ['DATE', 'ASIN', 'PARENT_ASIN', 'SKU', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE', 'BUY_BOX_PCT',
+  'VINE_UNITS_DEDUCTED', 'CANCELLED_UNITS_DEDUCTED', 'SALES_DEDUCTED'];
+const VINE_COL_INDEX = 10; // VINE_UNITS_DEDUCTED (column K)
+const VINE_BUDGET = 30;    // max units one Vine enrollment can account for (same rule as clean-business-report-vine.js)
 const unmatchedTabFor = account => (account === 'newderm' ? 'unmatched' : `unmatched_${account}`);
 const TOTALS_TAB     = 'Daily Totals';
 const TOTALS_HEADERS = ['DATE', 'ACCOUNT', 'BRAND', 'ASINS', 'SESSIONS', 'PAGE_VIEWS', 'UNITS_ORDERED', 'ORDERED_PRODUCT_SALES', 'CONVERSION_RATE', 'FINAL', 'SYNCED_AT'];
@@ -186,10 +195,58 @@ async function loadAsinMap(accountBrands) {
     const brand = candidates.find(b => !b.marketplaceId) || candidates[0];
     if (!brand) continue;
     const cur = map.get(asin);
-    // Prefer the FBA SKU over its -SF twin for the SKU column.
-    if (!cur || (/-SF$/i.test(cur.sku) && !/-SF$/i.test(sku))) map.set(asin, { brandTab: brand.tabName, sku });
+    const price = parseFloat(String(r[4] || '').replace(/[$,]/g, '')) || 0;  // column E
+    const vineMonth = vineMonthOf(r[5]);                                    // column F: date enrolled in Vine
+    // Prefer the FBA SKU over its -SF twin for the SKU column; keep any Vine info found on either row.
+    if (!cur || (/-SF$/i.test(cur.sku) && !/-SF$/i.test(sku))) {
+      map.set(asin, { brandTab: brand.tabName, sku, price: price || cur?.price || 0, vineMonth: vineMonth || cur?.vineMonth || null });
+    } else if (!cur.vineMonth && vineMonth) {
+      cur.vineMonth = vineMonth; if (!cur.price) cur.price = price;
+    }
   }
   return map;
+}
+
+// "YYYY-MM" from the master list's Vine enrollment date (ISO, M/D/YYYY or a Sheets day count).
+function vineMonthOf(v) {
+  const iso = normDate(String(v || '').trim());
+  return iso ? iso.slice(0, 7) : null;
+}
+
+// ── Orders facts for the cleanup (ADDED 2026-11-10) ─────────────────────────
+// Per brand tab: the earliest date the orders sheet covers, and per
+// ASIN + day the units that are NOT cancelled (the orders sheet already leaves
+// Vine orders out) plus cancelled units and dollars. Dates are read in any
+// format (the monthly cleaner compared raw text, which misses "10/5/2026").
+async function loadOrderFacts(tabNames, wantedDates) {
+  const out = {};
+  for (const tab of tabNames) {
+    let rows;
+    try { rows = await readRows(sheetsConfig.orders, tab); }
+    catch (err) { out[tab] = { error: err.message }; continue; }
+    let coverageStart = null;
+    const byKey = new Map();
+    for (const r of rows || []) {
+      const d = normDate(r.date);
+      if (!d) continue;
+      if (!coverageStart || d < coverageStart) coverageStart = d;
+      if (!wantedDates.has(d)) continue;
+      const asin = String(r.asin || '').trim().toUpperCase();
+      if (!asin) continue;
+      const k = `${asin}|${d}`;
+      const f = byKey.get(k) || { units: 0, cancelledUnits: 0, cancelledSales: 0 };
+      const units = parseInt(r.unit_count, 10) || 0;
+      if (String(r.status || '').toLowerCase() === 'cancelled') {
+        f.cancelledUnits += units;
+        f.cancelledSales += parseFloat(String(r.item_price || 0).replace(/[$,]/g, '')) || 0; // line-item total already
+      } else {
+        f.units += units;
+      }
+      byKey.set(k, f);
+    }
+    out[tab] = { coverageStart, byKey };
+  }
+  return out;
 }
 function parseCsv(text) {
   const out = []; let row = [], cur = '', inQ = false;
@@ -216,5 +273,5 @@ module.exports = {
   DAILY_SHEET_ID, BRAND_HEADERS, unmatchedTabFor, TOTALS_TAB, TOTALS_HEADERS, NO_DATA_BRAND, NOT_AVAILABLE_BRAND, FATAL_LIMIT,
   RETENTION_DAYS, BACKFILL_DAYS, RECENT_OFFSETS, FINAL_AFTER, MAX_REQUESTS_PER_RUN, CELL_ALERT,
   todayPT, addDays, normDate, dayRange, gs, rng, q, getTabs, ensureTabs, readMeta, writeMeta, readPending, readTotals,
-  loadAsinMap, isUsBrand, sleep, round2, brands,
+  loadAsinMap, loadOrderFacts, VINE_COL_INDEX, VINE_BUDGET, isUsBrand, sleep, round2, brands,
 };
