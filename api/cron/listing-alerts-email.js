@@ -102,7 +102,11 @@ module.exports = async (req, res) => {
 
   const dateGiven = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || ''));
   const reportDate = dateGiven ? String(req.query.date) : todayEt();
-  const prevDate = addDays(reportDate, -1);
+  // CHANGED 2026-11-13 — weekdays only. The report itself is TODAY's sync vs
+  // the master SKU list; prevDate is only the "before" for the change checks
+  // (category, images) and the NEW tags: the last report day's sync, so on a
+  // Monday that's Friday and weekend changes aren't lost.
+  const prevDate = previousWeekday(reportDate);
   const scheduled = !testTo.length && !preview && !force && !dateGiven;
 
   try {
@@ -482,7 +486,8 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo, sc
           <td style="background:#001F60;padding:24px 32px;">
             <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">NewDerm &middot; Amazon Listings</div>
             <div style="font-size:24px;color:#ffffff;font-weight:700;margin-top:6px;font-family:Georgia,'Times New Roman',serif;">Listing Alerts</div>
-            <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${escapeHtml(fmtDay(reportDate))} &middot; compared with the master SKU list and ${escapeHtml(fmtDay(prevDate))}</div>
+            <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${escapeHtml(fmtDay(reportDate))} &middot; today's product sync compared with the master SKU list</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px;">Category and image changes, and NEW tags, are since the last report (${escapeHtml(fmtDay(prevDate))})</div>
             ${scope ? `<div style="font-size:12px;color:#24E9A3;margin-top:6px;">${escapeHtml(scope)}</div>` : ''}
           </td>
         </tr>
@@ -526,6 +531,11 @@ function buildWorkbook(found) {
 
 // ── Dates ──────────────────────────────────────────────────────────────────
 function todayEt() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()); }
+function previousWeekday(iso) {
+  let d = addDays(iso, -1);
+  while ([0, 6].includes(new Date(d + 'T12:00:00Z').getUTCDay())) d = addDays(d, -1);
+  return d;
+}
 function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 function fmtDay(iso) { return new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
