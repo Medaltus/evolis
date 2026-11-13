@@ -134,8 +134,10 @@ const HEADERS = [
 // (its row writes stop at column AE), but its header check expects an exact
 // match, and its ?force=true clear step must keep them — so it needs to
 // know they exist.
-const { OFFER_HEADERS } = require('../config/product-offer-columns');
-const SHEET_HEADERS = [...HEADERS, ...OFFER_HEADERS];
+const { OFFER_HEADERS, IMAGE_HEADERS = [] } = require('../config/product-offer-columns');
+const SHEET_HEADERS = [...HEADERS, ...OFFER_HEADERS, ...IMAGE_HEADERS];
+// ADDED 2026-11-13 — the images column sits after the offer columns (AL).
+const IMAGES_COL = colLetterOf(SHEET_HEADERS.indexOf('images'));
 
 // Column letters for the formulas below — spelled out once here so a
 // future HEADERS reorder doesn't silently break the formula strings.
@@ -295,6 +297,9 @@ module.exports = async (req, res) => {
     try {
       if (!tabTokens[item.brandTabName]) {
         tabTokens[item.brandTabName] = await ensureTab(sheets.products, item.brandTabName, SHEET_HEADERS);
+        // ADDED 2026-11-13 — make room for the images column and label it.
+        await prepareImagesColumn(item.brandTabName, tabTokens[item.brandTabName])
+          .catch(err => console.warn(`[sync-products] ${item.brandTabName} — images column setup failed (row writes continue without images):`, err.message));
         const existingRows = await readRows(sheets.products, item.brandTabName);
         tabNextRow[item.brandTabName] = existingRows.length + 2; // +1 for header row, +1 to move past the last existing row
 
@@ -453,7 +458,18 @@ module.exports = async (req, res) => {
       // written to, always, by construction — not two systems that are
       // merely supposed to agree.
       const range = `${item.brandTabName}!A${rowNumber}:${COL_QTY_ON_HAND}${rowNumber}`;
-      await updateRange(sheets.products, range, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
+      // CHANGED 2026-11-13 — the row's main cells and its images cell go out
+      // in ONE Sheets call (values:batchUpdate), so adding images costs no
+      // extra writes. Falls back to the original single-range write if the
+      // images column isn't available on this tab.
+      if (imagesReady[item.brandTabName] && IMAGES_COL) {
+        await batchWriteRanges(tabTokens[item.brandTabName], [
+          { range, values: [row] },
+          { range: `${item.brandTabName}!${IMAGES_COL}${rowNumber}`, values: [[row.images || '']] },
+        ]);
+      } else {
+        await updateRange(sheets.products, range, [row], tabTokens[item.brandTabName], 'USER_ENTERED');
+      }
       processed++;
     } catch (err) {
       console.error(`[sync-products] ${item.sku} (${item.brandTabName}) failed:`, err.message);
@@ -557,15 +573,27 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
   const b2cOffer = (listing?.offers || []).find(o => o.offerType === 'B2C');
   const offersStr = b2cOffer ? `${b2cOffer.price?.currencyCode || ''} ${b2cOffer.price?.amount || ''}`.trim() : '';
 
+  // CHANGED 2026-11-13 — each issue also carries Amazon's enforcement
+  // actions (e.g. LISTING_SUPPRESSED, ATTRIBUTE_SUPPRESSED, CATALOG_ITEM_REMOVED)
+  // and issue categories (e.g. INVALID_IMAGE) in {braces} at the end, so the
+  // Listing Alerts email can tell a real suppression from a warning. Same
+  // column and same "[SEVERITY] attrs: message" start as before.
   const issuesStr = (listing?.issues || [])
-    .map(iss => `[${iss.severity}] ${(iss.attributeNames || []).join(',')}: ${iss.message}`)
+    .map(iss => {
+      const tags = [
+        ...((iss.enforcements?.actions || []).map(a => a.action).filter(Boolean)),
+        ...((iss.categories || []).filter(Boolean)),
+      ];
+      return `[${iss.severity}] ${(iss.attributeNames || []).join(',')}: ${iss.message}${tags.length ? ` {${[...new Set(tags)].join('; ')}}` : ''}`;
+    })
     .join(' | ');
 
   const salesRanksStr = (catalog?.salesRanks?.[0]?.classificationRanks || [])
     .map(r => `${r.title} (#${r.rank})`)
     .join('; ');
 
-  return [
+  const imagesStr = imageSlots(catalog); // ADDED 2026-11-13 — carried on the row, not one of its 31 cells
+  return Object.assign([
     dateStr,
     sku,
     asin,
@@ -624,7 +652,7 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
     // AND inbound (still in transit, not physically on hand yet) — per
     // exact definition given 2026-07-20.
     `=${COL_FULFILLABLE}${rowNumber}+${COL_RESERVED}${rowNumber}+${COL_SELLER_FULFILLED}${rowNumber}`,
-  ];
+  ], { images: imagesStr });
 }
 
 // ── API calls ───────────────────────────────────────────────────────────────
@@ -861,14 +889,17 @@ async function clearRowsForDate(dateStr, brandList = brands.filter(b => b.active
     try {
       const token = await ensureTab(sheets.products, brand.tabName, SHEET_HEADERS);
       const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA'); // preserve formula text, not computed values
+      rows.forEach((r, i) => { r.__row = i + 2; }); // original sheet row (readRows keeps one entry per row)
       const kept  = rows.filter(r => normalizeSheetDate(r.date) !== dateStr);
       if (kept.length !== rows.length) {
         // CHANGED 2026-10-20 — rewrite using the tab's OWN columns (readRows
         // keys every row by row 1), not this file's HEADERS: otherwise a
         // force run wiped every column after qty_on_hand (the offer columns
         // from sync-product-offers.js) on every row of the tab.
-        const cols = rows.length && HEADERS.every(h => h in rows[0]) ? Object.keys(rows[0]) : SHEET_HEADERS;
-        const rowArrays = kept.map(r => cols.map(h => r[h] ?? ''));
+        const cols = (rows.length && HEADERS.every(h => h in rows[0]) ? Object.keys(rows[0]) : SHEET_HEADERS).filter(h => h !== '__row');
+        // Rows below a removed one move up; renumber each formula's own-row
+        // references so they keep pointing at their own row (ADDED 2026-10-21).
+        const rowArrays = kept.map((r, j) => cols.map(h => moveOwnRowRefs(r[h] ?? '', r.__row, j + 2)));
         await replaceRows(sheets.products, brand.tabName, cols, rowArrays, token, 'USER_ENTERED');
         console.log(`[sync-products] ${brand.id} — cleared ${rows.length - kept.length} existing rows for ${dateStr}`);
       }
@@ -913,4 +944,82 @@ function toEstIso(date) {
   }).formatToParts(date);
   const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.000Z`;
+}
+
+// ADDED 2026-10-21 — sync-products.js writes formulas that reference their
+// OWN row by number (e.g. "=D57+E57+J57", "=AE57-E57"). When a rewrite moves
+// a row (trimming old rows from the top shifts everything up), those
+// numbers must move with it, or every formula ends up adding up some other
+// SKU's numbers. Rewrites a formula's references to oldRow so they point at
+// newRow; anything else (including numbers like the 90 in "/90") is left alone.
+function moveOwnRowRefs(value, oldRow, newRow) {
+  if (typeof value !== 'string' || !value.startsWith('=') || oldRow === newRow) return value;
+  return value.replace(/(\$?[A-Z]{1,3}\$?)(\d+)(?![\d(])/g, (m, col, num) => (Number(num) === oldRow ? `${col}${newRow}` : m));
+}
+
+// ── Images column (ADDED 2026-11-13) ──────────────────────────────────────
+// One cell per SKU per day: each image slot's current Amazon image ID, from
+// the catalog response this file already fetches (includedData: images).
+// "MAIN:71aBc… | PT01:81xYz… | …" — the ID is the image file name in the
+// link, which changes whenever the picture in that slot is replaced.
+function imageSlots(catalog) {
+  const sets = Array.isArray(catalog?.images) ? catalog.images : [];
+  const best = {};
+  for (const set of sets) {
+    for (const im of set.images || []) {
+      if (!im?.variant || !im?.link) continue;
+      const area = (im.height || 0) * (im.width || 0);
+      if (!best[im.variant] || area > best[im.variant].area) best[im.variant] = { area, link: im.link };
+    }
+  }
+  const order = v => (v === 'MAIN' ? '0' : v.startsWith('PT') ? '1' + v : v === 'SWCH' ? '9' : '5' + v);
+  return Object.keys(best).sort((a, b) => order(a).localeCompare(order(b)))
+    .map(v => `${v}:${String(best[v].link).split('/').pop().replace(/\.[a-z0-9]+$/i, '')}`)
+    .join(' | ');
+}
+
+function colLetterOf(i) {
+  if (i < 0) return null;
+  let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); }
+  return s;
+}
+
+// Per tab, once per run: widen the grid if needed and label the column.
+const imagesReady = {};
+let productsGridCache = null;
+async function prepareImagesColumn(tabName, token) {
+  if (imagesReady[tabName] || !IMAGES_COL) return;
+  const idx = SHEET_HEADERS.indexOf('images');
+  if (!productsGridCache) {
+    const meta = await sheetsCall(token, 'GET', `/${sheets.products}?fields=sheets.properties(sheetId,title,gridProperties)`);
+    productsGridCache = Object.fromEntries((meta.sheets || []).map(x => [x.properties.title, x.properties]));
+  }
+  const props = productsGridCache[tabName];
+  if (props && (props.gridProperties?.columnCount || 0) < idx + 1) {
+    await sheetsCall(token, 'POST', `/${sheets.products}:batchUpdate`, { requests: [{ appendDimension: {
+      sheetId: props.sheetId, dimension: 'COLUMNS', length: idx + 1 - props.gridProperties.columnCount } }] });
+    props.gridProperties.columnCount = idx + 1;
+  }
+  await batchWriteRanges(token, [{ range: `${tabName}!${IMAGES_COL}1`, values: [['images']] }]);
+  imagesReady[tabName] = true;
+}
+
+async function batchWriteRanges(token, data) {
+  return sheetsCall(token, 'POST', `/${sheets.products}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data });
+}
+
+// Sheets REST call with the same quota-aware retry as config/_sheets_client.js.
+async function sheetsCall(token, method, path, body) {
+  const waits = [2000, 4000, 8000, 16000, 20000, 30000];
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+      method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.ok) return res.json();
+    const text = await res.text();
+    const retryable = res.status === 429 || (res.status >= 500 && attempt < 4);
+    if (retryable && attempt < waits.length) { await new Promise(r => setTimeout(r, waits[attempt] + Math.floor(Math.random() * 1500))); continue; }
+    throw new Error(`Sheets ${method} ${res.status}: ${text.slice(0, 200)}`);
+  }
 }
