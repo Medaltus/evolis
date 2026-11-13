@@ -127,7 +127,7 @@ module.exports = async (req, res) => {
         const ourPrice = get(list[0], 'our_price') === '' ? null : num(get(list[0], 'our_price'));
         const owner = String(get(list[0], 'buybox_owner'));
         asinCards.push({
-          brand: brand.displayName || brand.id, asin, sku: skus.join(', '), manager: m.manager,
+          brand: brand.displayName || brand.id, asin, sku: skus.join(', '), manager: m.manager, domain: domainFor(brand.marketplaceId),
           buyboxOwner: owner.startsWith('us') ? owner : owner === 'none' ? 'Nobody (suppressed)' : (names[sellers.find(s => s.buybox)?.id] || owner),
           ourBuybox: owner.startsWith('us'), ourPrice, sellers,
           gone: [...prevSellers].filter(id => !todaySellers.has(id)).map(label),
@@ -242,7 +242,7 @@ function buildHtml(cards, reportDate, prevDate, unknownManagers, wouldSendTo, sc
       const bb = c.ourBuybox ? pill(esc(c.buyboxOwner.replace('us', 'Ours')), '#24E9A3', '#001F60') : pill(`Buy Box: ${esc(c.buyboxOwner)}`, '#FFD2CC', '#C0392B');
       const rows = c.sellers.map((s, n) => `<tr style="background:${n % 2 ? '#F7F8FC' : '#fff'};">
           <td style="${td}white-space:nowrap;">${s.isNew ? pill('NEW', '#24E9A3', '#001F60') : `<span style="font-size:10px;color:#9ba8c0;">since ${esc(fmtDay(s.firstSeen))}</span>`}</td>
-          <td style="${td}"><a href="https://www.amazon.com/sp?seller=${esc(s.id)}" style="color:#001F60;font-weight:700;text-decoration:none;">${esc(s.name)}</a>${s.name !== s.id ? `<div style="font-size:10px;color:#9ba8c0;">${esc(s.id)}</div>` : ''}</td>
+          <td style="${td}"><a href="${esc(sellerLink(c.domain, s.id, c.asin))}" style="color:#001F60;font-weight:700;text-decoration:none;">${esc(s.name)}</a>${s.name !== s.id ? `<div style="font-size:10px;color:#9ba8c0;">${esc(s.id)}</div>` : ''}</td>
           <td style="${td}">${esc(s.channel)}</td>
           <td style="${td}white-space:nowrap;">${money(s.price)}</td>
           <td style="${td}">${diffCell(s, c.ourPrice)}</td>
@@ -294,7 +294,7 @@ function buildWorkbook(cards) {
   const rows = [['Brand', 'SKU', 'ASIN', 'Brand Manager', 'Buy Box', 'Our price', 'Seller', 'Seller ID', 'New?', 'First seen', 'Ships', 'Their price', 'Difference vs ours', 'Holds Buy Box', 'Storefront']];
   for (const c of cards) for (const s of c.sellers) {
     rows.push([c.brand, c.sku, c.asin, c.manager || '', c.buyboxOwner, c.ourPrice ?? '', s.name, s.id, s.isNew ? 'NEW' : 'ongoing', s.firstSeen, s.channel,
-      s.price, s.diff ?? '', s.buybox ? 'YES' : '', `https://www.amazon.com/sp?seller=${s.id}`]);
+      s.price, s.diff ?? '', s.buybox ? 'YES' : '', sellerLink(c.domain, s.id, c.asin)]);
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 13 }, { wch: 18 }, { wch: 22 }, { wch: 10 }, { wch: 26 }, { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 6 }, { wch: 11 }, { wch: 12 }, { wch: 10 }, { wch: 40 }];
@@ -347,6 +347,18 @@ async function sheetsApi(token, method, path, body) {
 const quoteTab = t => `'${String(t).replace(/'/g, "''")}'`;
 const rng = (tab, a1) => encodeURIComponent(`${quoteTab(tab)}!${a1}`);
 const num = v => { const n = parseFloat(String(v).replace(/[$,]/g, '')); return Number.isFinite(n) ? n : null; };
+
+// Seller storefront link (FIXED 2026-11-13 per Jaclyn): the bare
+// /sp?seller=ID link opened a blank page. This is the format Amazon uses on
+// the product page's seller link; same for both marketplaces, only the
+// domain changes (amazon.com US, amazon.ca Canada).
+const CA_MARKETPLACE_ID = process.env.SP_MARKETPLACE_ID_CA || 'A2EUQ1WTGCTBG2';
+const domainFor = marketplaceId => (marketplaceId === CA_MARKETPLACE_ID ? 'ca' : 'com');
+function sellerLink(domain, sellerId, asin) {
+  return `https://www.amazon.${domain}/sp?ie=UTF8&seller=${encodeURIComponent(sellerId)}`
+    + `${asin ? `&asin=${encodeURIComponent(asin)}` : ''}&ref_=dp_merchant_link`;
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function todayEt() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()); }
 function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
