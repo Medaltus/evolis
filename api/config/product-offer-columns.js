@@ -15,4 +15,9 @@ module.exports = {
     'lowest_alt_price',   // lowest other-seller price incl. shipping
     'offers_synced_at',   // when this row's offer data was written (Eastern)
   ],
+  // ADDED 2026-11-13 — written by sync-products.js, AFTER the offer columns
+  // (so nothing existing moves). One cell per SKU per day: each image slot's
+  // current Amazon image ID, e.g. "MAIN:71aBc… | PT01:81xYz…". A replaced
+  // image (new infographic, new main photo) shows up as a changed ID.
+  IMAGE_HEADERS: ['images'],
 };
