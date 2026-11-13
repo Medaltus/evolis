@@ -26,14 +26,22 @@
  * Only SKUs on the master list with Status LIVE are ever included.
  * Each item is marked NEW (not present the day before) or ongoing.
  *
- * Recipients: awilcox@medaltus.com always, plus the Brand Manager (master
- * list "Brand Manager" column, AA) of every SKU in the email.
+ * Recipients (CHANGED 2026-11-13 per Jaclyn): awilcox@medaltus.com gets one
+ * email with EVERYTHING. Each Brand Manager (master list "Brand Manager"
+ * column, AA) gets their OWN email with only the SKUs assigned to them, and
+ * none on a day their SKUs have nothing to report. SKUs whose manager name
+ * isn't recognised still appear in the full email, with a note.
  * Organized by brand. Full detail is also attached as an Excel file.
  *
  * Modes:
  *   ?testTo=a@medaltus.com        send only to these @medaltus.com addresses;
- *                                 not logged, ignores the once-a-day check
+ *                                 not logged, ignores the once-a-day check.
+ *                                 Sends the version THAT address would get
+ *                                 (a brand manager's own SKUs, otherwise the
+ *                                 full email); &as=someone@medaltus.com picks
+ *                                 whose version to send, &as=all the full one.
  *   ?preview=true                 return the email HTML instead of sending
+ *                                 (full version; &as=… for someone's own)
  *   ?date=YYYY-MM-DD              report on a specific day (default: yesterday ET)
  *   ?force=true                   send again even if today's already went out
  *
@@ -123,39 +131,63 @@ module.exports = async (req, res) => {
 
     if (!found.length) return res.status(200).json({ sent: false, reason: 'nothing to report', reportDate });
 
-    // ── Recipients ──────────────────────────────────────────────────────
-    const managerEmails = new Set();
+    // ── Who gets which version (CHANGED 2026-11-13) ─────────────────────
+    const emailOf = name => MANAGER_EMAILS[String(name || '').trim().toLowerCase()] || null;
+    for (const f of found) if (f.manager && !emailOf(f.manager)) unknownManagers.add(f.manager);
+    const versions = new Map(); // email -> items
+    for (const e of ALWAYS_TO) versions.set(e, found);
     for (const f of found) {
-      const key = String(f.manager || '').trim().toLowerCase();
-      if (!key) continue;
-      if (MANAGER_EMAILS[key]) managerEmails.add(MANAGER_EMAILS[key]); else unknownManagers.add(f.manager);
+      const e = emailOf(f.manager);
+      if (!e || ALWAYS_TO.includes(e)) continue;
+      if (!versions.has(e)) versions.set(e, []);
+      versions.get(e).push(f);
     }
-    const realTo = [...new Set([...ALWAYS_TO, ...managerEmails])];
-    const to = testTo.length ? testTo : realTo;
 
-    const html = buildHtml(found, reportDate, prevDate, [...unknownManagers], testTo.length ? realTo : null);
-    if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
+    const asParam = String(req.query.as || '').trim().toLowerCase();
+    const pickVersion = who => (who === 'all' || !versions.has(who)) ? { who: 'all', items: found } : { who, items: versions.get(who) };
 
+    if (preview) {
+      const v = pickVersion(asParam || 'all');
+      res.setHeader('Content-Type', 'text/html');
+      return res.status(200).send(buildHtml(v.items, reportDate, prevDate, v.who === 'all' ? [...unknownManagers] : [], null, scopeNote(v.who, v.items)));
+    }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
-    const counts = countByType(found);
-    const subject = `${testTo.length ? '[TEST] ' : ''}Listing Alerts — ${summaryLine(counts)} · ${fmtDay(reportDate)}`;
-    const attachment = Buffer.from(XLSX.write(buildWorkbook(found), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
-    const sendRes = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: `Medaltus Reports <${FROM_EMAIL}>`, reply_to: REPLY_TO, to, subject, html,
-        attachments: [{ filename: `Listing Alerts_${reportDate}.xlsx`, content: attachment }],
-      }),
-    });
-    const sendBody = await sendRes.json().catch(() => ({}));
-    if (!sendRes.ok) throw new Error(`Resend ${sendRes.status}: ${JSON.stringify(sendBody).slice(0, 200)}`);
 
-    if (!testTo.length) {
-      const token = await ensureTab(sheets.products, LOG_TAB, ['report_date', 'sent_at', 'items', 'recipients', 'message_id']);
-      await appendRows(sheets.products, LOG_TAB, [[reportDate, new Date().toISOString(), found.length, to.join(', '), sendBody.id || '']], token);
+    // Test: one email, to the test address(es), with the chosen version.
+    const sends = testTo.length
+      ? [{ to: testTo, ...pickVersion(asParam || testTo[0]), test: true }]
+      : [...versions.entries()].map(([who, items]) => ({ to: [who], who: ALWAYS_TO.includes(who) ? 'all' : who, items }));
+
+    const results = [];
+    for (const send of sends) {
+      if (!send.items.length) continue;
+      const counts = countByType(send.items);
+      const realTo = send.who === 'all' ? ALWAYS_TO : [send.who];
+      const html = buildHtml(send.items, reportDate, prevDate, send.who === 'all' ? [...unknownManagers] : [],
+        send.test ? realTo : null, scopeNote(send.who, send.items));
+      const subject = `${send.test ? '[TEST] ' : ''}Listing Alerts — ${summaryLine(counts)} · ${fmtDay(reportDate)}`;
+      const attachment = Buffer.from(XLSX.write(buildWorkbook(send.items), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
+      const sendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: `Medaltus Reports <${FROM_EMAIL}>`, reply_to: REPLY_TO, to: send.to, subject, html,
+          attachments: [{ filename: `Listing Alerts_${reportDate}.xlsx`, content: attachment }],
+        }),
+      });
+      const body = await sendRes.json().catch(() => ({}));
+      results.push({ to: send.to, version: send.who, items: send.items.length, ok: sendRes.ok, id: body.id || null, error: sendRes.ok ? undefined : JSON.stringify(body).slice(0, 200) });
+      await sleep(600); // Resend rate limit
     }
-    return res.status(200).json({ sent: true, test: !!testTo.length, to, reportDate, counts, unknownManagers: [...unknownManagers] });
+    const failed = results.filter(r => !r.ok);
+    if (failed.length) await sendCronFailureAlert('listing-alerts-email', failed.map(f => `${f.to.join(',')}: ${f.error}`).join('\n'));
+
+    if (!testTo.length && results.some(r => r.ok)) {
+      const token = await ensureTab(sheets.products, LOG_TAB, ['report_date', 'sent_at', 'items', 'recipients', 'message_id']);
+      await appendRows(sheets.products, LOG_TAB, [[reportDate, new Date().toISOString(), found.length,
+        results.filter(r => r.ok).map(r => `${r.to.join(',')} (${r.items})`).join('; '), results.map(r => r.id).filter(Boolean).join(', ')]], token);
+    }
+    return res.status(200).json({ sent: results.some(r => r.ok), test: !!testTo.length, reportDate, emails: results, unknownManagers: [...unknownManagers] });
   } catch (err) {
     console.error('[listing-alerts-email]', err.message);
     await sendCronFailureAlert('listing-alerts-email', err.message);
@@ -342,7 +374,13 @@ function diffCell(d, side) {
   return `<span style="color:#9ba8c0;">${escapeHtml(d.before)}</span>${shown}<span style="color:#9ba8c0;">${escapeHtml(after)}</span>${note}`;
 }
 
-function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
+function scopeNote(who, items) {
+  if (who === 'all') return '';
+  const brandsShown = [...new Set(items.map(i => i.brand))].sort().join(', ');
+  return `Your SKUs only (${brandsShown}) — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.`;
+}
+
+function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo, scope = '') {
   const counts = countByType(found);
   const tiles = TYPES.filter(([t]) => counts[t].all).map(([t, label, color]) => `
     <td style="padding:0 8px 8px 0;vertical-align:top;">
@@ -373,7 +411,7 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
       const more = list.length > ROWS_PER_SECTION ? `<div style="font-size:11px;color:#6B7BA2;margin-top:6px;">+ ${list.length - ROWS_PER_SECTION} more in the attached Excel</div>` : '';
       return `<div style="margin:14px 0 4px;font-size:13px;font-weight:700;color:${color};">${escapeHtml(label)} &middot; ${list.length}</div>
         <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-          <tr><th style="${th}"></th><th style="${th}">SKU</th><th style="${th}">What</th>${showExpected ? `<th style="${th}">${t === 'category' ? 'Before' : 'Master list (expected)'}</th>` : ''}<th style="${th}">${t === 'category' ? 'Now' : t === 'contribution' ? 'Live on Amazon' : 'Detail'}</th></tr>
+          <tr><th style="${th}width:56px;"></th><th style="${th}width:120px;">SKU</th><th style="${th}width:120px;">What</th>${showExpected ? `<th style="${th}">${t === 'category' ? 'Before' : 'Master list (expected)'}</th>` : ''}<th style="${th}">${t === 'category' ? 'Now' : t === 'contribution' ? 'Live on Amazon' : 'Detail'}</th></tr>
           ${rows}</table>${more}`;
     }).join('');
     return `<tr><td style="padding:18px 32px 6px;">
@@ -394,12 +432,13 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
 <body style="margin:0;padding:0;background:#f0f2f7;font-family:Arial,Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f7;padding:32px 0;">
     <tr><td align="center">
-      <table width="760" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+      <table width="1100" cellpadding="0" cellspacing="0" style="width:1100px;max-width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);"> <!-- 760 → 1100 (2026-11-13) so long rows wrap less -->
         <tr>
           <td style="background:#001F60;padding:24px 32px;">
             <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">NewDerm &middot; Amazon Listings</div>
             <div style="font-size:24px;color:#ffffff;font-weight:700;margin-top:6px;font-family:Georgia,'Times New Roman',serif;">Listing Alerts</div>
             <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${escapeHtml(fmtDay(reportDate))} &middot; compared with the master SKU list and ${escapeHtml(fmtDay(prevDate))}</div>
+            ${scope ? `<div style="font-size:12px;color:#24E9A3;margin-top:6px;">${escapeHtml(scope)}</div>` : ''}
           </td>
         </tr>
         <tr><td style="padding:22px 32px 4px;"><table cellpadding="0" cellspacing="0"><tr>${tiles}</tr></table></td></tr>
