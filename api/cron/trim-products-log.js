@@ -19,6 +19,8 @@ const { ensureTab, readRows, replaceRows } = require('../config/_sheets_client')
 const brands = require('../config/brands');
 const sheets = require('../config/sheets');
 const { sendCronFailureAlert } = require('../_alerts');
+const { normalizeOrderDate } = require('../_dates');                       // ADDED 2026-10-21
+const { OFFER_HEADERS, IMAGE_HEADERS = [] } = require('../config/product-offer-columns'); // ADDED 2026-10-21 (+ images 2026-11-13)
 
 const RETENTION_DAYS = 395; // 13 months (365 + 30)
 // CHANGED 2026-09-01 per Jaclyn — was 730 days (2 years). Real math worked
@@ -60,6 +62,9 @@ const HEADERS = [
   'offers', 'issues', 'last_synced',
   'purchased_units_90d', 'days_of_inventory', 'qty_on_hand',
 ];
+// ADDED 2026-10-21 — columns after qty_on_hand belong to
+// sync-product-offers.js. Included so the header check matches.
+const SHEET_HEADERS = [...HEADERS, ...OFFER_HEADERS, ...IMAGE_HEADERS];
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -75,20 +80,47 @@ module.exports = async (req, res) => {
 
   for (const brand of brands.filter(b => b.active)) {
     try {
-      const token = await ensureTab(sheets.products, brand.tabName, HEADERS);
-      const rows  = await readRows(sheets.products, brand.tabName);
+      // FIXED 2026-10-21 — three problems, caught before this cron's first
+      // real trim (rows only age out after 395 days):
+      //   1. It rewrote each tab from its own fixed HEADERS list, which would
+      //      have erased every column after qty_on_hand (sync-product-
+      //      offers.js's alt-seller / Buy Box columns) on every row. Now it
+      //      rewrites using the tab's own columns.
+      //   2. It read DISPLAYED values and wrote them back as RAW text, which
+      //      would have frozen the live formulas (total_quantity,
+      //      days_of_inventory) into static numbers and turned every number
+      //      into text. Now it reads formulas ('FORMULA') and writes with
+      //      USER_ENTERED — same as sync-products.js's own clear step.
+      //   3. Dates were compared as raw text, which breaks as soon as a date
+      //      reads back as "10/21/2026" instead of "2026-10-21" (the same
+      //      bug found in trim-orders.js on 2026-10-06). Dates are now read
+      //      in any format; a row whose date can't be read is always KEPT,
+      //      and the cron refuses to empty a tab entirely.
+      const token = await ensureTab(sheets.products, brand.tabName, SHEET_HEADERS);
+      const rows  = await readRows(sheets.products, brand.tabName, 'FORMULA');
 
       const before = rows.length;
-      const kept   = rows.filter(r => (r.date || '') >= cutoffStr);
-      const after  = kept.length;
+      let unreadable = 0;
+      rows.forEach((r, i) => { r.__row = i + 2; }); // original sheet row (readRows keeps one entry per row)
+      const kept = rows.filter(r => {
+        const iso = normalizeOrderDate(r.date).iso;
+        if (!iso) { unreadable++; return true; }
+        return iso >= cutoffStr;
+      });
+      const after = kept.length;
 
+      if (before > 0 && after === 0) {
+        throw new Error(`trim would delete all ${before} rows — skipped (check the date column; first date seen: "${rows[0].date}")`);
+      }
       if (after < before) {
-        const rowArrays = kept.map(r => HEADERS.map(h => r[h] ?? ''));
-        await replaceRows(sheets.products, brand.tabName, HEADERS, rowArrays, token);
+        const cols = (HEADERS.every(h => h in rows[0]) ? Object.keys(rows[0]) : SHEET_HEADERS).filter(h => h !== '__row');
+        // Kept rows move up; renumber each formula's own-row references.
+        const rowArrays = kept.map((r, j) => cols.map(h => moveOwnRowRefs(r[h] ?? '', r.__row, j + 2)));
+        await replaceRows(sheets.products, brand.tabName, cols, rowArrays, token, 'USER_ENTERED');
         console.log(`[trim-products-log] ${brand.id} — trimmed ${before - after} rows (${before} → ${after})`);
       }
 
-      results.push({ brand: brand.id, before, after, trimmed: before - after });
+      results.push({ brand: brand.id, before, after, trimmed: before - after, ...(unreadable ? { unreadableDatesKept: unreadable } : {}) });
     } catch (err) {
       console.error(`[trim-products-log] ${brand.id} failed:`, err.message);
       results.push({ brand: brand.id, status: 'error', error: err.message });
@@ -106,3 +138,14 @@ module.exports = async (req, res) => {
 
   res.status(200).json({ results, cutoffDate: cutoffStr, timestamp: new Date().toISOString() });
 };
+
+// ADDED 2026-10-21 — sync-products.js writes formulas that reference their
+// OWN row by number (e.g. "=D57+E57+J57", "=AE57-E57"). When a rewrite moves
+// a row (trimming old rows from the top shifts everything up), those
+// numbers must move with it, or every formula ends up adding up some other
+// SKU's numbers. Rewrites a formula's references to oldRow so they point at
+// newRow; anything else (including numbers like the 90 in "/90") is left alone.
+function moveOwnRowRefs(value, oldRow, newRow) {
+  if (typeof value !== 'string' || !value.startsWith('=') || oldRow === newRow) return value;
+  return value.replace(/(\$?[A-Z]{1,3}\$?)(\d+)(?![\d(])/g, (m, col, num) => (Number(num) === oldRow ? `${col}${newRow}` : m));
+}
