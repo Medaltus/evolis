@@ -288,6 +288,14 @@
     {
       "path": "/api/cron/listing-alerts-email",
       "schedule": "15,45 14-20 * * 1-5"
+    },
+    {
+      "path": "/api/cron/sync-fbm-listings",
+      "schedule": "3,18,33,48 13 * * *"
+    },
+    {
+      "path": "/api/cron/alt-sellers-email",
+      "schedule": "15 21 * * 1-5"
     }
   ],
   "functions": {
