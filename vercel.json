@@ -284,6 +284,10 @@
     {
       "path": "/api/cron/sync-daily-business-report-process?account=hol",
       "schedule": "10,30,50 * * * *"
+    },
+    {
+      "path": "/api/cron/listing-alerts-email",
+      "schedule": "30 13 * * *"
     }
   ],
   "functions": {
