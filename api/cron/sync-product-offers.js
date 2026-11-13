@@ -68,6 +68,18 @@ const CALL_GAP_MS    = 10_500;  // 0.1 calls/sec, with a little headroom
 const TIME_BUDGET_MS = 240_000; // stop starting new calls after 4 minutes
 const BRAND_PAUSE_MS = 500;     // between brands' sheet reads (2026-10-28)
 
+
+// Seller storefront link (FIXED 2026-11-13 per Jaclyn): the bare
+// /sp?seller=ID link opened a blank page. This is the format Amazon uses on
+// the product page's seller link; same for both marketplaces, only the
+// domain changes (amazon.com US, amazon.ca Canada).
+const CA_MARKETPLACE_ID = process.env.SP_MARKETPLACE_ID_CA || 'A2EUQ1WTGCTBG2';
+const domainFor = marketplaceId => (marketplaceId === CA_MARKETPLACE_ID ? 'ca' : 'com');
+function sellerLink(domain, sellerId, asin) {
+  return `https://www.amazon.${domain}/sp?ie=UTF8&seller=${encodeURIComponent(sellerId)}`
+    + `${asin ? `&asin=${encodeURIComponent(asin)}` : ''}&ref_=dp_merchant_link`;
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 module.exports = async (req, res) => {
@@ -86,7 +98,7 @@ module.exports = async (req, res) => {
     const asin = String(req.query.asin).trim().toUpperCase();
     const account = req.query.account === 'hol' ? 'hol' : 'newderm';
     const raw = await fetchOffersBatch([asin], marketplaceId, account);
-    const parsed = raw.byAsin[asin] ? summarizeOffers(raw.byAsin[asin], ourSellerIds, {}) : null;
+    const parsed = raw.byAsin[asin] ? summarizeOffers(raw.byAsin[asin], ourSellerIds, {}, asin, marketplaceId) : null;
     return res.status(200).json({ testMode: true, asin, account, parsed, raw: raw.raw });
   }
 
@@ -208,7 +220,7 @@ module.exports = async (req, res) => {
         const { byAsin, failed } = await fetchOffersBatch(chunk, market, account);
         for (const asin of chunk) {
           if (byAsin[asin]) {
-            const s = summarizeOffers(byAsin[asin], ourSellerIds, names);
+            const s = summarizeOffers(byAsin[asin], ourSellerIds, names, asin, market);
             s.sellerIds.forEach(id => { if (!names[id] && !newSellerIds.has(id)) newSellerIds.set(id, asin); });
             results[`${asin}|${account}|${market}`] = s;
           }
@@ -331,7 +343,7 @@ async function fetchOffersBatch(asins, marketplaceId, account) {
   return { byAsin, failed, raw: resp };
 }
 
-function summarizeOffers(payload, ourSellerIds, names) {
+function summarizeOffers(payload, ourSellerIds, names, asin = '', marketplaceId = '') {
   const offers = payload.Offers || [];
   const isOurs = o => o.MyOffer === true || ourSellerIds.has(o.SellerId);
   const alt = offers.filter(o => !isOurs(o) && o.SellerId);
@@ -371,7 +383,7 @@ function summarizeOffers(payload, ourSellerIds, names) {
   return {
     altCount,
     altLabels: altIds.map(label),
-    altLinks: altIds.map(id => `https://www.amazon.com/sp?seller=${id}`),
+    altLinks: altIds.map(id => sellerLink(domainFor(marketplaceId), id, asin)),
     buyboxOwner,
     lowestAltPrice,
     sellerIds: altIds,
