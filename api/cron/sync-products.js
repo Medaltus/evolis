@@ -178,10 +178,10 @@ module.exports = async (req, res) => {
     const testItem = { sku: req.query.testSku, asin: req.query.testAsin, name: '(test mode)', account: testAccount };
     try {
       const [listing, inventory, catalog, sfListing] = await Promise.all([
-        fetchListing(testItem.sku, testItem.account).catch(err => ({ __error: err.message })),
-        fetchInventory(testItem.sku, testItem.account).catch(err => ({ __error: err.message })),
-        fetchCatalog(testItem.asin, testItem.account).catch(err => ({ __error: err.message })),
-        fetchListing(`${testItem.sku}-SF`, testItem.account).catch(err => ({ __error: err.message })),
+        fetchListing(testItem.sku, testItem.account, testItem.marketplaceId).catch(err => ({ __error: err.message })),
+        fetchInventory(testItem.sku, testItem.account, testItem.marketplaceId).catch(err => ({ __error: err.message })),
+        fetchCatalog(testItem.asin, testItem.account, testItem.marketplaceId).catch(err => ({ __error: err.message })),
+        fetchListing(`${testItem.sku}-SF`, testItem.account, testItem.marketplaceId).catch(err => ({ __error: err.message })),
       ]);
       return res.status(200).json({
         testMode: true, account: testItem.account, sku: testItem.sku, asin: testItem.asin,
@@ -522,10 +522,10 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
   // Fire all 4 API calls in parallel — the SF listing call costs no extra
   // wall-clock time this way vs. the 3 we were already making.
   const [listing, inventory, catalog, sfListing] = await Promise.all([
-    fetchListing(sku, item.account).catch(err => ({ __error: err.message })),
-    fetchInventory(sku, item.account).catch(err => ({ __error: err.message })),
-    fetchCatalog(asin, item.account).catch(err => ({ __error: err.message })),
-    fetchListing(sfSku, item.account).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
+    fetchListing(sku, item.account, item.marketplaceId).catch(err => ({ __error: err.message })),
+    fetchInventory(sku, item.account, item.marketplaceId).catch(err => ({ __error: err.message })),
+    fetchCatalog(asin, item.account, item.marketplaceId).catch(err => ({ __error: err.message })),
+    fetchListing(sfSku, item.account, item.marketplaceId).catch(() => null), // null = SF SKU doesn't exist for this product, that's fine
   ]);
 
   // ADDED 2026-07-22: these three errors used to be captured into
@@ -659,12 +659,12 @@ async function buildProductRow(item, dateStr, nowIso, rowNumber, units90d) {
 
 // account ADDED 2026-10-06 — defaults to NewDerm. The seller ID in the
 // Listings path must be the SKU's own account's, or Amazon says not found.
-function fetchListing(sku, account = 'newderm') {
+function fetchListing(sku, account = 'newderm', marketplaceId = process.env.SP_MARKETPLACE_ID) {
   return spRequest(
     'GET',
     `/listings/2021-08-01/items/${getSellerId(account)}/${encodeURIComponent(sku)}`,
     {
-      marketplaceIds: process.env.SP_MARKETPLACE_ID,
+      marketplaceIds: marketplaceId || process.env.SP_MARKETPLACE_ID,
       includedData: 'summaries,attributes,issues,offers,fulfillmentAvailability,procurement',
     },
     null,
@@ -672,14 +672,14 @@ function fetchListing(sku, account = 'newderm') {
   );
 }
 
-function fetchInventory(sku, account = 'newderm') {
+function fetchInventory(sku, account = 'newderm', marketplaceId = process.env.SP_MARKETPLACE_ID) {
   return spRequest(
     'GET',
     '/fba/inventory/v1/summaries',
     {
       granularityType: 'Marketplace',
-      granularityId:   process.env.SP_MARKETPLACE_ID,
-      marketplaceIds:  process.env.SP_MARKETPLACE_ID,
+      granularityId:   marketplaceId || process.env.SP_MARKETPLACE_ID,
+      marketplaceIds:  marketplaceId || process.env.SP_MARKETPLACE_ID,
       details:         'true',
       sellerSkus:      sku,
     },
@@ -688,12 +688,12 @@ function fetchInventory(sku, account = 'newderm') {
   );
 }
 
-function fetchCatalog(asin, account = 'newderm') {
+function fetchCatalog(asin, account = 'newderm', marketplaceId = process.env.SP_MARKETPLACE_ID) {
   return spRequest(
     'GET',
     `/catalog/2022-04-01/items/${asin}`,
     {
-      marketplaceIds: process.env.SP_MARKETPLACE_ID,
+      marketplaceIds: marketplaceId || process.env.SP_MARKETPLACE_ID,
       includedData:   'attributes,images,productTypes,salesRanks,summaries,dimensions',
     },
     null,
@@ -793,7 +793,11 @@ async function fetchMasterSkuList() {
 
     // account ADDED 2026-10-06 — each SKU's Amazon calls use the seller
     // account its brand belongs to (High On Love vs NewDerm).
-    out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart, account: accountForBrand(matched) });
+    // marketplaceId ADDED 2026-11-13 — a brand's own marketplace (skinuva-ca →
+    // Amazon.ca) for its Listings / inventory / catalog calls. Every call used
+    // to ask Amazon.com, so Canadian listings came back with no contributions.
+    out.push({ asin, sku, name, brandTabName: matched.tabName, sellsOnWalmart, account: accountForBrand(matched),
+      marketplaceId: matched.marketplaceId || process.env.SP_MARKETPLACE_ID });
   }
   return out;
 }
