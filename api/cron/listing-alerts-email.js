@@ -364,12 +364,18 @@ async function loadMaster() {
   const head = (rows[0] || []).map(h => h.trim().toLowerCase());
   const col = (name, fallback) => { const i = head.indexOf(name.toLowerCase()); return i >= 0 ? i : fallback; };
   const iAsin = col('ASIN', 0), iSku = col('SKU', 1), iStatus = col('Status', 7), iMgr = col('Brand Manager', 26);
+  const iChannel = col('Channel', 6); // column G
   const iBackend = col('Backend Keywords', -1), iSeasonal = col('Seasonal Backend Keywords', -1);
   const fieldIdx = Object.fromEntries(FIELDS.filter(f => f[1] !== 'backend_keywords').map(([h, c]) => [c, col(h, -1)]));
   const map = new Map();
   for (const r of rows.slice(1)) {
     const sku = String(r[iSku] || '').trim().toUpperCase();
     if (!sku) continue;
+    // FIXED 2026-11-13 per Jaclyn — the master list can have a row per channel
+    // for the same SKU; only rows whose Channel (column G) says Amazon are
+    // compared with Amazon data. Previously the last row won, so a SKU's
+    // Walmart copy was being compared with its Amazon listing.
+    if (!/amazon/i.test(String(r[iChannel] || ''))) continue;
     const get = i => (i >= 0 ? String(r[i] || '').trim() : '');
     map.set(sku, {
       asin: get(iAsin), status: get(iStatus).toUpperCase(), manager: get(iMgr),
