@@ -28,6 +28,16 @@
  * scheduled run picks up where the last one stopped. Stops starting new
  * Amazon calls after ~4 minutes to stay inside the 5-minute limit.
  *
+ * OFFER DETAIL (ADDED 2026-11-13): every offer Amazon returns is also saved,
+ * one row per offer per ASIN per day, to the "Newderm -SF product Sync" sheet
+ * (SHEET_SF_PRODUCTS, default 1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34),
+ * tab "<brand tab> offers": seller, FBA/FBM, listing price, shipping, landed
+ * price, difference from our price, and whether THAT offer holds the Buy Box,
+ * so "who has the Buy Box" is known down to our FBA vs our FBM (-SF) offer.
+ * Same Amazon calls as before; nothing extra is asked of Amazon. Re-running a
+ * day replaces that day's rows for the ASINs re-fetched (no duplicates), and
+ * rows older than 90 days are removed. Feeds the Alternate Sellers email.
+ *
  * Manual:
  *   GET /api/cron/sync-product-offers                  — normal run
  *   GET /api/cron/sync-product-offers?brand=skinuva    — one brand only
@@ -42,6 +52,13 @@ const { sendCronFailureAlert } = require('../_alerts');
 const { accountForBrand } = require('../_account');
 const { isoDate } = require('../_dates');
 const { OFFER_HEADERS } = require('../config/product-offer-columns');
+
+// ── Offer detail sheet (ADDED 2026-11-13) ──────────────────────────────────
+const DETAIL_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
+const DETAIL_SUFFIX = ' offers';
+const DETAIL_HEADERS = ['date', 'asin', 'sku', 'seller_id', 'seller_name', 'is_us', 'fulfillment', 'listing_price', 'shipping',
+  'landed_price', 'our_price', 'price_diff', 'is_buybox', 'buybox_owner', 'total_offers', 'synced_at'];
+const DETAIL_KEEP_DAYS = 90;
 
 const SHEETS_API     = 'https://sheets.googleapis.com/v4/spreadsheets';
 const NAMES_TAB      = 'seller_names';
@@ -132,7 +149,7 @@ module.exports = async (req, res) => {
       // Offer columns: wherever they already are, else appended after the last column.
       const idx = {}; let next = header.length; let headerNeedsWrite = false;
       OFFER_HEADERS.forEach(h => { const i = header.indexOf(h); if (i >= 0) idx[h] = i; else { idx[h] = next++; headerNeedsWrite = true; } });
-      const dateCol = header.indexOf('date'), asinCol = header.indexOf('asin');
+      const dateCol = header.indexOf('date'), asinCol = header.indexOf('asin'), skuCol = header.indexOf('sku');
       if (dateCol < 0 || asinCol < 0) { console.warn(`[sync-product-offers] ${brand.id} — no date/asin column, skipping`); continue; }
 
       const neededCols = Math.max(...Object.values(idx)) + 1;
@@ -147,10 +164,12 @@ module.exports = async (req, res) => {
       tabCols[brand.tabName] = { idx, headerNeedsWrite };
 
       const syncedCol = idx.offers_synced_at;
+      const readCols = [dateCol, asinCol, syncedCol, skuCol >= 0 ? skuCol : asinCol];
       const cols = await sheetsApi(token, 'GET', `/${sheets.products}/values:batchGet?majorDimension=COLUMNS&${
-        [dateCol, asinCol, syncedCol].map(c => `ranges=${rng(brand.tabName, `${colLetter(c)}2:${colLetter(c)}`)}`).join('&')}`);
-      const [dates, asins, synced] = (cols.valueRanges || []).map(vr => (vr.values || [])[0] || []);
+        readCols.map(c => `ranges=${rng(brand.tabName, `${colLetter(c)}2:${colLetter(c)}`)}`).join('&')}`);
+      const [dates, asins, synced, skuVals] = (cols.valueRanges || []).map(vr => (vr.values || [])[0] || []);
       const byAsin = new Map();
+      const skusByAsin = new Map(); // ADDED 2026-11-13 — for the offer detail rows
       dates.forEach((d, i) => {
         if (isoDate(d) !== today) return;
         const asin = String(asins[i] || '').trim().toUpperCase();
@@ -158,10 +177,14 @@ module.exports = async (req, res) => {
         if (isoDate(String(synced[i] || '').slice(0, 10)) === today) return; // already done today
         if (!byAsin.has(asin)) byAsin.set(asin, []);
         byAsin.get(asin).push(i + 2);
+        if (skuCol >= 0 && skuVals[i]) {
+          if (!skusByAsin.has(asin)) skusByAsin.set(asin, new Set());
+          skusByAsin.get(asin).add(String(skuVals[i]).replace(/^'/, '').trim());
+        }
       });
       // Brand's own marketplace when it has one (e.g. skinuva-ca → Amazon.ca), else US. ADDED 2026-10-21
       const market = brand.marketplaceId || marketplaceId;
-      for (const [asin, rows] of byAsin) work.push({ brand, account: accountForBrand(brand), market, asin, rows });
+      for (const [asin, rows] of byAsin) work.push({ brand, account: accountForBrand(brand), market, asin, rows, skus: [...(skusByAsin.get(asin) || [])] });
     } catch (err) {
       console.warn(`[sync-product-offers] ${brand.id} — could not read tab:`, err.message);
       errors.push(`${brand.id} tab read: ${err.message}`);
@@ -244,6 +267,14 @@ module.exports = async (req, res) => {
     }
   }
 
+  // ── Offer detail → "Newderm -SF product Sync" (ADDED 2026-11-13) ─────────
+  let detail = null;
+  try {
+    detail = await writeOfferDetail(work, results, keyOf, today, nowEt);
+  } catch (err) {
+    errors.push(`offer detail sheet: ${err.message}`);
+  }
+
   // ── Add newly seen seller IDs to seller_names (names left blank) ─────────
   if (newSellerIds.size) {
     try {
@@ -261,7 +292,7 @@ module.exports = async (req, res) => {
   }
   res.status(200).json({
     date: today, asinsNeeded: work.length, asinsDone: Object.keys(results).length, asinsRemaining: remaining,
-    amazonCalls: calls, stoppedEarly, rowsWrittenByBrand: written, newSellerIdsAdded: newSellerIds.size,
+    amazonCalls: calls, stoppedEarly, rowsWrittenByBrand: written, newSellerIdsAdded: newSellerIds.size, offerDetail: detail,
     ...(invalidAsins.length ? { asinsNotOnAmazon: invalidAsins } : {}),
     ...(errors.length ? { errors: errors.slice(0, 15) } : {}),
   });
@@ -318,6 +349,25 @@ function summarizeOffers(payload, ourSellerIds, names) {
   const price = o => (Number(o.ListingPrice?.Amount) || 0) + (Number(o.Shipping?.Amount) || 0);
   const lowestAltPrice = alt.length ? Math.round(Math.min(...alt.map(price)) * 100) / 100 : null;
 
+  // ADDED 2026-11-13 — who holds the Buy Box down to OUR FBA vs OUR FBM offer,
+  // our reference price (our Buy Box offer, else our lowest), and one detail
+  // row per offer for the offer detail sheet.
+  const round2 = n => Math.round(n * 100) / 100;
+  const ours = offers.filter(isOurs);
+  const ourPrice = bb && isOurs(bb) ? round2(price(bb)) : (ours.length ? round2(Math.min(...ours.map(price))) : null);
+  const channel = o => (o.IsFulfilledByAmazon ? 'FBA' : 'FBM');
+  const buyboxDetail = !bb ? 'none' : (isOurs(bb) ? `us (${channel(bb)})` : label(bb.SellerId || 'unknown'));
+  const offerRows = offers.map(o => {
+    const landed = round2(price(o));
+    const us = isOurs(o);
+    return {
+      seller_id: o.SellerId || '', seller_name: us ? 'us' : (names[o.SellerId]?.name || ''), is_us: us ? 'TRUE' : 'FALSE',
+      fulfillment: channel(o), listing_price: Number(o.ListingPrice?.Amount) || 0, shipping: Number(o.Shipping?.Amount) || 0,
+      landed_price: landed, our_price: ourPrice ?? '', price_diff: us || ourPrice == null ? '' : round2(landed - ourPrice),
+      is_buybox: o.IsBuyBoxWinner ? 'TRUE' : 'FALSE',
+    };
+  });
+
   return {
     altCount,
     altLabels: altIds.map(label),
@@ -325,7 +375,84 @@ function summarizeOffers(payload, ourSellerIds, names) {
     buyboxOwner,
     lowestAltPrice,
     sellerIds: altIds,
+    buyboxDetail, ourPrice, offerRows, totalOffers: total,
   };
+}
+
+// ── Offer detail sheet writer (ADDED 2026-11-13) ───────────────────────────
+// Per brand tab "<tab> offers": today's rows for the ASINs fetched this run
+// replace any earlier rows for the same ASIN + day; rows older than
+// DETAIL_KEEP_DAYS are removed; new rows are appended at the end.
+async function writeOfferDetail(work, results, keyOf, today, nowEt) {
+  const byTab = new Map(); // tab -> { asins:Set, rows:[] }
+  for (const w of work) {
+    const s = results[keyOf(w)];
+    if (!s || s.invalid) continue;
+    const tab = `${w.brand.tabName}${DETAIL_SUFFIX}`;
+    if (!byTab.has(tab)) byTab.set(tab, { asins: new Set(), rows: [] });
+    const t = byTab.get(tab);
+    if (t.asins.has(w.asin)) continue; // one set of rows per ASIN per run
+    t.asins.add(w.asin);
+    const sku = (w.skus || []).join(' | ');
+    const base = [today, w.asin, sku];
+    if (!s.offerRows.length) {
+      t.rows.push([...base, '', '', '', '', '', '', '', '', '', '', 'no offers', s.totalOffers, nowEt]);
+    } else {
+      for (const o of s.offerRows) {
+        t.rows.push([...base, o.seller_id, o.seller_name, o.is_us, o.fulfillment, o.listing_price, o.shipping, o.landed_price,
+          o.our_price, o.price_diff, o.is_buybox, s.buyboxDetail, s.totalOffers, nowEt]);
+      }
+    }
+  }
+  if (!byTab.size) return { tabs: 0, rowsAdded: 0, rowsRemoved: 0 };
+
+  const token = await getSheetsToken('writer');
+  const meta = await sheetsApi(token, 'GET', `/${DETAIL_SHEET}?fields=sheets.properties(sheetId,title)`);
+  const ids = Object.fromEntries((meta.sheets || []).map(x => [x.properties.title, x.properties.sheetId]));
+
+  // Create missing tabs, then label them.
+  const missing = [...byTab.keys()].filter(t => ids[t] == null);
+  if (missing.length) {
+    const r = await sheetsApi(token, 'POST', `/${DETAIL_SHEET}:batchUpdate`, { requests: missing.map(title => ({
+      addSheet: { properties: { title, gridProperties: { rowCount: 1000, columnCount: DETAIL_HEADERS.length, frozenRowCount: 1 } } } })) });
+    (r.replies || []).forEach((rep, i) => { ids[missing[i]] = rep.addSheet?.properties?.sheetId; });
+    await sheetsApi(token, 'POST', `/${DETAIL_SHEET}/values:batchUpdate`, { valueInputOption: 'RAW',
+      data: missing.map(t => ({ range: `${quoteTab(t)}!A1`, values: [DETAIL_HEADERS] })) });
+  }
+
+  // Find rows to remove: same ASIN + today (being replaced), or older than the keep window.
+  const cutoff = (() => { const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - DETAIL_KEEP_DAYS); return d.toISOString().slice(0, 10); })();
+  const existingTabs = [...byTab.keys()].filter(t => !missing.includes(t));
+  const deletes = [];
+  let rowsRemoved = 0;
+  if (existingTabs.length) {
+    const got = await sheetsApi(token, 'GET', `/${DETAIL_SHEET}/values:batchGet?majorDimension=COLUMNS&${existingTabs.map(t => `ranges=${rng(t, 'A2:B')}`).join('&')}`);
+    (got.valueRanges || []).forEach((vr, k) => {
+      const tab = existingTabs[k];
+      const [dates = [], asins = []] = vr.values || [];
+      const drop = [];
+      dates.forEach((d, i) => {
+        const iso = isoDate(d);
+        const asin = String(asins[i] || '').trim().toUpperCase();
+        if ((iso === today && byTab.get(tab).asins.has(asin)) || (iso && iso < cutoff)) drop.push(i + 1); // 0-based grid row (row 1 = header)
+      });
+      rowsRemoved += drop.length;
+      // merge into ranges, deleted bottom-up so earlier indexes stay valid
+      const ranges = [];
+      for (const r of drop) { const last = ranges[ranges.length - 1]; if (last && r === last[1]) last[1]++; else ranges.push([r, r + 1]); }
+      ranges.reverse().forEach(([a, b]) => deletes.push({ deleteDimension: { range: { sheetId: ids[tab], dimension: 'ROWS', startIndex: a, endIndex: b } } }));
+    });
+  }
+  if (deletes.length) await sheetsApi(token, 'POST', `/${DETAIL_SHEET}:batchUpdate`, { requests: deletes });
+
+  let rowsAdded = 0;
+  for (const [tab, t] of byTab) {
+    if (!t.rows.length) continue;
+    await sheetsApi(token, 'POST', `/${DETAIL_SHEET}/values/${rng(tab, 'A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: t.rows });
+    rowsAdded += t.rows.length;
+    await sleep(300);
+  }
+  return { tabs: byTab.size, rowsAdded, rowsRemoved };
 }
 
 // ── Sheets helpers ─────────────────────────────────────────────────────────
