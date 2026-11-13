@@ -6,7 +6,15 @@
  * onhold-email.js. Sends ONLY when there is something to report.
  *
  * Compares the Products Cache (written daily by sync-products.js) for
- * YESTERDAY (Eastern; the last fully-synced day) against:
+ * TODAY (Eastern) against the master list and against yesterday.
+ * TIMING (CHANGED 2026-11-13 per Jaclyn): today's rows only exist once
+ * sync-products' daytime pass has run (from 9:08 AM Eastern), so this checks
+ * every 30 min from 9:15 AM to 3:45 PM Eastern (14:15–20:45 UTC) and sends as
+ * soon as sync-products marks today complete (Products Cache _meta:
+ * products_log_date = today AND products_log_complete = true). If today still
+ * isn't complete at the last check, it sends anyway with a note naming the
+ * brands with no rows yet, so a slow day delays the email but never skips it.
+ * Compares:
  *   1. CONTRIBUTIONS — the master SKU list is the source of truth. For each
  *      LIVE master SKU, every contribution field FILLED IN on the master list
  *      (Title, Item Highlights, Bullets 1–5, Product Description, Backend
@@ -42,7 +50,7 @@
  *                                 whose version to send, &as=all the full one.
  *   ?preview=true                 return the email HTML instead of sending
  *                                 (full version; &as=… for someone's own)
- *   ?date=YYYY-MM-DD              report on a specific day (default: yesterday ET)
+ *   ?date=YYYY-MM-DD              report on a specific day (default: today ET)
  *   ?force=true                   send again even if today's already went out
  *
  * Env: CRON_SECRET, ALERTS_API_KEY (Resend), SHEET_MASTER_SKU_LIST,
@@ -92,8 +100,10 @@ module.exports = async (req, res) => {
   const preview = req.query.preview === 'true';
   const force = req.query.force === 'true';
 
-  const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : addDays(todayEt(), -1);
+  const dateGiven = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || ''));
+  const reportDate = dateGiven ? String(req.query.date) : todayEt();
   const prevDate = addDays(reportDate, -1);
+  const scheduled = !testTo.length && !preview && !force && !dateGiven;
 
   try {
     // ── Once a day ──────────────────────────────────────────────────────
@@ -104,12 +114,23 @@ module.exports = async (req, res) => {
       }
     }
 
+    // ── Wait for today's sync-products pass (ADDED 2026-11-13) ───────────
+    const pm = {};
+    (await readRows(sheets.products, '_meta').catch(() => []) || []).forEach(r => { if (r.KEY) pm[r.KEY] = r.VALUE; });
+    const syncComplete = pm.products_log_date === reportDate && pm.products_log_complete === 'true';
+    const now = new Date();
+    const lastCheck = now.getUTCHours() > 20 || (now.getUTCHours() === 20 && now.getUTCMinutes() >= 40);
+    if (scheduled && !syncComplete && !lastCheck) {
+      return res.status(200).json({ waiting: true, reason: `sync-products hasn't finished ${reportDate} yet (_meta: date=${pm.products_log_date || '—'}, complete=${pm.products_log_complete || '—'}); will check again in 30 minutes` });
+    }
+
     // ── Master SKU list ─────────────────────────────────────────────────
     const master = await loadMaster();
 
     // ── Products Cache: yesterday + the day before, every active brand ──
     const found = [];       // alert rows
     const unknownManagers = new Set();
+    const notSynced = []; // brands with no rows yet for reportDate
     for (const brand of brands.filter(b => b.active)) {
       const rows = await readRows(sheets.products, brand.tabName).catch(err => { throw new Error(`Products Cache tab "${brand.tabName}": ${err.message}`); });
       const day = {}, prev = {};
@@ -119,6 +140,7 @@ module.exports = async (req, res) => {
         if (!sku) continue;
         if (d === reportDate) day[sku] = r; else if (d === prevDate) prev[sku] = r;
       }
+      if (!Object.keys(day).length) notSynced.push(brand.displayName || brand.id);
       for (const [sku, cur] of Object.entries(day)) {
         const m = master.get(sku);
         if (!m || m.status !== 'LIVE') continue; // master list is the source of truth
@@ -129,7 +151,17 @@ module.exports = async (req, res) => {
       await sleep(400); // spread reads (shared Sheets quota)
     }
 
-    if (!found.length) return res.status(200).json({ sent: false, reason: 'nothing to report', reportDate });
+    const syncNote = !syncComplete
+      ? `Today's product sync hadn't finished when this was sent${notSynced.length ? ` — no data yet for: ${notSynced.join(', ')}` : ''}. Those brands are not checked in this email.`
+      : '';
+    if (!found.length) {
+      // Nothing to report: still log a scheduled day so later checks stop.
+      if (scheduled) {
+        const token = await ensureTab(sheets.products, LOG_TAB, ['report_date', 'sent_at', 'items', 'recipients', 'message_id']);
+        await appendRows(sheets.products, LOG_TAB, [[reportDate, new Date().toISOString(), 0, '(nothing to report — no email)', '']], token);
+      }
+      return res.status(200).json({ sent: false, reason: 'nothing to report', reportDate, syncComplete, notSynced });
+    }
 
     // ── Who gets which version (CHANGED 2026-11-13) ─────────────────────
     const emailOf = name => MANAGER_EMAILS[String(name || '').trim().toLowerCase()] || null;
@@ -149,7 +181,7 @@ module.exports = async (req, res) => {
     if (preview) {
       const v = pickVersion(asParam || 'all');
       res.setHeader('Content-Type', 'text/html');
-      return res.status(200).send(buildHtml(v.items, reportDate, prevDate, v.who === 'all' ? [...unknownManagers] : [], null, scopeNote(v.who, v.items)));
+      return res.status(200).send(buildHtml(v.items, reportDate, prevDate, v.who === 'all' ? [...unknownManagers] : [], null, scopeNote(v.who, v.items), syncNote));
     }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
 
@@ -164,7 +196,7 @@ module.exports = async (req, res) => {
       const counts = countByType(send.items);
       const realTo = send.who === 'all' ? ALWAYS_TO : [send.who];
       const html = buildHtml(send.items, reportDate, prevDate, send.who === 'all' ? [...unknownManagers] : [],
-        send.test ? realTo : null, scopeNote(send.who, send.items));
+        send.test ? realTo : null, scopeNote(send.who, send.items), syncNote);
       const subject = `${send.test ? '[TEST] ' : ''}Listing Alerts — ${summaryLine(counts)} · ${fmtDay(reportDate)}`;
       const attachment = Buffer.from(XLSX.write(buildWorkbook(send.items), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
       const sendRes = await fetch('https://api.resend.com/emails', {
@@ -187,7 +219,7 @@ module.exports = async (req, res) => {
       await appendRows(sheets.products, LOG_TAB, [[reportDate, new Date().toISOString(), found.length,
         results.filter(r => r.ok).map(r => `${r.to.join(',')} (${r.items})`).join('; '), results.map(r => r.id).filter(Boolean).join(', ')]], token);
     }
-    return res.status(200).json({ sent: results.some(r => r.ok), test: !!testTo.length, reportDate, emails: results, unknownManagers: [...unknownManagers] });
+    return res.status(200).json({ sent: results.some(r => r.ok), test: !!testTo.length, reportDate, syncComplete, notSynced, emails: results, unknownManagers: [...unknownManagers] });
   } catch (err) {
     console.error('[listing-alerts-email]', err.message);
     await sendCronFailureAlert('listing-alerts-email', err.message);
@@ -392,7 +424,7 @@ function scopeNote(who, items) {
   return `Your SKUs only (${brandsShown}) — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.`;
 }
 
-function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo, scope = '') {
+function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo, scope = '', syncNote = '') {
   const counts = countByType(found);
   const tiles = TYPES.filter(([t]) => counts[t].all).map(([t, label, color]) => `
     <td style="padding:0 8px 8px 0;vertical-align:top;">
@@ -434,6 +466,7 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo, sc
   }).join('');
 
   const notes = [
+    syncNote,
     unknownManagers.length ? `Brand Manager name(s) on the master list with no email on file (not emailed): ${unknownManagers.map(escapeHtml).join(', ')}.` : '',
     wouldSendTo ? `TEST SEND — the real email would go to: ${wouldSendTo.map(escapeHtml).join(', ')}.` : '',
   ].filter(Boolean).map(n => `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">${n}</div>`).join('');
