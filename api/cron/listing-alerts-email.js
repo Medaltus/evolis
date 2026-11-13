@@ -204,10 +204,19 @@ function checkSku(cur, before, m) {
     const want = col === 'backend_keywords' ? [m.backend, m.seasonalBackend].filter(Boolean) : [m.fields[col]].filter(Boolean);
     if (!want.length) continue;
     const mismatch = row => !row ? null : !want.some(w => sameText(w, row[col], col === 'backend_keywords'));
+    // ADDED 2026-11-13 — the holiday (Seasonal) backend list being live isn't a
+    // mismatch, but it's worth knowing: noted as an FYI, once per SKU.
+    if (col === 'backend_keywords' && !mismatch(cur) && m.seasonalBackend && sameText(m.seasonalBackend, cur[col], true)
+        && !(m.backend && sameText(m.backend, cur[col], true))) {
+      const wasHoliday = before && m.seasonalBackend && sameText(m.seasonalBackend, before[col], true);
+      out.push({ type: 'holiday', field: 'Backend Keywords', isNew: !wasHoliday, expected: '', live: 'Holiday (Seasonal) backend keywords are live' });
+    }
     if (mismatch(cur)) {
       const liveText = String(cur[col] || '');
       const closest = want.reduce((a, w) => (similarity(w, liveText) > similarity(a, liveText) ? w : a), want[0]);
-      out.push({ type: 'contribution', field: label, isNew: !(before && mismatch(before)),
+      // For backend keywords, say which master list the live keywords are closest to.
+      const fieldLabel = col === 'backend_keywords' && m.seasonalBackend && closest === m.seasonalBackend ? `${label} (vs. holiday list)` : label;
+      out.push({ type: 'contribution', field: fieldLabel, isNew: !(before && mismatch(before)),
         expected: closest, live: liveText || '(blank on Amazon)', diff: liveText ? textDiff(closest, liveText) : null });
     }
   }
@@ -244,9 +253,11 @@ function checkSku(cur, before, m) {
 function suppressionFindings(row) {
   const out = [];
   const status = String(row.status || '').toUpperCase();
-  const inStock = (parseInt(row.fulfillable_quantity, 10) || 0) + (parseInt(row.seller_fulfilled_quantity, 10) || 0) > 0;
+  // CHANGED 2026-11-13 per Jaclyn — only "not DISCOVERABLE" counts here. The
+  // old "not buyable while in stock" check was really a Buy Box signal (e.g.
+  // EVO0011: no FBA stock, its -SF FBM SKU holds the Buy Box) and was
+  // misleading; Buy Box issues will get their own email.
   if (status && !status.includes('DISCOVERABLE')) out.push({ kind: 'suppression', key: 'status:discoverable', field: 'Listing status', detail: `Not discoverable on Amazon (status: ${status || 'none'})` });
-  else if (status && !status.includes('BUYABLE') && inStock) out.push({ kind: 'suppression', key: 'status:buyable', field: 'Listing status', detail: `Not buyable while in stock (status: ${status})` });
   for (const issue of String(row.issues || '').split(' | ').map(s => s.trim()).filter(Boolean)) {
     const tags = (issue.match(/\{([^}]*)\}\s*$/) || [, ''])[1].split(';').map(t => t.trim()).filter(Boolean);
     const suppressed = tags.some(t => SUPPRESSION_TAGS.includes(t));
@@ -353,6 +364,7 @@ const TYPES = [
   ['contribution', 'Contribution mismatches', '#001F60'],
   ['category', 'Category changes', '#6B4FBB'],
   ['image', 'Image changes (FYI)', '#1A7F5A'],
+  ['holiday', 'Holiday keywords live (FYI)', '#1A7F5A'],
 ];
 const countByType = found => Object.fromEntries(TYPES.map(([t]) => [t, { all: found.filter(f => f.type === t).length, new: found.filter(f => f.type === t && f.isNew).length }]));
 const summaryLine = c => TYPES.filter(([t]) => c[t].all).map(([t, label]) => `${c[t].all} ${label.replace(' (FYI)', '').toLowerCase()}`).join(', ');
