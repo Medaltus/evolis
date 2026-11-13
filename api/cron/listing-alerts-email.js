@@ -173,8 +173,10 @@ function checkSku(cur, before, m) {
     if (!want.length) continue;
     const mismatch = row => !row ? null : !want.some(w => sameText(w, row[col], col === 'backend_keywords'));
     if (mismatch(cur)) {
+      const liveText = String(cur[col] || '');
+      const closest = want.reduce((a, w) => (similarity(w, liveText) > similarity(a, liveText) ? w : a), want[0]);
       out.push({ type: 'contribution', field: label, isNew: !(before && mismatch(before)),
-        expected: want[0], live: String(cur[col] || '') || '(blank on Amazon)' });
+        expected: closest, live: liveText || '(blank on Amazon)', diff: liveText ? textDiff(closest, liveText) : null });
     }
   }
 
@@ -245,6 +247,34 @@ function sameText(expected, live, keywords) {
   return words(expected) === words(live);
 }
 
+// ── Where two texts differ (ADDED 2026-11-13) ──────────────────────────────
+// Compares the cleaned-up texts and returns the part that differs on each
+// side, plus a little matching context before and after, so the email can
+// show the exact difference instead of two near-identical cut-off paragraphs.
+// Differences you can't see (extra spaces, symbols like ® or ™) are named.
+function textDiff(expected, live) {
+  const a = norm(expected), b = norm(live);
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  let j = 0; while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+  const CTX = 45;
+  const before = (i > CTX ? '…' : '') + a.slice(Math.max(0, i - CTX), i);
+  const afterA = a.slice(a.length - j, a.length - j + CTX) + (j > CTX ? '…' : '');
+  const afterB = b.slice(b.length - j, b.length - j + CTX) + (j > CTX ? '…' : '');
+  const partA = a.slice(i, a.length - j), partB = b.slice(i, b.length - j);
+  return { before, expectedPart: partA, livePart: partB, afterExpected: afterA, afterLive: afterB, note: invisibleNote(partA, partB) };
+}
+function invisibleNote(x, y) {
+  const describe = s => [...s].map(ch => (ch === ' ' ? 'a space' : /[\w]/.test(ch) ? null : `"${ch}" (U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')})`)).filter(Boolean);
+  const vis = s => s.replace(/\s/g, '');
+  if (vis(x) === vis(y)) return 'Only spacing differs';
+  if (x.length <= 3 && y.length <= 3) {
+    const dx = describe(x), dy = describe(y);
+    if (dx.length || dy.length) return `Master has ${dx.length ? dx.join(', ') : 'nothing'} where Amazon has ${dy.length ? dy.join(', ') : 'nothing'}`;
+  }
+  return '';
+}
+function similarity(x, y) { const a = norm(x), b = norm(y); let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; }
+
 // ── Master list ────────────────────────────────────────────────────────────
 async function loadMaster() {
   const id = process.env.SHEET_MASTER_SKU_LIST;
@@ -300,6 +330,18 @@ function escapeHtml(s) {
 }
 const clip = (s, n = 180) => { const t = String(s || ''); return t.length > n ? t.slice(0, n) + '…' : t; };
 
+// One side of a contribution difference: matching context in grey, the part
+// that differs highlighted (or "(nothing here)" when one side simply has extra text).
+function diffCell(d, side) {
+  const part = side === 'expected' ? d.expectedPart : d.livePart;
+  const after = side === 'expected' ? d.afterExpected : d.afterLive;
+  const mark = side === 'expected' ? '#FFE8A3' : '#FFD2CC';
+  const shown = part ? `<span style="background:${mark};font-weight:700;color:#001F60;padding:0 2px;">${escapeHtml(clip(part, 220))}</span>`
+    : `<span style="background:${mark};font-style:italic;color:#6B7BA2;padding:0 2px;">(nothing here)</span>`;
+  const note = side === 'live' && d.note ? `<div style="font-size:11px;color:#C0392B;margin-top:3px;">${escapeHtml(d.note)}</div>` : '';
+  return `<span style="color:#9ba8c0;">${escapeHtml(d.before)}</span>${shown}<span style="color:#9ba8c0;">${escapeHtml(after)}</span>${note}`;
+}
+
 function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
   const counts = countByType(found);
   const tiles = TYPES.filter(([t]) => counts[t].all).map(([t, label, color]) => `
@@ -326,8 +368,8 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
           <td style="${td}white-space:nowrap;">${newPill(i.isNew)}</td>
           <td style="${td}font-weight:700;white-space:nowrap;">${escapeHtml(i.sku)}<div style="font-weight:400;color:#6B7BA2;font-size:11px;">${escapeHtml(i.asin)}</div></td>
           <td style="${td}">${escapeHtml(i.field)}</td>
-          ${showExpected ? `<td style="${td}">${escapeHtml(clip(i.expected))}</td>` : ''}
-          <td style="${td}">${escapeHtml(clip(i.live))}</td></tr>`).join('');
+          ${showExpected ? `<td style="${td}">${i.diff ? diffCell(i.diff, 'expected') : escapeHtml(clip(i.expected))}</td>` : ''}
+          <td style="${td}">${i.diff ? diffCell(i.diff, 'live') : escapeHtml(clip(i.live))}</td></tr>`).join('');
       const more = list.length > ROWS_PER_SECTION ? `<div style="font-size:11px;color:#6B7BA2;margin-top:6px;">+ ${list.length - ROWS_PER_SECTION} more in the attached Excel</div>` : '';
       return `<div style="margin:14px 0 4px;font-size:13px;font-weight:700;color:${color};">${escapeHtml(label)} &middot; ${list.length}</div>
         <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
@@ -363,7 +405,7 @@ function buildHtml(found, reportDate, prevDate, unknownManagers, wouldSendTo) {
         <tr><td style="padding:22px 32px 4px;"><table cellpadding="0" cellspacing="0"><tr>${tiles}</tr></table></td></tr>
         ${brandSections}
         <tr><td style="padding:14px 32px 24px;">
-          <div style="font-size:12px;color:#6B7BA2;">The full list, every brand and every item, is attached as an Excel file.</div>
+          <div style="font-size:12px;color:#6B7BA2;">Contribution rows show only the part that differs (highlighted), with a little matching text around it. The full text of both versions, every brand and every item, is in the attached Excel file.</div>
           ${notes}
         </td></tr>
         <tr>
@@ -387,10 +429,12 @@ function buildWorkbook(found) {
     const list = found.filter(f => f.type === t);
     if (!list.length) continue;
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Brand', 'SKU', 'ASIN', 'Brand Manager', 'New?', 'What', t === 'category' ? 'Before' : 'Master list (expected)', t === 'category' ? 'Now' : 'Live / detail'],
-      ...list.map(i => [i.brand, i.sku, i.asin, i.manager || '', i.isNew ? 'NEW' : 'ongoing', i.field, i.expected || '', i.live || '']),
+      ['Brand', 'SKU', 'ASIN', 'Brand Manager', 'New?', 'What', t === 'category' ? 'Before' : 'Master list (expected)', t === 'category' ? 'Now' : 'Live / detail',
+        ...(t === 'contribution' ? ['Master: differing part', 'Amazon: differing part', 'Note'] : [])],
+      ...list.map(i => [i.brand, i.sku, i.asin, i.manager || '', i.isNew ? 'NEW' : 'ongoing', i.field, i.expected || '', i.live || '',
+        ...(t === 'contribution' ? [i.diff ? (i.diff.expectedPart || '(nothing)') : '', i.diff ? (i.diff.livePart || '(nothing)') : '', i.diff?.note || ''] : [])]),
     ]);
-    ws['!cols'] = [{ wch: 16 }, { wch: 18 }, { wch: 13 }, { wch: 18 }, { wch: 8 }, { wch: 20 }, { wch: 70 }, { wch: 70 }];
+    ws['!cols'] = [{ wch: 16 }, { wch: 18 }, { wch: 13 }, { wch: 18 }, { wch: 8 }, { wch: 20 }, { wch: 70 }, { wch: 70 }, { wch: 30 }, { wch: 30 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, label.replace(/[()]/g, '').slice(0, 31));
   }
   return wb;
