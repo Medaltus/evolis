@@ -287,7 +287,7 @@
     },
     {
       "path": "/api/cron/listing-alerts-email",
-      "schedule": "30 13 * * *"
+      "schedule": "15,45 14-20 * * 1-5"
     }
   ],
   "functions": {
