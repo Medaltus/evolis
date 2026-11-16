@@ -216,15 +216,23 @@ module.exports = async (req, res) => {
         // Ads vs organic for the last two complete months (Ad Orders Cache is
         // monthly; organic units = total units − ad units for the same month).
         const ad = ads.byAsin.get(p.asin);
-        if (ad && ads.months.length === 2) {
-          const [mPrev, mLast] = ads.months;
-          const units = mk => ads.monthDays(mk).reduce((n, d) => n + (p.byDate.get(d)?.u || 0), 0);
-          const a0 = ad[mPrev.key] || { u: 0, spend: 0, sales: 0 }, a1 = ad[mLast.key] || { u: 0, spend: 0, sales: 0 };
-          const o0 = Math.max(0, units(mPrev.key) - a0.u), o1 = Math.max(0, units(mLast.key) - a1.u);
-          row.ads = { prevLabel: mPrev.label, lastLabel: mLast.label, adUnits: [a0.u, a1.u], spend: [a0.spend, a1.spend], adSales: [a0.sales, a1.sales], organic: [o0, o1] };
+        if (ad && ads.months.length === 3) {
+          // Per day for each period, so a partial current month compares fairly,
+          // and total = ads + organic for the SAME days (they always add up).
+          const per = ads.months.map(mo => {
+            const days = ads.monthDays(mo.key);
+            const total = days.reduce((n, d) => n + (p.byDate.get(d)?.u || 0), 0);
+            const a = ad[mo.key] || { u: 0, spend: 0, sales: 0 };
+            const n = days.length || 1;
+            return { label: mo.label, total: total / n, ad: a.u / n, organic: Math.max(0, total - a.u) / n, spend: a.spend / n, adTotal: a.u, spendTotal: a.spend, adSales: a.sales, organicTotal: Math.max(0, total - a.u) };
+          });
+          const f = v => (v >= 10 ? Math.round(v).toLocaleString('en-US') : v.toFixed(1));
+          const line = key => per.map(x => `${x.label} ${f(x[key])}`).join(' · ');
+          row.ads = per;
           row.context.unshift(
-            { label: `Ads (${mPrev.label} → ${mLast.label})`, text: `${a0.u.toLocaleString('en-US')} → ${a1.u.toLocaleString('en-US')} units · spend $${Math.round(a0.spend).toLocaleString('en-US')} → $${Math.round(a1.spend).toLocaleString('en-US')}` },
-            { label: `Organic (${mPrev.label} → ${mLast.label})`, text: `${o0.toLocaleString('en-US')} → ${o1.toLocaleString('en-US')} units` });
+            { label: 'Units per day', text: line('total'), ads: true },
+            { label: 'Ad units per day', text: `${line('ad')} · spend/day ${per.map(x => '$' + Math.round(x.spend).toLocaleString('en-US')).join(' · ')}`, ads: true },
+            { label: 'Organic units per day', text: line('organic'), ads: true });
         }
         const changes = (pc.changes.get(p.asin) || []).slice(-3);
         if (changes.length) row.context.push({ label: 'Listing changes', text: changes.map(c => `${c.what} ${fmtDay(c.date)}`).join(' · ') });
@@ -259,7 +267,10 @@ module.exports = async (req, res) => {
     const unknownManagers = [...new Set([...cards, ...inventory].filter(c => c.manager && !emailOf(c.manager)).map(c => c.manager))];
     const asParam = String(req.query.as || '').trim().toLowerCase();
     const pick = who => (who === 'all' || !versions.has(who)) ? { who: 'all', data: all } : { who, data: versions.get(who) };
-    const ctx = { W, end, brandSummaries, events };
+    const yr = list => fmtDay(list[0]).length && new Date(list[0] + 'T12:00:00Z').getUTCFullYear();
+    const span = (list, withYear) => `${fmtDay(list[0])} – ${fmtDay(list[list.length - 1])}${withYear ? `, ${yr(list)}` : ''}`;
+    const L = { cur: span(W.cur), prior: span(W.prior), yoy: span(W.yoy, true), base: span(W.base) }; // ADDED 2026-11-16 — real dates instead of "prior" / "last yr"
+    const ctx = { W, end, brandSummaries, events, L };
 
     if (preview) {
       const v = pick(asParam || 'all');
@@ -273,9 +284,9 @@ module.exports = async (req, res) => {
     for (const s of sends) {
       if (!s.data.cards.length && !s.data.inventory.length && !(s.who === 'all' && anyBrandAlert)) continue;
       const lost = s.data.cards.reduce((n, c) => n + c.lost, 0);
-      const subject = `${s.test ? '[TEST] ' : ''}Underperforming Products — ${s.data.cards.length} to review, ~$${Math.round(lost).toLocaleString('en-US')} at stake · week ending ${fmtDay(end)}`;
+      const subject = `${s.test ? '[TEST] ' : ''}Underperforming Products — ${s.data.cards.length} to review, ~$${Math.round(lost).toLocaleString('en-US')} at stake · ${ctx.L.cur}`;
       const html = buildHtml(s.data, ctx, s.who === 'all' ? unknownManagers : [], s.test ? (s.who === 'all' ? ALWAYS_TO : [s.who]) : null, s.who);
-      const attachment = Buffer.from(XLSX.write(buildWorkbook(s.data), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
+      const attachment = Buffer.from(XLSX.write(buildWorkbook(s.data, ctx.L), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST', headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: `Medaltus Reports <${FROM_EMAIL}>`, reply_to: REPLY_TO, to: s.to, subject, html,
@@ -426,10 +437,16 @@ async function adMonthsFor(brand, end) {
   if (!sheets.adOrders) return out;
   const [y, m] = end.split('-').map(Number);
   const mk = (yy, mm) => { const d = new Date(Date.UTC(yy, mm - 1, 1)); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 }; };
-  const last = mk(y, m - 1), prev = mk(y, m - 2);
+  // CHANGED 2026-11-16 — three periods: the two complete months before
+  // `end`'s month, plus `end`'s month to date (so a drop inside the current
+  // month shows up). Compared PER DAY, since the current month is partial.
+  const last = mk(y, m - 1), prev = mk(y, m - 2), curM = mk(y, m);
   const label = x => new Date(Date.UTC(x.y, x.m - 1, 15)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  out.months = [prev, last].map(x => ({ ...x, key: `${x.y}-${String(x.m).padStart(2, '0')}`, label: label(x) }));
-  out.monthDays = key => { const [yy, mm] = key.split('-').map(Number); const days = []; for (let d = new Date(Date.UTC(yy, mm - 1, 1)); d.getUTCMonth() === mm - 1; d.setUTCDate(d.getUTCDate() + 1)) days.push(d.toISOString().slice(0, 10)); return days; };
+  out.months = [prev, last, curM].map((x, i) => {
+    const key = `${x.y}-${String(x.m).padStart(2, '0')}`;
+    return { ...x, key, label: i === 2 ? `${label(x)} 1–${Number(end.slice(8, 10))}` : label(x) };
+  });
+  out.monthDays = key => { const [yy, mm] = key.split('-').map(Number); const days = []; for (let d = new Date(Date.UTC(yy, mm - 1, 1)); d.getUTCMonth() === mm - 1; d.setUTCDate(d.getUTCDate() + 1)) { const iso = d.toISOString().slice(0, 10); if (iso <= end) days.push(iso); } return days; };
   const rows = await readRows(sheets.adOrders, brand.tabName).catch(() => []);
   for (const r of rows || []) {
     const key = `${parseInt(r.year, 10)}-${String(parseInt(r.month, 10)).padStart(2, '0')}`;
@@ -479,6 +496,19 @@ const fmtPct = p => (p == null ? '—' : `${p > 0 ? '+' : ''}${Math.round(p * 10
 const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
 const pctCell = p => (p == null ? '<span style="color:#9ba8c0;">—</span>' : `<span style="color:${p < 0 ? '#C0392B' : '#1A7F5A'};font-weight:${p <= -0.3 ? 700 : 400};">${fmtPct(p)}</span>`);
 
+// Ads vs organic, per day, as a small aligned table (ADDED 2026-11-16).
+function adsTable(per) {
+  if (!per) return '';
+  const f = v => (v >= 10 ? Math.round(v).toLocaleString('en-US') : v.toFixed(1));
+  const c = 'padding:2px 6px;font-size:11px;font-family:Arial,sans-serif;text-align:right;white-space:nowrap;';
+  const h = 'padding:2px 6px;font-size:10px;font-family:Arial,sans-serif;color:#6B7BA2;font-weight:700;text-align:right;white-space:nowrap;border-bottom:1px solid #e4e8ef;';
+  const lab = 'padding:2px 6px 2px 0;font-size:11px;font-family:Arial,sans-serif;color:#001F60;font-weight:700;white-space:nowrap;';
+  const row = (label, key, money) => `<tr><td style="${lab}">${label}</td>${per.map(x => `<td style="${c}">${money ? '$' + Math.round(x[key]).toLocaleString('en-US') : f(x[key])}</td>`).join('')}</tr>`;
+  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;">
+    <tr><td style="${h}text-align:left;padding-left:0;">Per day</td>${per.map(x => `<td style="${h}">${esc(x.label)}</td>`).join('')}</tr>
+    ${row('Units', 'total')}${row('From ads', 'ad')}${row('Organic', 'organic')}${row('Ad spend', 'spend', true)}</table>`;
+}
+
 function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
   const { cards, inventory } = data;
   const th = 'padding:7px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
@@ -488,7 +518,7 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
   const lostTotal = cards.reduce((n, c) => n + c.lost, 0);
   const tile = (l, v, c, sub) => `<td style="padding:0 8px 8px 0;vertical-align:top;"><div style="border:1px solid #e4e8ef;border-radius:10px;padding:10px 14px;min-width:130px;">
     <div style="font-size:11px;color:#6B7BA2;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">${esc(l)}</div><div style="font-size:24px;color:${c};font-weight:700;margin-top:2px;">${v}</div>${sub ? `<div style="font-size:11px;color:#6B7BA2;">${esc(sub)}</div>` : ''}</div></td>`;
-  const tiles = tile('Products to review', cards.length, '#001F60') + tile('Revenue at stake', money(lostTotal), '#C0392B', 'per 28 days')
+  const tiles = tile('Products to review', cards.length, '#001F60') + tile('Revenue at stake', money(lostTotal), '#C0392B', ctx.L.cur)
     + tile('Likely inventory', inventory.length, '#D35400', 'out of FBA stock ≥3 days');
 
   // ADDED 2026-11-16 — every brand, so "checked and fine" is visible and
@@ -513,10 +543,10 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
           <td style="${td}text-align:right;">${pctCell(b.sessionsVsPrior)}</td><td style="${td}text-align:right;">${b.checked}</td>
           <td style="${td}text-align:right;font-weight:${b.flagged ? 700 : 400};color:${b.flagged ? '#C0392B' : '#001F60'};">${b.flagged}</td><td style="${td}text-align:right;">${b.inventory || 0}</td></tr>`).join('');
   const summaryTable = !downList.length ? '' : `<tr><td style="padding:6px 32px 4px;">
-      <div style="font-size:13px;font-weight:700;color:#001F60;margin-bottom:6px;">Brands with revenue down vs the prior 28 days</div>
+      <div style="font-size:13px;font-weight:700;color:#001F60;margin-bottom:6px;">Brands with revenue down: ${esc(ctx.L.cur)} vs ${esc(ctx.L.prior)}</div>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-        <tr><th style="${th}">Brand</th><th style="${th}text-align:right;">Revenue (28d)</th><th style="${th}text-align:right;">vs prior</th><th style="${th}text-align:right;">vs last yr</th>
-        <th style="${th}text-align:right;">Sessions vs prior</th><th style="${th}text-align:right;">Products checked</th><th style="${th}text-align:right;">Flagged</th><th style="${th}text-align:right;">Likely inventory</th></tr>
+        <tr><th style="${th}">Brand</th><th style="${th}text-align:right;">Revenue<br>${esc(ctx.L.cur)}</th><th style="${th}text-align:right;">vs<br>${esc(ctx.L.prior)}</th><th style="${th}text-align:right;">vs<br>${esc(ctx.L.yoy)}</th>
+        <th style="${th}text-align:right;">Sessions vs<br>${esc(ctx.L.prior)}</th><th style="${th}text-align:right;">Products checked</th><th style="${th}text-align:right;">Flagged</th><th style="${th}text-align:right;">Likely inventory</th></tr>
         ${summaryRows}</table></td></tr>`;
 
   const brandsInOrder = [...new Set([...cards, ...inventory].map(c => c.brand))]
@@ -534,26 +564,28 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
         <td style="${td}text-align:right;">${money(c.cur.r)}<div style="font-size:11px;">${pctCell(c.d.r[0])} <span style="color:#9ba8c0;">/</span> ${pctCell(c.d.r[1])}</div></td>
         <td style="${td}text-align:right;">${Math.round(c.cur.s).toLocaleString('en-US')}<div style="font-size:11px;">${pctCell(c.d.s[0])} <span style="color:#9ba8c0;">/</span> ${pctCell(c.d.s[1])}</div></td>
         <td style="${td}text-align:right;">${Math.round(c.cur.u).toLocaleString('en-US')}<div style="font-size:11px;">${pctCell(c.d.u[0])} <span style="color:#9ba8c0;">/</span> ${pctCell(c.d.u[1])}</div></td>
-        <td style="${td}text-align:right;">${(c.cur.cvr * 100).toFixed(1)}%<div style="font-size:11px;">${pctCell(c.cvrChange)} <span style="color:#9ba8c0;">vs 3-mo</span></div></td>
-        <td style="${td}font-size:11px;line-height:1.45;">${c.context.map(x => `<div style="margin-bottom:3px;"><b style="color:#001F60;">${esc(x.label)}:</b> <span style="color:#3a4a6b;">${esc(x.text)}</span></div>`).join('') || '<span style="color:#9ba8c0;">—</span>'}</td></tr>`).join('');
+        <td style="${td}text-align:right;">${(c.cur.cvr * 100).toFixed(1)}%<div style="font-size:11px;">${pctCell(c.cvrChange)}</div></td>
+        <td style="${td}font-size:11px;line-height:1.45;">${adsTable(c.ads)}${c.context.filter(x => !x.ads).map(x => `<div style="margin-bottom:3px;"><b style="color:#001F60;">${esc(x.label)}:</b> <span style="color:#3a4a6b;">${esc(x.text)}</span></div>`).join('') || (c.ads ? '' : '<span style="color:#9ba8c0;">—</span>')}</td></tr>`).join('');
     const more = list.length > ROWS_PER_BRAND ? `<div style="font-size:11px;color:#6B7BA2;margin-top:6px;">+ ${list.length - ROWS_PER_BRAND} more in the attached Excel</div>` : '';
     const table = list.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;margin-top:8px;">
         <tr><th style="${th}width:24px;">#</th><th style="${th}">Product</th><th style="${th}text-align:right;">Share of brand sales</th><th style="${th}text-align:right;">Revenue at stake</th>
-        <th style="${th}text-align:right;">Revenue<br>vs prior / last yr</th><th style="${th}text-align:right;">Sessions<br>vs prior / last yr</th><th style="${th}text-align:right;">Units<br>vs prior / last yr</th><th style="${th}text-align:right;">Conversion</th><th style="${th}">Context</th></tr>${rows}</table>${more}` : '';
+        <th style="${th}text-align:right;">Revenue</th><th style="${th}text-align:right;">Sessions</th><th style="${th}text-align:right;">Units</th><th style="${th}text-align:right;">Conversion</th><th style="${th}">Context</th></tr>
+        <tr><td colspan="9" style="padding:5px 8px;font-size:10px;color:#6B7BA2;background:#F7F8FC;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;">
+          Numbers are for <b style="color:#001F60;">${esc(ctx.L.cur)}</b>. Changes underneath: <b style="color:#001F60;">vs ${esc(ctx.L.prior)}</b> / <b style="color:#001F60;">vs ${esc(ctx.L.yoy)}</b>. Conversion change is vs ${esc(ctx.L.base)}.</td></tr>${rows}</table>${more}` : '';
     const invList = inv.length ? `<div style="margin-top:10px;font-size:12px;color:#D35400;font-weight:700;">Likely inventory-driven (out of FBA stock in this period) · ${inv.length}</div>
         <div style="font-size:12px;color:#001F60;margin-top:3px;">${inv.map(c => `${esc(c.sku)} — ${c.oosDays} days out, ${money(c.lost)} at stake`).join(' &middot; ')}</div>` : '';
     return `<tr><td style="padding:18px 32px 6px;">
       <div style="font-size:18px;font-weight:700;color:#001F60;font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;">${esc(brand)}
         <span style="font-size:11px;font-weight:400;color:#6B7BA2;font-family:Arial,sans-serif;">${mgrs ? '&nbsp;·&nbsp;' + esc(mgrs) : ''}</span></div>
-      <div style="font-size:12px;color:#6B7BA2;margin-top:6px;">Brand revenue (28 days): <b style="color:#001F60;">${money(bs.curRevenue28 || 0)}</b> &middot; vs prior 28 days ${pctCell(bs.revenueVsPrior)} &middot; vs last year ${pctCell(bs.revenueVsLastYear)} &middot; sessions vs prior ${pctCell(bs.sessionsVsPrior)}</div>
+      <div style="font-size:12px;color:#6B7BA2;margin-top:6px;">Brand revenue ${esc(ctx.L.cur)}: <b style="color:#001F60;">${money(bs.curRevenue28 || 0)}</b> &middot; vs ${esc(ctx.L.prior)} ${pctCell(bs.revenueVsPrior)} &middot; vs ${esc(ctx.L.yoy)} ${pctCell(bs.revenueVsLastYear)} &middot; sessions vs ${esc(ctx.L.prior)} ${pctCell(bs.sessionsVsPrior)}</div>
       ${table}${invList}</td></tr>`;
   }).join('');
 
   const scope = who && who !== 'all' ? `Your brands only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const notes = [
     'Small brands: a product that is ≥10% of its brand\'s sales is checked with lower minimums (50 sessions / 5 units), and the minimum revenue loss is 5% of the brand\'s 28-day revenue (between $50 and $200). "Brand down" = the whole brand\'s revenue is down ≥30% vs the prior 28 days and ≥20% vs last year.',
-    'Ad units / spend / organic units compare the last two complete months (Sponsored Products + Display; Sponsored Brands can\'t be split by product). Organic units = total units − ad units.',
-    'Ranked by revenue at stake: revenue lost over 28 days vs the prior 28 days (or vs last year, if larger); brand-wide declines count half. "vs prior / last yr" = change vs the prior 28 days / the same 28 days last year (per-day averages). Conversion compares with the trailing 3 months.',
+    'Units per day / ad units per day / organic units per day cover the last two complete months and the current month so far (Sponsored Products + Display; Sponsored Brands can\'t be split by product). Organic = total units − ad units for the same days, so they always add up.',
+    `Ranked by revenue at stake: revenue lost in ${esc(ctx.L.cur)} compared with ${esc(ctx.L.prior)} (or with ${esc(ctx.L.yoy)}, if larger); brand-wide declines count half. Changes compare per-day averages, with event days left out.`,
     ctx.events.length ? `Event days left out of every comparison: ${ctx.events.map(e => esc(e.name)).join(', ')}.` : 'No events listed yet — add Prime Day, Black Friday etc. to the "events" tab of the Daily Business Report sheet so they are left out of comparisons.',
     unknownManagers.length ? `Brand Manager name(s) on the master list with no email on file (not emailed): ${unknownManagers.map(esc).join(', ')}.` : '',
     wouldSendTo ? `TEST SEND — the real email would go to: ${wouldSendTo.map(esc).join(', ')}.` : '',
@@ -566,14 +598,14 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
       <tr><td style="background:#001F60;padding:24px 32px;">
         <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">NewDerm &middot; Weekly Performance</div>
         <div style="font-size:24px;color:#fff;font-weight:700;margin-top:6px;font-family:Georgia,'Times New Roman',serif;">Underperforming Products</div>
-        <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">Last 28 days (${esc(fmtDay(ctx.W.cur[0]))} – ${esc(fmtDay(ctx.end))}) vs the prior 28 days and the same period last year &middot; highest revenue at stake first</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${esc(ctx.L.cur)} vs ${esc(ctx.L.prior)} and vs ${esc(ctx.L.yoy)} &middot; highest revenue at stake first</div>
         ${scope ? `<div style="font-size:12px;color:#24E9A3;margin-top:6px;">${esc(scope)}</div>` : ''}
       </td></tr>
       <tr><td style="padding:22px 32px 4px;"><table cellpadding="0" cellspacing="0"><tr>${tiles}</tr></table></td></tr>
       ${summaryTable}
       ${sections}
       ${upList.length || notChecked.length ? `<tr><td style="padding:10px 32px 0;"><div style="font-size:11px;color:#6B7BA2;">
-        ${upList.length ? `Flat or growing (not shown): ${upList.map(([n, b]) => `${esc(n)} ${fmtPct(b.revenueVsPrior)}`).join(', ')}.` : ''}
+        ${upList.length ? `Flat or growing vs ${esc(ctx.L.prior)} (not shown): ${upList.map(([n, b]) => `${esc(n)} ${fmtPct(b.revenueVsPrior)}`).join(', ')}.` : ''}
         ${notChecked.length ? ` Not checked: ${notChecked.map(([n, b]) => `${esc(n)} (${esc(b.note)})`).join(', ')}.` : ''}</div></td></tr>` : ''}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:12px;color:#6B7BA2;">Every flagged product, with all its numbers, is in the attached Excel file.</div>${notes}</td></tr>
       <tr><td style="background:#001F60;padding:16px 32px;"><div style="padding-bottom:12px;"><img src="${LOGO_URL}" alt="Medaltus" height="22" style="height:22px;display:block;"></div>
@@ -583,15 +615,15 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
 </body></html>`;
 }
 
-function buildWorkbook({ cards, inventory }) {
+function buildWorkbook({ cards, inventory }, L) {
   const wb = XLSX.utils.book_new();
-  const head = ['Brand', 'SKU', 'ASIN', 'Product', 'Brand Manager', 'Flags', 'Share of brand sales', 'Revenue at stake (28d)', 'Revenue (28d)', 'Revenue vs prior', 'Revenue vs last yr',
-    'Sessions (28d)', 'Sessions vs prior', 'Sessions vs last yr', 'Units (28d)', 'Units vs prior', 'Units vs last yr', 'Conversion', 'Conversion vs 3-mo', 'Context',
-    'Ad months', 'Ad units (prev → last)', 'Ad spend (prev → last)', 'Ad sales (prev → last)', 'Organic units (prev → last)'];
+  const head = ['Brand', 'SKU', 'ASIN', 'Product', 'Brand Manager', 'Flags', 'Share of brand sales', `Revenue at stake (${L.cur})`, `Revenue ${L.cur}`, `Revenue vs ${L.prior}`, `Revenue vs ${L.yoy}`,
+    `Sessions ${L.cur}`, `Sessions vs ${L.prior}`, `Sessions vs ${L.yoy}`, `Units ${L.cur}`, `Units vs ${L.prior}`, `Units vs ${L.yoy}`, 'Conversion', `Conversion vs ${L.base}`, 'Context',
+    'Periods', 'Units per day', 'Ad units per day', 'Ad spend per day', 'Organic units per day'];
   const line = c => [c.brand, c.sku, c.asin, c.name, c.manager || '', c.flags.join(', '), round(c.share, 3), Math.round(c.lost), Math.round(c.cur.r), round(c.d.r[0]), round(c.d.r[1]),
-    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.map(x => `${x.label}: ${x.text}`).join(' | '),
-    c.ads ? `${c.ads.prevLabel} → ${c.ads.lastLabel}` : '', c.ads ? c.ads.adUnits.join(' → ') : '', c.ads ? c.ads.spend.map(x => Math.round(x)).join(' → ') : '',
-    c.ads ? c.ads.adSales.map(x => Math.round(x)).join(' → ') : '', c.ads ? c.ads.organic.join(' → ') : ''];
+    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.filter(x => !x.ads).map(x => `${x.label}: ${x.text}`).join(' | '),
+    c.ads ? c.ads.map(x => x.label).join(' | ') : '', c.ads ? c.ads.map(x => x.total.toFixed(1)).join(' | ') : '', c.ads ? c.ads.map(x => x.ad.toFixed(1)).join(' | ') : '',
+    c.ads ? c.ads.map(x => x.spend.toFixed(2)).join(' | ') : '', c.ads ? c.ads.map(x => x.organic.toFixed(1)).join(' | ') : ''];
   const ws = XLSX.utils.aoa_to_sheet([head, ...[...cards].sort((a, b) => b.priority - a.priority).map(line)]);
   ws['!cols'] = head.map((h, i) => ({ wch: i === 3 || i === 19 ? 40 : 14 }));
   XLSX.utils.book_append_sheet(wb, ws, 'Underperforming');
