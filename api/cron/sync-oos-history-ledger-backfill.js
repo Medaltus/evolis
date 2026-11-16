@@ -107,8 +107,11 @@ module.exports = async (req, res) => {
     const now = toEstIso(new Date());
 
     // Ending SELLABLE balance per SKU per day (US).
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const head = lines.shift().split('\t').map(h => h.trim().toLowerCase());
+    // FIXED 2026-11-16 — Amazon wraps every header and value in double quotes
+    // ("date", "10/01/2026"); unquote each cell.
+    const cells = line => line.split('\t').map(v => v.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"').trim());
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const head = cells(lines.shift()).map(h => h.toLowerCase());
     const col = name => head.indexOf(name);
     const iDate = col('date'), iAsin = col('asin'), iSku = col('msku'), iDisp = col('disposition'),
       iEnd = col('ending warehouse balance'), iLoc = col('location');
@@ -117,7 +120,7 @@ module.exports = async (req, res) => {
     const bySku = new Map(); // sku -> { asin, days: Map(date -> units) }
     let excludedDeleted = 0, otherSkus = 0;
     for (const line of lines) {
-      const c = line.split('\t');
+      const c = cells(line);
       if (String(c[iDisp] || '').trim().toUpperCase() !== 'SELLABLE') continue;
       if (iLoc >= 0 && c[iLoc] && !/^US$/i.test(c[iLoc].trim()) && marketplaceId === process.env.SP_MARKETPLACE_ID) continue;
       const sku = String(c[iSku] || '').trim();
