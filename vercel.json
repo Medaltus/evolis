@@ -300,6 +300,14 @@
     {
       "path": "/api/cron/underperforming-email",
       "schedule": "40 12 * * 1"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-request?market=ca",
+      "schedule": "4,19,34,49 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-daily-business-report-process?market=ca",
+      "schedule": "13,43 * * * *"
     }
   ],
   "functions": {
