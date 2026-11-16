@@ -181,7 +181,7 @@ async function readTotals() {
 // Brand is decided by SKU prefix (brands.js skuPrefix), same as every other
 // cron. A prefix shared by a marketplace variant (skinuva / skinuva-ca) goes
 // to the US brand, since this report is the US marketplace.
-async function loadAsinMap(accountBrands) {
+async function loadAsinMap(accountBrands, market = 'us') {
   const id = process.env.SHEET_MASTER_SKU_LIST;
   if (!id) throw new Error('SHEET_MASTER_SKU_LIST env var not set');
   const res = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${MASTER_GID}`);
@@ -194,7 +194,11 @@ async function loadAsinMap(accountBrands) {
     const candidates = accountBrands.filter(b => b.skuPrefix && sku.toUpperCase().startsWith(b.skuPrefix.toUpperCase()));
     const brand = candidates.find(b => !b.marketplaceId) || candidates[0];
     if (!brand) continue;
-    const cur = map.get(asin);
+    let cur = map.get(asin);
+    // For Canada, the -CA SKU is the one that belongs in the SKU column (ADDED 2026-11-16):
+    // keep a -CA SKU over a US one, and replace a US one when the -CA SKU comes later.
+    if (market === 'ca' && cur && CA_SKU.test(cur.sku) && !CA_SKU.test(sku)) continue;
+    if (market === 'ca' && cur && !CA_SKU.test(cur.sku) && CA_SKU.test(sku)) { map.delete(asin); cur = undefined; }
     const price = parseFloat(String(r[4] || '').replace(/[$,]/g, '')) || 0;  // column E
     const vineMonth = vineMonthOf(r[5]);                                    // column F: date enrolled in Vine
     // Prefer the FBA SKU over its -SF twin for the SKU column; keep any Vine info found on either row.
@@ -266,6 +270,26 @@ function parseCsv(text) {
 // skinuva-ca (Amazon.ca) are left out, by setting or by sales channel.
 const isUsBrand = b => !b.marketplaceId && !/amazon\.ca/i.test(b.salesChannel || '') && !/-ca$/i.test(b.id);
 
+// ── Marketplaces (ADDED 2026-11-16 — Skinuva Canada) ───────────────────────
+// ?market=ca runs the same crons for the account's Amazon.ca brands
+// (skinuva-ca), as their own scope: _meta_ca, unmatched_ca, and Daily Totals
+// rows labeled "<account>-ca". Without ?market it's the US, exactly as before.
+const MARKETS = {
+  us: { marketplaceId: () => process.env.SP_MARKETPLACE_ID, brands: list => list.filter(isUsBrand) },
+  ca: { marketplaceId: () => process.env.SP_MARKETPLACE_ID_CA || 'A2EUQ1WTGCTBG2',
+        brands: list => list.filter(b => b.marketplaceId === (process.env.SP_MARKETPLACE_ID_CA || 'A2EUQ1WTGCTBG2') || /-ca$/i.test(b.id)) },
+};
+function getMarket(req) {
+  const m = String((req && req.query && req.query.market) || 'us').trim().toLowerCase();
+  if (!MARKETS[m]) { const e = new Error(`Unknown market "${m}" — expected us or ca`); e.status = 400; throw e; }
+  return m;
+}
+// One label per account + market: Daily Totals ACCOUNT value, log label.
+const scopeKey = (account, market) => (market === 'us' ? account : `${account}-${market}`);
+const metaTabForScope = (baseMetaTab, market) => (market === 'us' ? baseMetaTab : `${baseMetaTab}_${market}`);
+const unmatchedTabForScope = (account, market) => (market === 'us' ? unmatchedTabFor(account) : `${unmatchedTabFor(account)}_${market}`);
+const CA_SKU = /-CA(-|\.|$)/i;
+
 const sleep  = ms => new Promise(r => setTimeout(r, ms));
 const round2 = n => Math.round(n * 100) / 100;
 
@@ -274,4 +298,5 @@ module.exports = {
   RETENTION_DAYS, BACKFILL_DAYS, RECENT_OFFSETS, FINAL_AFTER, MAX_REQUESTS_PER_RUN, CELL_ALERT,
   todayPT, addDays, normDate, dayRange, gs, rng, q, getTabs, ensureTabs, readMeta, writeMeta, readPending, readTotals,
   loadAsinMap, loadOrderFacts, VINE_COL_INDEX, VINE_BUDGET, isUsBrand, sleep, round2, brands,
+  MARKETS, getMarket, scopeKey, metaTabForScope, unmatchedTabForScope,
 };
