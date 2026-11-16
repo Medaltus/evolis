@@ -97,11 +97,17 @@ module.exports = async (req, res) => {
     }
     const cutoff = addDays(today, -FIRST_RUN_DAYS);
     const badReviews = [], quietlySeen = [];
+    const allByAsin = new Map(); // ADDED 2026-11-16 — every review per ASIN, for "last 3 reviews" under a rating drop
     for (const b of active) {
       if (!tabs.has(b.tabName)) continue;
       const rows = await readRows(REVIEWS_SHEET, b.tabName).catch(() => []);
       for (const r of rows || []) {
         const stars = parseFloat(r.star_rating);
+        const asinKey = String(r.asin || '').replace(/^'/, '').trim().toUpperCase();
+        if (asinKey && Number.isFinite(stars)) {
+          if (!allByAsin.has(asinKey)) allByAsin.set(asinKey, []);
+          allByAsin.get(asinKey).push({ stars, title: r.review_title || '', text: r.review_text || '', date: isoDate(r.date) || '', dateText: r.date || '', purchase: r.purchase_type || '' });
+        }
         if (!Number.isFinite(stars) || stars >= BAD_BELOW) continue;
         const key = reviewKey(r);
         if (seen.has(key)) continue;
@@ -140,6 +146,9 @@ module.exports = async (req, res) => {
         reviewsFrom: prev.reviews, reviewsTo: last.reviews, drop: last.rating < prev.rating, belowLine: last.rating < ELIGIBILITY_LINE && prev.rating >= ELIGIBILITY_LINE });
     }
     ratingChanges.sort((a, b) => (a.to - a.from) - (b.to - b.from));
+    for (const rc of ratingChanges) {
+      rc.last3 = (allByAsin.get(rc.asin) || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 3);
+    }
 
     const drops = ratingChanges.filter(r => r.drop);
     if (!badReviews.length && !drops.length) {
@@ -248,7 +257,12 @@ function buildHtml(data, today, wouldSendTo, who, firstRun) {
           <td style="${td}"><b>${esc(x.sku)}</b> <span style="font-size:10px;color:#9ba8c0;">${esc(x.asin)}</span>${x.belowLine ? `<div style="margin-top:3px;"><span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#FFD2CC;color:#C0392B;font-size:10px;font-weight:700;">Now below ${ELIGIBILITY_LINE.toFixed(1)}★</span></div>` : ''}</td>
           <td style="${td}white-space:nowrap;"><b>${x.from.toFixed(1)}★ → <span style="color:#C0392B;">${x.to.toFixed(1)}★</span></b></td>
           <td style="${td}white-space:nowrap;">${Number.isFinite(x.reviewsFrom) && Number.isFinite(x.reviewsTo) ? `${x.reviewsFrom.toLocaleString('en-US')} → ${x.reviewsTo.toLocaleString('en-US')} <span style="color:#6B7BA2;">(+${(x.reviewsTo - x.reviewsFrom).toLocaleString('en-US')})</span>` : '—'}</td>
-          <td style="${td}white-space:nowrap;color:#6B7BA2;">${esc(fmtDay(x.fromDate))} → ${esc(fmtDay(x.toDate))}</td></tr>`).join('')}</table>` : '';
+          <td style="${td}white-space:nowrap;color:#6B7BA2;">${esc(fmtDay(x.fromDate))} → ${esc(fmtDay(x.toDate))}</td></tr>
+          <tr style="background:${x.belowLine ? '#FFF1EE' : i % 2 ? '#F7F8FC' : '#fff'};"><td colspan="4" style="padding:0 10px 10px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;">
+            <div style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Last 3 reviews</div>
+            ${x.last3 && x.last3.length ? x.last3.map(v => `<div style="font-size:12px;color:#3a4a6b;margin-bottom:5px;line-height:1.45;">${starsHtml(v.stars)} <b style="color:#001F60;">${esc(v.title || '(no title)')}</b> <span style="color:#9ba8c0;font-size:11px;">· ${esc(v.date ? fmtDay(v.date) : v.dateText)}${v.purchase ? ' · ' + esc(v.purchase) : ''}</span><br>${esc(clip(v.text, 240))}</div>`).join('')
+              : '<div style="font-size:11px;color:#9ba8c0;">No written reviews for this product in the reviews sheet yet.</div>'}
+          </td></tr>`).join('')}</table>` : '';
     const reviewCards = rv.length ? `<div style="margin:14px 0 4px;font-size:13px;font-weight:700;color:#001F60;">New reviews under 4★ · ${rv.length}</div>
       ${rv.map(x => `<div style="border:1px solid #e4e8ef;border-left:4px solid ${x.stars <= 2 ? '#C0392B' : '#F2A900'};border-radius:6px;padding:10px 12px;margin-bottom:8px;">
         <div style="font-size:12px;">${starsHtml(x.stars)} &nbsp;<b style="color:#001F60;">${esc(x.title || '(no title)')}</b></div>
@@ -263,7 +277,7 @@ function buildHtml(data, today, wouldSendTo, who, firstRun) {
   const scope = who && who !== 'all' ? `Your brands only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const notes = [
     rises.length ? `Ratings up: ${rises.map(x => `${esc(x.sku)} ${x.from.toFixed(1)}★ → ${x.to.toFixed(1)}★`).join(', ')}.` : '',
-    'Reviews: under 4★ and new since the last email (from the weekly reviews upload). Ratings: Helium 10 Keyword Tracker, latest update vs the one before.',
+    'Reviews: under 4★ and new since the last email (from the weekly reviews upload). Ratings: Helium 10 Keyword Tracker, latest update vs the one before. "Last 3 reviews" are written reviews only — Amazon\'s rating also counts star ratings left without a review, so a drop can come from ratings that don\'t appear here.',
     firstRun ? `First email: only reviews from the last ${FIRST_RUN_DAYS} days are included; older ones were recorded as already seen.` : '',
     wouldSendTo ? `TEST SEND — the real email would go to: ${wouldSendTo.map(esc).join(', ')}.` : '',
   ].filter(Boolean).map(n => `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">${n}</div>`).join('');
@@ -297,9 +311,10 @@ function buildWorkbook({ reviews, ratings }) {
     XLSX.utils.book_append_sheet(wb, ws, 'New reviews under 4 stars');
   }
   if (ratings.length) {
-    const ws = XLSX.utils.aoa_to_sheet([['Brand', 'SKU', 'ASIN', 'Rating before', 'Rating now', 'Change', 'Reviews before', 'Reviews now', 'Compared from', 'Compared to', `Below ${ELIGIBILITY_LINE.toFixed(1)}?`, 'Brand Manager'],
-      ...ratings.map(x => [x.brand, x.sku, x.asin, x.from, x.to, Math.round((x.to - x.from) * 100) / 100, Number.isFinite(x.reviewsFrom) ? x.reviewsFrom : '', Number.isFinite(x.reviewsTo) ? x.reviewsTo : '', x.fromDate, x.toDate, x.to < ELIGIBILITY_LINE ? 'YES' : '', x.manager])]);
-    ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 8 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 10 }, { wch: 18 }];
+    const last = (x, i) => { const v = (x.last3 || [])[i]; return v ? `${v.stars}★ ${v.date || v.dateText} — ${v.title}: ${clip(v.text, 300)}` : ''; };
+    const ws = XLSX.utils.aoa_to_sheet([['Brand', 'SKU', 'ASIN', 'Rating before', 'Rating now', 'Change', 'Reviews before', 'Reviews now', 'Compared from', 'Compared to', `Below ${ELIGIBILITY_LINE.toFixed(1)}?`, 'Brand Manager', 'Latest review', '2nd latest review', '3rd latest review'],
+      ...ratings.map(x => [x.brand, x.sku, x.asin, x.from, x.to, Math.round((x.to - x.from) * 100) / 100, Number.isFinite(x.reviewsFrom) ? x.reviewsFrom : '', Number.isFinite(x.reviewsTo) ? x.reviewsTo : '', x.fromDate, x.toDate, x.to < ELIGIBILITY_LINE ? 'YES' : '', x.manager, last(x, 0), last(x, 1), last(x, 2)])]);
+    ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 8 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 60 }, { wch: 60 }, { wch: 60 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Rating changes');
   }
   return wb;
