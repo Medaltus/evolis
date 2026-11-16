@@ -11,9 +11,11 @@
  * Reads every set in SHEET_SETS (one per seller account group) and combines them.
  * Contents: a status card per account (status + Account Health Rating), what
  * changed (worse first), every metric that isn't healthy (value vs Amazon's
- * target) — each policy violation row lists the SKUs found for it by the
- * violation scan (sync-account-health.js ?scan=violations → "violation_scan"),
- * or says none are identified yet — and new negative seller feedback.
+ * target; Amazon violations are counts only — Amazon doesn't say which SKUs;
+ * Walmart metrics list the orders behind them), "Inactive listings" (every
+ * issue on the cron brands' inactive SKUs + stranded stock, from the daily
+ * scan → "inactive_listings"; NEW = first seen on the latest scan), and new
+ * negative seller feedback.
  * Listing-level issues are NOT in this email (CHANGED 2026-11-16 per Jaclyn —
  * Listing Alerts already covers them).
  *
@@ -32,14 +34,14 @@ const SHEET_SETS = [
   { // NewDerm US, NewDerm CA, High On Love — written by this project's sync-account-health.js
     health:   { id: '18TMRTDW1Mvodx7hZ1dWu1763_gCokFytC8BxHAWxOSE', tab: 'health_daily' },
     metrics:  { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'metrics_detail' },
-    scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'violation_scan' }, // SKU hunt (?scan=violations)
+    inactive: { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'inactive_listings' }, // daily inactive-listings scan
     feedback: { id: '1sMJEdXewdG_PXzN_Saj-2Wkd9ozihBUXDGwwopS8YwQ', tab: 'seller_feedback' },
     changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes' },
   },
   { // 4th seller account (ADDED 2026-11-16) — same layout, written by its own sync-account-health.js
     health:   { id: '14zbDimNq2BQIRFu1dB5purlFjZVAWx2uneC2bniiFIE', tab: 'health_daily' },
     metrics:  { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'metrics_detail' },
-    scan:     { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'violation_scan' },
+    inactive: { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'inactive_listings' },
     feedback: { id: '1Gk-fM_GIEYyZqmkGBzA17EneoXx6mxSioMOya5ztaSE', tab: 'seller_feedback' },
     changes:  { id: '1Id_oct_VhZUpUadsbwDPc9wsG7oWIe6ZG1eQ5DhC_Qc', tab: 'changes' },
   },
@@ -88,7 +90,7 @@ module.exports = async (req, res) => {
   try {
     const read = async s => readTab(s).catch(() => []); // a set with no data yet just adds nothing
     const all = async key => (await Promise.all(SHEET_SETS.map(set => read(set[key])))).flat();
-    const [metrics, scan, feedback, changes, defects] = await Promise.all([all('metrics'), all('scan'), all('feedback'), all('changes'), all('defects')]);
+    const [metrics, inactive, feedback, changes, defects] = await Promise.all([all('metrics'), all('inactive'), all('feedback'), all('changes'), all('defects')]);
     if (!testTo.length && !preview && !force) {
       const log = await read(SHEETS.meta);
       if (log.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
@@ -109,7 +111,7 @@ module.exports = async (req, res) => {
     });
     const todays = changes.filter(r => r[0] === today);
     const worse = todays.filter(r => r[7] === 'worse');
-    const scanFound = latestScan(scan);
+    const inactiveLatest = latestScan(inactive);
     const newFeedback = feedback.filter(r => r[7] === today);
 
     const somethingNew = worse.length || newFeedback.length;
@@ -118,7 +120,7 @@ module.exports = async (req, res) => {
     }
 
     const defectsLatest = latestScan(defects); // same "newest day per account" rule
-    const html = buildHtml({ today, monday, cards, todays, scanFound, defectsLatest, newFeedback, test: testTo.length ? TO : null });
+    const html = buildHtml({ today, monday, cards, todays, inactiveLatest, defectsLatest, newFeedback, test: testTo.length ? TO : null });
     if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
     const atRisk = cards.filter(c => !HEALTHY.test(c.status));
@@ -132,31 +134,20 @@ module.exports = async (req, res) => {
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`Resend ${r.status}: ${JSON.stringify(body).slice(0, 200)}`);
     if (!testTo.length) await logSend(today, subject, body.id);
-    return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, violationSkusFound: scanFound.length, newFeedback: newFeedback.length });
+    return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, inactiveListingIssues: inactiveLatest.length, newFeedback: newFeedback.length });
   } catch (err) {
     console.error('[account-health-email]', err.message);
     await sendCronFailureAlert('account-health-email', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
-// Latest violation_scan results PER ACCOUNT (a scan may run over a day or two;
-// everything from the newest scan date is used). Columns: date, account,
-// marketplace, brand, sku, asin, listing_status, source, likely_violation_type,
-// amazon_message, enforcement, first_seen.
+// Newest day's rows PER ACCOUNT (inactive_listings, defect_orders). inactive_listings
+// columns: date, account, marketplace, brand, sku, asin, listing_status, source,
+// severity, amazon_message, enforcement, first_seen.
 const latestScan = rows => {
   const last = {};
   rows.forEach(r => { const k = `${r[1]}|${r[2]}`; if (!last[k] || r[0] > last[k]) last[k] = r[0]; });
   return rows.filter(r => r[0] === last[`${r[1]}|${r[2]}`]);
-};
-// Which scan "likely_violation_type" values belong under each Account Health violation metric.
-const SCAN_TYPES_FOR = {
-  restrictedProductPolicyViolations: ['Restricted product'],
-  listingPolicyViolations: ['Listing policy'],
-  otherPolicyViolations: ['Removed / other policy', 'Other'],
-  receivedIntellectualPropertyComplaints: ['Intellectual property'], suspectedIntellectualPropertyViolations: ['Intellectual property'],
-  productAuthenticityCustomerComplaints: ['Product authenticity'],
-  productSafetyCustomerComplaints: ['Product safety'], foodAndProductSafetyIssues: ['Product safety'],
-  customerProductReviewsPolicyViolations: ['Review policy'],
 };
 
 // ── Email ──────────────────────────────────────────────────────────────────
@@ -171,7 +162,7 @@ const statusPill = s => {
 const shortDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? fmtDay(m[0], true) : ''; };
 const daysOpen = (first, today) => { const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'); return Math.max(0, Math.round((b - a) / 86400000)); };
 
-function buildHtml({ today, monday, cards, todays, scanFound, defectsLatest = [], newFeedback, test }) {
+function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsLatest = [], newFeedback, test }) {
   const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
   const section = (title, color, inner) => `<tr><td style="padding:18px 32px 4px;"><div style="font-size:15px;font-weight:700;color:${color};font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;margin-bottom:8px;">${title}</div>${inner}</td></tr>`;
@@ -202,14 +193,7 @@ function buildHtml({ today, monday, cards, todays, scanFound, defectsLatest = []
       return `<tr><td style="padding:0 10px 9px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;font-size:11px;color:#3a4a6b;" colspan="6">
         <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">Orders behind it (${orders.length}):</span> ${shown}${orders.length > 10 ? `<div style="color:#9ba8c0;">+ ${orders.length - 10} more in the Walmart Account Health sheet (defect_orders)</div>` : ''}</td></tr>`;
     }
-    const types = SCAN_TYPES_FOR[a.metric];
-    if (!types) return '';
-    const hits = scanFound.filter(r => r[1] === a.acc && r[2] === a.mkt && types.includes(r[8]));
-    const inner = hits.length
-      ? hits.map(r => `<div style="margin:2px 0;"><b style="color:#001F60;">${esc(r[4])}</b> <span style="color:#9ba8c0;">${esc(r[5])}</span> · ${esc(r[3])} · <span style="color:#6B7BA2;">${esc(r[6])}</span> — ${esc(r[9])}</div>`).join('')
-      : `<span style="color:#9ba8c0;">SKUs not identified yet — Amazon doesn't send them through its API; see Seller Central → Performance → Account Health.</span>`;
-    return `<tr><td style="padding:0 10px 9px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;font-size:11px;color:#3a4a6b;" colspan="6">
-      <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">SKUs found${hits.length ? ` (${hits.length})` : ''}:</span> ${inner}</td></tr>`;
+    return ''; // Amazon violations: counts only (Amazon doesn't say which SKUs)
   };
   const attentionHtml = attention.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
       <tr><th style="${th}">Account</th><th style="${th}">Metric</th><th style="${th}">Status</th><th style="${th}">Now</th><th style="${th}">Target</th><th style="${th}">Period</th></tr>
@@ -218,6 +202,25 @@ function buildHtml({ today, monday, cards, todays, scanFound, defectsLatest = []
         <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.target !== '' ? `${({ LESS_THAN: 'under', GREATER_THAN: 'over', EQUALS: '' })[a.cond] ?? ''} ${isRate(a.metric) ? pct(a.target) : esc(a.target)}` : '—'}</td>
         <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.from ? `${shortDate(a.from)} – ${shortDate(a.to)}` : ''}</td></tr>${skuRow(a)}`).join('')}</table>`
     : `<div style="font-size:12px;color:#1A7F5A;">Every metric on every account is healthy.</div>`;
+
+  // Inactive listings, grouped by account + brand; NEW first, then by SKU.
+  const groups = {};
+  inactiveLatest.forEach(r => { const k = `${r[1]} ${r[2]} · ${r[3] || 'Other'}`; (groups[k] = groups[k] || []).push(r); });
+  const clip = (t, n) => { t = String(t || '').trim(); return t.length > n ? t.slice(0, n).trimEnd() + '… (full text in the inactive_listings tab)' : t; };
+  const inactiveHtml = inactiveLatest.length ? Object.keys(groups).sort().map(k => {
+    const rows = groups[k].sort((a, b) => (b[11] === b[0]) - (a[11] === a[0]) || a[4].localeCompare(b[4]));
+    const skus = new Set(rows.map(r => r[4])).size;
+    return `<div style="font-size:13px;font-weight:700;color:#001F60;margin:10px 0 4px;">${esc(k)} <span style="font-weight:400;color:#6B7BA2;font-size:11px;">· ${skus} SKU${skus === 1 ? '' : 's'}, ${rows.length} issue${rows.length === 1 ? '' : 's'}</span></div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
+        <tr><th style="${th}"></th><th style="${th}">SKU</th><th style="${th}">Status</th><th style="${th}">Amazon's message</th><th style="${th}">Open</th></tr>
+        ${rows.map(r => `<tr style="background:${r[11] === r[0] ? '#FFF8E6' : '#fff'};">
+          <td style="${td}white-space:nowrap;">${r[11] === r[0] ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#24E9A3;color:#001F60;font-size:10px;font-weight:700;">NEW</span>' : ''}</td>
+          <td style="${td}white-space:nowrap;"><b>${esc(r[4])}</b><div style="font-size:10px;color:#9ba8c0;">${esc(r[5])}</div></td>
+          <td style="${td}white-space:nowrap;font-size:11px;">${esc(r[6])}${r[7] === 'Stranded inventory report' ? '<div style="font-size:10px;color:#9ba8c0;">stranded stock</div>' : ''}</td>
+          <td style="${td}font-size:11px;">${esc(clip(r[9], 400))}${r[10] ? `<div style="font-size:10px;color:#9ba8c0;">${esc(String(r[10]).replace(/_/g, ' ').toLowerCase())}</div>` : ''}</td>
+          <td style="${td}white-space:nowrap;color:#6B7BA2;">${r[11] ? `${daysOpen(r[11], today)} day${daysOpen(r[11], today) === 1 ? '' : 's'}` : ''}</td></tr>`).join('')}</table>`;
+  }).join('') + `<div style="font-size:11px;color:#9ba8c0;margin-top:6px;">Inactive SKUs of the cron brands with the issues Amazon reports on them, plus stranded stock. Not tied to the Account Health violation counts above — Amazon doesn't link those to SKUs.</div>`
+    : `<div style="font-size:12px;color:#6B7BA2;">No inactive listings with issues on the latest scan.</div>`;
 
   const feedbackHtml = newFeedback.length ? newFeedback.map(f => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:9px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
       <b style="color:#001F60;">${esc(f[3])}★</b> · ${esc(f[1])} ${esc(f[2])} · ${esc(f[0])}${f[6] ? ` · order ${esc(f[6])}` : ''}<div style="margin-top:3px;">${esc(f[4])}</div></div>`).join('')
@@ -235,6 +238,7 @@ function buildHtml({ today, monday, cards, todays, scanFound, defectsLatest = []
       <tr><td style="padding:22px 32px 4px;"><table width="100%" cellpadding="0" cellspacing="0"><tr>${cardHtml}</tr></table></td></tr>
       ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
       ${section('Needs attention', '#C0392B', attentionHtml)}
+      ${section('Inactive listings', '#001F60', inactiveHtml)}
       ${section('New negative seller feedback', '#001F60', feedbackHtml)}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Sources: Amazon's Account Health report and Walmart's Seller Performance API (30-day window), pulled each morning. Full history in the Account Health sheets.</div>
         ${test ? `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">TEST SEND — the real email goes to: ${test.map(esc).join(', ')}.</div>` : ''}</td></tr>
