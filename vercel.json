@@ -308,6 +308,10 @@
     {
       "path": "/api/cron/sync-daily-business-report-process?market=ca",
       "schedule": "13,43 * * * *"
+    },
+    {
+      "path": "/api/cron/reviews-alert-email",
+      "schedule": "0 20 * * 1"
     }
   ],
   "functions": {
