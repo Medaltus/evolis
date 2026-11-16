@@ -6,14 +6,16 @@
  *
  * Sends:
  *   - weekdays, only when something is NEW today: a metric / status / rating
- *     got worse ("changes" sheet), a listing policy issue first seen today
- *     ("listing_issues"), or new negative seller feedback ("seller_feedback");
+ *     got worse ("changes" sheet) or new negative seller feedback ("seller_feedback");
  *   - every Monday, always — a weekly snapshot even when nothing changed.
  * Reads every set in SHEET_SETS (one per seller account group) and combines them.
  * Contents: a status card per account (status + Account Health Rating), what
  * changed (worse first), every metric that isn't healthy (value vs Amazon's
- * target), listings with policy issues (new ones flagged, days open), and new
- * negative seller feedback.
+ * target) — each policy violation row lists the SKUs found for it by the
+ * violation scan (sync-account-health.js ?scan=violations → "violation_scan"),
+ * or says none are identified yet — and new negative seller feedback.
+ * Listing-level issues are NOT in this email (CHANGED 2026-11-16 per Jaclyn —
+ * Listing Alerts already covers them).
  *
  * Modes: ?testTo=a@medaltus.com (send only there, not logged) · ?preview=true
  * (return the HTML) · ?force=true (send even if nothing is new / already sent).
@@ -30,14 +32,14 @@ const SHEET_SETS = [
   { // NewDerm US, NewDerm CA, High On Love — written by this project's sync-account-health.js
     health:   { id: '18TMRTDW1Mvodx7hZ1dWu1763_gCokFytC8BxHAWxOSE', tab: 'health_daily' },
     metrics:  { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'metrics_detail' },
-    issues:   { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'listing_issues' },
+    scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'violation_scan' }, // SKU hunt (?scan=violations)
     feedback: { id: '1sMJEdXewdG_PXzN_Saj-2Wkd9ozihBUXDGwwopS8YwQ', tab: 'seller_feedback' },
     changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes' },
   },
   { // 4th seller account (ADDED 2026-11-16) — same layout, written by its own sync-account-health.js
     health:   { id: '14zbDimNq2BQIRFu1dB5purlFjZVAWx2uneC2bniiFIE', tab: 'health_daily' },
     metrics:  { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'metrics_detail' },
-    issues:   { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'listing_issues' },
+    scan:     { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'violation_scan' },
     feedback: { id: '1Gk-fM_GIEYyZqmkGBzA17EneoXx6mxSioMOya5ztaSE', tab: 'seller_feedback' },
     changes:  { id: '1Id_oct_VhZUpUadsbwDPc9wsG7oWIe6ZG1eQ5DhC_Qc', tab: 'changes' },
   },
@@ -76,7 +78,7 @@ module.exports = async (req, res) => {
   try {
     const read = async s => readTab(s).catch(() => []); // a set with no data yet just adds nothing
     const all = async key => (await Promise.all(SHEET_SETS.map(set => read(set[key])))).flat();
-    const [metrics, issues, feedback, changes] = await Promise.all([all('metrics'), all('issues'), all('feedback'), all('changes')]);
+    const [metrics, scan, feedback, changes] = await Promise.all([all('metrics'), all('scan'), all('feedback'), all('changes')]);
     if (!testTo.length && !preview && !force) {
       const log = await read(SHEETS.meta);
       if (log.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
@@ -97,21 +99,20 @@ module.exports = async (req, res) => {
     });
     const todays = changes.filter(r => r[0] === today);
     const worse = todays.filter(r => r[7] === 'worse');
-    const issuesToday = latestIssues(issues);
-    const newIssues = issuesToday.filter(r => r[12] === r[0]);
+    const scanFound = latestScan(scan);
     const newFeedback = feedback.filter(r => r[7] === today);
 
-    const somethingNew = worse.length || newIssues.length || newFeedback.length;
+    const somethingNew = worse.length || newFeedback.length;
     if (!somethingNew && !monday && !force && !preview && !testTo.length) {
       return res.status(200).json({ sent: false, reason: 'nothing new today (weekday)', changesToday: todays.length });
     }
 
-    const html = buildHtml({ today, monday, cards, todays, issuesToday, newIssues, newFeedback, test: testTo.length ? TO : null });
+    const html = buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test: testTo.length ? TO : null });
     if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
     const atRisk = cards.filter(c => !HEALTHY.test(c.status));
     const bits = [atRisk.length ? `${atRisk.map(c => `${c.acc} ${c.mkt}`).join(', ')} ${atRisk.length === 1 ? 'is' : 'are'} ${atRisk.map(c => c.status.replace(/_/g, ' ').toLowerCase())[0]}` : 'all accounts healthy',
-      worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : '', newIssues.length ? `${newIssues.length} new listing issue${newIssues.length === 1 ? '' : 's'}` : ''].filter(Boolean);
+      worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : ''].filter(Boolean);
     const subject = `${testTo.length ? '[TEST] ' : ''}Account Health — ${bits.join(' · ')} · ${fmtDay(today)}`;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
@@ -120,19 +121,31 @@ module.exports = async (req, res) => {
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`Resend ${r.status}: ${JSON.stringify(body).slice(0, 200)}`);
     if (!testTo.length) await logSend(today, subject, body.id);
-    return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, newIssues: newIssues.length, newFeedback: newFeedback.length });
+    return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, violationSkusFound: scanFound.length, newFeedback: newFeedback.length });
   } catch (err) {
     console.error('[account-health-email]', err.message);
     await sendCronFailureAlert('account-health-email', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
-const latestOf = rows => rows.map(r => r[0]).sort().pop();
-// Latest listing_issues day PER ACCOUNT (sets can be pulled on different mornings).
-const latestIssues = issues => {
+// Latest violation_scan results PER ACCOUNT (a scan may run over a day or two;
+// everything from the newest scan date is used). Columns: date, account,
+// marketplace, brand, sku, asin, listing_status, source, likely_violation_type,
+// amazon_message, enforcement, first_seen.
+const latestScan = rows => {
   const last = {};
-  issues.forEach(r => { const k = `${r[1]}|${r[2]}`; if (!last[k] || r[0] > last[k]) last[k] = r[0]; });
-  return issues.filter(r => r[0] === last[`${r[1]}|${r[2]}`]);
+  rows.forEach(r => { const k = `${r[1]}|${r[2]}`; if (!last[k] || r[0] > last[k]) last[k] = r[0]; });
+  return rows.filter(r => r[0] === last[`${r[1]}|${r[2]}`]);
+};
+// Which scan "likely_violation_type" values belong under each Account Health violation metric.
+const SCAN_TYPES_FOR = {
+  restrictedProductPolicyViolations: ['Restricted product'],
+  listingPolicyViolations: ['Listing policy'],
+  otherPolicyViolations: ['Removed / other policy', 'Other'],
+  receivedIntellectualPropertyComplaints: ['Intellectual property'], suspectedIntellectualPropertyViolations: ['Intellectual property'],
+  productAuthenticityCustomerComplaints: ['Product authenticity'],
+  productSafetyCustomerComplaints: ['Product safety'], foodAndProductSafetyIssues: ['Product safety'],
+  customerProductReviewsPolicyViolations: ['Review policy'],
 };
 
 // ── Email ──────────────────────────────────────────────────────────────────
@@ -147,7 +160,7 @@ const statusPill = s => {
 const shortDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? fmtDay(m[0], true) : ''; };
 const daysOpen = (first, today) => { const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'); return Math.max(0, Math.round((b - a) / 86400000)); };
 
-function buildHtml({ today, monday, cards, todays, issuesToday, newIssues, newFeedback, test }) {
+function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test }) {
   const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
   const section = (title, color, inner) => `<tr><td style="padding:18px 32px 4px;"><div style="font-size:15px;font-weight:700;color:${color};font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;margin-bottom:8px;">${title}</div>${inner}</td></tr>`;
@@ -169,24 +182,24 @@ function buildHtml({ today, monday, cards, todays, issuesToday, newIssues, newFe
     : `<div style="font-size:12px;color:#6B7BA2;">No changes since the previous snapshot.</div>`;
 
   const attention = cards.flatMap(c => c.attention.map(a => ({ ...a, acc: c.acc, mkt: c.mkt })));
+  // Under each policy-violation row: the SKUs the violation scan found for it.
+  const skuRow = a => {
+    const types = SCAN_TYPES_FOR[a.metric];
+    if (!types) return '';
+    const hits = scanFound.filter(r => r[1] === a.acc && r[2] === a.mkt && types.includes(r[8]));
+    const inner = hits.length
+      ? hits.map(r => `<div style="margin:2px 0;"><b style="color:#001F60;">${esc(r[4])}</b> <span style="color:#9ba8c0;">${esc(r[5])}</span> · ${esc(r[3])} · <span style="color:#6B7BA2;">${esc(r[6])}</span> — ${esc(r[9])}</div>`).join('')
+      : `<span style="color:#9ba8c0;">SKUs not identified yet — Amazon doesn't send them through its API; see Seller Central → Performance → Account Health.</span>`;
+    return `<tr><td style="padding:0 10px 9px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;font-size:11px;color:#3a4a6b;" colspan="6">
+      <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">SKUs found${hits.length ? ` (${hits.length})` : ''}:</span> ${inner}</td></tr>`;
+  };
   const attentionHtml = attention.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
       <tr><th style="${th}">Account</th><th style="${th}">Metric</th><th style="${th}">Status</th><th style="${th}">Now</th><th style="${th}">Amazon's target</th><th style="${th}">Period</th></tr>
       ${attention.map(a => `<tr><td style="${td}">${esc(a.acc)} ${esc(a.mkt)}</td><td style="${td}font-weight:700;">${esc(nameOf(a.metric))}</td><td style="${td}">${statusPill(a.status)}</td>
         <td style="${td}white-space:nowrap;">${a.defects !== '' && a.defects != null && !isRate(a.metric) ? `<b>${esc(a.defects)}</b>` : `<b>${fmtVal(a.metric, a.value)}</b>`}</td>
         <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.target !== '' ? `${({ LESS_THAN: 'under', GREATER_THAN: 'over', EQUALS: '' })[a.cond] ?? ''} ${isRate(a.metric) ? pct(a.target) : esc(a.target)}` : '—'}</td>
-        <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.from ? `${shortDate(a.from)} – ${shortDate(a.to)}` : ''}</td></tr>`).join('')}</table>`
+        <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.from ? `${shortDate(a.from)} – ${shortDate(a.to)}` : ''}</td></tr>${skuRow(a)}`).join('')}</table>`
     : `<div style="font-size:12px;color:#1A7F5A;">Every metric on every account is healthy.</div>`;
-
-  const issuesHtml = issuesToday.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-      <tr><th style="${th}"></th><th style="${th}">Listing</th><th style="${th}">Amazon's message</th><th style="${th}">Enforcement</th><th style="${th}">Open</th></tr>
-      ${issuesToday.slice().sort((a, b) => (b[12] === b[0]) - (a[12] === a[0]) || (a[1] + a[3]).localeCompare(b[1] + b[3])).map(r => `<tr style="background:${r[12] === r[0] ? '#FFF8E6' : '#fff'};">
-        <td style="${td}white-space:nowrap;">${r[12] === r[0] ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#24E9A3;color:#001F60;font-size:10px;font-weight:700;">NEW</span>' : ''}</td>
-        <td style="${td}"><b>${esc(r[4])}</b> <span style="font-size:10px;color:#9ba8c0;">${esc(r[5])}</span><div style="font-size:11px;color:#6B7BA2;">${esc(r[3] || r[1])} · ${esc(r[1])} ${esc(r[2])}</div></td>
-        <td style="${td}">${esc(r[8])}${r[6] ? `<div style="font-size:10px;color:#9ba8c0;">${esc(r[6])}</div>` : ''}</td>
-        <td style="${td}font-size:11px;">${esc(String(r[11] || '').replace(/_/g, ' ').toLowerCase())}</td>
-        <td style="${td}white-space:nowrap;color:#6B7BA2;">${r[12] ? `${daysOpen(r[12], today)} day${daysOpen(r[12], today) === 1 ? '' : 's'}` : ''}</td></tr>`).join('')}</table>
-      <div style="font-size:11px;color:#9ba8c0;margin-top:4px;">Amazon's Account Health report gives violation counts only; these are the listings currently carrying policy or enforcement issues. Older, resolved violations only appear in Seller Central.</div>`
-    : `<div style="font-size:12px;color:#1A7F5A;">No listings with policy or enforcement issues.</div>`;
 
   const feedbackHtml = newFeedback.length ? newFeedback.map(f => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:9px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
       <b style="color:#001F60;">${esc(f[3])}★</b> · ${esc(f[1])} ${esc(f[2])} · ${esc(f[0])}${f[6] ? ` · order ${esc(f[6])}` : ''}<div style="margin-top:3px;">${esc(f[4])}</div></div>`).join('')
@@ -204,7 +217,6 @@ function buildHtml({ today, monday, cards, todays, issuesToday, newIssues, newFe
       <tr><td style="padding:22px 32px 4px;"><table width="100%" cellpadding="0" cellspacing="0"><tr>${cardHtml}</tr></table></td></tr>
       ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
       ${section('Needs attention', '#C0392B', attentionHtml)}
-      ${section('Listings with policy issues', '#001F60', issuesHtml)}
       ${section('New negative seller feedback', '#001F60', feedbackHtml)}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Source: Amazon's Account Health report, pulled each morning. Full history in the Account Health sheets (Daily Health, Metrics Detail, Changes, Seller Feedback).</div>
         ${test ? `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">TEST SEND — the real email goes to: ${test.map(esc).join(', ')}.</div>` : ''}</td></tr>
