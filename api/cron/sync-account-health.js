@@ -47,22 +47,24 @@
  * Needs the "Selling Partner Insights" role on each Amazon app (NewDerm's and
  * High On Love's). ?check=true tests that without writing anything.
  *
- * VIOLATION SCAN (ADDED 2026-11-16, manual for now): Amazon never links a
- * policy violation to its SKU, so ?scan=violations looks for the SKUs
- * indirectly, ONLY for the active cron brands (brands.js, minus the brands
- * left out of the emails):
+ * INACTIVE LISTINGS SCAN (ADDED 2026-11-16; CHANGED same day per Jaclyn: it
+ * now records EVERY issue on every inactive SKU — no keyword guessing about
+ * which violation it belongs to — into the "inactive_listings" tab, and runs
+ * daily on its own schedule, once per day). Only the active cron brands
+ * (brands.js, minus the brands left out of the emails):
  *   1. requests the All Listings report (every SKU, incl. inactive/removed) and
  *      the Stranded inventory report per account;
  *   2. on later ?scan=violations runs, collects them, keeps the cron brands' SKUs
  *      that are NOT active (active ones are already in listing_issues), asks the
  *      Listings API for each one's issues (a few minutes per run, resuming on the
- *      next run), and keeps anything that reads as a policy violation or removal;
- *      stranded SKUs whose reason is a removal/policy problem are added too;
- *   3. writes them to Metrics Detail → "violation_scan" with the violation type
- *      each most likely belongs to. Run it until it says "done".
+ *      next run), and keeps every issue Amazon reports (one row per SKU + message);
+ *      every stranded SKU is added with its stranded reason;
+ *   3. writes them to Metrics Detail → "inactive_listings" (first_seen carries
+ *      over, so new ones can be flagged). Once a day's scan is done, further
+ *      calls that day just answer "done".
  *
  * Manual:
- *   GET /api/cron/sync-account-health?scan=violations   violation scan (see above; run until "done")
+ *   GET /api/cron/sync-account-health?scan=violations   inactive listings scan (scheduled daily; see above)
  *   GET /api/cron/sync-account-health              normal run
  *   GET /api/cron/sync-account-health?check=true   access check: request the report for each account, write nothing
  *   GET /api/cron/sync-account-health?force=true   request today's reports again
@@ -90,21 +92,10 @@ const SHEETS = {
   changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes', account: 'writer' },
   meta:     { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: '_meta', account: 'primary' },
   issues:   { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'listing_issues', account: 'primary' }, // 2nd tab of Metrics Detail
-  scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'violation_scan', account: 'primary' }, // 3rd tab of Metrics Detail
+  scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'inactive_listings', account: 'primary' }, // 3rd tab of Metrics Detail
 };
-const SCAN_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'listing_status', 'source', 'likely_violation_type', 'amazon_message', 'enforcement', 'first_seen'];
+const SCAN_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'listing_status', 'source', 'severity', 'amazon_message', 'enforcement', 'first_seen'];
 const SCAN_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside']; // same brands left out of the alert emails
-const VIOLATION_HINT = /restrict|prohibit|polic|pesticid|drug|unapproved|supplement|hazmat|dangerous|safety|recall|authentic|counterfeit|intellectual|trademark|copyright|patent|infring|remov|deactivat|blocked|not permitted|compliance|regulat|claim|approval/i;
-const VIOLATION_TYPE = [
-  [/restrict|prohibit|pesticid|drug|unapproved|supplement|hazmat|dangerous goods|ingredient/i, 'Restricted product'],
-  [/authentic|counterfeit/i, 'Product authenticity'],
-  [/intellectual|trademark|copyright|patent|infring/i, 'Intellectual property'],
-  [/safety|recall/i, 'Product safety'],
-  [/review/i, 'Review policy'],
-  [/listing polic|policy/i, 'Listing policy'],
-  [/remov|deactivat|blocked|not permitted/i, 'Removed / other policy'],
-];
-const typeOf = msg => (VIOLATION_TYPE.find(([re]) => re.test(msg)) || [, 'Other'])[1];
 const SCAN_BUDGET_MS = 230_000;
 const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
 const REPORT_TYPES = ['GET_V2_SELLER_PERFORMANCE_REPORT', 'GET_SELLER_FEEDBACK_DATA', 'GET_MERCHANTS_LISTINGS_FYP_REPORT'];
@@ -411,18 +402,21 @@ async function violationScan(meta, today) {
     const hits = scanBrands(sc).filter(b => b.skuPrefix && s.startsWith(b.skuPrefix.toUpperCase()));
     return hits.find(b => /-CA(-|\.|$)/i.test(s) === !!b.marketplaceId) || hits[0] || null;
   };
+  if (meta.scan_done_date === today) return { allDone: true, accounts: [], note: `today's scan already finished (${today})`, sheet: 'Metrics Detail → inactive_listings' };
   let state = {}; try { state = JSON.parse(meta.scan_state || '{}'); } catch { state = {}; }
+  if (Object.values(state).some(v => v.date && v.date !== today)) state = {}; // a scan left over from another day starts over
   const summary = [];
 
   for (const sc of SCOPES) {
     const st = state[sc.key] || (state[sc.key] = {});
-    if (!scanBrands(sc).length) { summary.push({ scope: sc.key, status: 'no cron brands on this account' }); continue; }
+    if (!scanBrands(sc).length) { st.done = true; st.date = today; st.found = 0; summary.push({ scope: sc.key, status: 'no cron brands on this account' }); continue; }
 
     // 1. Request the two reports (once per scan)
     if (!st.allId && !st.done) {
       const a = await requestRaw(sc, 'GET_MERCHANT_LISTINGS_ALL_DATA');
       const s2 = await requestRaw(sc, 'GET_STRANDED_INVENTORY_UI_DATA');
       st.allId = a.reportId || null; st.strandedId = s2.reportId || null; st.date = today; st.queue = null; st.found = 0;
+      await upsertRows(SHEETS.scan, SCAN_HEADERS, [], r => r[0] === today && r[1] === sc.label && r[2] === sc.marketplace); // a re-run replaces today's rows
       summary.push({ scope: sc.key, status: st.allId ? 'reports requested — run again in a few minutes' : `could not request: ${a.error}` });
       continue;
     }
@@ -452,8 +446,8 @@ async function violationScan(meta, today) {
         for (const r of t.rows) {
           const sku = r.sku || r['seller-sku'] || ''; const b = brandOf(sc, sku);
           const reason = [r['stranded-reason'], r['primary-action'], r['status-primary'], r['status-secondary'], r.reason].filter(Boolean).join(' · ');
-          if (!b || !VIOLATION_HINT.test(reason)) continue;
-          add.push([today, sc.label, sc.marketplace, b.displayName || b.id, sku, r.asin || '', 'stranded', 'Stranded inventory report', typeOf(reason), reason, '', '']);
+          if (!b) continue;
+          add.push([today, sc.label, sc.marketplace, b.displayName || b.id, sku, r.asin || '', 'Stranded', 'Stranded inventory report', '', reason || 'Stranded', '', '']);
         }
         if (add.length) { await writeScanRows(sc, add, today); st.found += add.length; }
       }
@@ -470,10 +464,9 @@ async function violationScan(meta, today) {
       } catch { continue; }
       for (const iss of (listing && listing.issues) || []) {
         const actions = (iss.enforcements?.actions || []).map(a => a.action).filter(Boolean);
-        const msg = String(iss.message || '');
-        if (!VIOLATION_HINT.test(msg) && !actions.some(a => /REMOV|SUPPRESS|BLOCK/i.test(a))) continue;
-        if (!VIOLATION_HINT.test(msg) && /image|title|bullet|item name|catalog|translation/i.test(msg)) continue; // data issues, not violations
-        found.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, q.status, 'Inactive listing (Listings API)', typeOf(msg), msg, actions.join('; '), '']);
+        const msg = String(iss.message || '').trim();
+        if (!msg) continue;
+        found.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, q.status, 'Listings API', iss.severity || '', msg, actions.join('; '), '']);
       }
       await sleep(220);
     }
@@ -483,8 +476,9 @@ async function violationScan(meta, today) {
   }
   // A finished scan can be started again later: clear its state when every account is done.
   const allDone = SCOPES.every(sc => !state[sc.key] || state[sc.key].done);
-  meta.scan_state = allDone ? '{}' : JSON.stringify(state); // when every account is done, the next ?scan=violations starts a fresh scan
-  return { allDone, accounts: summary, sheet: 'Metrics Detail → violation_scan' };
+  meta.scan_state = allDone ? '{}' : JSON.stringify(state);
+  if (allDone) meta.scan_done_date = today; // once a day
+  return { allDone, accounts: summary, sheet: 'Metrics Detail → inactive_listings' };
 }
 async function requestRaw(sc, type) {
   const r = await spRequest('POST', '/reports/2021-06-30/reports', {}, { reportType: type, marketplaceIds: [sc.marketplaceId()] }, sc.account).catch(e => ({ error: e.message }));
@@ -510,9 +504,10 @@ async function sellerIdFor(sc) {
 async function writeScanRows(sc, rows, today) {
   const existing = await readTab(SHEETS.scan);
   const firstSeen = new Map(existing.map(r => [`${r[1]}|${r[2]}|${r[4]}|${r[9]}`, r[11] || r[0]]));
-  const fresh = [];
+  const fresh = []; const batch = new Set();
   for (const r of rows) {
     const k = `${r[1]}|${r[2]}|${r[4]}|${r[9]}`;
+    if (batch.has(k)) continue; batch.add(k);
     r[11] = firstSeen.get(k) || today;
     if (existing.some(e => e[0] === today && `${e[1]}|${e[2]}|${e[4]}|${e[9]}` === k)) continue; // already written today
     fresh.push(r);
