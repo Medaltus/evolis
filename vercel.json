@@ -312,6 +312,10 @@
     {
       "path": "/api/cron/reviews-alert-email",
       "schedule": "0 20 * * 1"
+    },
+    {
+      "path": "/api/cron/sync-account-health",
+      "schedule": "9,39 11-12 * * *"
     }
   ],
   "functions": {
