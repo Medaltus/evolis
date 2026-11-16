@@ -148,7 +148,11 @@ const COL_TOTAL_QUANTITY   = 'K'; // "Available"
 const COL_PURCHASED_90D    = 'AC';
 const COL_QTY_ON_HAND      = 'AE';
 
-const EXCLUDED_BRAND_NAMES = ['high on love']; // different seller account entirely
+// CHANGED 2026-11-13 — High On Love removed. It was excluded when this cron
+// could only call Amazon as NewDerm; since 2026-10-06 each SKU uses its own
+// brand's seller account (accountForBrand → 'hol'), but the exclusion was
+// never lifted, so High On Love was never synced.
+const EXCLUDED_BRAND_NAMES = [];
 
 const TIME_BUDGET_MS = 250_000; // stay safely under Vercel's 300s cap
 const INTER_SKU_DELAY_MS = 1200; // conservative default — see rate-limiting note above
@@ -731,16 +735,36 @@ function resolveBrandForSku(sku, candidates) {
   return usBrand || candidates[0];
 }
 
+// Whole-file, quote-aware CSV reader (ADDED 2026-11-13): commas and line
+// breaks inside quoted cells stay inside the cell.
+function parseCsvText(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim()));
+}
+
 async function fetchMasterSkuList() {
   const csvUrl = `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv&gid=${MASTER_SHEET_GID}`;
   const resp   = await fetch(csvUrl);
   if (!resp.ok) throw new Error(`Failed to fetch master SKU list: ${resp.status}`);
   const csv   = await resp.text();
-  const lines = csv.trim().split('\n').slice(1);
+  // FIXED 2026-11-13 — read the CSV properly. The old split(',') / split('\n')
+  // broke any row with a comma in a quoted cell (columns shifted, so Brand /
+  // Channel / Status were read from the wrong place and the SKU was skipped)
+  // or a line break in one (the long copy columns P–Y now hold multi-line text).
+  const table = parseCsvText(csv).slice(1);
 
   const out = [];
-  for (const line of lines) {
-    const cols      = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+  for (const row of table) {
+    const cols      = row.map(c => String(c || '').trim());
     const asin      = cols[0] || '';
     const sku       = cols[1] || '';
     const name      = cols[2] || '';
@@ -768,11 +792,16 @@ async function fetchMasterSkuList() {
     if (sku.toUpperCase().startsWith('C-SVA')) continue; // website-only inventory, not Amazon
     if (EXCLUDED_BRAND_NAMES.some(x => brandNorm.includes(x))) continue;
 
+    // CHANGED 2026-11-13 — also compare with spaces, hyphens and punctuation
+    // removed, so "HighOnLove", "High On Love" and "high-on-love" all match.
+    const squash = v => stripAccents(String(v || '').toLowerCase()).replace(/[^a-z0-9]/g, '');
+    const brandSq = squash(rawBrand);
     const nameMatched = brands.find(b =>
       b.active && (
         brandNorm === stripAccents(b.id.toLowerCase()) ||
         brandNorm === stripAccents((b.displayName || '').toLowerCase()) ||
-        brandNorm.includes(stripAccents(b.id.toLowerCase()))
+        brandNorm.includes(stripAccents(b.id.toLowerCase())) ||
+        (brandSq && (brandSq === squash(b.id) || brandSq === squash(b.displayName) || brandSq === squash(b.amazonBrandName)))
       )
     );
     if (!nameMatched) {
