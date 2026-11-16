@@ -64,6 +64,21 @@
  * Sheet: SHEET_AMAZON_REVIEWS. One tab per brand, auto-created on first
  * run — same convention as every other multi-brand sheet in this repo.
  *
+ * TEAM COLUMNS ARE PROTECTED (FIXED 2026-11-16 per Jaclyn): the team keeps
+ * YEAR and MONTH (columns M & N) by hand to track which reviews have been
+ * shared with each brand. This used to clear the whole tab (A2:ZZ) and
+ * write review_id into column M, wiping both. Now:
+ *   - columns are found by their HEADER NAME in the tab's own row 1; any
+ *     column this upload doesn't manage (YEAR, MONTH, anything added later)
+ *     belongs to the team and is never cleared or overwritten — its values
+ *     stay attached to their review, even when rows are re-sorted;
+ *   - review_id gets its own column at the END of the existing headers
+ *     (never M) the first time it's missing;
+ *   - nothing is cleared: rows are written back in place (the merge only
+ *     ever adds or updates reviews, so the row count never shrinks).
+ * SORTED BY PRODUCT (ADDED 2026-11-16): SKU, then newest review first, so a
+ * new review sits with that product's other reviews.
+ *
  * Body: { filename, contentBase64 }
  *   No sheetId in the body (unlike upload-keyword-tracker.js) — there's
  *   only one legitimate destination for this specific upload, same
@@ -91,7 +106,7 @@
  */
 
 const XLSX = require('xlsx');
-const { ensureTab, readRows, replaceRows, updateRange } = require('./config/_sheets_client');
+const { ensureTab, readRows, updateRange } = require('./config/_sheets_client');
 const brands = require('./config/brands');
 const { isoDate } = require('./_dates'); // ADDED 2026-10-13 — reads "August 9, 2026", "8/9/2026", ISO…
 
@@ -211,7 +226,13 @@ module.exports = async (req, res) => {
   for (const [tabName, brandRows] of Object.entries(rowsByBrandTab)) {
     try {
       const token    = await ensureTab(SHEET_ID, tabName, HEADERS);
-      const existing = await readRows(SHEET_ID, tabName);
+      // FORMULA: a team column holding a formula is kept as the formula.
+      const existing = await readRows(SHEET_ID, tabName, 'FORMULA');
+      // The tab's own header row, in its own order. Managed columns are
+      // found by name; every other header is a team column (YEAR, MONTH…).
+      const head = await readHeaderRow(tabName, token);
+      const sheetHeaders = head.length ? [...head] : [...HEADERS];
+      for (const h of HEADERS) if (!sheetHeaders.includes(h)) sheetHeaders.push(h); // e.g. review_id → after MONTH, never over it
 
       // CHANGED 2026-10-13 — how a review is recognized as "already in the
       // sheet". Two keys, tried in order:
@@ -247,7 +268,9 @@ module.exports = async (req, res) => {
         const id = idOf(r);
         const k  = (id && byId.get(id)) || identityKey(r);
         if (merged.has(k)) updated++; else added++;
+        const before = merged.get(k) || {}; // keeps the team's columns (YEAR, MONTH…) with their review
         merged.set(k, {
+          ...before,
           sku:              String(field(r, 'sku', 'SKU')).trim().toUpperCase(),
           asin:             field(r, 'asin', 'ASIN'),
           product_name:     field(r, 'product_name', 'Product Name'),
@@ -272,15 +295,22 @@ module.exports = async (req, res) => {
       // (Sheets' own force-text convention under USER_ENTERED) since
       // both can look numeric-ish and shouldn't risk reinterpretation.
       const TEXT_PROTECTED_COLS = new Set(['sku', 'asin']);
-      const outRows = Array.from(merged.values()).map(r => HEADERS.map(h => {
+      // Sorted by product (SKU), newest review first within each product.
+      const dateKey = r => isoDate(r.date) || '';
+      const sorted = Array.from(merged.values()).sort((a, b) =>
+        String(a.sku || '').replace(/^'/, '').localeCompare(String(b.sku || '').replace(/^'/, ''))
+        || dateKey(b).localeCompare(dateKey(a)));
+      const outRows = sorted.map(r => sheetHeaders.map(h => {
         const v = r[h] ?? '';
-        return (TEXT_PROTECTED_COLS.has(h) && v !== '') ? `'${v}` : v;
+        return (TEXT_PROTECTED_COLS.has(h) && v !== '' && !String(v).startsWith("'")) ? `'${v}` : v;
       }));
-      await replaceRows(SHEET_ID, tabName, HEADERS, outRows, token, 'USER_ENTERED');
-      // ADDED 2026-10-13 — replaceRows never rewrites row 1, so tabs created
-      // before review_id existed would never get its header (and its values
-      // would be unreadable by name on the next upload). Write it every time.
-      await updateRange(SHEET_ID, `${tabName}!A1`, [HEADERS], token, 'RAW');
+      // Never clear (that wiped the team's columns): write the header row
+      // and the rows back in place, padding with blank rows only if the
+      // tab somehow had more rows before.
+      const pad = Math.max(0, (existing || []).length - outRows.length);
+      const blank = sheetHeaders.map(() => '');
+      await updateRange(SHEET_ID, `${tabName}!A1`, [sheetHeaders], token, 'RAW');
+      await updateRange(SHEET_ID, `${tabName}!A2`, [...outRows, ...Array.from({ length: pad }, () => blank)], token, 'USER_ENTERED');
 
       console.log(`[upload-amazon-reviews] ${tabName} — ${brandRows.length} incoming (${updated} already in sheet, ${added} new), ${outRows.length} total rows after merge`);
       results.push({ brand: tabName, status: 'ok', incomingRows: brandRows.length, alreadyInSheet: updated, newReviews: added, totalRows: outRows.length });
@@ -298,6 +328,15 @@ module.exports = async (req, res) => {
     ...(unmatchedSkus.size ? { unmatchedSkus: Array.from(unmatchedSkus) } : {}),
   });
 };
+
+// The tab's row 1, exactly as it is (ADDED 2026-11-16).
+async function readHeaderRow(tabName, token) {
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(`'${tabName.replace(/'/g, "''")}'!1:1`)}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`reading ${tabName} header row → ${res.status}: ${(await res.text()).slice(0, 150)}`);
+  const d = await res.json();
+  return ((d.values || [])[0] || []).map(h => String(h).trim());
+}
 
 // Same helper already proven in sync-fbm-returns-process.js /
 // sync-returns-process.js — formats Eastern wall-clock time as an
