@@ -1,9 +1,9 @@
 /**
  * api/cron/reviews-alert-email.js
  * ADDED 2026-11-16 (per Jaclyn) — weekly "Reviews & Ratings" alert email,
- * styled and routed like listing-alerts-email.js: awilcox@medaltus.com gets
- * every brand, each Brand Manager (master SKU list "Brand Manager" column)
- * gets their own. Mondays 3 PM Eastern (after Isabella's Monday upload).
+ * styled like listing-alerts-email.js. Unlike the other alert emails, this
+ * one goes out as ONE full email (every brand) to Ashley and all Brand
+ * Managers (CHANGED 2026-11-16 per Jaclyn). Mondays 3 PM Eastern (after Isabella's Monday upload).
  * Sends only when there's something to report.
  *
  * 1. NEW BAD REVIEWS — reviews under 4 stars that have appeared in the
@@ -171,15 +171,17 @@ module.exports = async (req, res) => {
     if (preview) { const v = pick(asParam || 'all'); res.setHeader('Content-Type', 'text/html'); return res.status(200).send(buildHtml(v.data, today, null, v.who, firstRun)); }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
 
-    const sends = testTo.length ? [{ to: testTo, ...pick(asParam || testTo[0]), test: true }]
-      : [...versions.entries()].map(([who, data]) => ({ to: [who], who: ALWAYS_TO.includes(who) ? 'all' : who, data }));
+    // One full email to everyone (CHANGED 2026-11-16): Ashley + every Brand Manager.
+    const everyone = [...new Set([...ALWAYS_TO, ...Object.values(MANAGER_EMAILS)])];
+    const sends = testTo.length ? [{ to: testTo, ...pick(asParam || 'all'), test: true }]
+      : [{ to: everyone, who: 'all', data: all }];
     const results = [];
     for (const s of sends) {
       const dropsHere = s.data.ratings.filter(r => r.drop);
       if (!s.data.reviews.length && !dropsHere.length) continue;
       const parts = [s.data.reviews.length ? `${s.data.reviews.length} new review${s.data.reviews.length === 1 ? '' : 's'} under 4★` : '', dropsHere.length ? `${dropsHere.length} rating drop${dropsHere.length === 1 ? '' : 's'}` : ''].filter(Boolean);
       const subject = `${s.test ? '[TEST] ' : ''}Reviews & Ratings — ${parts.join(', ')} · ${fmtDay(today)}`;
-      const html = buildHtml(s.data, today, s.test ? (s.who === 'all' ? ALWAYS_TO : [s.who]) : null, s.who, firstRun);
+      const html = buildHtml(s.data, today, s.test ? (s.who === 'all' ? [...new Set([...ALWAYS_TO, ...Object.values(MANAGER_EMAILS)])] : [s.who]) : null, s.who, firstRun);
       const attachment = Buffer.from(XLSX.write(buildWorkbook(s.data), { type: 'buffer', bookType: 'xlsx' })).toString('base64');
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST', headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
@@ -239,10 +241,13 @@ const starsHtml = n => `<span style="color:#F2A900;letter-spacing:1px;">${'★'.
 function buildHtml(data, today, wouldSendTo, who, firstRun) {
   const { reviews, ratings } = data;
   const drops = ratings.filter(r => r.drop), rises = ratings.filter(r => !r.drop);
-  const tile = (l, v, c, sub) => `<td style="padding:0 8px 8px 0;vertical-align:top;"><div style="border:1px solid #e4e8ef;border-radius:10px;padding:10px 14px;min-width:140px;">
-    <div style="font-size:11px;color:#6B7BA2;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">${esc(l)}</div><div style="font-size:26px;color:${c};font-weight:700;margin-top:2px;">${v}</div>${sub ? `<div style="font-size:11px;color:#6B7BA2;">${esc(sub)}</div>` : ''}</div></td>`;
+  // Same height for every box (CHANGED 2026-11-16): fixed height, and the
+  // sub-line is always there (blank when there's nothing to say).
+  const tile = (l, v, c, sub) => `<td style="padding:0 8px 8px 0;vertical-align:top;"><div style="border:1px solid #e4e8ef;border-radius:10px;padding:10px 14px;min-width:170px;height:74px;box-sizing:border-box;">
+    <div style="font-size:11px;color:#6B7BA2;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">${esc(l)}</div><div style="font-size:26px;color:${c};font-weight:700;margin-top:2px;line-height:1.1;">${v}</div><div style="font-size:11px;color:#6B7BA2;">${sub ? esc(sub) : '&nbsp;'}</div></div></td>`;
   const tiles = tile('New reviews under 4★', reviews.length, reviews.length ? '#C0392B' : '#1A7F5A')
     + tile('Rating drops', drops.length, drops.length ? '#C0392B' : '#1A7F5A', drops.filter(d => d.belowLine).length ? `${drops.filter(d => d.belowLine).length} fell below ${ELIGIBILITY_LINE.toFixed(1)}★` : '');
+  // (scope note no longer needed: everyone gets the full email)
   const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
 
@@ -260,21 +265,21 @@ function buildHtml(data, today, wouldSendTo, who, firstRun) {
           <td style="${td}white-space:nowrap;color:#6B7BA2;">${esc(fmtDay(x.fromDate))} → ${esc(fmtDay(x.toDate))}</td></tr>
           <tr style="background:${x.belowLine ? '#FFF1EE' : i % 2 ? '#F7F8FC' : '#fff'};"><td colspan="4" style="padding:0 10px 10px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;">
             <div style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Last 3 reviews</div>
-            ${x.last3 && x.last3.length ? x.last3.map(v => `<div style="font-size:12px;color:#3a4a6b;margin-bottom:5px;line-height:1.45;">${starsHtml(v.stars)} <b style="color:#001F60;">${esc(v.title || '(no title)')}</b> <span style="color:#9ba8c0;font-size:11px;">· ${esc(v.date ? fmtDay(v.date) : v.dateText)}${v.purchase ? ' · ' + esc(v.purchase) : ''}</span><br>${esc(clip(v.text, 240))}</div>`).join('')
+            ${x.last3 && x.last3.length ? x.last3.map(v => `<div style="font-size:12px;color:#3a4a6b;margin-bottom:5px;line-height:1.45;">${starsHtml(v.stars)} <b style="color:#001F60;">${esc(v.title || '(no title)')}</b> <span style="color:#9ba8c0;font-size:11px;">· ${esc(v.date ? fmtDay(v.date) : v.dateText)}${v.purchase ? ' · ' + esc(v.purchase) : ''}</span><br><span style="white-space:pre-line;">${esc(String(v.text || '').trim())}</span></div>`).join('')
               : '<div style="font-size:11px;color:#9ba8c0;">No written reviews for this product in the reviews sheet yet.</div>'}
           </td></tr>`).join('')}</table>` : '';
     const reviewCards = rv.length ? `<div style="margin:14px 0 4px;font-size:13px;font-weight:700;color:#001F60;">New reviews under 4★ · ${rv.length}</div>
       ${rv.map(x => `<div style="border:1px solid #e4e8ef;border-left:4px solid ${x.stars <= 2 ? '#C0392B' : '#F2A900'};border-radius:6px;padding:10px 12px;margin-bottom:8px;">
         <div style="font-size:12px;">${starsHtml(x.stars)} &nbsp;<b style="color:#001F60;">${esc(x.title || '(no title)')}</b></div>
         <div style="font-size:11px;color:#6B7BA2;margin:3px 0 6px;"><b style="color:#001F60;">${esc(x.sku)}</b> · ${esc(clip(x.product, 70))} · ${esc(x.date ? fmtDay(x.date) : x.dateText)}${x.purchase ? ` · ${esc(x.purchase)}` : ''}${x.reviewer ? ` · ${esc(x.reviewer)}` : ''}</div>
-        <div style="font-size:12px;color:#3a4a6b;line-height:1.5;">${esc(clip(x.text, 600))}</div></div>`).join('')}` : '';
+        <div style="font-size:12px;color:#3a4a6b;line-height:1.5;white-space:pre-line;">${esc(String(x.text || '').trim())}</div></div>`).join('')}` : '';
     return `<tr><td style="padding:18px 32px 6px;">
       <div style="font-size:18px;font-weight:700;color:#001F60;font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;">${esc(brand)}
         <span style="font-size:11px;font-weight:400;color:#6B7BA2;font-family:Arial,sans-serif;">${mgrs ? '&nbsp;·&nbsp;' + esc(mgrs) : ''}</span></div>
       ${dropTable}${reviewCards}</td></tr>`;
   }).join('');
 
-  const scope = who && who !== 'all' ? `Your brands only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
+  const scope = '';
   const notes = [
     rises.length ? `Ratings up: ${rises.map(x => `${esc(x.sku)} ${x.from.toFixed(1)}★ → ${x.to.toFixed(1)}★`).join(', ')}.` : '',
     'Reviews: under 4★ and new since the last email (from the weekly reviews upload). Ratings: Helium 10 Keyword Tracker, latest update vs the one before. "Last 3 reviews" are written reviews only — Amazon\'s rating also counts star ratings left without a review, so a drop can come from ratings that don\'t appear here.',
@@ -311,7 +316,7 @@ function buildWorkbook({ reviews, ratings }) {
     XLSX.utils.book_append_sheet(wb, ws, 'New reviews under 4 stars');
   }
   if (ratings.length) {
-    const last = (x, i) => { const v = (x.last3 || [])[i]; return v ? `${v.stars}★ ${v.date || v.dateText} — ${v.title}: ${clip(v.text, 300)}` : ''; };
+    const last = (x, i) => { const v = (x.last3 || [])[i]; return v ? `${v.stars}★ ${v.date || v.dateText} — ${v.title}: ${String(v.text || '').trim()}` : ''; };
     const ws = XLSX.utils.aoa_to_sheet([['Brand', 'SKU', 'ASIN', 'Rating before', 'Rating now', 'Change', 'Reviews before', 'Reviews now', 'Compared from', 'Compared to', `Below ${ELIGIBILITY_LINE.toFixed(1)}?`, 'Brand Manager', 'Latest review', '2nd latest review', '3rd latest review'],
       ...ratings.map(x => [x.brand, x.sku, x.asin, x.from, x.to, Math.round((x.to - x.from) * 100) / 100, Number.isFinite(x.reviewsFrom) ? x.reviewsFrom : '', Number.isFinite(x.reviewsTo) ? x.reviewsTo : '', x.fromDate, x.toDate, x.to < ELIGIBILITY_LINE ? 'YES' : '', x.manager, last(x, 0), last(x, 1), last(x, 2)])]);
     ws['!cols'] = [{ wch: 14 }, { wch: 16 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 8 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 60 }, { wch: 60 }, { wch: 60 }];
