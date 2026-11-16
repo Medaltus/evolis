@@ -80,7 +80,13 @@ const T = { // thresholds
   salesMoM: 0.30, salesYoY: 0.20, salesBaseline: 0.35, salesMinUnits: 20, salesMinLoss: 200,
   cvrDrop: 0.25, cvrMinSessions: 200, cvrSteady: 0.90,
   minUsableDays: 14, oosDays: 3, buyboxDropPts: 15, priceMove: 0.10, brandWidePts: 10,
+  // ADDED 2026-11-16 — minimums relative to brand size, so small brands get alerts too:
+  // a product that's ≥10% of its brand's sales qualifies with lower floors.
+  importantShare: 0.10, smallTrafficMin: 50, smallUnitsMin: 5, smallCvrMin: 80,
+  lossShareOfBrand: 0.05, lossFloor: 50,
+  brandAlertMoM: 0.30, brandAlertYoY: 0.20,
 };
+const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
@@ -126,12 +132,15 @@ module.exports = async (req, res) => {
     const cards = []; const inventory = []; const brandSummaries = {};
 
     for (const brand of brands.filter(b => b.active)) {
-      if (!tabs.has(brand.tabName)) continue;
+      const bName = brand.displayName || brand.id;
+      if (!tabs.has(brand.tabName)) { brandSummaries[bName] = { note: 'Not in the Daily Business Report (no tab)' }; continue; }
       const evDays = eventDaysFor(brand.id);
       const days = await readDays(token, brand.tabName, wanted); // asin -> Map(date -> {s,u,r,bb,sku})
-      if (!days.size) continue;
+      if (!days.size) { brandSummaries[bName] = { note: 'No Daily Business Report data for these dates yet' }; continue; }
       const oos = await oosDaysByAsin(brand, W.cur);
-      const status = await productStatus(brand);
+      const pc = await productsCacheInfo(brand, W.prior[0]); // status + listing changes
+      const status = pc.status;
+      const competition = await competitionFor(brand);
 
       // Brand totals, for "brand-wide" and share of sales.
       const brandAgg = { cur: agg(), prior: agg(), base: agg(), yoy: agg() };
@@ -144,19 +153,26 @@ module.exports = async (req, res) => {
         per.push({ asin, sku, m, a, byDate });
       }
       const brandChange = pctChange(brandAgg.prior.avg('r'), brandAgg.cur.avg('r'));
-      brandSummaries[brand.displayName || brand.id] = {
-        revenueVsPrior: brandChange, revenueVsLastYear: brandAgg.yoy.n >= T.minUsableDays ? pctChange(brandAgg.yoy.avg('r'), brandAgg.cur.avg('r')) : null,
+      const brandYoY = brandAgg.yoy.n >= T.minUsableDays ? pctChange(brandAgg.yoy.avg('r'), brandAgg.cur.avg('r')) : null;
+      const summary = brandSummaries[bName] = {
+        revenueVsPrior: brandChange, revenueVsLastYear: brandYoY,
         sessionsVsPrior: pctChange(brandAgg.prior.avg('s'), brandAgg.cur.avg('s')), curRevenue28: brandAgg.cur.avg('r') * 28,
+        checked: 0, flagged: 0, inventory: 0, manager: '',
+        brandAlert: brandChange != null && brandChange <= -T.brandAlertMoM && (brandYoY == null || brandYoY <= -T.brandAlertYoY),
       };
       const brandBaseRev = brandAgg.prior.avg('r') * 28 || 1;
+      const minLoss = Math.max(T.lossFloor, Math.min(T.salesMinLoss, brandBaseRev * T.lossShareOfBrand));
 
       for (const p of per) {
         if (!p.m || p.m.status !== 'LIVE') continue;               // master list = source of truth
+        if (!summary.manager && p.m.manager) summary.manager = p.m.manager;
         const firstBaseMonth = W.base.slice(0, 28);
         if (!firstBaseMonth.some(d => p.byDate.has(d))) continue;  // launched < ~90 days ago
         const { cur, prior, base, yoy } = p.a;
         if (cur.n < T.minUsableDays || prior.n < T.minUsableDays) continue;
         const hasYoy = yoy.n >= T.minUsableDays;
+        summary.checked++;
+        const important = (prior.avg('r') * 28) / brandBaseRev >= T.importantShare; // ≥10% of brand sales
         const d = {
           s: [pctChange(prior.avg('s'), cur.avg('s')), hasYoy ? pctChange(yoy.avg('s'), cur.avg('s')) : null, pctChange(base.avg('s'), cur.avg('s'))],
           u: [pctChange(prior.avg('u'), cur.avg('u')), hasYoy ? pctChange(yoy.avg('u'), cur.avg('u')) : null, pctChange(base.avg('u'), cur.avg('u'))],
@@ -164,15 +180,16 @@ module.exports = async (req, res) => {
         };
         const flags = [];
         // TRAFFIC
-        if (prior.avg('s') * 28 >= T.trafficMinSessions && d.s[0] <= -T.trafficMoM && (hasYoy ? d.s[1] <= -T.trafficYoY : d.s[2] <= -T.trafficMoM)) flags.push('Traffic');
+        if ((prior.avg('s') * 28 >= T.trafficMinSessions || (important && prior.avg('s') * 28 >= T.smallTrafficMin)) && d.s[0] <= -T.trafficMoM && (hasYoy ? d.s[1] <= -T.trafficYoY : d.s[2] <= -T.trafficMoM)) flags.push('Traffic');
         // SALES
         const lost = Math.max((prior.avg('r') - cur.avg('r')) * 28, hasYoy ? (yoy.avg('r') - cur.avg('r')) * 28 : 0);
         const salesBy = k => (d[k][0] <= -T.salesMoM && (hasYoy ? d[k][1] <= -T.salesYoY : true)) || d[k][2] <= -T.salesBaseline;
-        if (base.avg('u') * 28 >= T.salesMinUnits && lost >= T.salesMinLoss && (salesBy('u') || salesBy('r'))) flags.push('Sales');
+        if ((base.avg('u') * 28 >= T.salesMinUnits || (important && base.avg('u') * 28 >= T.smallUnitsMin)) && lost >= minLoss && (salesBy('u') || salesBy('r'))) flags.push('Sales');
         // CONVERSION
         const cvr = x => (x.s ? x.u / x.s : 0);
         const cvrChange = pctChange(cvr(base), cvr(cur));
-        if (cur.s >= T.cvrMinSessions && base.s >= T.cvrMinSessions && cur.avg('s') >= prior.avg('s') * T.cvrSteady && cvrChange <= -T.cvrDrop) flags.push('Conversion');
+        const cvrMin = important ? T.smallCvrMin : T.cvrMinSessions;
+        if (cur.s >= cvrMin && base.s >= cvrMin && cur.avg('s') >= prior.avg('s') * T.cvrSteady && cvrChange <= -T.cvrDrop) flags.push('Conversion');
         if (!flags.length) continue;
 
         const name = p.m.name || '';
@@ -189,6 +206,10 @@ module.exports = async (req, res) => {
         const aspCh = asp(prior) && asp(cur) ? pctChange(asp(prior), asp(cur)) : null;
         if (aspCh != null && Math.abs(aspCh) >= T.priceMove) row.context.push(`Avg price ${aspCh > 0 ? 'up' : 'down'} ${Math.round(Math.abs(aspCh) * 100)}% ($${asp(prior).toFixed(2)} → $${asp(cur).toFixed(2)})`);
         if (status.get(p.asin) === 'hidden') row.context.push('Not discoverable on Amazon today');
+        const comp = competition.get(p.asin);
+        if (comp) row.context.push(comp);
+        const changes = (pc.changes.get(p.asin) || []).slice(-3);
+        if (changes.length) row.context.push(`Changed: ${changes.map(c => `${c.what} (${fmtDay(c.date)})`).join(', ')}`);
         // Compare with the REST of the brand (this product left out), so a big
         // product's own drop can't make the brand look like it fell with it.
         const restChange = pctChange(brandAgg.prior.avg('r') - prior.avg('r'), brandAgg.cur.avg('r') - cur.avg('r'));
@@ -198,13 +219,14 @@ module.exports = async (req, res) => {
         if (evInWindows) row.context.push('Event days excluded');
         row.priority = row.lost * (brandWide ? 0.5 : 1);
 
-        if (oosCount >= T.oosDays) inventory.push({ ...row, oosDays: oosCount });
-        else cards.push(row);
+        if (oosCount >= T.oosDays) { inventory.push({ ...row, oosDays: oosCount }); summary.inventory++; }
+        else { cards.push(row); summary.flagged++; }
       }
       await sleep(300);
     }
 
-    if (!cards.length && !inventory.length) return res.status(200).json({ sent: false, reason: 'nothing qualifies', windowEnd: end });
+    const anyBrandAlert = Object.values(brandSummaries).some(b => b.brandAlert);
+    if (!cards.length && !inventory.length && !anyBrandAlert) return res.status(200).json({ sent: false, reason: 'nothing qualifies', windowEnd: end, brandSummaries });
 
     // ── Versions per recipient ───────────────────────────────────────────────
     const emailOf = n => MANAGER_EMAILS[String(n || '').trim().toLowerCase()] || null;
@@ -231,7 +253,7 @@ module.exports = async (req, res) => {
       : [...versions.entries()].map(([who, data]) => ({ to: [who], who: ALWAYS_TO.includes(who) ? 'all' : who, data }));
     const results = [];
     for (const s of sends) {
-      if (!s.data.cards.length && !s.data.inventory.length) continue;
+      if (!s.data.cards.length && !s.data.inventory.length && !(s.who === 'all' && anyBrandAlert)) continue;
       const lost = s.data.cards.reduce((n, c) => n + c.lost, 0);
       const subject = `${s.test ? '[TEST] ' : ''}Underperforming Products — ${s.data.cards.length} to review, ~$${Math.round(lost).toLocaleString('en-US')} at stake · week ending ${fmtDay(end)}`;
       const html = buildHtml(s.data, ctx, s.who === 'all' ? unknownManagers : [], s.test ? (s.who === 'all' ? ALWAYS_TO : [s.who]) : null, s.who);
@@ -333,17 +355,77 @@ async function oosDaysByAsin(brand, curDays) {
   return out;
 }
 
-// Latest Products Cache status per ASIN: 'hidden' when not DISCOVERABLE.
-async function productStatus(brand) {
-  const out = new Map();
+// From the Products Cache: latest status per ASIN ('hidden' when not
+// DISCOVERABLE), and listing changes since `since` — dates where the title,
+// item highlights, bullets, description, backend keywords or an image slot
+// differ from the previous day (ADDED 2026-11-16).
+const CHANGE_FIELDS = [['title', 'title'], ['item_highlights', 'item highlights'], ['bullet_1', 'bullets'], ['bullet_2', 'bullets'], ['bullet_3', 'bullets'],
+  ['bullet_4', 'bullets'], ['bullet_5', 'bullets'], ['description', 'description'], ['backend_keywords', 'backend keywords']];
+async function productsCacheInfo(brand, since) {
+  const status = new Map(), changes = new Map();
   const rows = await readRows(sheets.products, brand.tabName).catch(() => []);
   let latest = '';
-  for (const r of rows || []) { const d = isoDate(r.date); if (d && d > latest) latest = d; }
+  const bySku = new Map(); // sku -> [{date,row}]
+  for (const r of rows || []) {
+    const d = isoDate(r.date); if (!d) continue;
+    if (d > latest) latest = d;
+    if (d < addDays(since, -1)) continue;
+    const sku = String(r.sku || '').replace(/^'/, '').trim();
+    if (!bySku.has(sku)) bySku.set(sku, []);
+    bySku.get(sku).push({ date: d, row: r });
+  }
   for (const r of rows || []) {
     if (isoDate(r.date) !== latest) continue;
     const st = String(r.status || '').toUpperCase();
-    if (st && !st.includes('DISCOVERABLE')) out.set(String(r.asin || '').trim().toUpperCase(), 'hidden');
+    if (st && !st.includes('DISCOVERABLE')) status.set(String(r.asin || '').trim().toUpperCase(), 'hidden');
   }
+  const slots = c => Object.fromEntries(String(c || '').split('|').map(x => x.trim()).filter(Boolean).map(x => [x.split(':')[0], x.slice(x.indexOf(':') + 1)]));
+  for (const [, list] of bySku) {
+    list.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const asin = String(list[0]?.row.asin || '').trim().toUpperCase();
+    if (!asin || changes.has(asin)) continue; // one SKU per ASIN is enough
+    const found = [];
+    for (let i = 1; i < list.length; i++) {
+      const a = list[i - 1].row, b = list[i].row, date = list[i].date;
+      if (date < since) continue;
+      const what = new Set();
+      for (const [f, label] of CHANGE_FIELDS) if (String(a[f] || '').trim() && String(b[f] || '').trim() && String(a[f]).trim() !== String(b[f]).trim()) what.add(label);
+      const sa = slots(a.images), sb = slots(b.images);
+      if (Object.keys(sa).length && Object.keys(sb).length) for (const v of new Set([...Object.keys(sa), ...Object.keys(sb)])) if (sa[v] !== sb[v]) what.add(`${v} image`);
+      for (const w of what) found.push({ date, what: w });
+    }
+    changes.set(asin, found);
+  }
+  return { status, changes };
+}
+
+// Other sellers on each ASIN on the latest offers day (the offers tabs).
+async function competitionFor(brand) {
+  const out = new Map();
+  try {
+    const token = await getSheetsToken('writer');
+    const got = await sheetsApi(token, 'GET', `/${SF_SHEET}/values/${rng(brand.tabName + ' offers', 'A1:P')}`);
+    const [head = [], ...rows] = got.values || [];
+    const ix = Object.fromEntries(head.map((h, i) => [String(h).trim(), i]));
+    let latest = '';
+    for (const r of rows) { const d = isoDate(r[ix.date]); if (d && d > latest) latest = d; }
+    const byAsin = new Map();
+    for (const r of rows) {
+      if (isoDate(r[ix.date]) !== latest) continue;
+      const asin = String(r[ix.asin] || '').trim().toUpperCase();
+      if (!byAsin.has(asin)) byAsin.set(asin, []);
+      byAsin.get(asin).push(r);
+    }
+    for (const [asin, list] of byAsin) {
+      const others = list.filter(r => r[ix.is_us] !== 'TRUE' && r[ix.seller_id]);
+      if (!others.length) continue;
+      const our = num(list[0][ix.our_price]);
+      const lowest = Math.min(...others.map(r => num(r[ix.landed_price])));
+      const owner = String(list[0][ix.buybox_owner] || '');
+      const vs = our ? (lowest < our ? `, lowest $${(our - lowest).toFixed(2)} below ours` : lowest > our ? `, lowest $${(lowest - our).toFixed(2)} above ours` : ', lowest = ours') : '';
+      out.set(asin, `${others.length} other seller${others.length === 1 ? '' : 's'}${vs} · Buy Box: ${owner.startsWith('us') ? owner.replace('us', 'ours') : owner || 'none'}`);
+    }
+  } catch { /* no offers tab yet for this brand */ }
   return out;
 }
 
@@ -364,6 +446,29 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
     <div style="font-size:11px;color:#6B7BA2;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">${esc(l)}</div><div style="font-size:24px;color:${c};font-weight:700;margin-top:2px;">${v}</div>${sub ? `<div style="font-size:11px;color:#6B7BA2;">${esc(sub)}</div>` : ''}</div></td>`;
   const tiles = tile('Products to review', cards.length, '#001F60') + tile('Revenue at stake', money(lostTotal), '#C0392B', 'per 28 days')
     + tile('Likely inventory', inventory.length, '#D35400', 'out of FBA stock ≥3 days');
+
+  // ADDED 2026-11-16 — every brand, so "checked and fine" is visible and
+  // nothing drops out silently. A brand manager's version lists their brands.
+  const mine = name => {
+    if (!who || who === 'all') return true;
+    const b = ctx.brandSummaries[name] || {};
+    return MANAGER_EMAILS[String(b.manager || '').trim().toLowerCase()] === who || [...cards, ...inventory].some(c => c.brand === name);
+  };
+  const summaryRows = Object.entries(ctx.brandSummaries).filter(([name]) => mine(name))
+    .sort((a, b) => (b[1].brandAlert - a[1].brandAlert) || ((b[1].curRevenue28 || 0) - (a[1].curRevenue28 || 0)))
+    .map(([name, b], i) => b.note
+      ? `<tr style="background:${i % 2 ? '#F7F8FC' : '#fff'};"><td style="${td}font-weight:700;">${esc(name)}</td><td style="${td}color:#9ba8c0;" colspan="7">${esc(b.note)}</td></tr>`
+      : `<tr style="background:${b.brandAlert ? '#FFF1EE' : i % 2 ? '#F7F8FC' : '#fff'};">
+          <td style="${td}font-weight:700;">${esc(name)}${b.brandAlert ? ` ${pill('Brand down', '#FFD2CC', '#C0392B')}` : ''}<div style="font-size:10px;color:#9ba8c0;">${esc(b.manager || '')}</div></td>
+          <td style="${td}text-align:right;">${money(b.curRevenue28 || 0)}</td><td style="${td}text-align:right;">${pctCell(b.revenueVsPrior)}</td><td style="${td}text-align:right;">${pctCell(b.revenueVsLastYear)}</td>
+          <td style="${td}text-align:right;">${pctCell(b.sessionsVsPrior)}</td><td style="${td}text-align:right;">${b.checked}</td>
+          <td style="${td}text-align:right;font-weight:${b.flagged ? 700 : 400};color:${b.flagged ? '#C0392B' : '#001F60'};">${b.flagged}</td><td style="${td}text-align:right;">${b.inventory || 0}</td></tr>`).join('');
+  const summaryTable = `<tr><td style="padding:6px 32px 4px;">
+      <div style="font-size:13px;font-weight:700;color:#001F60;margin-bottom:6px;">All brands</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
+        <tr><th style="${th}">Brand</th><th style="${th}text-align:right;">Revenue (28d)</th><th style="${th}text-align:right;">vs prior</th><th style="${th}text-align:right;">vs last yr</th>
+        <th style="${th}text-align:right;">Sessions vs prior</th><th style="${th}text-align:right;">Products checked</th><th style="${th}text-align:right;">Flagged</th><th style="${th}text-align:right;">Likely inventory</th></tr>
+        ${summaryRows}</table></td></tr>`;
 
   const brandsInOrder = [...new Set([...cards, ...inventory].map(c => c.brand))]
     .sort((a, b) => cards.filter(c => c.brand === b).reduce((n, c) => n + c.lost, 0) - cards.filter(c => c.brand === a).reduce((n, c) => n + c.lost, 0));
@@ -397,6 +502,7 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
 
   const scope = who && who !== 'all' ? `Your brands only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const notes = [
+    'Small brands: a product that is ≥10% of its brand\'s sales is checked with lower minimums (50 sessions / 5 units), and the minimum revenue loss is 5% of the brand\'s 28-day revenue (between $50 and $200). "Brand down" = the whole brand\'s revenue is down ≥30% vs the prior 28 days and ≥20% vs last year.',
     'Ranked by revenue at stake: revenue lost over 28 days vs the prior 28 days (or vs last year, if larger); brand-wide declines count half. "vs prior / last yr" = change vs the prior 28 days / the same 28 days last year (per-day averages). Conversion compares with the trailing 3 months.',
     ctx.events.length ? `Event days left out of every comparison: ${ctx.events.map(e => esc(e.name)).join(', ')}.` : 'No events listed yet — add Prime Day, Black Friday etc. to the "events" tab of the Daily Business Report sheet so they are left out of comparisons.',
     unknownManagers.length ? `Brand Manager name(s) on the master list with no email on file (not emailed): ${unknownManagers.map(esc).join(', ')}.` : '',
@@ -414,6 +520,7 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
         ${scope ? `<div style="font-size:12px;color:#24E9A3;margin-top:6px;">${esc(scope)}</div>` : ''}
       </td></tr>
       <tr><td style="padding:22px 32px 4px;"><table cellpadding="0" cellspacing="0"><tr>${tiles}</tr></table></td></tr>
+      ${summaryTable}
       ${sections}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:12px;color:#6B7BA2;">Every flagged product, with all its numbers, is in the attached Excel file.</div>${notes}</td></tr>
       <tr><td style="background:#001F60;padding:16px 32px;"><div style="padding-bottom:12px;"><img src="${LOGO_URL}" alt="Medaltus" height="22" style="height:22px;display:block;"></div>
