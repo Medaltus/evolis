@@ -65,6 +65,7 @@
  *
  * Manual:
  *   GET /api/cron/sync-account-health?scan=violations   inactive listings scan (scheduled daily; see above)
+ *   GET /api/cron/sync-account-health?scan=violations&restart=true   start today's scan over (then run without restart until done)
  *   GET /api/cron/sync-account-health              normal run
  *   GET /api/cron/sync-account-health?check=true   access check: request the report for each account, write nothing
  *   GET /api/cron/sync-account-health?force=true   request today's reports again
@@ -155,7 +156,7 @@ module.exports = async (req, res) => {
 
     const meta = await readMeta();
     if (req.query.scan === 'violations') {
-      const out = await violationScan(meta, today);
+      const out = await violationScan(meta, today, req.query.restart === 'true');
       meta.last_scan_run = new Date().toISOString();
       await writeMeta(meta);
       return res.status(200).json({ scan: 'violations', ...out });
@@ -393,8 +394,9 @@ async function latestRows(sheetId, tab, cols) {
 }
 
 // ── Violation scan (ADDED 2026-11-16) ──────────────────────────────────────
-async function violationScan(meta, today) {
+async function violationScan(meta, today, restart = false) {
   const started = Date.now();
+  if (restart) { delete meta.scan_done_date; meta.scan_state = '{}'; } // &restart=true: start today's scan over for every account
   const scanBrands = sc => brands.filter(b => b.active && !SCAN_EXCLUDED_BRANDS.includes(b.id) && accountForBrand(b) === sc.account
     && ((b.marketplaceId || process.env.SP_MARKETPLACE_ID) === sc.marketplaceId()));
   const brandOf = (sc, sku) => {
