@@ -37,11 +37,16 @@ module.exports = async (req, res) => {
   let account;
   try { account = getAccount(req); }
   catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
-  const CRON = cronLabel('sync-daily-business-report-process', account);
-  const META_TAB = metaTabFor(account);
-  const UNMATCHED = C.unmatchedTabFor(account);
-  const accountBrands = brandsForAccount(account).filter(C.isUsBrand);
-  if (!accountBrands.length) return res.status(200).json({ skipped: true, account, reason: 'no active brands for this account' });
+  // ?market=ca (ADDED 2026-11-16) — NewDerm's Amazon.ca brands as their own scope.
+  let market;
+  try { market = C.getMarket(req); }
+  catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  const scope = C.scopeKey(account, market);
+  const CRON = cronLabel('sync-daily-business-report-process', account) + (market === 'us' ? '' : ` [${market}]`);
+  const META_TAB = C.metaTabForScope(metaTabFor(account), market);
+  const UNMATCHED = C.unmatchedTabForScope(account, market);
+  const accountBrands = C.MARKETS[market].brands(brandsForAccount(account));
+  if (!accountBrands.length) return res.status(200).json({ skipped: true, account, market, reason: 'no active brands for this account in this marketplace' });
 
   const today = C.todayPT();
   const ts = new Date().toISOString();
@@ -86,7 +91,7 @@ module.exports = async (req, res) => {
 
     let written = { asinRows: 0, days: 0, rowsRemoved: 0, byTab: {} };
     if (days.size) {
-      const asinMap = await C.loadAsinMap(accountBrands);
+      const asinMap = await C.loadAsinMap(accountBrands, market);
       const freshByTab = new Map();   // tab -> rows
       const totals = new Map();       // `${date}|${brandTab}` -> acc
 
@@ -143,10 +148,10 @@ module.exports = async (req, res) => {
 
       // ── Daily Totals: replace only THIS account's rows for these days ──
       const finalCut = C.addDays(today, -C.FINAL_AFTER);
-      const oldTotals = (await C.readTotals()).filter(r => r[0] >= cutoff && !(r[1] === account && days.has(r[0])));
+      const oldTotals = (await C.readTotals()).filter(r => r[0] >= cutoff && !(r[1] === scope && days.has(r[0])));
       const newTotals = [...totals.entries()].map(([k, t]) => {
         const [date, brand] = k.split('|');
-        return [date, account, brand, t.asins, t.s, t.pv, t.u, C.round2(t.rev), t.s ? C.round2(t.u / t.s * 100) : 0, date <= finalCut ? 'Y' : 'N', ts];
+        return [date, scope, brand, t.asins, t.s, t.pv, t.u, C.round2(t.rev), t.s ? C.round2(t.u / t.s * 100) : 0, date <= finalCut ? 'Y' : 'N', ts];
       });
       const allTotals = [...oldTotals, ...newTotals].sort((a, b) => a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1])) || String(a[2]).localeCompare(String(b[2])));
 
