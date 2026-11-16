@@ -77,6 +77,10 @@ const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
 const LOG_TAB = 'email-log-listing-alerts';
 const ROWS_PER_SECTION = 25; // per brand per section in the email body; the Excel has everything
 
+// ADDED 2026-11-16 per Jaclyn — brands never included in the alert emails.
+// collagelee: merged into Cloud Café (2026-11-16); hillside: brand terminated (2026-11-16).
+const EMAIL_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside'];
+
 // Contribution fields: [master header, Products Cache column, label]
 const FIELDS = [
   ['Title', 'title', 'Title'],
@@ -135,7 +139,7 @@ module.exports = async (req, res) => {
     const found = [];       // alert rows
     const unknownManagers = new Set();
     const notSynced = []; // brands with no rows yet for reportDate
-    for (const brand of brands.filter(b => b.active)) {
+    for (const brand of brands.filter(b => b.active && !EMAIL_EXCLUDED_BRANDS.includes(b.id))) {
       const rows = await readRows(sheets.products, brand.tabName).catch(err => { throw new Error(`Products Cache tab "${brand.tabName}": ${err.message}`); });
       const day = {}, prev = {};
       for (const r of rows || []) {
