@@ -44,13 +44,18 @@ const SHEET_SETS = [
     changes:  { id: '1Id_oct_VhZUpUadsbwDPc9wsG7oWIe6ZG1eQ5DhC_Qc', tab: 'changes' },
   },
 ];
+SHEET_SETS.push({ // Walmart (ADDED 2026-11-16) — written by sync-walmart-health.js in the same layout, as account "Walmart"
+  metrics:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'metrics_detail' },
+  changes:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'changes' },
+  defects:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'defect_orders' },
+});
 const SHEETS = { meta: { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'email-log' } }; // send log lives with set 1
 const TO = ['awilcox@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com'];
 const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
 const REPLY_TO = 'reports@medaltus.com';
 const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
-const ACCOUNT_ORDER = ['NewDerm|US', 'NewDerm|CA', 'High On Love|US']; // these first; any other account follows
-const HEALTHY = /^(GOOD|GREAT|NONE|NORMAL|HEALTHY|)$/i;
+const ACCOUNT_ORDER = ['NewDerm|US', 'NewDerm|CA', 'High On Love|US']; // these first; other Amazon accounts next; Walmart last
+const HEALTHY = /^(GOOD|GREAT|NONE|NORMAL|HEALTHY|ACTIVE|MEETS STANDARD|)$/i; // last two: Walmart
 
 // Plain-English names for Amazon's metric keys.
 const NAMES = {
@@ -63,9 +68,14 @@ const NAMES = {
   restrictedProductPolicyViolations: 'Restricted product policy violations', suspectedIntellectualPropertyViolations: 'Suspected IP violations',
   foodAndProductSafetyIssues: 'Food & product safety issues', customerProductReviewsPolicyViolations: 'Review policy violations',
   otherPolicyViolations: 'Other policy violations', documentRequests: 'Document requests',
+  // Walmart (sync-walmart-health.js)
+  cancellations: 'Cancellation rate', onTimeDelivery: 'On-time delivery rate', validTracking: 'Valid tracking rate', sellerResponse: 'Seller response rate',
+  lateShipment: 'Late shipment rate', onTimeShipment: 'On-time shipment rate', carrierMethodAccuracy: 'Carrier method accuracy',
+  shipFromAccuracy: 'Ship-from location accuracy', negativeFeedback: 'Negative feedback rate', returns: 'Return rate', itemNotReceived: 'Item not received rate',
 };
+const WM_RATES = new Set(['cancellations', 'onTimeDelivery', 'validTracking', 'sellerResponse', 'lateShipment', 'onTimeShipment', 'carrierMethodAccuracy', 'shipFromAccuracy', 'negativeFeedback', 'returns', 'itemNotReceived']);
 const nameOf = m => NAMES[m] || m.replace(/\[\d+\]$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\./g, ' › ').replace(/^./, c => c.toUpperCase());
-const isRate = m => /rate/i.test(m) && !/rating/i.test(m);
+const isRate = m => WM_RATES.has(m) || (/rate/i.test(m) && !/rating/i.test(m));
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
@@ -78,7 +88,7 @@ module.exports = async (req, res) => {
   try {
     const read = async s => readTab(s).catch(() => []); // a set with no data yet just adds nothing
     const all = async key => (await Promise.all(SHEET_SETS.map(set => read(set[key])))).flat();
-    const [metrics, scan, feedback, changes] = await Promise.all([all('metrics'), all('scan'), all('feedback'), all('changes')]);
+    const [metrics, scan, feedback, changes, defects] = await Promise.all([all('metrics'), all('scan'), all('feedback'), all('changes'), all('defects')]);
     if (!testTo.length && !preview && !force) {
       const log = await read(SHEETS.meta);
       if (log.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
@@ -87,7 +97,7 @@ module.exports = async (req, res) => {
     // Latest snapshot per account
     const latestDate = (rows, acc, mkt) => rows.filter(r => r[1] === acc && r[2] === mkt).map(r => r[0]).sort().pop();
     const accounts = [...new Set(metrics.filter(r => r[1] && r[2]).map(r => `${r[1]}|${r[2]}`))]
-      .sort((a, b) => ((ACCOUNT_ORDER.indexOf(a) + 1) || 99) - ((ACCOUNT_ORDER.indexOf(b) + 1) || 99) || a.localeCompare(b))
+      .sort((a, b) => ((ACCOUNT_ORDER.indexOf(a) + 1) || (a.startsWith('Walmart|') ? 200 : 99)) - ((ACCOUNT_ORDER.indexOf(b) + 1) || (b.startsWith('Walmart|') ? 200 : 99)) || a.localeCompare(b))
       .map(k => k.split('|'));
     const cards = accounts.map(([acc, mkt]) => {
       const d = latestDate(metrics, acc, mkt);
@@ -107,7 +117,8 @@ module.exports = async (req, res) => {
       return res.status(200).json({ sent: false, reason: 'nothing new today (weekday)', changesToday: todays.length });
     }
 
-    const html = buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test: testTo.length ? TO : null });
+    const defectsLatest = latestScan(defects); // same "newest day per account" rule
+    const html = buildHtml({ today, monday, cards, todays, scanFound, defectsLatest, newFeedback, test: testTo.length ? TO : null });
     if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
     const atRisk = cards.filter(c => !HEALTHY.test(c.status));
@@ -153,14 +164,14 @@ const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g,
 const pct = v => { const n = parseFloat(v); return Number.isFinite(n) ? `${(n * 100).toFixed(n < 0.1 ? 2 : 1).replace(/\.0+$/, '')}%` : esc(v); };
 const fmtVal = (m, v) => (v === '' || v == null ? '' : isRate(m) ? pct(v) : esc(v));
 const statusPill = s => {
-  const bad = /risk|bad|poor|fail|critical|suspend|deactivat/i.test(s), mid = /fair|warning|at_risk/i.test(s) && !/bad/i.test(s);
+  const bad = /risk|bad|poor|fail|critical|suspend|deactivat/i.test(s), mid = /fair|warning|at_risk|attention|monitor|recommended/i.test(s) && !/bad/i.test(s);
   const [bg, fg] = bad ? ['#FFD2CC', '#C0392B'] : mid ? ['#FFE8A3', '#7A5B00'] : ['#D6F7EA', '#1A7F5A'];
   return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:${bg};color:${fg};font-size:11px;font-weight:700;">${esc(String(s || '—').replace(/_/g, ' '))}</span>`;
 };
 const shortDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? fmtDay(m[0], true) : ''; };
 const daysOpen = (first, today) => { const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'); return Math.max(0, Math.round((b - a) / 86400000)); };
 
-function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test }) {
+function buildHtml({ today, monday, cards, todays, scanFound, defectsLatest = [], newFeedback, test }) {
   const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
   const section = (title, color, inner) => `<tr><td style="padding:18px 32px 4px;"><div style="font-size:15px;font-weight:700;color:${color};font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;margin-bottom:8px;">${title}</div>${inner}</td></tr>`;
@@ -184,6 +195,13 @@ function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test 
   const attention = cards.flatMap(c => c.attention.map(a => ({ ...a, acc: c.acc, mkt: c.mkt })));
   // Under each policy-violation row: the SKUs the violation scan found for it.
   const skuRow = a => {
+    if (a.acc === 'Walmart') { // Walmart: the orders behind the metric (defect_orders)
+      const orders = defectsLatest.filter(r => r[3] === a.metric);
+      if (!orders.length) return '';
+      const shown = orders.slice(0, 10).map(r => `<div style="margin:2px 0;">Order <b style="color:#001F60;">${esc(r[4])}</b>${r[5] ? ` · SKU <b style="color:#001F60;">${esc(r[5])}</b>` : ''}${r[6] ? ` · ${esc(r[6])}` : ''}${r[7] ? ` · <span style="color:#6B7BA2;">${esc(r[7])}</span>` : ''}${r[8] ? ` — ${esc(r[8])}` : ''}</div>`).join('');
+      return `<tr><td style="padding:0 10px 9px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;font-size:11px;color:#3a4a6b;" colspan="6">
+        <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">Orders behind it (${orders.length}):</span> ${shown}${orders.length > 10 ? `<div style="color:#9ba8c0;">+ ${orders.length - 10} more in the Walmart Account Health sheet (defect_orders)</div>` : ''}</td></tr>`;
+    }
     const types = SCAN_TYPES_FOR[a.metric];
     if (!types) return '';
     const hits = scanFound.filter(r => r[1] === a.acc && r[2] === a.mkt && types.includes(r[8]));
@@ -194,7 +212,7 @@ function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test 
       <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">SKUs found${hits.length ? ` (${hits.length})` : ''}:</span> ${inner}</td></tr>`;
   };
   const attentionHtml = attention.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-      <tr><th style="${th}">Account</th><th style="${th}">Metric</th><th style="${th}">Status</th><th style="${th}">Now</th><th style="${th}">Amazon's target</th><th style="${th}">Period</th></tr>
+      <tr><th style="${th}">Account</th><th style="${th}">Metric</th><th style="${th}">Status</th><th style="${th}">Now</th><th style="${th}">Target</th><th style="${th}">Period</th></tr>
       ${attention.map(a => `<tr><td style="${td}">${esc(a.acc)} ${esc(a.mkt)}</td><td style="${td}font-weight:700;">${esc(nameOf(a.metric))}</td><td style="${td}">${statusPill(a.status)}</td>
         <td style="${td}white-space:nowrap;">${a.defects !== '' && a.defects != null && !isRate(a.metric) ? `<b>${esc(a.defects)}</b>` : `<b>${fmtVal(a.metric, a.value)}</b>`}</td>
         <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.target !== '' ? `${({ LESS_THAN: 'under', GREATER_THAN: 'over', EQUALS: '' })[a.cond] ?? ''} ${isRate(a.metric) ? pct(a.target) : esc(a.target)}` : '—'}</td>
@@ -210,7 +228,7 @@ function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test 
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f7;padding:32px 0;"><tr><td align="center">
     <table width="1100" cellpadding="0" cellspacing="0" style="width:1100px;max-width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
       <tr><td style="background:#001F60;padding:24px 32px;">
-        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">NewDerm &middot; Amazon Seller Accounts</div>
+        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">Medaltus &middot; Amazon &amp; Walmart Seller Accounts</div>
         <div style="font-size:24px;color:#fff;font-weight:700;margin-top:6px;font-family:Georgia,'Times New Roman',serif;">Account Health</div>
         <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${esc(fmtDay(today))}${monday ? ' &middot; weekly snapshot' : ''} &middot; ${cards.map(c => `${esc(c.acc)} ${esc(c.mkt)}`).join(', ')}</div>
       </td></tr>
@@ -218,7 +236,7 @@ function buildHtml({ today, monday, cards, todays, scanFound, newFeedback, test 
       ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
       ${section('Needs attention', '#C0392B', attentionHtml)}
       ${section('New negative seller feedback', '#001F60', feedbackHtml)}
-      <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Source: Amazon's Account Health report, pulled each morning. Full history in the Account Health sheets (Daily Health, Metrics Detail, Changes, Seller Feedback).</div>
+      <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Sources: Amazon's Account Health report and Walmart's Seller Performance API (30-day window), pulled each morning. Full history in the Account Health sheets.</div>
         ${test ? `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">TEST SEND — the real email goes to: ${test.map(esc).join(', ')}.</div>` : ''}</td></tr>
       <tr><td style="background:#001F60;padding:16px 32px;"><div style="padding-bottom:12px;"><img src="${LOGO_URL}" alt="Medaltus" height="22" style="height:22px;display:block;"></div>
         <span style="font-size:11px;color:#6B7BA2;">Medaltus automated report &middot; reports@medaltus.com</span></td></tr>
