@@ -47,11 +47,17 @@
  * Needs the "Selling Partner Insights" role on each Amazon app (NewDerm's and
  * High On Love's). ?check=true tests that without writing anything.
  *
- * INACTIVE LISTINGS SCAN (ADDED 2026-11-16; CHANGED same day per Jaclyn: it
- * now records EVERY issue on every inactive SKU — no keyword guessing about
- * which violation it belongs to — into the "inactive_listings" tab, and runs
- * daily on its own schedule, once per day). Only the active cron brands
- * (brands.js, minus the brands left out of the emails):
+ * INACTIVE LISTINGS SCAN (ADDED 2026-11-16; reworked same day per Jaclyn).
+ * Amazon calls a listing "Inactive" for ordinary reasons too (out of stock,
+ * -SF backups with no quantity, listings closed on purpose), so a non-active
+ * SKU is only kept when at least one of these holds (Jaclyn's rules):
+ *   1. Amazon has suppressed, removed or blocked it (an enforcement on an issue);
+ *   2. it is not discoverable (Amazon's own listing status lacks DISCOVERABLE);
+ *   3. the All Listings report says "Incomplete".
+ * Kept SKUs get every issue Amazon reports (one row per SKU + message) and a
+ * why_listed column; stranded stock is always kept. Runs daily on its own
+ * schedule, once per day. Only the active cron brands (brands.js, minus the
+ * brands left out of the emails):
  *   1. requests the All Listings report (every SKU, incl. inactive/removed) and
  *      the Stranded inventory report per account;
  *   2. on later ?scan=violations runs, collects them, keeps the cron brands' SKUs
@@ -95,7 +101,7 @@ const SHEETS = {
   issues:   { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'listing_issues', account: 'primary' }, // 2nd tab of Metrics Detail
   scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'inactive_listings', account: 'primary' }, // 3rd tab of Metrics Detail
 };
-const SCAN_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'listing_status', 'source', 'severity', 'amazon_message', 'enforcement', 'first_seen'];
+const SCAN_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'listing_status', 'source', 'severity', 'amazon_message', 'enforcement', 'first_seen', 'why_listed'];
 const SCAN_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside']; // same brands left out of the alert emails
 const SCAN_BUDGET_MS = 230_000;
 const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
@@ -449,7 +455,7 @@ async function violationScan(meta, today, restart = false) {
           const sku = r.sku || r['seller-sku'] || ''; const b = brandOf(sc, sku);
           const reason = [r['stranded-reason'], r['primary-action'], r['status-primary'], r['status-secondary'], r.reason].filter(Boolean).join(' · ');
           if (!b) continue;
-          add.push([today, sc.label, sc.marketplace, b.displayName || b.id, sku, r.asin || '', 'Stranded', 'Stranded inventory report', '', reason || 'Stranded', '', '']);
+          add.push([today, sc.label, sc.marketplace, b.displayName || b.id, sku, r.asin || '', 'Stranded', 'Stranded inventory report', '', reason || 'Stranded', '', '', 'Stranded stock']);
         }
         if (add.length) { await writeScanRows(sc, add, today); st.found += add.length; }
       }
@@ -464,11 +470,20 @@ async function violationScan(meta, today, restart = false) {
         listing = await spRequest('GET', `/listings/2021-08-01/items/${await sellerIdFor(sc)}/${encodeURIComponent(q.sku)}`,
           { marketplaceIds: sc.marketplaceId(), includedData: 'summaries,issues' }, null, sc.account);
       } catch { continue; }
-      for (const iss of (listing && listing.issues) || []) {
+      if (!listing || listing.errors) continue; // SKU no longer exists on Amazon
+      const issues = listing.issues || [];
+      const amazonStatus = ((listing.summaries || [])[0] || {}).status || [];
+      const enforced = [...new Set(issues.flatMap(i => (i.enforcements?.actions || []).map(a => a.action)).filter(a => /SUPPRESS|REMOV|BLOCK/i.test(a || '')))];
+      const notDiscoverable = !amazonStatus.some(x => /DISCOVERABLE/i.test(x));
+      const incomplete = /incomplete/i.test(q.status);
+      if (!enforced.length && !notDiscoverable && !incomplete) continue; // out of stock / closed on purpose / -SF backup → not listed
+      const why = [enforced.length ? enforced.map(a => a.replace(/_/g, ' ').toLowerCase()).join(', ').replace(/^./, c => c.toUpperCase()) : '', notDiscoverable ? 'Not discoverable' : '', incomplete ? 'Incomplete' : ''].filter(Boolean).join(' · ');
+      const statusText = [q.status, amazonStatus.length ? `Amazon: ${amazonStatus.join(', ')}` : 'Amazon: no status'].join(' · ');
+      const withText = issues.filter(i => String(i.message || '').trim());
+      if (!withText.length) found.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, statusText, 'Listings API', '', '(Amazon gives no reason on the listing)', enforced.join('; '), '', why]);
+      for (const iss of withText) {
         const actions = (iss.enforcements?.actions || []).map(a => a.action).filter(Boolean);
-        const msg = String(iss.message || '').trim();
-        if (!msg) continue;
-        found.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, q.status, 'Listings API', iss.severity || '', msg, actions.join('; '), '']);
+        found.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, statusText, 'Listings API', iss.severity || '', String(iss.message).trim(), actions.join('; '), '', why]);
       }
       await sleep(220);
     }
