@@ -206,13 +206,13 @@ module.exports = async (req, res) => {
           context: [],
         };
         const bbPrior = prior.bbAvg(), bbCur = cur.bbAvg();
-        if (bbPrior != null && bbCur != null && bbPrior - bbCur >= T.buyboxDropPts) row.context.push(`Buy Box ${Math.round(bbPrior)}% → ${Math.round(bbCur)}%`);
+        if (bbPrior != null && bbCur != null && bbPrior - bbCur >= T.buyboxDropPts) row.context.push({ label: 'Buy Box', text: `${Math.round(bbPrior)}% → ${Math.round(bbCur)}% of the time` });
         const asp = x => (x.u ? x.r / x.u : null);
         const aspCh = asp(prior) && asp(cur) ? pctChange(asp(prior), asp(cur)) : null;
-        if (aspCh != null && Math.abs(aspCh) >= T.priceMove) row.context.push(`Avg price ${aspCh > 0 ? 'up' : 'down'} ${Math.round(Math.abs(aspCh) * 100)}% ($${asp(prior).toFixed(2)} → $${asp(cur).toFixed(2)})`);
-        if (status.get(p.asin) === 'hidden') row.context.push('Not discoverable on Amazon today');
+        if (aspCh != null && Math.abs(aspCh) >= T.priceMove) row.context.push({ label: 'Price', text: `avg ${aspCh > 0 ? 'up' : 'down'} ${Math.round(Math.abs(aspCh) * 100)}% ($${asp(prior).toFixed(2)} → $${asp(cur).toFixed(2)})` });
+        if (status.get(p.asin) === 'hidden') row.context.push({ label: 'Listing', text: 'not discoverable on Amazon today' });
         const comp = competition.get(p.asin);
-        if (comp) row.context.push(comp);
+        if (comp) row.context.push({ label: 'Competition', text: comp });
         // Ads vs organic for the last two complete months (Ad Orders Cache is
         // monthly; organic units = total units − ad units for the same month).
         const ad = ads.byAsin.get(p.asin);
@@ -222,17 +222,19 @@ module.exports = async (req, res) => {
           const a0 = ad[mPrev.key] || { u: 0, spend: 0, sales: 0 }, a1 = ad[mLast.key] || { u: 0, spend: 0, sales: 0 };
           const o0 = Math.max(0, units(mPrev.key) - a0.u), o1 = Math.max(0, units(mLast.key) - a1.u);
           row.ads = { prevLabel: mPrev.label, lastLabel: mLast.label, adUnits: [a0.u, a1.u], spend: [a0.spend, a1.spend], adSales: [a0.sales, a1.sales], organic: [o0, o1] };
-          row.context.unshift(`Ad units ${mPrev.label} ${a0.u} → ${mLast.label} ${a1.u} (spend $${Math.round(a0.spend).toLocaleString('en-US')} → $${Math.round(a1.spend).toLocaleString('en-US')}) · Organic units ${o0} → ${o1}`);
+          row.context.unshift(
+            { label: `Ads (${mPrev.label} → ${mLast.label})`, text: `${a0.u.toLocaleString('en-US')} → ${a1.u.toLocaleString('en-US')} units · spend $${Math.round(a0.spend).toLocaleString('en-US')} → $${Math.round(a1.spend).toLocaleString('en-US')}` },
+            { label: `Organic (${mPrev.label} → ${mLast.label})`, text: `${o0.toLocaleString('en-US')} → ${o1.toLocaleString('en-US')} units` });
         }
         const changes = (pc.changes.get(p.asin) || []).slice(-3);
-        if (changes.length) row.context.push(`Changed: ${changes.map(c => `${c.what} (${fmtDay(c.date)})`).join(', ')}`);
+        if (changes.length) row.context.push({ label: 'Listing changes', text: changes.map(c => `${c.what} ${fmtDay(c.date)}`).join(' · ') });
         // Compare with the REST of the brand (this product left out), so a big
         // product's own drop can't make the brand look like it fell with it.
         const restChange = pctChange(brandAgg.prior.avg('r') - prior.avg('r'), brandAgg.cur.avg('r') - cur.avg('r'));
         const brandWide = restChange != null && d.r[0] != null && Math.abs(d.r[0] - restChange) * 100 <= T.brandWidePts;
-        if (brandWide) row.context.push(`Brand-wide (rest of brand ${fmtPct(restChange)})`);
+        if (brandWide) row.context.push({ label: 'Brand-wide', text: `rest of the brand is ${fmtPct(restChange)} too` });
         const evInWindows = [...W.cur, ...W.prior, ...W.yoy].some(x => evDays.has(x));
-        if (evInWindows) row.context.push('Event days excluded');
+        if (evInWindows) row.context.push({ label: 'Events', text: 'event days left out of the comparison' });
         row.priority = row.lost * (brandWide ? 0.5 : 1);
 
         if (oosCount >= T.oosDays) { inventory.push({ ...row, oosDays: oosCount }); summary.inventory++; }
@@ -533,7 +535,7 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
         <td style="${td}text-align:right;">${Math.round(c.cur.s).toLocaleString('en-US')}<div style="font-size:11px;">${pctCell(c.d.s[0])} <span style="color:#9ba8c0;">/</span> ${pctCell(c.d.s[1])}</div></td>
         <td style="${td}text-align:right;">${Math.round(c.cur.u).toLocaleString('en-US')}<div style="font-size:11px;">${pctCell(c.d.u[0])} <span style="color:#9ba8c0;">/</span> ${pctCell(c.d.u[1])}</div></td>
         <td style="${td}text-align:right;">${(c.cur.cvr * 100).toFixed(1)}%<div style="font-size:11px;">${pctCell(c.cvrChange)} <span style="color:#9ba8c0;">vs 3-mo</span></div></td>
-        <td style="${td}font-size:11px;">${c.context.map(esc).join('<br>') || '<span style="color:#9ba8c0;">—</span>'}</td></tr>`).join('');
+        <td style="${td}font-size:11px;line-height:1.45;">${c.context.map(x => `<div style="margin-bottom:3px;"><b style="color:#001F60;">${esc(x.label)}:</b> <span style="color:#3a4a6b;">${esc(x.text)}</span></div>`).join('') || '<span style="color:#9ba8c0;">—</span>'}</td></tr>`).join('');
     const more = list.length > ROWS_PER_BRAND ? `<div style="font-size:11px;color:#6B7BA2;margin-top:6px;">+ ${list.length - ROWS_PER_BRAND} more in the attached Excel</div>` : '';
     const table = list.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;margin-top:8px;">
         <tr><th style="${th}width:24px;">#</th><th style="${th}">Product</th><th style="${th}text-align:right;">Share of brand sales</th><th style="${th}text-align:right;">Revenue at stake</th>
@@ -587,7 +589,7 @@ function buildWorkbook({ cards, inventory }) {
     'Sessions (28d)', 'Sessions vs prior', 'Sessions vs last yr', 'Units (28d)', 'Units vs prior', 'Units vs last yr', 'Conversion', 'Conversion vs 3-mo', 'Context',
     'Ad months', 'Ad units (prev → last)', 'Ad spend (prev → last)', 'Ad sales (prev → last)', 'Organic units (prev → last)'];
   const line = c => [c.brand, c.sku, c.asin, c.name, c.manager || '', c.flags.join(', '), round(c.share, 3), Math.round(c.lost), Math.round(c.cur.r), round(c.d.r[0]), round(c.d.r[1]),
-    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.join('; '),
+    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.map(x => `${x.label}: ${x.text}`).join(' | '),
     c.ads ? `${c.ads.prevLabel} → ${c.ads.lastLabel}` : '', c.ads ? c.ads.adUnits.join(' → ') : '', c.ads ? c.ads.spend.map(x => Math.round(x)).join(' → ') : '',
     c.ads ? c.ads.adSales.map(x => Math.round(x)).join(' → ') : '', c.ads ? c.ads.organic.join(' → ') : ''];
   const ws = XLSX.utils.aoa_to_sheet([head, ...[...cards].sort((a, b) => b.priority - a.priority).map(line)]);
