@@ -10,6 +10,8 @@
  *          as data: account status, Account Health Rating, every performance
  *          metric (status, value, Amazon's target) and every policy violation count
  *        GET_SELLER_FEEDBACK_DATA — negative/neutral (1–3★) seller feedback, last 30 days
+ *        GET_MERCHANTS_LISTINGS_FYP_REPORT — suppressed listings with Amazon's reason
+ *          (ADDED 2026-11-16, feeds the listing_issues tab)
  * Scheduled a few times each morning, so a report requested on one run is
  * written on the next.
  *
@@ -24,6 +26,16 @@
  *   Seller Feedback  each feedback once (date + order ID), never repeated;
  *                    the rater's email is not stored
  *   Meta             pending report IDs, last request date per account
+ *   Metrics Detail, 2nd tab "listing_issues" (ADDED 2026-11-16): which LISTINGS
+ *                    carry policy / enforcement problems — Amazon's Account Health
+ *                    report only gives violation COUNTS, never the ASINs. One row per
+ *                    account + SKU + issue per day, from: the Suppressed Listings
+ *                    report, the Products Cache "issues" column (FBA SKUs, latest
+ *                    day) and the -SF product sheet's "<brand> fbm" tabs (FBM SKUs).
+ *                    Kept: anything Amazon enforced ({LISTING_SUPPRESSED}, removed,
+ *                    search-suppressed…) or whose message is about policy
+ *                    (restricted, prohibited, safety, authenticity, IP…). first_seen
+ *                    carries over from earlier days, so you can see how long it's been.
  * Writes alternate between the project's two Google service accounts (see
  * SHEETS below); if one can't open a sheet, the other is tried.
  *
@@ -44,6 +56,9 @@
 const zlib = require('zlib');
 const { spRequest } = require('../_spauth');
 const { getSheetsToken } = require('../config/_sheets_client');
+const brands = require('../config/brands');
+const sheetsConfig = require('../config/sheets');
+const { accountForBrand } = require('../_account');
 const { sendCronFailureAlert } = require('../_alerts');
 
 const SCOPES = [
@@ -59,7 +74,13 @@ const SHEETS = {
   feedback: { id: '1sMJEdXewdG_PXzN_Saj-2Wkd9ozihBUXDGwwopS8YwQ', tab: 'seller_feedback', account: 'primary' },
   changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes', account: 'writer' },
   meta:     { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: '_meta', account: 'primary' },
+  issues:   { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'listing_issues', account: 'primary' }, // 2nd tab of Metrics Detail
 };
+const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
+const REPORT_TYPES = ['GET_V2_SELLER_PERFORMANCE_REPORT', 'GET_SELLER_FEEDBACK_DATA', 'GET_MERCHANTS_LISTINGS_FYP_REPORT'];
+const ISSUE_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'source', 'listing_status', 'issue', 'issue_code', 'severity', 'enforcement', 'first_seen', 'details'];
+const ENFORCED = /LISTING_SUPPRESSED|ATTRIBUTE_SUPPRESSED|CATALOG_ITEM_REMOVED|SEARCH_SUPPRESSED|LISTING_REMOVED|ITEM_REMOVED|SUPPRESS|REMOV|BLOCK|INACTIV/i;
+const POLICY = /restrict|prohibit|polic|pesticid|drug|unapproved|dietary supplement|ingredient|safety|hazmat|dangerous|recall|authentic|counterfeit|intellectual|trademark|copyright|patent|brand registry|compliance|regulat|claim|disease|medical|fda|epa|approval|ungated|gated|category approval/i;
 
 // Daily Health columns: [column, how to find it among the flattened metrics]
 const HEALTH_COLS = [
@@ -124,9 +145,15 @@ module.exports = async (req, res) => {
       catch (err) { still.push(p); results.push({ scope: p.scope, type: p.type, status: 'error checking', error: err.message }); continue; }
       const st = rep && rep.processingStatus;
       if (st === 'IN_QUEUE' || st === 'IN_PROGRESS') { if (ageHours(p.requestedAt) < 24) still.push(p); continue; }
-      if (st !== 'DONE') { results.push({ scope: p.scope, type: p.type, status: st || 'unknown', note: st === 'CANCELLED' ? 'no data for this period' : 'Amazon could not build it' }); continue; }
+      if (st !== 'DONE') {
+        // A cancelled suppressed-listings report means none are suppressed — the
+        // listing_issues tab is still written from the other two sources.
+        if (st === 'CANCELLED' && p.type === 'GET_MERCHANTS_LISTINGS_FYP_REPORT') { results.push({ scope: p.scope, type: 'listing issues', ...(await writeListingIssues(sc, p.date, null)) }); continue; }
+        results.push({ scope: p.scope, type: p.type, status: st || 'unknown', note: st === 'CANCELLED' ? 'no data for this period' : 'Amazon could not build it' }); continue;
+      }
       const text = await download(rep.reportDocumentId, sc.account);
       if (p.type === 'GET_V2_SELLER_PERFORMANCE_REPORT') results.push({ scope: p.scope, type: 'performance', ...(await writePerformance(sc, p.date, text)) });
+      else if (p.type === 'GET_MERCHANTS_LISTINGS_FYP_REPORT') results.push({ scope: p.scope, type: 'listing issues', ...(await writeListingIssues(sc, p.date, text)) });
       else results.push({ scope: p.scope, type: 'feedback', ...(await writeFeedback(sc, text, today)) });
       await sleep(400);
     }
@@ -136,13 +163,13 @@ module.exports = async (req, res) => {
       const k = `requested ${sc.key}`;
       if (meta[k] === today && !force) continue;
       const got = [];
-      for (const type of ['GET_V2_SELLER_PERFORMANCE_REPORT', 'GET_SELLER_FEEDBACK_DATA']) {
+      for (const type of REPORT_TYPES) {
         const r = await requestReport(sc, type).catch(err => ({ error: err.message }));
         if (r.reportId) { still.push({ scope: sc.key, type, reportId: r.reportId, date: today, requestedAt: new Date().toISOString() }); got.push(type); }
         else results.push({ scope: sc.key, type, status: 'request failed', error: r.error || JSON.stringify(r).slice(0, 300) });
         await sleep(600);
       }
-      if (got.length === 2) meta[k] = today;
+      if (got.length === REPORT_TYPES.length) meta[k] = today;
     }
 
     meta.pending = JSON.stringify(still);
@@ -255,6 +282,89 @@ function direction(field, metric, a, b) {
   return y > x ? 'worse' : 'better';                                                                        // rates / counts: higher is worse
 }
 
+// ── Listing issues (ADDED 2026-11-16) ──────────────────────────────────────
+async function writeListingIssues(sc, date, fypText) {
+  const scopeBrands = brands.filter(b => b.active && accountForBrand(b) === sc.account
+    && ((b.marketplaceId || process.env.SP_MARKETPLACE_ID) === sc.marketplaceId()));
+  const brandForSku = sku => {
+    const s = String(sku || '').toUpperCase();
+    const hits = scopeBrands.filter(b => b.skuPrefix && s.startsWith(b.skuPrefix.toUpperCase()));
+    return (hits.find(b => /-CA(-|\.|$)/i.test(s) === !!b.marketplaceId) || hits[0] || {}).displayName || '';
+  };
+  const rows = [];
+  const add = (brand, sku, asin, source, status, issue, code, severity, enforcement, details) =>
+    rows.push([date, sc.label, sc.marketplace, brand, sku, asin, source, status, issue, code, severity, enforcement, '', details ? JSON.stringify(details).slice(0, 500) : '']);
+
+  // 1. Suppressed Listings report — every row is a suppression (Amazon's own reason)
+  if (fypText) {
+    const lines = fypText.split(/\r?\n/).filter(l => l.trim());
+    const cells = l => l.split('\t').map(v => v.trim().replace(/^"(.*)"$/, '$1'));
+    const head = lines.length ? cells(lines.shift()).map(h => h.toLowerCase()) : [];
+    const col = (...names) => head.findIndex(h => names.some(n => h.includes(n)));
+    const iSku = col('sku', 'seller-sku'), iAsin = col('asin'), iStatus = col('status'), iReason = col('reason', 'issue', 'description');
+    for (const l of lines) {
+      const c = cells(l);
+      const sku = c[iSku] || '';
+      if (!sku) continue;
+      add(brandForSku(sku), sku, c[iAsin] || '', 'Suppressed Listings report', c[iStatus] || 'Suppressed', c[iReason] || '', '', '', 'LISTING_SUPPRESSED',
+        Object.fromEntries(head.map((h, i) => [h, c[i]]).filter(([h, v]) => v && ![iSku, iAsin, iStatus, iReason].includes(head.indexOf(h)))));
+    }
+  }
+
+  // 2 + 3. Listing issues from the Products Cache (FBA) and the FBM tabs
+  const fromIssues = (brand, sku, asin, status, issuesCell, source) => {
+    for (const issue of String(issuesCell || '').split(' | ').map(x => x.trim()).filter(Boolean)) {
+      const tags = ((issue.match(/\{([^}]*)\}\s*$/) || [, ''])[1]).split(';').map(t => t.trim()).filter(Boolean);
+      const sev = (issue.match(/^\[([A-Z]+)\]/) || [, ''])[1];
+      const msg = issue.replace(/^\[[A-Z]+\]\s*/, '').replace(/\s*\{[^}]*\}\s*$/, '');
+      const enforced = tags.filter(t => ENFORCED.test(t));
+      if (!enforced.length && !POLICY.test(msg)) continue;
+      const attrs = (msg.match(/^([^:]*):/) || [, ''])[1];
+      add(brand, sku, asin, source, status, msg.replace(/^[^:]*:\s*/, ''), attrs, sev, enforced.join('; ') || tags.join('; '), null);
+    }
+  };
+  for (const b of scopeBrands) {
+    const cache = await latestRows(sheetsConfig.products, b.tabName, ['date', 'sku', 'asin', 'status', 'issues']).catch(() => []);
+    cache.forEach(r => fromIssues(b.displayName || b.id, r.sku, r.asin, r.status, r.issues, 'Listing (FBA SKU)'));
+    const fbm = await latestRows(SF_SHEET, `${b.tabName} fbm`, ['date', 'fbm_sku', 'asin', 'status', 'issues']).catch(() => []);
+    fbm.forEach(r => fromIssues(b.displayName || b.id, r.fbm_sku, r.asin, r.status, r.issues, 'Listing (FBM SKU)'));
+    await sleep(300);
+  }
+
+  // De-duplicate (same SKU + issue from two sources keeps the first), carry first_seen
+  const seenKey = new Set(); const unique = [];
+  for (const r of rows) { const k = `${r[4]}|${r[8]}`; if (seenKey.has(k)) continue; seenKey.add(k); unique.push(r); }
+  const history = await readTab(SHEETS.issues);
+  const first = new Map();
+  history.filter(h => h[1] === sc.label && h[2] === sc.marketplace).forEach(h => {
+    const k = `${h[4]}|${h[8]}`; const f = h[12] || h[0];
+    if (!first.has(k) || f < first.get(k)) first.set(k, f);
+  });
+  unique.forEach(r => { r[12] = first.get(`${r[4]}|${r[8]}`) || date; });
+  await upsertRows(SHEETS.issues, ISSUE_HEADERS, unique, r => r[0] === date && r[1] === sc.label && r[2] === sc.marketplace);
+  return { status: 'written', listingsWithIssues: new Set(unique.map(r => r[4])).size, issues: unique.length,
+    newToday: unique.filter(r => r[12] === date).length, suppressedReport: fypText ? 'read' : 'none suppressed' };
+}
+
+// The latest day's rows of a tab, only the named columns (by header).
+async function latestRows(sheetId, tab, cols) {
+  const token = await getSheetsToken(sheetId);
+  const head = await sheetsApi(token, 'GET', `/${sheetId}/values/${rng(tab, 'A1:ZZ1')}`);
+  const h = ((head.values || [])[0] || []).map(x => String(x).trim());
+  const idx = cols.map(c => h.indexOf(c));
+  if (idx[0] < 0) return [];
+  const letter = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const got = await sheetsApi(token, 'GET', `/${sheetId}/values:batchGet?majorDimension=COLUMNS&${idx.filter(i => i >= 0).map(i => `ranges=${rng(tab, `${letter(i)}2:${letter(i)}`)}`).join('&')}`);
+  const colsData = {}; let k = 0;
+  cols.forEach((c, j) => { colsData[c] = idx[j] >= 0 ? ((got.valueRanges[k++] || {}).values || [[]])[0] || [] : []; });
+  const isoOf = v => { const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : ''; };
+  const dates = colsData.date.map(isoOf);
+  const latest = dates.filter(Boolean).sort().pop();
+  const out = [];
+  dates.forEach((d, i) => { if (d === latest) out.push(Object.fromEntries(cols.map(c => [c, String(colsData[c][i] ?? '').replace(/^'/, '')]))); });
+  return out;
+}
+
 // ── Seller feedback ────────────────────────────────────────────────────────
 async function writeFeedback(sc, text, today) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -307,7 +417,7 @@ async function api(sheet, method, path, body) {
 }
 const ready = new Set();
 async function ensureTab(sheet, headers) {
-  if (ready.has(sheet.id)) return;
+  if (ready.has(`${sheet.id}|${sheet.tab}`)) return; // per TAB: Metrics Detail holds two tabs
   const meta = await api(sheet, 'GET', '?fields=sheets.properties(sheetId,title)');
   const tabs = (meta.sheets || []).map(s => s.properties);
   if (!tabs.some(t => t.title === sheet.tab)) {
@@ -319,7 +429,7 @@ async function ensureTab(sheet, headers) {
     await api(sheet, 'POST', ':batchUpdate', { requests: [req] });
   }
   await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A1')}?valueInputOption=RAW`, { values: [headers] });
-  ready.add(sheet.id);
+  ready.add(`${sheet.id}|${sheet.tab}`);
 }
 async function readTab(sheet) {
   try {
