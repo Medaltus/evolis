@@ -75,6 +75,10 @@ const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const ROWS_PER_BRAND = 15;
 
+// ADDED 2026-11-16 per Jaclyn — brands never included in the alert emails.
+// collagelee: merged into Cloud Café (2026-11-16); hillside: brand terminated (2026-11-16).
+const EMAIL_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside'];
+
 const T = { // thresholds
   trafficMoM: 0.30, trafficYoY: 0.20, trafficMinSessions: 150,
   salesMoM: 0.30, salesYoY: 0.20, salesBaseline: 0.35, salesMinUnits: 20, salesMinLoss: 200,
@@ -131,7 +135,7 @@ module.exports = async (req, res) => {
     const wanted = new Set([...W.cur, ...W.base, ...W.yoy]);
     const cards = []; const inventory = []; const brandSummaries = {};
 
-    for (const brand of brands.filter(b => b.active)) {
+    for (const brand of brands.filter(b => b.active && !EMAIL_EXCLUDED_BRANDS.includes(b.id))) {
       const bName = brand.displayName || brand.id;
       if (!tabs.has(brand.tabName)) { brandSummaries[bName] = { note: 'Not in the Daily Business Report (no tab)' }; continue; }
       const evDays = eventDaysFor(brand.id);
@@ -141,6 +145,7 @@ module.exports = async (req, res) => {
       const pc = await productsCacheInfo(brand, W.prior[0]); // status + listing changes
       const status = pc.status;
       const competition = await competitionFor(brand);
+      const ads = await adMonthsFor(brand, end); // ADDED 2026-11-16 — monthly ad vs organic
 
       // Brand totals, for "brand-wide" and share of sales.
       const brandAgg = { cur: agg(), prior: agg(), base: agg(), yoy: agg() };
@@ -208,6 +213,17 @@ module.exports = async (req, res) => {
         if (status.get(p.asin) === 'hidden') row.context.push('Not discoverable on Amazon today');
         const comp = competition.get(p.asin);
         if (comp) row.context.push(comp);
+        // Ads vs organic for the last two complete months (Ad Orders Cache is
+        // monthly; organic units = total units − ad units for the same month).
+        const ad = ads.byAsin.get(p.asin);
+        if (ad && ads.months.length === 2) {
+          const [mPrev, mLast] = ads.months;
+          const units = mk => ads.monthDays(mk).reduce((n, d) => n + (p.byDate.get(d)?.u || 0), 0);
+          const a0 = ad[mPrev.key] || { u: 0, spend: 0, sales: 0 }, a1 = ad[mLast.key] || { u: 0, spend: 0, sales: 0 };
+          const o0 = Math.max(0, units(mPrev.key) - a0.u), o1 = Math.max(0, units(mLast.key) - a1.u);
+          row.ads = { prevLabel: mPrev.label, lastLabel: mLast.label, adUnits: [a0.u, a1.u], spend: [a0.spend, a1.spend], adSales: [a0.sales, a1.sales], organic: [o0, o1] };
+          row.context.unshift(`Ad units ${mPrev.label} ${a0.u} → ${mLast.label} ${a1.u} (spend $${Math.round(a0.spend).toLocaleString('en-US')} → $${Math.round(a1.spend).toLocaleString('en-US')}) · Organic units ${o0} → ${o1}`);
+        }
         const changes = (pc.changes.get(p.asin) || []).slice(-3);
         if (changes.length) row.context.push(`Changed: ${changes.map(c => `${c.what} (${fmtDay(c.date)})`).join(', ')}`);
         // Compare with the REST of the brand (this product left out), so a big
@@ -399,6 +415,32 @@ async function productsCacheInfo(brand, since) {
   return { status, changes };
 }
 
+// Ad units / spend / ad sales per ASIN for the two complete months before
+// `end`'s month, from the Ad Orders Cache (Sponsored Products + Display;
+// Sponsored Brands can't be split by ASIN) — ADDED 2026-11-16, used until
+// a daily per-ASIN ad feed exists.
+async function adMonthsFor(brand, end) {
+  const out = { byAsin: new Map(), months: [], monthDays: () => [] };
+  if (!sheets.adOrders) return out;
+  const [y, m] = end.split('-').map(Number);
+  const mk = (yy, mm) => { const d = new Date(Date.UTC(yy, mm - 1, 1)); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 }; };
+  const last = mk(y, m - 1), prev = mk(y, m - 2);
+  const label = x => new Date(Date.UTC(x.y, x.m - 1, 15)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  out.months = [prev, last].map(x => ({ ...x, key: `${x.y}-${String(x.m).padStart(2, '0')}`, label: label(x) }));
+  out.monthDays = key => { const [yy, mm] = key.split('-').map(Number); const days = []; for (let d = new Date(Date.UTC(yy, mm - 1, 1)); d.getUTCMonth() === mm - 1; d.setUTCDate(d.getUTCDate() + 1)) days.push(d.toISOString().slice(0, 10)); return days; };
+  const rows = await readRows(sheets.adOrders, brand.tabName).catch(() => []);
+  for (const r of rows || []) {
+    const key = `${parseInt(r.year, 10)}-${String(parseInt(r.month, 10)).padStart(2, '0')}`;
+    if (!out.months.some(x => x.key === key)) continue;
+    const asin = String(r.asin || '').trim().toUpperCase();
+    if (!asin) continue;
+    if (!out.byAsin.has(asin)) out.byAsin.set(asin, {});
+    const a = out.byAsin.get(asin)[key] || (out.byAsin.get(asin)[key] = { u: 0, spend: 0, sales: 0 });
+    a.u += parseInt(r.ad_units, 10) || 0; a.spend += num(r.spend); a.sales += num(r.sales);
+  }
+  return out;
+}
+
 // Other sellers on each ASIN on the latest offers day (the offers tabs).
 async function competitionFor(brand) {
   const out = new Map();
@@ -454,17 +496,22 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
     const b = ctx.brandSummaries[name] || {};
     return MANAGER_EMAILS[String(b.manager || '').trim().toLowerCase()] === who || [...cards, ...inventory].some(c => c.brand === name);
   };
-  const summaryRows = Object.entries(ctx.brandSummaries).filter(([name]) => mine(name))
-    .sort((a, b) => (b[1].brandAlert - a[1].brandAlert) || ((b[1].curRevenue28 || 0) - (a[1].curRevenue28 || 0)))
-    .map(([name, b], i) => b.note
-      ? `<tr style="background:${i % 2 ? '#F7F8FC' : '#fff'};"><td style="${td}font-weight:700;">${esc(name)}</td><td style="${td}color:#9ba8c0;" colspan="7">${esc(b.note)}</td></tr>`
-      : `<tr style="background:${b.brandAlert ? '#FFF1EE' : i % 2 ? '#F7F8FC' : '#fff'};">
+  // CHANGED 2026-11-16 per Jaclyn — only brands whose revenue is DOWN vs the
+  // prior 28 days are listed; flat/growing and unchecked brands get one
+  // line at the bottom, so the email stays about what's declining.
+  const mineList = Object.entries(ctx.brandSummaries).filter(([name]) => mine(name));
+  const downList = mineList.filter(([, b]) => !b.note && b.revenueVsPrior != null && b.revenueVsPrior < 0);
+  const upList = mineList.filter(([, b]) => !b.note && !(b.revenueVsPrior != null && b.revenueVsPrior < 0));
+  const notChecked = mineList.filter(([, b]) => b.note);
+  const summaryRows = downList
+    .sort((a, b) => (b[1].brandAlert - a[1].brandAlert) || ((a[1].revenueVsPrior || 0) - (b[1].revenueVsPrior || 0)))
+    .map(([name, b], i) => `<tr style="background:${b.brandAlert ? '#FFF1EE' : i % 2 ? '#F7F8FC' : '#fff'};">
           <td style="${td}font-weight:700;">${esc(name)}${b.brandAlert ? ` ${pill('Brand down', '#FFD2CC', '#C0392B')}` : ''}<div style="font-size:10px;color:#9ba8c0;">${esc(b.manager || '')}</div></td>
           <td style="${td}text-align:right;">${money(b.curRevenue28 || 0)}</td><td style="${td}text-align:right;">${pctCell(b.revenueVsPrior)}</td><td style="${td}text-align:right;">${pctCell(b.revenueVsLastYear)}</td>
           <td style="${td}text-align:right;">${pctCell(b.sessionsVsPrior)}</td><td style="${td}text-align:right;">${b.checked}</td>
           <td style="${td}text-align:right;font-weight:${b.flagged ? 700 : 400};color:${b.flagged ? '#C0392B' : '#001F60'};">${b.flagged}</td><td style="${td}text-align:right;">${b.inventory || 0}</td></tr>`).join('');
-  const summaryTable = `<tr><td style="padding:6px 32px 4px;">
-      <div style="font-size:13px;font-weight:700;color:#001F60;margin-bottom:6px;">All brands</div>
+  const summaryTable = !downList.length ? '' : `<tr><td style="padding:6px 32px 4px;">
+      <div style="font-size:13px;font-weight:700;color:#001F60;margin-bottom:6px;">Brands with revenue down vs the prior 28 days</div>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
         <tr><th style="${th}">Brand</th><th style="${th}text-align:right;">Revenue (28d)</th><th style="${th}text-align:right;">vs prior</th><th style="${th}text-align:right;">vs last yr</th>
         <th style="${th}text-align:right;">Sessions vs prior</th><th style="${th}text-align:right;">Products checked</th><th style="${th}text-align:right;">Flagged</th><th style="${th}text-align:right;">Likely inventory</th></tr>
@@ -503,6 +550,7 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
   const scope = who && who !== 'all' ? `Your brands only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const notes = [
     'Small brands: a product that is ≥10% of its brand\'s sales is checked with lower minimums (50 sessions / 5 units), and the minimum revenue loss is 5% of the brand\'s 28-day revenue (between $50 and $200). "Brand down" = the whole brand\'s revenue is down ≥30% vs the prior 28 days and ≥20% vs last year.',
+    'Ad units / spend / organic units compare the last two complete months (Sponsored Products + Display; Sponsored Brands can\'t be split by product). Organic units = total units − ad units.',
     'Ranked by revenue at stake: revenue lost over 28 days vs the prior 28 days (or vs last year, if larger); brand-wide declines count half. "vs prior / last yr" = change vs the prior 28 days / the same 28 days last year (per-day averages). Conversion compares with the trailing 3 months.',
     ctx.events.length ? `Event days left out of every comparison: ${ctx.events.map(e => esc(e.name)).join(', ')}.` : 'No events listed yet — add Prime Day, Black Friday etc. to the "events" tab of the Daily Business Report sheet so they are left out of comparisons.',
     unknownManagers.length ? `Brand Manager name(s) on the master list with no email on file (not emailed): ${unknownManagers.map(esc).join(', ')}.` : '',
@@ -522,6 +570,9 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
       <tr><td style="padding:22px 32px 4px;"><table cellpadding="0" cellspacing="0"><tr>${tiles}</tr></table></td></tr>
       ${summaryTable}
       ${sections}
+      ${upList.length || notChecked.length ? `<tr><td style="padding:10px 32px 0;"><div style="font-size:11px;color:#6B7BA2;">
+        ${upList.length ? `Flat or growing (not shown): ${upList.map(([n, b]) => `${esc(n)} ${fmtPct(b.revenueVsPrior)}`).join(', ')}.` : ''}
+        ${notChecked.length ? ` Not checked: ${notChecked.map(([n, b]) => `${esc(n)} (${esc(b.note)})`).join(', ')}.` : ''}</div></td></tr>` : ''}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:12px;color:#6B7BA2;">Every flagged product, with all its numbers, is in the attached Excel file.</div>${notes}</td></tr>
       <tr><td style="background:#001F60;padding:16px 32px;"><div style="padding-bottom:12px;"><img src="${LOGO_URL}" alt="Medaltus" height="22" style="height:22px;display:block;"></div>
         <span style="font-size:11px;color:#6B7BA2;">Medaltus automated report &middot; reports@medaltus.com</span></td></tr>
@@ -533,9 +584,12 @@ function buildHtml(data, ctx, unknownManagers, wouldSendTo, who) {
 function buildWorkbook({ cards, inventory }) {
   const wb = XLSX.utils.book_new();
   const head = ['Brand', 'SKU', 'ASIN', 'Product', 'Brand Manager', 'Flags', 'Share of brand sales', 'Revenue at stake (28d)', 'Revenue (28d)', 'Revenue vs prior', 'Revenue vs last yr',
-    'Sessions (28d)', 'Sessions vs prior', 'Sessions vs last yr', 'Units (28d)', 'Units vs prior', 'Units vs last yr', 'Conversion', 'Conversion vs 3-mo', 'Context'];
+    'Sessions (28d)', 'Sessions vs prior', 'Sessions vs last yr', 'Units (28d)', 'Units vs prior', 'Units vs last yr', 'Conversion', 'Conversion vs 3-mo', 'Context',
+    'Ad months', 'Ad units (prev → last)', 'Ad spend (prev → last)', 'Ad sales (prev → last)', 'Organic units (prev → last)'];
   const line = c => [c.brand, c.sku, c.asin, c.name, c.manager || '', c.flags.join(', '), round(c.share, 3), Math.round(c.lost), Math.round(c.cur.r), round(c.d.r[0]), round(c.d.r[1]),
-    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.join('; ')];
+    Math.round(c.cur.s), round(c.d.s[0]), round(c.d.s[1]), Math.round(c.cur.u), round(c.d.u[0]), round(c.d.u[1]), round(c.cur.cvr, 4), round(c.cvrChange), c.context.join('; '),
+    c.ads ? `${c.ads.prevLabel} → ${c.ads.lastLabel}` : '', c.ads ? c.ads.adUnits.join(' → ') : '', c.ads ? c.ads.spend.map(x => Math.round(x)).join(' → ') : '',
+    c.ads ? c.ads.adSales.map(x => Math.round(x)).join(' → ') : '', c.ads ? c.ads.organic.join(' → ') : ''];
   const ws = XLSX.utils.aoa_to_sheet([head, ...[...cards].sort((a, b) => b.priority - a.priority).map(line)]);
   ws['!cols'] = head.map((h, i) => ({ wch: i === 3 || i === 19 ? 40 : 14 }));
   XLSX.utils.book_append_sheet(wb, ws, 'Underperforming');
