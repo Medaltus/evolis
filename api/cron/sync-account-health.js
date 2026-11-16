@@ -1,0 +1,367 @@
+/**
+ * api/cron/sync-account-health.js
+ * ADDED 2026-11-16 (per Jaclyn) — daily Amazon account health, for:
+ *   NewDerm · Amazon.com, NewDerm · Amazon.ca, High On Love · Amazon.com
+ *
+ * Amazon builds reports in the background, so each run does two things:
+ *   1. collects any reports requested earlier that are now ready, and writes them;
+ *   2. requests today's reports for any account not yet requested today:
+ *        GET_V2_SELLER_PERFORMANCE_REPORT — the Seller Central Account Health page
+ *          as data: account status, Account Health Rating, every performance
+ *          metric (status, value, Amazon's target) and every policy violation count
+ *        GET_SELLER_FEEDBACK_DATA — negative/neutral (1–3★) seller feedback, last 30 days
+ * Scheduled a few times each morning, so a report requested on one run is
+ * written on the next.
+ *
+ * Five sheets (one tab each; the tab is created/renamed automatically):
+ *   Daily Health     one row per account + marketplace + day: status, rating,
+ *                    the headline metrics and every violation count
+ *   Metrics Detail   one row per metric per account + marketplace + day, exactly
+ *                    as Amazon reports it (incl. metrics Amazon adds later)
+ *   Changes          one row per change vs the previous snapshot: statuses,
+ *                    counts, rates, account status, health rating (feeds the
+ *                    future alert email)
+ *   Seller Feedback  each feedback once (date + order ID), never repeated;
+ *                    the rater's email is not stored
+ *   Meta             pending report IDs, last request date per account
+ * Writes alternate between the project's two Google service accounts (see
+ * SHEETS below); if one can't open a sheet, the other is tried.
+ *
+ * Amazon says not to rely on the exact JSON layout of the performance report,
+ * so it's read generically: every metric object anywhere in the report becomes
+ * a Metrics Detail row, and the Daily Health columns are filled by matching
+ * metric names. Nothing is dropped if Amazon renames or adds a metric.
+ *
+ * Needs the "Selling Partner Insights" role on each Amazon app (NewDerm's and
+ * High On Love's). ?check=true tests that without writing anything.
+ *
+ * Manual:
+ *   GET /api/cron/sync-account-health              normal run
+ *   GET /api/cron/sync-account-health?check=true   access check: request the report for each account, write nothing
+ *   GET /api/cron/sync-account-health?force=true   request today's reports again
+ */
+
+const zlib = require('zlib');
+const { spRequest } = require('../_spauth');
+const { getSheetsToken } = require('../config/_sheets_client');
+const { sendCronFailureAlert } = require('../_alerts');
+
+const SCOPES = [
+  { key: 'newderm-us', account: 'newderm', label: 'NewDerm', marketplace: 'US', marketplaceId: () => process.env.SP_MARKETPLACE_ID },
+  { key: 'newderm-ca', account: 'newderm', label: 'NewDerm', marketplace: 'CA', marketplaceId: () => process.env.SP_MARKETPLACE_ID_CA || 'A2EUQ1WTGCTBG2' },
+  { key: 'hol-us', account: 'hol', label: 'High On Love', marketplace: 'US', marketplaceId: () => process.env.SP_MARKETPLACE_ID },
+];
+
+// Each sheet, its one tab, and which Google service account writes it.
+const SHEETS = {
+  health:   { id: '18TMRTDW1Mvodx7hZ1dWu1763_gCokFytC8BxHAWxOSE', tab: 'health_daily', account: 'writer' },
+  metrics:  { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'metrics_detail', account: 'primary' },
+  feedback: { id: '1sMJEdXewdG_PXzN_Saj-2Wkd9ozihBUXDGwwopS8YwQ', tab: 'seller_feedback', account: 'primary' },
+  changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes', account: 'writer' },
+  meta:     { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: '_meta', account: 'primary' },
+};
+
+// Daily Health columns: [column, how to find it among the flattened metrics]
+const HEALTH_COLS = [
+  ['account_status', m => m.__accountStatus],
+  ['ahr_status', m => pick(m, /accounthealthrating/, 'status')],
+  ['ahr_score', m => pick(m, /accounthealthrating/, 'value')],
+  ['odr_fba', m => pick(m, /orderdefectrate.*afn/, 'value')], ['odr_fba_status', m => pick(m, /orderdefectrate.*afn/, 'status')],
+  ['odr_fbm', m => pick(m, /orderdefectrate.*mfn/, 'value')], ['odr_fbm_status', m => pick(m, /orderdefectrate.*mfn/, 'status')],
+  ['late_shipment_rate', m => pick(m, /lateshipment/, 'value')], ['late_shipment_status', m => pick(m, /lateshipment/, 'status')],
+  ['pre_fulfillment_cancel_rate', m => pick(m, /prefulfillmentcancel/, 'value')], ['pre_fulfillment_cancel_status', m => pick(m, /prefulfillmentcancel/, 'status')],
+  ['valid_tracking_rate', m => pick(m, /validtracking/, 'value')], ['valid_tracking_status', m => pick(m, /validtracking/, 'status')],
+  ['on_time_delivery_rate', m => pick(m, /ontimedelivery/, 'value')], ['on_time_delivery_status', m => pick(m, /ontimedelivery/, 'status')],
+  ['invoice_defect_rate', m => pick(m, /invoicedefect/, 'value')],
+  ['listing_policy_violations', m => pick(m, /listingpolicy/, 'defects')],
+  ['ip_complaints_received', m => pick(m, /receivedintellectualproperty|intellectualpropertycomplaint/, 'defects')],
+  ['ip_violations_suspected', m => pick(m, /suspectedintellectualproperty/, 'defects')],
+  ['authenticity_complaints', m => pick(m, /authenticity/, 'defects')],
+  ['condition_complaints', m => pick(m, /productcondition/, 'defects')],
+  ['product_safety_complaints', m => pick(m, /productsafety/, 'defects')],
+  ['food_product_safety_issues', m => pick(m, /foodandproductsafety/, 'defects')],
+  ['restricted_product_violations', m => pick(m, /restrictedproduct/, 'defects')],
+  ['review_policy_violations', m => pick(m, /reviewspolicy|productreviews/, 'defects')],
+  ['other_policy_violations', m => pick(m, /otherpolicy/, 'defects')],
+  ['document_requests', m => pick(m, /documentrequest/, 'defects')],
+];
+const HEALTH_HEADERS = ['date', 'account', 'marketplace', ...HEALTH_COLS.map(c => c[0]), 'synced_at'];
+const METRIC_HEADERS = ['date', 'account', 'marketplace', 'metric', 'status', 'value', 'target', 'target_condition', 'defects_count', 'orders_count', 'reporting_from', 'reporting_to', 'details'];
+const CHANGE_HEADERS = ['date', 'account', 'marketplace', 'metric', 'field', 'from', 'to', 'direction', 'previous_snapshot'];
+const FEEDBACK_HEADERS = ['feedback_date', 'account', 'marketplace', 'rating', 'comments', 'your_response', 'order_id', 'first_seen'];
+const META_HEADERS = ['key', 'value', 'updated_at'];
+const BAD_STATUS = /risk|bad|poor|fail|critical|warning|unhealthy|suspend|deactivat/i;
+
+module.exports = async (req, res) => {
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
+  const today = todayEt();
+  const check = req.query.check === 'true';
+  const force = req.query.force === 'true';
+  const results = [];
+
+  try {
+    // ── Access check: request the performance report per account, write nothing ──
+    if (check) {
+      for (const sc of SCOPES) {
+        const r = await requestReport(sc, 'GET_V2_SELLER_PERFORMANCE_REPORT').catch(err => ({ error: err.message }));
+        results.push({ scope: sc.key, ok: !!r.reportId, reportId: r.reportId || null, error: r.reportId ? undefined : (r.error || JSON.stringify(r).slice(0, 300)),
+          hint: r.reportId ? 'access OK' : (/unauthori|access|role|403/i.test(String(r.error || JSON.stringify(r))) ? 'the app is missing the "Selling Partner Insights" role for this account' : undefined) });
+        await sleep(500);
+      }
+      return res.status(200).json({ check: true, results });
+    }
+
+    const meta = await readMeta();
+    let pending = []; try { pending = JSON.parse(meta.pending || '[]'); } catch { pending = []; }
+
+    // ── 1. Collect ready reports ─────────────────────────────────────────────
+    const still = [];
+    for (const p of pending) {
+      const sc = SCOPES.find(s => s.key === p.scope);
+      if (!sc) continue;
+      let rep;
+      try { rep = await spRequest('GET', `/reports/2021-06-30/reports/${p.reportId}`, {}, null, sc.account); }
+      catch (err) { still.push(p); results.push({ scope: p.scope, type: p.type, status: 'error checking', error: err.message }); continue; }
+      const st = rep && rep.processingStatus;
+      if (st === 'IN_QUEUE' || st === 'IN_PROGRESS') { if (ageHours(p.requestedAt) < 24) still.push(p); continue; }
+      if (st !== 'DONE') { results.push({ scope: p.scope, type: p.type, status: st || 'unknown', note: st === 'CANCELLED' ? 'no data for this period' : 'Amazon could not build it' }); continue; }
+      const text = await download(rep.reportDocumentId, sc.account);
+      if (p.type === 'GET_V2_SELLER_PERFORMANCE_REPORT') results.push({ scope: p.scope, type: 'performance', ...(await writePerformance(sc, p.date, text)) });
+      else results.push({ scope: p.scope, type: 'feedback', ...(await writeFeedback(sc, text, today)) });
+      await sleep(400);
+    }
+
+    // ── 2. Request today's reports ───────────────────────────────────────────
+    for (const sc of SCOPES) {
+      const k = `requested ${sc.key}`;
+      if (meta[k] === today && !force) continue;
+      const got = [];
+      for (const type of ['GET_V2_SELLER_PERFORMANCE_REPORT', 'GET_SELLER_FEEDBACK_DATA']) {
+        const r = await requestReport(sc, type).catch(err => ({ error: err.message }));
+        if (r.reportId) { still.push({ scope: sc.key, type, reportId: r.reportId, date: today, requestedAt: new Date().toISOString() }); got.push(type); }
+        else results.push({ scope: sc.key, type, status: 'request failed', error: r.error || JSON.stringify(r).slice(0, 300) });
+        await sleep(600);
+      }
+      if (got.length === 2) meta[k] = today;
+    }
+
+    meta.pending = JSON.stringify(still);
+    meta.last_run = new Date().toISOString();
+    await writeMeta(meta);
+
+    const failures = results.filter(r => r.error);
+    if (failures.length) await sendCronFailureAlert('sync-account-health', failures.map(f => `${f.scope} ${f.type || ''}: ${f.error}`).join('\n').slice(0, 1500));
+    return res.status(200).json({ date: today, results, pending: still.length });
+  } catch (err) {
+    console.error('[sync-account-health]', err.message);
+    await sendCronFailureAlert('sync-account-health', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Amazon ─────────────────────────────────────────────────────────────────
+async function requestReport(sc, type) {
+  const body = { reportType: type, marketplaceIds: [sc.marketplaceId()] };
+  if (type === 'GET_SELLER_FEEDBACK_DATA') {
+    const end = new Date(); const start = new Date(end.getTime() - 30 * 86400000);
+    body.dataStartTime = start.toISOString(); body.dataEndTime = end.toISOString();
+  }
+  const r = await spRequest('POST', '/reports/2021-06-30/reports', {}, body, sc.account);
+  return r && r.reportId ? r : { error: JSON.stringify((r && r.errors) || r).slice(0, 300) };
+}
+async function download(documentId, account) {
+  const doc = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
+  const buf = Buffer.from(await (await fetch(doc.url)).arrayBuffer());
+  return (doc.compressionAlgorithm === 'GZIP' ? zlib.gunzipSync(buf) : buf).toString('utf8');
+}
+
+// ── Performance report → Daily Health, Metrics Detail, Changes ─────────────
+async function writePerformance(sc, date, text) {
+  const json = JSON.parse(text);
+  const mid = sc.marketplaceId();
+  const accountStatus = ((json.accountStatuses || []).find(a => a.marketplaceId === mid) || (json.accountStatuses || [])[0] || {}).status || '';
+  const perf = (json.performanceMetrics || []).find(p => !p.marketplaceId || p.marketplaceId === mid) || (json.performanceMetrics || [])[0] || {};
+  const metrics = flatten(perf);
+  metrics.__accountStatus = accountStatus;
+
+  // Metrics Detail rows (+ the account status itself as a metric)
+  const detail = [[date, sc.label, sc.marketplace, 'accountStatus', accountStatus, '', '', '', '', '', '', '', '']];
+  for (const [path, m] of Object.entries(metrics)) {
+    if (path.startsWith('__')) continue;
+    detail.push([date, sc.label, sc.marketplace, path, m.status ?? '', m.value ?? '', m.target ?? '', m.condition ?? '', m.defects ?? '', m.orders ?? '', m.from ?? '', m.to ?? '', m.extra ? JSON.stringify(m.extra).slice(0, 500) : '']);
+  }
+  const health = [date, sc.label, sc.marketplace, ...HEALTH_COLS.map(([, f]) => { const v = f(metrics); return v == null ? '' : v; }), new Date().toISOString()];
+
+  // Changes vs the previous snapshot of this account + marketplace
+  const prevRows = await readTab(SHEETS.metrics);
+  const prevDate = prevRows.filter(r => r[1] === sc.label && r[2] === sc.marketplace && r[0] < date).map(r => r[0]).sort().pop();
+  const changes = [];
+  if (prevDate) {
+    const prev = new Map(prevRows.filter(r => r[1] === sc.label && r[2] === sc.marketplace && r[0] === prevDate).map(r => [r[3], r]));
+    for (const row of detail) {
+      const p = prev.get(row[3]);
+      if (!p) { changes.push([date, sc.label, sc.marketplace, row[3], 'metric', '(none)', 'new metric', 'new', prevDate]); continue; }
+      for (const [field, i] of [['status', 4], ['value', 5], ['defects_count', 8]]) {
+        const a = String(p[i] ?? '').trim(), b = String(row[i] ?? '').trim();
+        if (a === b || (a === '' && b === '')) continue;
+        changes.push([date, sc.label, sc.marketplace, row[3], field, a || '(blank)', b || '(blank)', direction(field, row[3], a, b), prevDate]);
+      }
+    }
+  }
+
+  // Write: replace any rows already written for this account + marketplace + date (re-runs)
+  await upsertRows(SHEETS.health, HEALTH_HEADERS, [health], r => r[0] === date && r[1] === sc.label && r[2] === sc.marketplace);
+  await upsertRows(SHEETS.metrics, METRIC_HEADERS, detail, r => r[0] === date && r[1] === sc.label && r[2] === sc.marketplace);
+  await upsertRows(SHEETS.changes, CHANGE_HEADERS, changes, r => r[0] === date && r[1] === sc.label && r[2] === sc.marketplace);
+  return { status: 'written', accountStatus, metrics: detail.length, changes: changes.length, comparedWith: prevDate || '(first snapshot)' };
+}
+
+// Every object in the report that looks like a metric → { status, value, target, … }
+function flatten(obj, path = '', out = {}) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+  const keys = Object.keys(obj);
+  const isMetric = keys.some(k => /^(status|rate|defectsCount|targetValue|ahrStatus|ahrScore|count|score)$/i.test(k));
+  if (isMetric && path) {
+    const rd = obj.reportingDateRange || {};
+    const target = obj.targetValue ?? obj.target ?? '';
+    out[path] = {
+      status: obj.status ?? obj.ahrStatus ?? '',
+      value: obj.rate ?? obj.ahrScore ?? obj.score ?? obj.value ?? (obj.defectsCount != null && obj.ordersCount ? +(obj.defectsCount / obj.ordersCount).toFixed(4) : ''),
+      target, condition: obj.targetCondition ?? '',
+      defects: obj.defectsCount ?? obj.count ?? '', orders: obj.ordersCount ?? obj.orderCount ?? '',
+      from: rd.reportingDateFrom ?? '', to: rd.reportingDateTo ?? '',
+      extra: Object.fromEntries(Object.entries(obj).filter(([k, v]) => typeof v !== 'object' && !/^(status|rate|defectsCount|targetValue|targetCondition|ordersCount|ahrStatus|ahrScore|count|score|value|target)$/i.test(k))),
+    };
+  }
+  for (const k of keys) if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k]) && k !== 'reportingDateRange') flatten(obj[k], path ? `${path}.${k}` : k, out);
+  for (const k of keys) if (Array.isArray(obj[k])) obj[k].forEach((v, i) => flatten(v, `${path ? path + '.' : ''}${k}[${i}]`, out));
+  return out;
+}
+function pick(metrics, re, field) {
+  const hit = Object.entries(metrics).find(([p]) => re.test(p.toLowerCase().replace(/[^a-z]/g, '')));
+  if (!hit) return null;
+  const m = hit[1];
+  return field === 'defects' ? (m.defects !== '' ? m.defects : m.value) : m[field];
+}
+function direction(field, metric, a, b) {
+  if (field === 'status' || metric === 'accountStatus') {
+    if (BAD_STATUS.test(b) && !BAD_STATUS.test(a)) return 'worse';
+    if (BAD_STATUS.test(a) && !BAD_STATUS.test(b)) return 'better';
+    return 'changed';
+  }
+  const x = parseFloat(a), y = parseFloat(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 'changed';
+  if (/accounthealthrating|ahr|ontimedelivery|validtracking/i.test(metric)) return y > x ? 'better' : 'worse'; // higher is better
+  return y > x ? 'worse' : 'better';                                                                        // rates / counts: higher is worse
+}
+
+// ── Seller feedback ────────────────────────────────────────────────────────
+async function writeFeedback(sc, text, today) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return { status: 'written', newFeedback: 0 };
+  const cells = l => l.split('\t').map(v => v.trim().replace(/^"(.*)"$/, '$1'));
+  const head = cells(lines.shift()).map(h => h.toLowerCase());
+  const col = n => head.findIndex(h => h.includes(n));
+  const iDate = col('date'), iRating = col('rating'), iComments = col('comment'), iResp = col('response'), iOrder = col('order');
+  const existing = await readTab(SHEETS.feedback);
+  const seen = new Set(existing.map(r => `${r[1]}|${r[2]}|${r[6]}|${r[0]}`));
+  const fresh = [];
+  for (const l of lines) {
+    const c = cells(l);
+    const row = [c[iDate] || '', sc.label, sc.marketplace, c[iRating] || '', c[iComments] || '', iResp >= 0 ? c[iResp] || '' : '', c[iOrder] || '', today];
+    const k = `${row[1]}|${row[2]}|${row[6]}|${row[0]}`;
+    if (seen.has(k)) continue;
+    seen.add(k); fresh.push(row);
+  }
+  if (fresh.length) await appendRows(SHEETS.feedback, FEEDBACK_HEADERS, fresh);
+  return { status: 'written', feedbackInReport: lines.length, newFeedback: fresh.length };
+}
+
+// ── Meta ───────────────────────────────────────────────────────────────────
+async function readMeta() {
+  const rows = await readTab(SHEETS.meta);
+  return Object.fromEntries(rows.filter(r => r[0]).map(r => [r[0], r[1] || '']));
+}
+async function writeMeta(meta) {
+  const now = new Date().toISOString();
+  const rows = Object.entries(meta).map(([k, v]) => [k, v, now]);
+  await replaceTab(SHEETS.meta, META_HEADERS, rows);
+}
+
+// ── Sheets (each sheet with its own Google service account, falling back) ──
+const tokenCache = {};
+async function tokenFor(sheet, other = false) {
+  const acct = other ? (sheet.account === 'writer' ? 'primary' : 'writer') : sheet.account;
+  if (!tokenCache[acct]) tokenCache[acct] = await getSheetsToken(acct);
+  return tokenCache[acct];
+}
+async function api(sheet, method, path, body) {
+  try { return await sheetsApi(await tokenFor(sheet), method, `/${sheet.id}${path}`, body); }
+  catch (err) {
+    if (!/ 40[34]:/.test(err.message)) throw err;
+    console.warn(`[sync-account-health] ${sheet.tab}: ${sheet.account} account can't open the sheet — trying the other account (${err.message.slice(0, 80)})`);
+    const result = await sheetsApi(await tokenFor(sheet, true), method, `/${sheet.id}${path}`, body);
+    sheet.account = sheet.account === 'writer' ? 'primary' : 'writer'; // use the one that worked for the rest of this run
+    return result;
+  }
+}
+const ready = new Set();
+async function ensureTab(sheet, headers) {
+  if (ready.has(sheet.id)) return;
+  const meta = await api(sheet, 'GET', '?fields=sheets.properties(sheetId,title)');
+  const tabs = (meta.sheets || []).map(s => s.properties);
+  if (!tabs.some(t => t.title === sheet.tab)) {
+    const blank = tabs.find(t => /^Sheet1$/i.test(t.title));
+    const peek = blank ? await api(sheet, 'GET', `/values/${rng(blank.title, 'A1:C3')}`) : null;
+    const req = blank && !(peek.values || []).length
+      ? { updateSheetProperties: { properties: { sheetId: blank.sheetId, title: sheet.tab, gridProperties: { frozenRowCount: 1 } }, fields: 'title,gridProperties.frozenRowCount' } }
+      : { addSheet: { properties: { title: sheet.tab, gridProperties: { frozenRowCount: 1 } } } };
+    await api(sheet, 'POST', ':batchUpdate', { requests: [req] });
+  }
+  await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A1')}?valueInputOption=RAW`, { values: [headers] });
+  ready.add(sheet.id);
+}
+async function readTab(sheet) {
+  try {
+    const d = await api(sheet, 'GET', `/values/${rng(sheet.tab, 'A2:ZZ')}`);
+    return (d.values || []).map(r => r.map(v => String(v ?? '')));
+  } catch (err) {
+    if (/Unable to parse range|400/.test(err.message)) return []; // tab not created yet
+    throw err;
+  }
+}
+async function appendRows(sheet, headers, rows) {
+  await ensureTab(sheet, headers);
+  for (let i = 0; i < rows.length; i += 500) {
+    await api(sheet, 'POST', `/values/${rng(sheet.tab, 'A1')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { values: rows.slice(i, i + 500) });
+  }
+}
+async function replaceTab(sheet, headers, rows) {
+  await ensureTab(sheet, headers);
+  await api(sheet, 'POST', `/values/${rng(sheet.tab, 'A2:ZZ')}:clear`, {});
+  if (rows.length) await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A2')}?valueInputOption=USER_ENTERED`, { values: rows });
+}
+// Keep every row except the ones `drop` matches, then add the new ones.
+async function upsertRows(sheet, headers, rows, drop) {
+  await ensureTab(sheet, headers);
+  const existing = await readTab(sheet);
+  const keep = existing.filter(r => !drop(r));
+  if (keep.length === existing.length) { if (rows.length) await appendRows(sheet, headers, rows); return; }
+  await replaceTab(sheet, headers, [...keep, ...rows]);
+}
+
+const RETRY_WAITS_MS = [2000, 4000, 8000, 16000, 20000, 30000];
+async function sheetsApi(token, method, path, body) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    if (res.ok) return res.json();
+    const text = await res.text();
+    const retryable = res.status === 429 || (res.status >= 500 && attempt < 4);
+    if (retryable && attempt < RETRY_WAITS_MS.length) { await sleep(RETRY_WAITS_MS[attempt] + Math.floor(Math.random() * 1500)); continue; }
+    throw new Error(`Sheets ${method} ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+const rng = (tab, a1) => encodeURIComponent(`'${String(tab).replace(/'/g, "''")}'!${a1}`);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const ageHours = iso => (Date.now() - new Date(iso).getTime()) / 3600000;
+function todayEt() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()); }
