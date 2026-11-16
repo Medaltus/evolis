@@ -59,6 +59,10 @@ const REPLY_TO = 'reports@medaltus.com';
 const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+// ADDED 2026-11-16 per Jaclyn — brands never included in the alert emails.
+// collagelee: merged into Cloud Café (2026-11-16); hillside: brand terminated (2026-11-16).
+const EMAIL_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside'];
+
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
   const testTo = String(req.query.testTo || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -87,7 +91,7 @@ module.exports = async (req, res) => {
 
     // ── Build each ASIN's picture ───────────────────────────────────────────
     const asinCards = []; // one per ASIN with other sellers today
-    for (const brand of brands.filter(b => b.active)) {
+    for (const brand of brands.filter(b => b.active && !EMAIL_EXCLUDED_BRANDS.includes(b.id))) {
       const tab = brand.tabName + OFFERS_SUFFIX;
       if (!tabs.has(tab)) continue;
       const got = await sheetsApi(token, 'GET', `/${SF_SHEET}/values/${rng(tab, 'A1:P')}`);
