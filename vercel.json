@@ -296,6 +296,10 @@
     {
       "path": "/api/cron/alt-sellers-email",
       "schedule": "15 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/underperforming-email",
+      "schedule": "40 12 * * 1"
     }
   ],
   "functions": {
