@@ -204,23 +204,26 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
     : `<div style="font-size:12px;color:#1A7F5A;">Every metric on every account is healthy.</div>`;
 
   // Inactive listings, grouped by account + brand; NEW first, then by SKU.
+  // Email shows errors, enforcements, stranded stock and "no reason" rows; warnings stay in the sheet.
+  const important = r => /ERROR/i.test(r[8] || '') || (r[10] || '').trim() || r[7] === 'Stranded inventory report' || /no reason/i.test(r[9] || '');
+  const hiddenWarnings = inactiveLatest.filter(r => !important(r)).length;
   const groups = {};
-  inactiveLatest.forEach(r => { const k = `${r[1]} ${r[2]} · ${r[3] || 'Other'}`; (groups[k] = groups[k] || []).push(r); });
+  inactiveLatest.filter(important).forEach(r => { const k = `${r[1]} ${r[2]} · ${r[3] || 'Other'}`; (groups[k] = groups[k] || []).push(r); });
   const clip = (t, n) => { t = String(t || '').trim(); return t.length > n ? t.slice(0, n).trimEnd() + '… (full text in the inactive_listings tab)' : t; };
   const inactiveHtml = inactiveLatest.length ? Object.keys(groups).sort().map(k => {
     const rows = groups[k].sort((a, b) => (b[11] === b[0]) - (a[11] === a[0]) || a[4].localeCompare(b[4]));
     const skus = new Set(rows.map(r => r[4])).size;
     return `<div style="font-size:13px;font-weight:700;color:#001F60;margin:10px 0 4px;">${esc(k)} <span style="font-weight:400;color:#6B7BA2;font-size:11px;">· ${skus} SKU${skus === 1 ? '' : 's'}, ${rows.length} issue${rows.length === 1 ? '' : 's'}</span></div>
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-        <tr><th style="${th}"></th><th style="${th}">SKU</th><th style="${th}">Status</th><th style="${th}">Amazon's message</th><th style="${th}">Open</th></tr>
+        <tr><th style="${th}"></th><th style="${th}">SKU</th><th style="${th}">Why it's listed</th><th style="${th}">Amazon's message</th><th style="${th}">Open</th></tr>
         ${rows.map(r => `<tr style="background:${r[11] === r[0] ? '#FFF8E6' : '#fff'};">
           <td style="${td}white-space:nowrap;">${r[11] === r[0] ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#24E9A3;color:#001F60;font-size:10px;font-weight:700;">NEW</span>' : ''}</td>
           <td style="${td}white-space:nowrap;"><b>${esc(r[4])}</b><div style="font-size:10px;color:#9ba8c0;">${esc(r[5])}</div></td>
-          <td style="${td}white-space:nowrap;font-size:11px;">${esc(r[6])}${r[7] === 'Stranded inventory report' ? '<div style="font-size:10px;color:#9ba8c0;">stranded stock</div>' : ''}</td>
+          <td style="${td}font-size:11px;"><b>${esc(r[12] || r[6])}</b><div style="font-size:10px;color:#9ba8c0;">${esc(r[12] ? r[6] : '')}</div></td>
           <td style="${td}font-size:11px;">${esc(clip(r[9], 400))}${r[10] ? `<div style="font-size:10px;color:#9ba8c0;">${esc(String(r[10]).replace(/_/g, ' ').toLowerCase())}</div>` : ''}</td>
           <td style="${td}white-space:nowrap;color:#6B7BA2;">${r[11] ? `${daysOpen(r[11], today)} day${daysOpen(r[11], today) === 1 ? '' : 's'}` : ''}</td></tr>`).join('')}</table>`;
-  }).join('') + `<div style="font-size:11px;color:#9ba8c0;margin-top:6px;">Inactive SKUs of the cron brands with the issues Amazon reports on them, plus stranded stock. Not tied to the Account Health violation counts above — Amazon doesn't link those to SKUs.</div>`
-    : `<div style="font-size:12px;color:#6B7BA2;">No inactive listings with issues on the latest scan.</div>`;
+  }).join('') + `<div style="font-size:11px;color:#9ba8c0;margin-top:6px;">Cron-brand SKUs Amazon has suppressed, removed or blocked, that aren't discoverable, or that the All Listings report calls Incomplete — plus stranded stock. Out-of-stock and closed listings are left out. Errors and enforcements shown${hiddenWarnings ? `; ${hiddenWarnings} lower-priority warning${hiddenWarnings === 1 ? '' : 's'} on these SKUs are in the inactive_listings tab` : ''}. Not tied to the Account Health violation counts above — Amazon doesn't link those to SKUs.</div>`
+    : `<div style="font-size:12px;color:#1A7F5A;">No suppressed, removed, undiscoverable or incomplete listings on the latest scan.</div>`;
 
   const feedbackHtml = newFeedback.length ? newFeedback.map(f => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:9px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
       <b style="color:#001F60;">${esc(f[3])}★</b> · ${esc(f[1])} ${esc(f[2])} · ${esc(f[0])}${f[6] ? ` · order ${esc(f[6])}` : ''}<div style="margin-top:3px;">${esc(f[4])}</div></div>`).join('')
