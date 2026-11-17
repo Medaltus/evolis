@@ -275,6 +275,7 @@ async function writePerformance(sc, date, text) {
       for (const [field, i] of [['status', 4], ['value', 5], ['defects_count', 8]]) {
         const a = String(p[i] ?? '').trim(), b = String(row[i] ?? '').trim();
         if (a === b || (a === '' && b === '')) continue;
+        if (field !== 'status' && sameShown(row[3], a, b)) continue; // e.g. 88.89% vs 88.87% — both show as 88.9%
         changes.push([date, sc.label, sc.marketplace, row[3], field, a || '(blank)', b || '(blank)', direction(field, row[3], a, b), prevDate]);
       }
     }
@@ -313,6 +314,16 @@ function pick(metrics, re, field) {
   if (!hit) return null;
   const m = hit[1];
   return field === 'defects' ? (m.defects !== '' ? m.defects : m.value) : m[field];
+}
+// A change only counts if it shows at the precision the email uses (FIXED 2026-11-17):
+// rates to 0.1 percentage point, other numbers to a whole number; "0" vs "0.0" is the same.
+function sameShown(metric, a, b) {
+  const x = parseFloat(a), y = parseFloat(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return String(a).trim() === String(b).trim();
+  const isRateish = /rate|accuracy|cancellations|returns|feedback|tracking|delivery|shipment|response|received/i.test(metric) && !/rating/i.test(metric) && Math.abs(x) <= 1 && Math.abs(y) <= 1;
+  if (!isRateish) return Math.round(x) === Math.round(y);
+  const shown = n => (n * 100).toFixed(n < 0.1 ? 2 : 1); // same rounding as the email: 0.47%, 88.9%
+  return shown(x) === shown(y);
 }
 function direction(field, metric, a, b) {
   if (field === 'status' || metric === 'accountStatus') {
@@ -484,7 +495,8 @@ async function violationScan(meta, today, restart = false) {
       if (!listing || listing.errors) continue; // SKU no longer exists on Amazon
       const issues = listing.issues || [];
       const amazonStatus = ((listing.summaries || [])[0] || {}).status || [];
-      const enforced = [...new Set(issues.flatMap(i => (i.enforcements?.actions || []).map(a => a.action)).filter(a => /SUPPRESS|REMOV|BLOCK/i.test(a || '')))];
+      // Listing-level enforcement only: ATTRIBUTE_SUPPRESSED just hides one attribute, not the listing (FIXED 2026-11-17).
+      const enforced = [...new Set(issues.flatMap(i => (i.enforcements?.actions || []).map(a => a.action)).filter(a => /SUPPRESS|REMOV|BLOCK/i.test(a || '') && !/^ATTRIBUTE_/i.test(a || '')))];
       const notDiscoverable = !amazonStatus.some(x => /DISCOVERABLE/i.test(x));
       const incomplete = /incomplete/i.test(q.status);
       if (!enforced.length && !notDiscoverable && !incomplete) continue; // out of stock / closed on purpose / -SF backup → not listed
@@ -615,10 +627,16 @@ async function ensureTab(sheet, headers) {
   await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A1')}?valueInputOption=RAW`, { values: [headers] });
   ready.add(`${sheet.id}|${sheet.tab}`);
 }
+// Columns that hold dates, per tab. Google Sheets used to turn written dates
+// into its own date numbers (e.g. 46342 = 2026-11-17); they're read back as
+// YYYY-MM-DD, and everything is now written RAW so it can't happen again (FIXED 2026-11-17).
+const DATE_COLS = { health_daily: [0], metrics_detail: [0], changes: [0, 8], seller_feedback: [7], listing_issues: [0, 12], inactive_listings: [0, 11] };
+const isoFromSerial = v => { const n = Number(v); return /^\d{5}$/.test(String(v)) && n > 40000 && n < 60000 ? new Date(Date.UTC(1899, 11, 30) + n * 86400000).toISOString().slice(0, 10) : v; };
 async function readTab(sheet) {
   try {
     const d = await api(sheet, 'GET', `/values/${rng(sheet.tab, 'A2:ZZ')}`);
-    return (d.values || []).map(r => r.map(v => String(v ?? '')));
+    const cols = DATE_COLS[sheet.tab] || [];
+    return (d.values || []).map(r => r.map((v, i) => { const s = String(v ?? ''); return cols.includes(i) ? String(isoFromSerial(s)) : s; }));
   } catch (err) {
     if (/Unable to parse range|400/.test(err.message)) return []; // tab not created yet
     throw err;
@@ -627,13 +645,13 @@ async function readTab(sheet) {
 async function appendRows(sheet, headers, rows) {
   await ensureTab(sheet, headers);
   for (let i = 0; i < rows.length; i += 500) {
-    await api(sheet, 'POST', `/values/${rng(sheet.tab, 'A1')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { values: rows.slice(i, i + 500) });
+    await api(sheet, 'POST', `/values/${rng(sheet.tab, 'A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: rows.slice(i, i + 500) });
   }
 }
 async function replaceTab(sheet, headers, rows) {
   await ensureTab(sheet, headers);
   await api(sheet, 'POST', `/values/${rng(sheet.tab, 'A2:ZZ')}:clear`, {});
-  if (rows.length) await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A2')}?valueInputOption=USER_ENTERED`, { values: rows });
+  if (rows.length) await api(sheet, 'PUT', `/values/${rng(sheet.tab, 'A2')}?valueInputOption=RAW`, { values: rows });
 }
 // Keep every row except the ones `drop` matches, then add the new ones.
 async function upsertRows(sheet, headers, rows, drop) {
