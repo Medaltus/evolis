@@ -1,279 +1,314 @@
 /**
- * api/cron/account-health-email.js
- * ADDED 2026-11-16 (per Jaclyn) — "Account Health" email for the whole team
- * (Ashley + every Brand Manager), styled like the other alert emails.
- * 8:00 AM Eastern, after sync-account-health.js's morning pull.
+ * api/cron/sync-walmart-health.js
+ * ADDED 2026-11-16 (per Jaclyn) — daily Walmart account health for the one
+ * Walmart seller account (credentials: WALMART_CLIENT_ID / _SECRET / _PARTNER_ID,
+ * the same ones sync-walmart-inventory.js uses).
  *
- * Sends:
- *   - weekdays, only when something is NEW today: a metric / status / rating
- *     got worse ("changes" sheet) or new negative seller feedback ("seller_feedback");
- *   - every Monday, always — a weekly snapshot even when nothing changed.
- * Reads every set in SHEET_SETS (one per seller account group) and combines them.
- * Contents: a status card per account (status + Account Health Rating), what
- * changed (worse first), every metric that isn't healthy (value vs Amazon's
- * target; Amazon violations are counts only — Amazon doesn't say which SKUs;
- * Walmart metrics list the orders behind them), "Inactive listings" (every
- * issue on the cron brands' inactive SKUs + stranded stock, from the daily
- * scan → "inactive_listings"; NEW = first seen on the latest scan), and new
- * negative seller feedback.
- * Listing-level issues are NOT in this email (CHANGED 2026-11-16 per Jaclyn —
- * Listing Alerts already covers them).
+ * Walmart Seller Performance API (US), one call per metric (Walmart allows one
+ * call per minute per metric, so a daily pull is well inside the limit):
+ *   GET /v3/insights/performance/{metric}/summary?reportDuration=30
+ *   GET /v3/insights/performance/{metric}/report?reportDuration=30   (order-level .xlsx)
+ * Metrics: cancellations, on-time delivery (otd), valid tracking, seller response
+ * (srr), late shipment, on-time shipment (sss/ots), carrier method accuracy
+ * (sss/cma), ship-from location accuracy (sss/sfla), negative feedback, returns,
+ * item not received. Paths confirmed in Walmart's docs are used as-is; for the
+ * few not confirmed, the likely names are tried in turn and the one that works
+ * is remembered in _meta.
  *
- * Modes: ?testTo=a@medaltus.com (send only there, not logged) · ?preview=true
- * (return the HTML) · ?force=true (send even if nothing is new / already sent).
- * Env: CRON_SECRET, ALERTS_API_KEY, optional FROM_EMAIL.
+ * One spreadsheet (SHEET below), tabs created automatically:
+ *   health_daily   one row per day: account status + each metric's rate and risk level
+ *   metrics_detail SAME layout as the Amazon account-health sheets, as account
+ *                  "Walmart" — so account-health-email.js shows Walmart like any
+ *                  other account: date, account, marketplace, metric, status,
+ *                  value (rate as a fraction), target, target_condition,
+ *                  defects_count (orders impacted), orders_count, reporting_from,
+ *                  reporting_to, details (drivers, GMV loss, trend, recommendations)
+ *   defect_orders  the orders (and SKUs) behind every metric with impacted orders,
+ *                  from Walmart's order-level report
+ *   changes        SAME layout as Amazon's: what moved since the previous day
+ *   _meta          which endpoint path worked per metric, last run
+ * Account status: Walmart answers "Partner is SUSPENDED" while an account is
+ * suspended (seen Nov 2026); that is recorded as status SUSPENDED.
+ *
+ * Manual: GET /api/cron/sync-walmart-health        (safe to re-run; today's rows are replaced)
  */
 
+const https = require('https');
+const XLSX = require('xlsx');
 const { getSheetsToken } = require('../config/_sheets_client');
 const { sendCronFailureAlert } = require('../_alerts');
 
-// CHANGED 2026-11-16 — the email reads every SET of account-health sheets
-// below and combines them; account cards come from whatever accounts are in
-// the data, so a new set's account appears automatically once it has data.
-const SHEET_SETS = [
-  { // NewDerm US, NewDerm CA, High On Love — written by this project's sync-account-health.js
-    health:   { id: '18TMRTDW1Mvodx7hZ1dWu1763_gCokFytC8BxHAWxOSE', tab: 'health_daily' },
-    metrics:  { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'metrics_detail' },
-    inactive: { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'inactive_listings' }, // daily inactive-listings scan
-    feedback: { id: '1sMJEdXewdG_PXzN_Saj-2Wkd9ozihBUXDGwwopS8YwQ', tab: 'seller_feedback' },
-    changes:  { id: '1AjYkrA8INLdkTViF-Ve4poHtlDmXPgkYiDUpK5JPY2Q', tab: 'changes' },
-  },
-  { // 4th seller account (ADDED 2026-11-16) — same layout, written by its own sync-account-health.js
-    health:   { id: '14zbDimNq2BQIRFu1dB5purlFjZVAWx2uneC2bniiFIE', tab: 'health_daily' },
-    metrics:  { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'metrics_detail' },
-    inactive: { id: '16DQAvusbKxULEh1_Opzb_WjUc5S3ohUBAtN0xWQ4DU4', tab: 'inactive_listings' },
-    feedback: { id: '1Gk-fM_GIEYyZqmkGBzA17EneoXx6mxSioMOya5ztaSE', tab: 'seller_feedback' },
-    changes:  { id: '1Id_oct_VhZUpUadsbwDPc9wsG7oWIe6ZG1eQ5DhC_Qc', tab: 'changes' },
-  },
-];
-SHEET_SETS.push({ // Walmart (ADDED 2026-11-16) — written by sync-walmart-health.js in the same layout, as account "Walmart"
-  metrics:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'metrics_detail' },
-  changes:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'changes' },
-  defects:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'defect_orders' },
-});
-const SHEETS = { meta: { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'email-log' } }; // send log lives with set 1
-const TO = ['awilcox@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com', 'mgallagher@medaltus.com']; // mgallagher ADDED 2026-11-17
-const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
-const REPLY_TO = 'reports@medaltus.com';
-const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
-const ACCOUNT_ORDER = ['NewDerm|US', 'NewDerm|CA', 'High On Love|US']; // these first; other Amazon accounts next; Walmart last
-const HEALTHY = /^(GOOD|GREAT|NONE|NORMAL|HEALTHY|ACTIVE|MEETS STANDARD|)$/i; // last two: Walmart
+const SHEET = '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE';
+const WM_HOST = 'marketplace.walmartapis.com';
+const ACCOUNT = 'Walmart', MARKET = 'US', WINDOW = 30;
 
-// Plain-English names for Amazon's metric keys.
-const NAMES = {
-  accountStatus: 'Account status', accountHealthRating: 'Account Health Rating', lateShipmentRate: 'Late shipment rate',
-  invoiceDefectRate: 'Invoice defect rate', 'orderDefectRate.afn': 'Order defect rate (FBA)', 'orderDefectRate.mfn': 'Order defect rate (FBM)',
-  onTimeDeliveryRate: 'On-time delivery rate', unitOnTimeDeliveryRate: 'Unit on-time delivery rate', validTrackingRate: 'Valid tracking rate',
-  preFulfillmentCancellationRate: 'Pre-fulfillment cancellation rate', listingPolicyViolations: 'Listing policy violations',
-  productAuthenticityCustomerComplaints: 'Product authenticity complaints', productConditionCustomerComplaints: 'Product condition complaints',
-  productSafetyCustomerComplaints: 'Product safety complaints', receivedIntellectualPropertyComplaints: 'IP complaints received',
-  restrictedProductPolicyViolations: 'Restricted product policy violations', suspectedIntellectualPropertyViolations: 'Suspected IP violations',
-  foodAndProductSafetyIssues: 'Food & product safety issues', customerProductReviewsPolicyViolations: 'Review policy violations',
-  otherPolicyViolations: 'Other policy violations', documentRequests: 'Document requests',
-  // Walmart (sync-walmart-health.js)
-  cancellations: 'Cancellation rate', onTimeDelivery: 'On-time delivery rate', validTracking: 'Valid tracking rate', sellerResponse: 'Seller response rate',
-  lateShipment: 'Late shipment rate', onTimeShipment: 'On-time shipment rate', carrierMethodAccuracy: 'Carrier method accuracy',
-  shipFromAccuracy: 'Ship-from location accuracy', negativeFeedback: 'Negative feedback rate', returns: 'Return rate', itemNotReceived: 'Item not received rate',
+// key, label, candidate paths (first confirmed in Walmart docs), extra query
+const METRICS = [
+  ['cancellations', 'Cancellation rate', ['cancellations'], ''],
+  ['onTimeDelivery', 'On-time delivery rate', ['otd'], '&shippingMethod=ALL_METHODS'],
+  ['validTracking', 'Valid tracking rate', ['vtr', 'validTrackingRate'], ''],
+  ['sellerResponse', 'Seller response rate', ['srr'], ''],
+  ['lateShipment', 'Late shipment rate', ['sss/lsr', 'lsr', 'lateShipment'], ''],
+  ['onTimeShipment', 'On-time shipment rate', ['sss/ots'], ''],
+  ['carrierMethodAccuracy', 'Carrier method accuracy', ['sss/cma'], ''],
+  ['shipFromAccuracy', 'Ship-from location accuracy', ['sss/sfla'], ''],
+  ['negativeFeedback', 'Negative feedback rate', ['negativeFeedback'], ''],
+  ['returns', 'Return rate', ['returns'], ''],
+  ['itemNotReceived', 'Item not received rate', ['inr', 'itemNotReceived'], ''],
+];
+const TABS = {
+  health:  { tab: 'health_daily', headers: ['date', 'account_status', ...METRICS.flatMap(([k]) => [`${k}_rate`, `${k}_risk`]), 'synced_at'] },
+  metrics: { tab: 'metrics_detail', headers: ['date', 'account', 'marketplace', 'metric', 'status', 'value', 'target', 'target_condition', 'defects_count', 'orders_count', 'reporting_from', 'reporting_to', 'details'] },
+  defects: { tab: 'defect_orders', headers: ['date', 'account', 'marketplace', 'metric', 'order_id', 'sku', 'item', 'order_date', 'reason', 'details'] },
+  changes: { tab: 'changes', headers: ['date', 'account', 'marketplace', 'metric', 'field', 'from', 'to', 'direction', 'previous_snapshot'] },
+  meta:    { tab: '_meta', headers: ['key', 'value', 'updated_at'] },
 };
-const WM_RATES = new Set(['cancellations', 'onTimeDelivery', 'validTracking', 'sellerResponse', 'lateShipment', 'onTimeShipment', 'carrierMethodAccuracy', 'shipFromAccuracy', 'negativeFeedback', 'returns', 'itemNotReceived']);
-const nameOf = m => NAMES[m] || m.replace(/\[\d+\]$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\./g, ' › ').replace(/^./, c => c.toUpperCase());
-const isRate = m => WM_RATES.has(m) || (/rate/i.test(m) && !/rating/i.test(m));
-const sameNumber = (a, b) => { const x = parseFloat(a), y = parseFloat(b); return Number.isFinite(x) && Number.isFinite(y) ? Math.round(x) === Math.round(y) : String(a).trim() === String(b).trim(); };
+const BAD = /risk|attention|monitor|below|fail|suspend|poor|critical|not meet|does not/i;
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
-  const testTo = String(req.query.testTo || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  if (testTo.some(e => !e.endsWith('@medaltus.com'))) return res.status(400).json({ error: 'testTo addresses must be @medaltus.com' });
-  const preview = req.query.preview === 'true', force = req.query.force === 'true';
+  for (const k of Object.keys(tokens)) delete tokens[k]; acct = 'writer'; tabsKnown = null; // fresh per run (FIXED 2026-11-17)
   const today = todayEt();
-  const monday = new Date(today + 'T12:00:00Z').getUTCDay() === 1;
-
+  const from = addDays(today, -WINDOW), to = addDays(today, -1);
   try {
-    const read = async s => readTab(s).catch(() => []); // a set with no data yet just adds nothing
-    const all = async key => (await Promise.all(SHEET_SETS.map(set => read(set[key])))).flat();
-    const [metrics, inactive, feedback, changes, defects] = await Promise.all([all('metrics'), all('inactive'), all('feedback'), all('changes'), all('defects')]);
-    if (!testTo.length && !preview && !force) {
-      const log = await read(SHEETS.meta);
-      if (log.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
+    const meta = Object.fromEntries((await readTab('meta')).map(r => [r[0], r[1]]));
+    const tokenRes = await getWalmartToken();
+    const token = tokenRes.access_token;
+    if (!token) throw new Error(`Walmart token: ${JSON.stringify(tokenRes).slice(0, 200)}`);
+
+    let accountStatus = 'ACTIVE';
+    const detail = [[today, ACCOUNT, MARKET, 'accountStatus', '', '', '', '', '', '', '', '', '']];
+    const healthRow = { date: today };
+    const defects = [];
+    const results = [];
+
+    for (const [key, label, paths, extra] of METRICS) {
+      const tryPaths = meta[`path ${key}`] ? [meta[`path ${key}`], ...paths.filter(p => p !== meta[`path ${key}`])] : paths;
+      let got = null, usedPath = null, lastErr = '';
+      for (const p of tryPaths) {
+        const r = await wmJson(`/v3/insights/performance/${p}/summary?reportDuration=${WINDOW}${extra}`, token).catch(e => ({ __err: e.message }));
+        const text = JSON.stringify(r || {});
+        if (/SUSPENDED/i.test(text)) { accountStatus = 'SUSPENDED'; lastErr = 'account suspended'; break; }
+        if (r && r.payload) { got = r.payload; usedPath = p; break; }
+        lastErr = (r && (r.__err || r.errors?.[0]?.description || r.errors?.[0]?.code || r.message)) || text.slice(0, 150);
+        await sleep(400);
+      }
+      if (accountStatus === 'SUSPENDED') { results.push({ metric: key, status: 'skipped — account suspended' }); break; }
+      if (!got) { results.push({ metric: key, status: 'not available', error: String(lastErr).slice(0, 150) }); continue; }
+      meta[`path ${key}`] = usedPath;
+
+      const rate = num(got.cumulativeRate ?? got.cumulativeAccuracy ?? got.rate);
+      const std = parseStandard(got.standard || got.performanceStandard, got.recommendedRate ?? got.recommendedAccuracy);
+      const risk = got.riskLevel || got.performanceRiskLevel
+        || (Number.isFinite(rate) && Number.isFinite(std.value) ? (std.cond === 'GREATER_THAN' ? (rate / 100 >= std.value ? 'MEETS STANDARD' : 'BELOW RECOMMENDED') : (rate / 100 <= std.value ? 'MEETS STANDARD' : 'ABOVE RECOMMENDED')) : '');
+      const impacted = got.ordersImpacted ?? got.impactedOrderCount ?? got.impactedCustomerCount ?? '';
+      const details = {
+        performanceRiskLevel: got.performanceRiskLevel, trend: got.cumulativeRateTrend || got.cumulativeAccuracyTrend, gmvLoss: got.gmvLoss,
+        sellerAccountableDrivers: got.sellerAccountableDrivers || got.infractionDrivers, nonAccountableDrivers: got.nonAccountableDrivers,
+        recommendations: (got.recommendations || []).map(x => x.recommendation).filter(Boolean), updated: got.updatedTimestamp,
+      };
+      detail.push([today, ACCOUNT, MARKET, key, risk, Number.isFinite(rate) ? +(rate / 100).toFixed(4) : '', Number.isFinite(std.value) ? std.value : '', std.cond,
+        impacted === '' ? '' : impacted, '', from, to, JSON.stringify(details).slice(0, 1500)]);
+      healthRow[`${key}_rate`] = Number.isFinite(rate) ? +(rate / 100).toFixed(4) : '';
+      healthRow[`${key}_risk`] = risk;
+      results.push({ metric: key, path: usedPath, rate: Number.isFinite(rate) ? `${rate}%` : '', risk, ordersImpacted: impacted });
+
+      // Order-level report for any metric with impacted orders
+      if (Number(impacted) > 0) {
+        const buf = await wmBinary(`/v3/insights/performance/${usedPath}/report?reportDuration=${WINDOW}${extra}`, token).catch(() => null);
+        const rows = buf ? parseReport(buf) : [];
+        rows.forEach(r => defects.push([today, ACCOUNT, MARKET, key, r.order, r.sku, r.item, r.date, r.reason, r.details]));
+        results[results.length - 1].defectOrders = rows.length;
+      }
+      await sleep(600);
     }
 
-    // Latest snapshot per account
-    const latestDate = (rows, acc, mkt) => rows.filter(r => r[1] === acc && r[2] === mkt).map(r => r[0]).sort().pop();
-    const accounts = [...new Set(metrics.filter(r => r[1] && r[2]).map(r => `${r[1]}|${r[2]}`))]
-      .sort((a, b) => ((ACCOUNT_ORDER.indexOf(a) + 1) || (a.startsWith('Walmart|') ? 200 : 99)) - ((ACCOUNT_ORDER.indexOf(b) + 1) || (b.startsWith('Walmart|') ? 200 : 99)) || a.localeCompare(b))
-      .map(k => k.split('|'));
-    const cards = accounts.map(([acc, mkt]) => {
-      const d = latestDate(metrics, acc, mkt);
-      const rows = metrics.filter(r => r[0] === d && r[1] === acc && r[2] === mkt);
-      const get = m => rows.find(r => r[3] === m) || [];
-      return { acc, mkt, date: d, status: get('accountStatus')[4] || '—', ahr: get('accountHealthRating')[5] || '—', ahrStatus: get('accountHealthRating')[4] || '',
-        attention: rows.filter(r => r[3] !== 'accountStatus' && !/\[\d+\]$/.test(r[3]) && !/\.(claims|chargebacks|negativeFeedback|orderWithDefects|invoiceDefect|missingInvoice|lateInvoice)$/.test(r[3]) && !HEALTHY.test(r[4] || ''))
-          .map(r => ({ metric: r[3], status: r[4], value: r[5], target: r[6], cond: r[7], defects: r[8], from: r[10], to: r[11] })) };
-    });
-    // Hide "changes" that look identical once rounded for display (also covers sheets written by other crons).
-    const todays = changes.filter(r => r[0] === today && !(r[4] !== 'status' && (r[4] === 'value' && isRate(r[3]) ? pct(r[5]) === pct(r[6]) : sameNumber(r[5], r[6]))));
-    const worse = todays.filter(r => r[7] === 'worse');
-    const inactiveLatest = latestScan(inactive);
-    const newFeedback = feedback.filter(r => r[7] === today);
+    detail[0][4] = accountStatus;
+    healthRow.account_status = accountStatus;
+    healthRow.synced_at = new Date().toISOString();
 
-    const somethingNew = worse.length || newFeedback.length;
-    if (!somethingNew && !monday && !force && !preview && !testTo.length) {
-      return res.status(200).json({ sent: false, reason: 'nothing new today (weekday)', changesToday: todays.length });
+    // Changes vs the previous snapshot
+    const prevAll = await readTab('metrics');
+    const prevDate = prevAll.filter(r => r[0] < today).map(r => r[0]).sort().pop();
+    const changes = [];
+    if (prevDate) {
+      const prev = new Map(prevAll.filter(r => r[0] === prevDate).map(r => [r[3], r]));
+      for (const row of detail) {
+        const p = prev.get(row[3]); if (!p) continue;
+        for (const [field, i] of [['status', 4], ['value', 5], ['defects_count', 8]]) {
+          const a = String(p[i] ?? '').trim(), b = String(row[i] ?? '').trim();
+          if (a === b) continue;
+          if (field !== 'status' && sameShown(row[3], a, b)) continue; // not visible at the precision shown
+          changes.push([today, ACCOUNT, MARKET, row[3], field, a || '(blank)', b || '(blank)', direction(row[3], field, a, b), prevDate]);
+        }
+      }
     }
 
-    const defectsLatest = latestScan(defects); // same "newest day per account" rule
-    const html = buildHtml({ today, monday, cards, todays, inactiveLatest, defectsLatest, newFeedback, test: testTo.length ? TO : null });
-    if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
-    if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
-    const atRisk = cards.filter(c => !HEALTHY.test(c.status));
-    const bits = [atRisk.length ? `${atRisk.map(c => `${c.acc} ${c.mkt}`).join(', ')} ${atRisk.length === 1 ? 'is' : 'are'} ${atRisk.map(c => c.status.replace(/_/g, ' ').toLowerCase())[0]}` : 'all accounts healthy',
-      worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : ''].filter(Boolean);
-    const subject = `${testTo.length ? '[TEST] ' : ''}Account Health — ${bits.join(' · ')} · ${fmtDay(today)}`;
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `Medaltus Reports <${FROM_EMAIL}>`, reply_to: REPLY_TO, to: testTo.length ? testTo : TO, subject, html }),
-    });
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`Resend ${r.status}: ${JSON.stringify(body).slice(0, 200)}`);
-    if (!testTo.length) await logSend(today, subject, body.id);
-    return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, inactiveListingIssues: inactiveLatest.length, newFeedback: newFeedback.length });
+    await upsert('metrics', detail, r => r[0] === today);
+    await upsert('health', [TABS.health.headers.map(h => healthRow[h] ?? '')], r => r[0] === today);
+    await upsert('changes', changes, r => r[0] === today);
+    await upsert('defects', defects, r => r[0] === today);
+    meta.last_run = new Date().toISOString();
+    await replace('meta', Object.entries(meta).map(([k, v]) => [k, v, new Date().toISOString()]));
+
+    const unavailable = results.filter(r => r.status === 'not available');
+    if (unavailable.length === METRICS.length) await sendCronFailureAlert('sync-walmart-health', `No Walmart performance metric could be read: ${unavailable[0].error}`);
+    return res.status(200).json({ date: today, accountStatus, window: `${from} → ${to}`, metrics: results, defectOrders: defects.length, changes: changes.length, comparedWith: prevDate || '(first snapshot)' });
   } catch (err) {
-    console.error('[account-health-email]', err.message);
-    await sendCronFailureAlert('account-health-email', err.message);
+    console.error('[sync-walmart-health]', err.message);
+    await sendCronFailureAlert('sync-walmart-health', err.message);
     return res.status(500).json({ error: err.message });
   }
 };
-// Newest day's rows PER ACCOUNT (inactive_listings, defect_orders). inactive_listings
-// columns: date, account, marketplace, brand, sku, asin, listing_status, source,
-// severity, amazon_message, enforcement, first_seen.
-const latestScan = rows => {
-  const last = {};
-  rows.forEach(r => { const k = `${r[1]}|${r[2]}`; if (!last[k] || r[0] > last[k]) last[k] = r[0]; });
-  return rows.filter(r => r[0] === last[`${r[1]}|${r[2]}`]);
-};
 
-// ── Email ──────────────────────────────────────────────────────────────────
-const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const pct = v => { const n = parseFloat(v); return Number.isFinite(n) ? `${(n * 100).toFixed(n < 0.1 ? 2 : 1).replace(/\.0+$/, '')}%` : esc(v); };
-const fmtVal = (m, v) => (v === '' || v == null ? '' : isRate(m) ? pct(v) : esc(v));
-const statusPill = s => {
-  const bad = /risk|bad|poor|fail|critical|suspend|deactivat/i.test(s), mid = /fair|warning|at_risk|attention|monitor|recommended/i.test(s) && !/bad/i.test(s);
-  const [bg, fg] = bad ? ['#FFD2CC', '#C0392B'] : mid ? ['#FFE8A3', '#7A5B00'] : ['#D6F7EA', '#1A7F5A'];
-  return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;background:${bg};color:${fg};font-size:11px;font-weight:700;">${esc(String(s || '—').replace(/_/g, ' '))}</span>`;
-};
-const shortDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? fmtDay(m[0], true) : ''; };
-const daysOpen = (first, today) => { const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'); return Math.max(0, Math.round((b - a) / 86400000)); };
-
-function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsLatest = [], newFeedback, test }) {
-  const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
-  const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
-  const section = (title, color, inner) => `<tr><td style="padding:18px 32px 4px;"><div style="font-size:15px;font-weight:700;color:${color};font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;margin-bottom:8px;">${title}</div>${inner}</td></tr>`;
-
-  const cardHtml = cards.map((c, i) => `${i && i % 4 === 0 ? '</tr><tr><td colspan="4" style="height:8px;"></td></tr><tr>' : ''}<td style="padding:0 8px 0 0;vertical-align:top;width:25%;"><div style="border:1px solid #e4e8ef;border-radius:10px;padding:12px 14px;height:96px;box-sizing:border-box;">
-      <div style="font-size:11px;color:#6B7BA2;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">${esc(c.acc)} · ${esc(c.mkt)}</div>
-      <div style="margin-top:6px;">${statusPill(c.status)}</div>
-      <div style="font-size:12px;color:#001F60;margin-top:6px;">Health rating <b>${esc(c.ahr)}</b> ${c.ahrStatus ? `<span style="color:#6B7BA2;">(${esc(c.ahrStatus.toLowerCase())})</span>` : ''}${c.attention.length ? ` · <span style="color:#C0392B;font-weight:700;">${c.attention.length} need${c.attention.length === 1 ? 's' : ''} attention</span>` : ''}</div>
-    </div></td>`).join('');
-
-  const order = { worse: 0, changed: 1, new: 2, better: 3 };
-  const changeRows = todays.slice().sort((a, b) => (order[a[7]] ?? 9) - (order[b[7]] ?? 9)).map(r => {
-    const col = r[7] === 'worse' ? '#C0392B' : r[7] === 'better' ? '#1A7F5A' : '#6B7BA2';
-    const f = r[4] === 'value' ? fmtVal(r[3], r[5]) : esc(r[5]), t = r[4] === 'value' ? fmtVal(r[3], r[6]) : esc(r[6]);
-    return `<tr><td style="${td}">${esc(r[1])} ${esc(r[2])}</td><td style="${td}font-weight:700;">${esc(nameOf(r[3]))}${r[4] !== 'status' && r[4] !== 'value' ? ` <span style="font-weight:400;color:#6B7BA2;">(${esc(r[4].replace(/_/g, ' '))})</span>` : ''}</td>
-      <td style="${td}white-space:nowrap;">${f} → <b style="color:${col};">${t}</b></td><td style="${td}color:${col};font-weight:700;text-transform:uppercase;font-size:10px;">${esc(r[7])}</td></tr>`;
-  }).join('');
-  const changesHtml = changeRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;"><tr><th style="${th}">Account</th><th style="${th}">What</th><th style="${th}">Change</th><th style="${th}"></th></tr>${changeRows}</table>`
-    : `<div style="font-size:12px;color:#6B7BA2;">No changes since the previous snapshot.</div>`;
-
-  const attention = cards.flatMap(c => c.attention.map(a => ({ ...a, acc: c.acc, mkt: c.mkt })));
-  // Under each policy-violation row: the SKUs the violation scan found for it.
-  const skuRow = a => {
-    if (a.acc === 'Walmart') { // Walmart: the orders behind the metric (defect_orders)
-      const orders = defectsLatest.filter(r => r[3] === a.metric);
-      if (!orders.length) return '';
-      const shown = orders.slice(0, 10).map(r => `<div style="margin:2px 0;">Order <b style="color:#001F60;">${esc(r[4])}</b>${r[5] ? ` · SKU <b style="color:#001F60;">${esc(r[5])}</b>` : ''}${r[6] ? ` · ${esc(r[6])}` : ''}${r[7] ? ` · <span style="color:#6B7BA2;">${esc(r[7])}</span>` : ''}${r[8] ? ` — ${esc(r[8])}` : ''}</div>`).join('');
-      return `<tr><td style="padding:0 10px 9px 22px;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;font-size:11px;color:#3a4a6b;" colspan="6">
-        <span style="font-size:10px;font-weight:700;color:#6B7BA2;text-transform:uppercase;letter-spacing:.04em;">Orders behind it (${orders.length}):</span> ${shown}${orders.length > 10 ? `<div style="color:#9ba8c0;">+ ${orders.length - 10} more in the Walmart Account Health sheet (defect_orders)</div>` : ''}</td></tr>`;
-    }
-    return ''; // Amazon violations: counts only (Amazon doesn't say which SKUs)
+// ── Walmart ────────────────────────────────────────────────────────────────
+function headers(token, accept) {
+  const h = {
+    Authorization: `Basic ${Buffer.from(`${process.env.WALMART_CLIENT_ID}:${process.env.WALMART_CLIENT_SECRET}`).toString('base64')}`,
+    'WM_SEC.ACCESS_TOKEN': token, 'WM_SVC.NAME': 'Walmart Marketplace', 'WM_QOS.CORRELATION_ID': `health-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    'WM_SVC.VERSION': '1.0.0', 'WM_MARKET': 'US', Accept: accept,
   };
-  const attentionHtml = attention.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-      <tr><th style="${th}">Account</th><th style="${th}">Metric</th><th style="${th}">Status</th><th style="${th}">Now</th><th style="${th}">Target</th><th style="${th}">Period</th></tr>
-      ${attention.map(a => `<tr><td style="${td}">${esc(a.acc)} ${esc(a.mkt)}</td><td style="${td}font-weight:700;">${esc(nameOf(a.metric))}</td><td style="${td}">${statusPill(a.status)}</td>
-        <td style="${td}white-space:nowrap;">${a.defects !== '' && a.defects != null && !isRate(a.metric) ? `<b>${esc(a.defects)}</b>` : `<b>${fmtVal(a.metric, a.value)}</b>`}</td>
-        <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.target !== '' ? `${({ LESS_THAN: 'under', GREATER_THAN: 'over', EQUALS: '' })[a.cond] ?? ''} ${isRate(a.metric) ? pct(a.target) : esc(a.target)}` : '—'}</td>
-        <td style="${td}white-space:nowrap;color:#6B7BA2;">${a.from ? `${shortDate(a.from)} – ${shortDate(a.to)}` : ''}</td></tr>${skuRow(a)}`).join('')}</table>`
-    : `<div style="font-size:12px;color:#1A7F5A;">Every metric on every account is healthy.</div>`;
-
-  // Inactive listings, grouped by account + brand; NEW first, then by SKU.
-  // Email shows errors, enforcements, stranded stock and "no reason" rows; warnings stay in the sheet.
-  // Only rows from the current rules (they always carry why_listed); errors, enforcements, stranded stock, "no reason" rows.
-  const important = r => (r[12] || '').trim() && (/ERROR/i.test(r[8] || '') || (r[10] || '').trim() || r[7] === 'Stranded inventory report' || /no reason/i.test(r[9] || ''));
-  const hiddenWarnings = inactiveLatest.filter(r => (r[12] || '').trim() && !important(r)).length;
-  const groups = {};
-  inactiveLatest.filter(important).forEach(r => { const k = `${r[1]} ${r[2]} · ${r[3] || 'Other'}`; (groups[k] = groups[k] || []).push(r); });
-  const clip = (t, n) => { t = String(t || '').trim(); return t.length > n ? t.slice(0, n).trimEnd() + '… (full text in the inactive_listings tab)' : t; };
-  const inactiveHtml = inactiveLatest.length ? Object.keys(groups).sort().map(k => {
-    const rows = groups[k].sort((a, b) => (b[11] === b[0]) - (a[11] === a[0]) || a[4].localeCompare(b[4]));
-    const skus = new Set(rows.map(r => r[4])).size;
-    return `<div style="font-size:13px;font-weight:700;color:#001F60;margin:10px 0 4px;">${esc(k)} <span style="font-weight:400;color:#6B7BA2;font-size:11px;">· ${skus} SKU${skus === 1 ? '' : 's'}, ${rows.length} issue${rows.length === 1 ? '' : 's'}</span></div>
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
-        <tr><th style="${th}"></th><th style="${th}">SKU</th><th style="${th}">Why it's listed</th><th style="${th}">Amazon's message</th><th style="${th}">Open</th></tr>
-        ${rows.map(r => `<tr style="background:${r[11] === r[0] ? '#FFF8E6' : '#fff'};">
-          <td style="${td}white-space:nowrap;">${r[11] === r[0] ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#24E9A3;color:#001F60;font-size:10px;font-weight:700;">NEW</span>' : ''}</td>
-          <td style="${td}white-space:nowrap;"><b>${esc(r[4])}</b><div style="font-size:10px;color:#9ba8c0;">${esc(r[5])}</div></td>
-          <td style="${td}font-size:11px;"><b>${esc(r[12] || r[6])}</b><div style="font-size:10px;color:#9ba8c0;">${esc(r[12] ? r[6] : '')}</div></td>
-          <td style="${td}font-size:11px;">${esc(clip(r[9], 400))}${r[10] ? `<div style="font-size:10px;color:#9ba8c0;">${esc(String(r[10]).replace(/_/g, ' ').toLowerCase())}</div>` : ''}</td>
-          <td style="${td}white-space:nowrap;color:#6B7BA2;">${r[11] ? `${daysOpen(r[11], today)} day${daysOpen(r[11], today) === 1 ? '' : 's'}` : ''}</td></tr>`).join('')}</table>`;
-  }).join('') + `<div style="font-size:11px;color:#9ba8c0;margin-top:6px;">Cron-brand SKUs Amazon has suppressed, removed or blocked, that aren't discoverable, or that the All Listings report calls Incomplete — plus stranded stock. Out-of-stock and closed listings are left out. Errors and enforcements shown${hiddenWarnings ? `; ${hiddenWarnings} lower-priority warning${hiddenWarnings === 1 ? '' : 's'} on these SKUs are in the inactive_listings tab` : ''}. Not tied to the Account Health violation counts above — Amazon doesn't link those to SKUs.</div>`
-    : `<div style="font-size:12px;color:#1A7F5A;">No suppressed, removed, undiscoverable or incomplete listings on the latest scan.</div>`;
-
-  const feedbackHtml = newFeedback.length ? newFeedback.map(f => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:9px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
-      <b style="color:#001F60;">${esc(f[3])}★</b> · ${esc(f[1])} ${esc(f[2])} · ${esc(f[0])}${f[6] ? ` · order ${esc(f[6])}` : ''}<div style="margin-top:3px;">${esc(f[4])}</div></div>`).join('')
-    : `<div style="font-size:12px;color:#1A7F5A;">No new negative seller feedback.</div>`;
-
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="x-apple-disable-message-reformatting"></head>
-<body style="margin:0;padding:0;background:#f0f2f7;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f7;padding:32px 0;"><tr><td align="center">
-    <table width="1100" cellpadding="0" cellspacing="0" style="width:1100px;max-width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-      <tr><td style="background:#001F60;padding:24px 32px;">
-        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#24E9A3;font-weight:700;">Medaltus &middot; Amazon &amp; Walmart Seller Accounts</div>
-        <div style="font-size:24px;color:#fff;font-weight:700;margin-top:6px;font-family:Georgia,'Times New Roman',serif;">Account Health</div>
-        <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px;">${esc(fmtDay(today))}${monday ? ' &middot; weekly snapshot' : ''} &middot; ${cards.map(c => `${esc(c.acc)} ${esc(c.mkt)}`).join(', ')}</div>
-      </td></tr>
-      <tr><td style="padding:22px 32px 4px;"><table width="100%" cellpadding="0" cellspacing="0"><tr>${cardHtml}</tr></table></td></tr>
-      ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
-      ${section('Needs attention', '#C0392B', attentionHtml)}
-      ${section('Inactive listings', '#001F60', inactiveHtml)}
-      ${section('New negative seller feedback', '#001F60', feedbackHtml)}
-      <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Sources: Amazon's Account Health report and Walmart's Seller Performance API (30-day window), pulled each morning. Full history in the Account Health sheets.</div>
-        ${test ? `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">TEST SEND — the real email goes to: ${test.map(esc).join(', ')}.</div>` : ''}</td></tr>
-      <tr><td style="background:#001F60;padding:16px 32px;"><div style="padding-bottom:12px;"><img src="${LOGO_URL}" alt="Medaltus" height="22" style="height:22px;display:block;"></div>
-        <span style="font-size:11px;color:#6B7BA2;">Medaltus automated report &middot; reports@medaltus.com</span></td></tr>
-    </table>
-  </td></tr></table>
-</body></html>`;
+  if (process.env.WALMART_PARTNER_ID) h['WM_PARTNER.ID'] = process.env.WALMART_PARTNER_ID;
+  return h;
+}
+function getWalmartToken() { // same call as sync-walmart-inventory.js
+  return new Promise((resolve, reject) => {
+    const id = process.env.WALMART_CLIENT_ID, secret = process.env.WALMART_CLIENT_SECRET;
+    if (!id || !secret) return reject(new Error('WALMART credentials not set'));
+    const body = 'grant_type=client_credentials';
+    const h = { Authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json',
+      'WM_SVC.NAME': 'Walmart Marketplace', 'WM_QOS.CORRELATION_ID': `token-${Date.now()}`, 'WM_SVC.VERSION': '1.0.0', 'Content-Length': Buffer.byteLength(body) };
+    if (process.env.WALMART_PARTNER_ID) h['WM_PARTNER.ID'] = process.env.WALMART_PARTNER_ID;
+    const req = https.request({ hostname: WM_HOST, path: '/v3/token', method: 'POST', headers: h }, r => {
+      let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error(`Token parse error (${r.statusCode}): ${d.slice(0, 200)}`)); } });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+}
+function wmJson(path, token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: WM_HOST, path, method: 'GET', headers: headers(token, 'application/json') }, r => {
+      let d = ''; r.on('data', c => d += c);
+      r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ __err: `HTTP ${r.statusCode}: ${d.slice(0, 150)}` }); } });
+    });
+    req.on('error', reject); req.end();
+  });
+}
+function wmBinary(path, token, hops = 0) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: WM_HOST, path, method: 'GET', headers: headers(token, 'application/octet-stream') }, r => {
+      if ([301, 302, 303, 307].includes(r.statusCode) && r.headers.location && hops < 3) {
+        r.resume();
+        return https.get(r.headers.location, rr => { const cs = []; rr.on('data', c => cs.push(c)); rr.on('end', () => resolve(Buffer.concat(cs))); }).on('error', reject);
+      }
+      const cs = []; r.on('data', c => cs.push(c));
+      r.on('end', () => (r.statusCode >= 200 && r.statusCode < 300 ? resolve(Buffer.concat(cs)) : reject(new Error(`report HTTP ${r.statusCode}`))));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+// Walmart's order-level reports differ per metric, so columns are found by name.
+// FIXED 2026-11-17: the sheet starts with a title row ("Data current as of …");
+// the real header row is found first. Reports for tracking / shipping metrics
+// have no SKU — they carry PO #, sales order #, carrier and tracking number.
+function parseReport(buf) {
+  let grid = [];
+  const quiet = console.error; console.error = () => {}; // the library warns "Bad uncompressed size" on Walmart's zips but reads them fine
+  try { const wb = XLSX.read(buf, { type: 'buffer' }); grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false }); }
+  catch { return []; } finally { console.error = quiet; }
+  const hi = grid.findIndex(r => r.filter(c => String(c).trim()).length >= 3 && r.some(c => /po ?#|purchase order|sales order|order ?(number|#|id)|tracking/i.test(String(c))));
+  if (hi < 0) return [];
+  const head = grid[hi].map(h => String(h).trim());
+  const col = re => head.findIndex(h => re.test(h));
+  const iPo = col(/^po ?#|purchase ?order/i), iSo = col(/sales ?order/i), iSku = col(/sku/i), iItem = col(/item ?name|product ?name|title/i),
+        iDate = col(/order ?date/i), iReason = col(/reason|defect|cause|marked late by/i), iCarrier = col(/^carrier/i), iTrack = col(/tracking/i);
+  return grid.slice(hi + 1).filter(r => r.some(c => String(c).trim())).slice(0, 500).map(r => {
+    const v = i => (i >= 0 ? String(r[i] ?? '').trim() : '');
+    let reason = v(iReason);
+    if (/marked late by/i.test(head[iReason] || '')) reason = `Marked late by ${reason || 0} day${reason === '1' ? '' : 's'}`;
+    const extra = [v(iCarrier) && `Carrier ${v(iCarrier)}`, v(iTrack) && `tracking ${v(iTrack)}`].filter(Boolean).join(' · ');
+    return { order: v(iPo) || v(iSo), sku: v(iSku), item: v(iItem), date: v(iDate), reason: [reason, extra].filter(Boolean).join(' · '),
+      details: JSON.stringify(Object.fromEntries(head.map((h, i) => [h || `col${i + 1}`, String(r[i] ?? '').trim()]).filter(([, x]) => x))).slice(0, 500) };
+  });
+}
+// "below 2%" → { value: 0.02, cond: 'LESS_THAN' }; "above 95%" → GREATER_THAN; else recommended rate (a minimum)
+function parseStandard(text, recommended) {
+  const m = String(text || '').match(/([\d.]+)\s*%/);
+  if (m) return { value: +(+m[1] / 100).toFixed(4), cond: /below|or below|less|under|max/i.test(text) ? 'LESS_THAN' : 'GREATER_THAN' };
+  if (recommended != null && recommended !== '') return { value: +(+recommended / 100).toFixed(4), cond: 'GREATER_THAN' };
+  return { value: NaN, cond: '' };
+}
+// A change only counts if it shows at the precision the email uses (FIXED 2026-11-17):
+// rates to 0.1 percentage point, other numbers to a whole number; "0" vs "0.0" is the same.
+function sameShown(metric, a, b) {
+  const x = parseFloat(a), y = parseFloat(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return String(a).trim() === String(b).trim();
+  const isRateish = /rate|accuracy|cancellations|returns|feedback|tracking|delivery|shipment|response|received/i.test(metric) && !/rating/i.test(metric) && Math.abs(x) <= 1 && Math.abs(y) <= 1;
+  if (!isRateish) return Math.round(x) === Math.round(y);
+  const shown = n => (n * 100).toFixed(n < 0.1 ? 2 : 1); // same rounding as the email: 0.47%, 88.9%
+  return shown(x) === shown(y);
+}
+function direction(metric, field, a, b) {
+  if (field === 'status') return BAD.test(b) && !BAD.test(a) ? 'worse' : BAD.test(a) && !BAD.test(b) ? 'better' : 'changed';
+  const x = parseFloat(a), y = parseFloat(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 'changed';
+  const higherIsBetter = /onTimeDelivery|validTracking|sellerResponse|onTimeShipment|Accuracy/i.test(metric);
+  return (y > x) === higherIsBetter ? 'better' : 'worse';
 }
 
-// ── Sheets ─────────────────────────────────────────────────────────────────
-async function readTab(sheet) {
-  const token = await getSheetsToken(sheet.id);
-  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}/values/${encodeURIComponent(`'${sheet.tab}'!A2:ZZ`)}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`${sheet.tab}: ${res.status}`);
-  const cols = { health_daily: [0], metrics_detail: [0], changes: [0, 8], seller_feedback: [7], inactive_listings: [0, 11], defect_orders: [0] }[sheet.tab] || [];
-  const iso = v => (/^\d{5}$/.test(v) && +v > 40000 && +v < 60000 ? new Date(Date.UTC(1899, 11, 30) + +v * 86400000).toISOString().slice(0, 10) : v); // Sheets date numbers → YYYY-MM-DD
-  return ((await res.json()).values || []).map(r => r.map((v, i) => { const s = String(v ?? ''); return cols.includes(i) ? iso(s) : s; }));
-}
-async function logSend(today, subject, id) {
-  const token = await getSheetsToken(SHEETS.meta.id);
-  const base = `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS.meta.id}`;
-  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const meta = await (await fetch(`${base}?fields=sheets.properties(title)`, { headers: h })).json();
-  if (!(meta.sheets || []).some(s => s.properties.title === SHEETS.meta.tab)) {
-    await fetch(`${base}:batchUpdate`, { method: 'POST', headers: h, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: SHEETS.meta.tab } } }] }) });
-    await fetch(`${base}/values/${encodeURIComponent(`'${SHEETS.meta.tab}'!A1`)}?valueInputOption=RAW`, { method: 'PUT', headers: h, body: JSON.stringify({ values: [['date', 'sent_at', 'subject', 'message_id']] }) });
+// ── Sheets (writer account, falling back to the primary) ───────────────────
+let acct = 'writer'; const tokens = {};
+async function api(method, path, body) {
+  for (let attempt = 0; ; attempt++) {
+    if (!tokens[acct]) tokens[acct] = await getSheetsToken(acct);
+    const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}${path}`, { method, headers: { Authorization: `Bearer ${tokens[acct]}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    if (r.ok) return r.json();
+    const t = await r.text();
+    if (r.status === 401 && attempt < 1) { delete tokens[acct]; continue; } // expired sign-in: new one, retry once
+    if ((r.status === 403 || r.status === 404) && acct === 'writer') { acct = 'primary'; continue; }
+    if ((r.status === 429 || r.status >= 500) && attempt < 5) { await sleep(2000 * (attempt + 1)); continue; }
+    throw new Error(`Sheets ${method} ${r.status}: ${t.slice(0, 200)}`);
   }
-  await fetch(`${base}/values/${encodeURIComponent(`'${SHEETS.meta.tab}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', headers: h, body: JSON.stringify({ values: [[today, new Date().toISOString(), subject, id || '']] }) });
 }
+const rng = (tab, a1) => encodeURIComponent(`'${tab}'!${a1}`);
+let tabsKnown = null;
+async function ensure(key) {
+  const { tab, headers } = TABS[key];
+  if (!tabsKnown) {
+    const m = await api('GET', '?fields=sheets.properties(sheetId,title)');
+    tabsKnown = (m.sheets || []).map(s => s.properties);
+  }
+  if (!tabsKnown.some(t => t.title === tab)) {
+    const blank = tabsKnown.find(t => /^Sheet1$/i.test(t.title));
+    const req = blank ? { updateSheetProperties: { properties: { sheetId: blank.sheetId, title: tab, gridProperties: { frozenRowCount: 1 } }, fields: 'title,gridProperties.frozenRowCount' } }
+      : { addSheet: { properties: { title: tab, gridProperties: { frozenRowCount: 1 } } } };
+    await api('POST', ':batchUpdate', { requests: [req] });
+    if (blank) blank.title = tab; else tabsKnown.push({ title: tab });
+  }
+  await api('PUT', `/values/${rng(tab, 'A1')}?valueInputOption=RAW`, { values: [headers] });
+}
+const isoFromSerial = v => (/^\d{5}$/.test(v) && +v > 40000 && +v < 60000 ? new Date(Date.UTC(1899, 11, 30) + +v * 86400000).toISOString().slice(0, 10) : v);
+async function readTab(key) { // column A is always the date; written RAW so Sheets never converts it (FIXED 2026-11-17)
+  try { const d = await api('GET', `/values/${rng(TABS[key].tab, 'A2:ZZ')}`); return (d.values || []).map(r => r.map((v, i) => { const s = String(v ?? ''); return i === 0 || (key === 'changes' && i === 8) ? isoFromSerial(s) : s; })); }
+  catch (e) { if (/400/.test(e.message)) return []; throw e; }
+}
+async function replace(key, rows) {
+  await ensure(key);
+  await api('POST', `/values/${rng(TABS[key].tab, 'A2:ZZ')}:clear`, {});
+  if (rows.length) await api('PUT', `/values/${rng(TABS[key].tab, 'A2')}?valueInputOption=RAW`, { values: rows });
+}
+async function upsert(key, rows, drop) {
+  await ensure(key);
+  const existing = await readTab(key);
+  const keep = existing.filter(r => !drop(r));
+  if (keep.length === existing.length) {
+    if (rows.length) await api('POST', `/values/${rng(TABS[key].tab, 'A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: rows });
+    return;
+  }
+  await replace(key, [...keep, ...rows]);
+}
+
+const num = v => (v === '' || v == null ? NaN : parseFloat(v));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 function todayEt() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()); }
-function fmtDay(iso, short) { return new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', short ? { month: 'short', day: 'numeric', timeZone: 'UTC' } : { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+function addDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
