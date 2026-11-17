@@ -61,14 +61,22 @@ module.exports = async (req, res) => {
     const notAvailable = new Set(); // days Amazon failed FATAL_LIMIT times
     let fatalCounts = {}; try { fatalCounts = JSON.parse(meta.fatal_counts || '{}'); } catch { fatalCounts = {}; }
     const keep = [], problems = [];
+    // ADDED 2026-11-16 — Amazon's report download allowance is shared by every
+    // cron on the account (a short burst, then ~1/min). "QuotaExceeded" means
+    // "slow down", not a failure: the report stays queued for the next run, no
+    // alert, and this run stops checking/downloading so the others get a turn.
+    const isThrottle = e => /QuotaExceeded|TooManyRequests|429|rate exceeded/i.test(String(e && e.message || e));
+    let throttled = 0;
     for (const p of pending) {
+      if (throttled) { keep.push(p); continue; }
       let status;
       try { status = await spRequest('GET', `/reports/2021-06-30/reports/${p.reportId}`, {}, null, account); }
-      catch (e) { keep.push(p); problems.push(`${p.date}: status check failed — ${e.message}`); continue; }
+      catch (e) { keep.push(p); if (isThrottle(e)) throttled++; else problems.push(`${p.date}: status check failed — ${e.message}`); continue; }
+      if (status && status.errors && isThrottle(JSON.stringify(status.errors))) { keep.push(p); throttled++; continue; }
       const st = status && status.processingStatus;
       if (st === 'DONE') {
         try { days.set(p.date, await downloadAsinRows(status.reportDocumentId, p.date, account, problems)); }
-        catch (e) { keep.push(p); problems.push(`${p.date}: download failed — ${e.message}`); }
+        catch (e) { keep.push(p); if (isThrottle(e)) throttled++; else problems.push(`${p.date}: download failed — ${e.message}`); }
       } else if (st === 'CANCELLED') {
         days.set(p.date, []);
       } else if (st === 'FATAL') {
@@ -183,7 +191,7 @@ module.exports = async (req, res) => {
       await sendCronFailureAlert(CRON, problems.join(' | ').slice(0, 1500), { 'Still pending': String(keep.length) });
     }
     console.log(`[daily-br-process] (${account}) wrote ${written.days} day(s), ${written.asinRows} ASIN rows, removed ${written.rowsRemoved}; still pending ${keep.length}`);
-    return res.status(200).json({ success: true, account, days_written: [...days.keys()].sort(), ...(notAvailable.size ? { not_available: [...notAvailable].sort() } : {}), ...written, still_pending: keep.length, problems });
+    return res.status(200).json({ success: true, account, days_written: [...days.keys()].sort(), ...(notAvailable.size ? { not_available: [...notAvailable].sort() } : {}), ...written, still_pending: keep.length, ...(throttled ? { amazon_said_slow_down: 'yes — the rest waits for the next run' } : {}), problems });
   } catch (err) {
     console.error('[daily-br-process]', err.message);
     await sendCronFailureAlert(CRON, err.message);
