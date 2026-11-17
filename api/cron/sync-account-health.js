@@ -55,7 +55,13 @@
  *   2. it is not discoverable (Amazon's own listing status lacks DISCOVERABLE);
  *   3. the All Listings report says "Incomplete".
  * Kept SKUs get every issue Amazon reports (one row per SKU + message) and a
- * why_listed column; stranded stock is always kept. Runs daily on its own
+ * why_listed column; stranded stock is always kept.
+ * VARIATION PARENTS are never listed (ADDED 2026-11-17): a parent SKU only groups
+ * its children (sizes/variants), never has stock or a condition, so Amazon always
+ * calls it "Incomplete — invalid condition type". Parents are recognized from
+ * Amazon's variation data (the listing has child SKUs), or — as a fallback — an
+ * Incomplete SKU whose only problem is "invalid condition type". Each family is
+ * recorded in Metrics Detail → "variation_parents" with its child SKUs instead. Runs daily on its own
  * schedule, once per day. Only the active cron brands (brands.js, minus the
  * brands left out of the emails):
  *   1. requests the All Listings report (every SKU, incl. inactive/removed) and
@@ -100,8 +106,10 @@ const SHEETS = {
   meta:     { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: '_meta', account: 'primary' },
   issues:   { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'listing_issues', account: 'primary' }, // 2nd tab of Metrics Detail
   scan:     { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'inactive_listings', account: 'primary' }, // 3rd tab of Metrics Detail
+  parents:  { id: '1gsbzdc6AJMSyyTgEbc1Lh2ccEgSJLtwg1GK7To8sWgI', tab: 'variation_parents', account: 'primary' }, // 4th tab (ADDED 2026-11-17)
 };
 const SCAN_HEADERS = ['date', 'account', 'marketplace', 'brand', 'sku', 'asin', 'listing_status', 'source', 'severity', 'amazon_message', 'enforcement', 'first_seen', 'why_listed'];
+const PARENT_HEADERS = ['date', 'account', 'marketplace', 'brand', 'parent_sku', 'asin', 'variation_theme', 'child_skus', 'child_count', 'amazon_status', 'how_identified'];
 const SCAN_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside']; // same brands left out of the alert emails
 const SCAN_BUDGET_MS = 230_000;
 const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
@@ -446,6 +454,7 @@ async function violationScan(meta, today, restart = false) {
       const s2 = await requestRaw(sc, 'GET_STRANDED_INVENTORY_UI_DATA');
       st.allId = a.reportId || null; st.strandedId = s2.reportId || null; st.date = today; st.queue = null; st.found = 0;
       await upsertRows(SHEETS.scan, SCAN_HEADERS, [], r => r[0] === today && r[1] === sc.label && r[2] === sc.marketplace); // a re-run replaces today's rows
+      await upsertRows(SHEETS.parents, PARENT_HEADERS, [], r => r[0] === today && r[1] === sc.label && r[2] === sc.marketplace);
       summary.push({ scope: sc.key, status: st.allId ? 'reports requested — run again in a few minutes' : `could not request: ${a.error}` });
       continue;
     }
@@ -484,17 +493,28 @@ async function violationScan(meta, today, restart = false) {
     }
 
     // 2b. Ask the Listings API about each queued SKU (resumes next run)
-    const found = [];
+    const found = [], parents = [];
     while (st.checked < st.queue.length && Date.now() - started < SCAN_BUDGET_MS) {
       const q = st.queue[st.checked++];
       let listing;
       try {
         listing = await spRequest('GET', `/listings/2021-08-01/items/${await sellerIdFor(sc)}/${encodeURIComponent(q.sku)}`,
-          { marketplaceIds: sc.marketplaceId(), includedData: 'summaries,issues' }, null, sc.account);
+          { marketplaceIds: sc.marketplaceId(), includedData: 'summaries,issues,relationships' }, null, sc.account);
       } catch { continue; }
       if (!listing || listing.errors) continue; // SKU no longer exists on Amazon
       const issues = listing.issues || [];
       const amazonStatus = ((listing.summaries || [])[0] || {}).status || [];
+      // Variation parent? (has child SKUs) → record the family, never list it.
+      const rels = (listing.relationships || []).flatMap(r => r.relationships || []).filter(r => /VARIATION/i.test(r.type || 'VARIATION'));
+      const childSkus = [...new Set(rels.flatMap(r => r.childSkus || []))];
+      const onlyCondition = issues.length > 0 && issues.every(i => /invalid condition type/i.test(i.message || ''));
+      if (childSkus.length || (/incomplete/i.test(q.status) && onlyCondition)) {
+        const theme = rels.map(r => r.variationTheme && (r.variationTheme.theme || (r.variationTheme.attributes || []).join('/'))).filter(Boolean)[0] || '';
+        parents.push([today, sc.label, sc.marketplace, q.brand, q.sku, q.asin, theme, childSkus.join(', '), childSkus.length || '',
+          amazonStatus.join(', ') || 'no status', childSkus.length ? 'Amazon variation data' : 'Incomplete — only "invalid condition type" (children not reported)']);
+        await sleep(220);
+        continue;
+      }
       // Listing-level enforcement only: ATTRIBUTE_SUPPRESSED just hides one attribute, not the listing (FIXED 2026-11-17).
       const enforced = [...new Set(issues.flatMap(i => (i.enforcements?.actions || []).map(a => a.action)).filter(a => /SUPPRESS|REMOV|BLOCK/i.test(a || '') && !/^ATTRIBUTE_/i.test(a || '')))];
       const notDiscoverable = !amazonStatus.some(x => /DISCOVERABLE/i.test(x));
@@ -511,8 +531,9 @@ async function violationScan(meta, today, restart = false) {
       await sleep(220);
     }
     if (found.length) { await writeScanRows(sc, found, today); st.found += found.length; }
+    if (parents.length) { await appendRows(SHEETS.parents, PARENT_HEADERS, parents); st.parents = (st.parents || 0) + parents.length; }
     if (st.checked >= st.queue.length) { st.done = true; st.queue = []; }
-    summary.push({ scope: sc.key, status: st.done ? 'done' : 'in progress — run again', inactiveSkusChecked: st.checked, toCheck: st.done ? 0 : st.queue.length - st.checked, violationsFound: st.found });
+    summary.push({ scope: sc.key, status: st.done ? 'done' : 'in progress — run again', inactiveSkusChecked: st.checked, toCheck: st.done ? 0 : st.queue.length - st.checked, violationsFound: st.found, variationParentsSkipped: st.parents || 0 });
   }
   // A finished scan can be started again later: clear its state when every account is done.
   const allDone = SCOPES.every(sc => !state[sc.key] || state[sc.key].done);
@@ -630,7 +651,7 @@ async function ensureTab(sheet, headers) {
 // Columns that hold dates, per tab. Google Sheets used to turn written dates
 // into its own date numbers (e.g. 46342 = 2026-11-17); they're read back as
 // YYYY-MM-DD, and everything is now written RAW so it can't happen again (FIXED 2026-11-17).
-const DATE_COLS = { health_daily: [0], metrics_detail: [0], changes: [0, 8], seller_feedback: [7], listing_issues: [0, 12], inactive_listings: [0, 11] };
+const DATE_COLS = { health_daily: [0], metrics_detail: [0], changes: [0, 8], seller_feedback: [7], listing_issues: [0, 12], inactive_listings: [0, 11], variation_parents: [0] };
 const isoFromSerial = v => { const n = Number(v); return /^\d{5}$/.test(String(v)) && n > 40000 && n < 60000 ? new Date(Date.UTC(1899, 11, 30) + n * 86400000).toISOString().slice(0, 10) : v; };
 async function readTab(sheet) {
   try {
