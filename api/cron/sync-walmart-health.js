@@ -138,6 +138,7 @@ module.exports = async (req, res) => {
         for (const [field, i] of [['status', 4], ['value', 5], ['defects_count', 8]]) {
           const a = String(p[i] ?? '').trim(), b = String(row[i] ?? '').trim();
           if (a === b) continue;
+          if (field !== 'status' && sameShown(row[3], a, b)) continue; // not visible at the precision shown
           changes.push([today, ACCOUNT, MARKET, row[3], field, a || '(blank)', b || '(blank)', direction(row[3], field, a, b), prevDate]);
         }
       }
@@ -237,6 +238,16 @@ function parseStandard(text, recommended) {
   if (recommended != null && recommended !== '') return { value: +(+recommended / 100).toFixed(4), cond: 'GREATER_THAN' };
   return { value: NaN, cond: '' };
 }
+// A change only counts if it shows at the precision the email uses (FIXED 2026-11-17):
+// rates to 0.1 percentage point, other numbers to a whole number; "0" vs "0.0" is the same.
+function sameShown(metric, a, b) {
+  const x = parseFloat(a), y = parseFloat(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return String(a).trim() === String(b).trim();
+  const isRateish = /rate|accuracy|cancellations|returns|feedback|tracking|delivery|shipment|response|received/i.test(metric) && !/rating/i.test(metric) && Math.abs(x) <= 1 && Math.abs(y) <= 1;
+  if (!isRateish) return Math.round(x) === Math.round(y);
+  const shown = n => (n * 100).toFixed(n < 0.1 ? 2 : 1); // same rounding as the email: 0.47%, 88.9%
+  return shown(x) === shown(y);
+}
 function direction(metric, field, a, b) {
   if (field === 'status') return BAD.test(b) && !BAD.test(a) ? 'worse' : BAD.test(a) && !BAD.test(b) ? 'better' : 'changed';
   const x = parseFloat(a), y = parseFloat(b);
@@ -276,21 +287,22 @@ async function ensure(key) {
   }
   await api('PUT', `/values/${rng(tab, 'A1')}?valueInputOption=RAW`, { values: [headers] });
 }
-async function readTab(key) {
-  try { const d = await api('GET', `/values/${rng(TABS[key].tab, 'A2:ZZ')}`); return (d.values || []).map(r => r.map(v => String(v ?? ''))); }
+const isoFromSerial = v => (/^\d{5}$/.test(v) && +v > 40000 && +v < 60000 ? new Date(Date.UTC(1899, 11, 30) + +v * 86400000).toISOString().slice(0, 10) : v);
+async function readTab(key) { // column A is always the date; written RAW so Sheets never converts it (FIXED 2026-11-17)
+  try { const d = await api('GET', `/values/${rng(TABS[key].tab, 'A2:ZZ')}`); return (d.values || []).map(r => r.map((v, i) => { const s = String(v ?? ''); return i === 0 || (key === 'changes' && i === 8) ? isoFromSerial(s) : s; })); }
   catch (e) { if (/400/.test(e.message)) return []; throw e; }
 }
 async function replace(key, rows) {
   await ensure(key);
   await api('POST', `/values/${rng(TABS[key].tab, 'A2:ZZ')}:clear`, {});
-  if (rows.length) await api('PUT', `/values/${rng(TABS[key].tab, 'A2')}?valueInputOption=USER_ENTERED`, { values: rows });
+  if (rows.length) await api('PUT', `/values/${rng(TABS[key].tab, 'A2')}?valueInputOption=RAW`, { values: rows });
 }
 async function upsert(key, rows, drop) {
   await ensure(key);
   const existing = await readTab(key);
   const keep = existing.filter(r => !drop(r));
   if (keep.length === existing.length) {
-    if (rows.length) await api('POST', `/values/${rng(TABS[key].tab, 'A1')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { values: rows });
+    if (rows.length) await api('POST', `/values/${rng(TABS[key].tab, 'A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: rows });
     return;
   }
   await replace(key, [...keep, ...rows]);
