@@ -143,6 +143,7 @@ const BAD_STATUS = /risk|bad|poor|fail|critical|warning|unhealthy|suspend|deacti
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
+  for (const k of Object.keys(tokenCache)) delete tokenCache[k]; // fresh Google sign-in every run (warm instances kept an expired one — FIXED 2026-11-17)
   const today = todayEt();
   const check = req.query.check === 'true';
   const force = req.query.force === 'true';
@@ -171,12 +172,18 @@ module.exports = async (req, res) => {
 
     // ── 1. Collect ready reports ─────────────────────────────────────────────
     const still = [];
+    // ADDED 2026-11-16 — Amazon's "QuotaExceeded" (shared download allowance)
+    // just means wait: the report stays pending for the next run, no alert.
+    const isThrottle = e => /QuotaExceeded|TooManyRequests|429|rate exceeded/i.test(String(e && e.message || e));
+    let throttled = false;
     for (const p of pending) {
       const sc = SCOPES.find(s => s.key === p.scope);
       if (!sc) continue;
+      if (throttled) { still.push(p); continue; }
       let rep;
       try { rep = await spRequest('GET', `/reports/2021-06-30/reports/${p.reportId}`, {}, null, sc.account); }
-      catch (err) { still.push(p); results.push({ scope: p.scope, type: p.type, status: 'error checking', error: err.message }); continue; }
+      catch (err) { still.push(p); if (isThrottle(err)) { throttled = true; continue; } results.push({ scope: p.scope, type: p.type, status: 'error checking', error: err.message }); continue; }
+      if (rep && rep.errors && isThrottle(JSON.stringify(rep.errors))) { still.push(p); throttled = true; continue; }
       const st = rep && rep.processingStatus;
       if (st === 'IN_QUEUE' || st === 'IN_PROGRESS') { if (ageHours(p.requestedAt) < 24) still.push(p); continue; }
       if (st !== 'DONE') {
@@ -185,7 +192,9 @@ module.exports = async (req, res) => {
         if (st === 'CANCELLED' && p.type === 'GET_MERCHANTS_LISTINGS_FYP_REPORT') { results.push({ scope: p.scope, type: 'listing issues', ...(await writeListingIssues(sc, p.date, null)) }); continue; }
         results.push({ scope: p.scope, type: p.type, status: st || 'unknown', note: st === 'CANCELLED' ? 'no data for this period' : 'Amazon could not build it' }); continue;
       }
-      const text = await download(rep.reportDocumentId, sc.account);
+      let text;
+      try { text = await download(rep.reportDocumentId, sc.account); }
+      catch (err) { still.push(p); if (isThrottle(err)) { throttled = true; continue; } results.push({ scope: p.scope, type: p.type, status: 'download failed', error: err.message }); continue; }
       if (p.type === 'GET_V2_SELLER_PERFORMANCE_REPORT') results.push({ scope: p.scope, type: 'performance', ...(await writePerformance(sc, p.date, text)) });
       else if (p.type === 'GET_MERCHANTS_LISTINGS_FYP_REPORT') results.push({ scope: p.scope, type: 'listing issues', ...(await writeListingIssues(sc, p.date, text)) });
       else results.push({ scope: p.scope, type: 'feedback', ...(await writeFeedback(sc, text, today)) });
@@ -232,6 +241,7 @@ async function requestReport(sc, type) {
 }
 async function download(documentId, account) {
   const doc = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
+  if (!doc || !doc.url) throw new Error(`no document URL (${JSON.stringify(doc).slice(0, 200)})`);
   const buf = Buffer.from(await (await fetch(doc.url)).arrayBuffer());
   return (doc.compressionAlgorithm === 'GZIP' ? zlib.gunzipSync(buf) : buf).toString('utf8');
 }
@@ -434,6 +444,8 @@ async function violationScan(meta, today, restart = false) {
     if (!st.queue) {
       const all = await reportText(sc, st.allId);
       if (all.waiting) { summary.push({ scope: sc.key, status: `All Listings report still ${all.waiting} — run again shortly` }); continue; }
+      const stranded = st.strandedId ? await reportText(sc, st.strandedId) : { text: '' };
+      if (stranded.waiting) { summary.push({ scope: sc.key, status: `Stranded inventory report still ${stranded.waiting} — run again shortly` }); continue; }
       const rows = [];
       if (all.text) {
         const t = tsv(all.text);
@@ -448,7 +460,6 @@ async function violationScan(meta, today, restart = false) {
       }
       st.queue = rows; st.checked = 0;
       // Stranded inventory: removal / policy reasons go straight in
-      const stranded = st.strandedId ? await reportText(sc, st.strandedId) : { text: '' };
       if (stranded.text) {
         const t = tsv(stranded.text); const add = [];
         for (const r of t.rows) {
@@ -504,8 +515,10 @@ async function requestRaw(sc, type) {
 async function reportText(sc, reportId) {
   const rep = await spRequest('GET', `/reports/2021-06-30/reports/${reportId}`, {}, null, sc.account);
   if (['IN_QUEUE', 'IN_PROGRESS'].includes(rep.processingStatus)) return { waiting: rep.processingStatus.toLowerCase().replace('_', ' ') };
+  if (rep.errors && /QuotaExceeded/i.test(JSON.stringify(rep.errors))) return { waiting: 'waiting on Amazon (slow down)' };
   if (rep.processingStatus !== 'DONE') return { text: '' };
-  return { text: await download(rep.reportDocumentId, sc.account) };
+  try { return { text: await download(rep.reportDocumentId, sc.account) }; }
+  catch (e) { if (/QuotaExceeded|TooManyRequests|429/i.test(e.message)) return { waiting: 'waiting on Amazon (slow down)' }; throw e; }
 }
 function tsv(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -575,6 +588,10 @@ async function tokenFor(sheet, other = false) {
 async function api(sheet, method, path, body) {
   try { return await sheetsApi(await tokenFor(sheet), method, `/${sheet.id}${path}`, body); }
   catch (err) {
+    if (/ 401:/.test(err.message)) { // sign-in expired mid-run: get a new one and retry once
+      delete tokenCache[sheet.account];
+      return sheetsApi(await tokenFor(sheet), method, `/${sheet.id}${path}`, body);
+    }
     if (!/ 40[34]:/.test(err.message)) throw err;
     console.warn(`[sync-account-health] ${sheet.tab}: ${sheet.account} account can't open the sheet — trying the other account (${err.message.slice(0, 80)})`);
     const result = await sheetsApi(await tokenFor(sheet, true), method, `/${sheet.id}${path}`, body);
