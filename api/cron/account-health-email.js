@@ -52,7 +52,7 @@ SHEET_SETS.push({ // Walmart (ADDED 2026-11-16) — written by sync-walmart-heal
   defects:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'defect_orders' },
 });
 const SHEETS = { meta: { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'email-log' } }; // send log lives with set 1
-const TO = ['awilcox@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com'];
+const TO = ['awilcox@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com', 'mgallagher@medaltus.com']; // mgallagher ADDED 2026-11-17
 const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
 const REPLY_TO = 'reports@medaltus.com';
 const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
@@ -78,6 +78,7 @@ const NAMES = {
 const WM_RATES = new Set(['cancellations', 'onTimeDelivery', 'validTracking', 'sellerResponse', 'lateShipment', 'onTimeShipment', 'carrierMethodAccuracy', 'shipFromAccuracy', 'negativeFeedback', 'returns', 'itemNotReceived']);
 const nameOf = m => NAMES[m] || m.replace(/\[\d+\]$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\./g, ' › ').replace(/^./, c => c.toUpperCase());
 const isRate = m => WM_RATES.has(m) || (/rate/i.test(m) && !/rating/i.test(m));
+const sameNumber = (a, b) => { const x = parseFloat(a), y = parseFloat(b); return Number.isFinite(x) && Number.isFinite(y) ? Math.round(x) === Math.round(y) : String(a).trim() === String(b).trim(); };
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
@@ -109,7 +110,8 @@ module.exports = async (req, res) => {
         attention: rows.filter(r => r[3] !== 'accountStatus' && !/\[\d+\]$/.test(r[3]) && !/\.(claims|chargebacks|negativeFeedback|orderWithDefects|invoiceDefect|missingInvoice|lateInvoice)$/.test(r[3]) && !HEALTHY.test(r[4] || ''))
           .map(r => ({ metric: r[3], status: r[4], value: r[5], target: r[6], cond: r[7], defects: r[8], from: r[10], to: r[11] })) };
     });
-    const todays = changes.filter(r => r[0] === today);
+    // Hide "changes" that look identical once rounded for display (also covers sheets written by other crons).
+    const todays = changes.filter(r => r[0] === today && !(r[4] !== 'status' && (r[4] === 'value' && isRate(r[3]) ? pct(r[5]) === pct(r[6]) : sameNumber(r[5], r[6]))));
     const worse = todays.filter(r => r[7] === 'worse');
     const inactiveLatest = latestScan(inactive);
     const newFeedback = feedback.filter(r => r[7] === today);
@@ -205,8 +207,9 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
 
   // Inactive listings, grouped by account + brand; NEW first, then by SKU.
   // Email shows errors, enforcements, stranded stock and "no reason" rows; warnings stay in the sheet.
-  const important = r => /ERROR/i.test(r[8] || '') || (r[10] || '').trim() || r[7] === 'Stranded inventory report' || /no reason/i.test(r[9] || '');
-  const hiddenWarnings = inactiveLatest.filter(r => !important(r)).length;
+  // Only rows from the current rules (they always carry why_listed); errors, enforcements, stranded stock, "no reason" rows.
+  const important = r => (r[12] || '').trim() && (/ERROR/i.test(r[8] || '') || (r[10] || '').trim() || r[7] === 'Stranded inventory report' || /no reason/i.test(r[9] || ''));
+  const hiddenWarnings = inactiveLatest.filter(r => (r[12] || '').trim() && !important(r)).length;
   const groups = {};
   inactiveLatest.filter(important).forEach(r => { const k = `${r[1]} ${r[2]} · ${r[3] || 'Other'}`; (groups[k] = groups[k] || []).push(r); });
   const clip = (t, n) => { t = String(t || '').trim(); return t.length > n ? t.slice(0, n).trimEnd() + '… (full text in the inactive_listings tab)' : t; };
@@ -257,7 +260,9 @@ async function readTab(sheet) {
   const token = await getSheetsToken(sheet.id);
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}/values/${encodeURIComponent(`'${sheet.tab}'!A2:ZZ`)}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`${sheet.tab}: ${res.status}`);
-  return ((await res.json()).values || []).map(r => r.map(v => String(v ?? '')));
+  const cols = { health_daily: [0], metrics_detail: [0], changes: [0, 8], seller_feedback: [7], inactive_listings: [0, 11], defect_orders: [0] }[sheet.tab] || [];
+  const iso = v => (/^\d{5}$/.test(v) && +v > 40000 && +v < 60000 ? new Date(Date.UTC(1899, 11, 30) + +v * 86400000).toISOString().slice(0, 10) : v); // Sheets date numbers → YYYY-MM-DD
+  return ((await res.json()).values || []).map(r => r.map((v, i) => { const s = String(v ?? ''); return cols.includes(i) ? iso(s) : s; }));
 }
 async function logSend(today, subject, id) {
   const token = await getSheetsToken(SHEETS.meta.id);
