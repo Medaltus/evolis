@@ -67,6 +67,7 @@ const BAD = /risk|attention|monitor|below|fail|suspend|poor|critical|not meet|do
 
 module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
+  for (const k of Object.keys(tokens)) delete tokens[k]; acct = 'writer'; tabsKnown = null; // fresh per run (FIXED 2026-11-17)
   const today = todayEt();
   const from = addDays(today, -WINDOW), to = addDays(today, -1);
   try {
@@ -206,16 +207,27 @@ function wmBinary(path, token, hops = 0) {
   });
 }
 // Walmart's order-level reports differ per metric, so columns are found by name.
+// FIXED 2026-11-17: the sheet starts with a title row ("Data current as of …");
+// the real header row is found first. Reports for tracking / shipping metrics
+// have no SKU — they carry PO #, sales order #, carrier and tracking number.
 function parseReport(buf) {
-  let rows = [];
-  try { const wb = XLSX.read(buf, { type: 'buffer' }); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); } catch { return []; }
-  return rows.slice(0, 500).map(r => {
-    const used = new Set();
-    const pick = re => { const k = Object.keys(r).find(x => re.test(x) && !used.has(x)); if (k) used.add(k); return k ? String(r[k]) : ''; };
-    const out = { order: pick(/purchase ?order|po ?(number|#|id)|order ?(number|#|id)/i), sku: pick(/sku/i), item: pick(/item ?name|product ?name|title/i),
-      date: pick(/order ?date|date/i), reason: pick(/reason|defect|driver|cause|status/i) };
-    out.details = JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k, v]) => v !== '' && !used.has(k)))).slice(0, 500);
-    return out;
+  let grid = [];
+  const quiet = console.error; console.error = () => {}; // the library warns "Bad uncompressed size" on Walmart's zips but reads them fine
+  try { const wb = XLSX.read(buf, { type: 'buffer' }); grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false }); }
+  catch { return []; } finally { console.error = quiet; }
+  const hi = grid.findIndex(r => r.filter(c => String(c).trim()).length >= 3 && r.some(c => /po ?#|purchase order|sales order|order ?(number|#|id)|tracking/i.test(String(c))));
+  if (hi < 0) return [];
+  const head = grid[hi].map(h => String(h).trim());
+  const col = re => head.findIndex(h => re.test(h));
+  const iPo = col(/^po ?#|purchase ?order/i), iSo = col(/sales ?order/i), iSku = col(/sku/i), iItem = col(/item ?name|product ?name|title/i),
+        iDate = col(/order ?date/i), iReason = col(/reason|defect|cause|marked late by/i), iCarrier = col(/^carrier/i), iTrack = col(/tracking/i);
+  return grid.slice(hi + 1).filter(r => r.some(c => String(c).trim())).slice(0, 500).map(r => {
+    const v = i => (i >= 0 ? String(r[i] ?? '').trim() : '');
+    let reason = v(iReason);
+    if (/marked late by/i.test(head[iReason] || '')) reason = `Marked late by ${reason || 0} day${reason === '1' ? '' : 's'}`;
+    const extra = [v(iCarrier) && `Carrier ${v(iCarrier)}`, v(iTrack) && `tracking ${v(iTrack)}`].filter(Boolean).join(' · ');
+    return { order: v(iPo) || v(iSo), sku: v(iSku), item: v(iItem), date: v(iDate), reason: [reason, extra].filter(Boolean).join(' · '),
+      details: JSON.stringify(Object.fromEntries(head.map((h, i) => [h || `col${i + 1}`, String(r[i] ?? '').trim()]).filter(([, x]) => x))).slice(0, 500) };
   });
 }
 // "below 2%" → { value: 0.02, cond: 'LESS_THAN' }; "above 95%" → GREATER_THAN; else recommended rate (a minimum)
@@ -241,6 +253,7 @@ async function api(method, path, body) {
     const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}${path}`, { method, headers: { Authorization: `Bearer ${tokens[acct]}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     if (r.ok) return r.json();
     const t = await r.text();
+    if (r.status === 401 && attempt < 1) { delete tokens[acct]; continue; } // expired sign-in: new one, retry once
     if ((r.status === 403 || r.status === 404) && acct === 'writer') { acct = 'primary'; continue; }
     if ((r.status === 429 || r.status >= 500) && attempt < 5) { await sleep(2000 * (attempt + 1)); continue; }
     throw new Error(`Sheets ${method} ${r.status}: ${t.slice(0, 200)}`);
