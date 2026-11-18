@@ -90,10 +90,16 @@ module.exports = async (req, res) => {
     ]);
 
     const evRows = parseCsvRows(eventsCsv);
+    // CHANGED 2026-11-18 — the Events tab's Brands column: blank = every brand;
+    // otherwise only the brands listed, using that row's dates. A brand listed on
+    // its own row for an event (same Event Name, same year) uses that row instead
+    // of the blank one — e.g. Black Friday 2026: Nov 25–30 for all, Nov 19–30 for
+    // dearcloud, skinside SEOUL, PB & Jay.
     const rawEvents = evRows.map(r => ({
       name:      (r['Event Name'] || '').trim(),
       startDate: (r['start_date'] || '').trim(),
       endDate:   (r['end_date']   || '').trim(),
+      brands:    String(r['Brands'] || r['brands'] || '').split(/[,;\n]/).map(x => normName(x)).filter(Boolean),
     })).filter(ev => ev.startDate && ev.endDate);
 
     // Regular prices keyed by ASIN (safer than SKU — each product has an FBA
@@ -108,7 +114,8 @@ module.exports = async (req, res) => {
 
     const allPricedAsins = new Set(priceRef.keys());
     rawEvents.forEach(ev => {
-      eventWindows.push({ asinSet: allPricedAsins, startDate: ev.startDate, endDate: ev.endDate });
+      eventWindows.push({ asinSet: allPricedAsins, startDate: ev.startDate, endDate: ev.endDate,
+        brands: ev.brands, eventKey: `${normName(ev.name)}|${ev.startDate.slice(0, 4)}` });
     });
 
     console.log(`[sale-promotions] events loaded: ${eventWindows.length}, prices: ${priceRef.size}`);
@@ -156,7 +163,17 @@ module.exports = async (req, res) => {
 
 // ── Per-brand core logic ─────────────────────────────────────────────────────
 
-async function processBrandPromos({ brand, eventWindows, priceRef, rowLimit, dryRun }) {
+// The event windows that apply to one brand: rows listing it, plus blank-Brands rows
+// for events where it has no row of its own (ADDED 2026-11-18).
+function windowsForBrand(brand, eventWindows) {
+  const keys = [brand.id, brand.displayName, brand.tabName, brand.amazonBrandName].map(normName).filter(Boolean);
+  const own = eventWindows.filter(w => w.brands && w.brands.length && w.brands.some(b => keys.includes(b)));
+  const ownEvents = new Set(own.map(w => w.eventKey));
+  return [...own, ...eventWindows.filter(w => (!w.brands || !w.brands.length) && !ownEvents.has(w.eventKey))];
+}
+
+async function processBrandPromos({ brand, eventWindows: allWindows, priceRef, rowLimit, dryRun }) {
+  const eventWindows = windowsForBrand(brand, allWindows);
   const token           = await ensureTab(sheets.orders, brand.tabName, HEADERS);
   const existingRowsRaw = await readRows(sheets.orders, brand.tabName);
   const existingRowsObj = (existingRowsRaw || []).map(normalizeRow);
@@ -221,6 +238,7 @@ function normalizeRow(r) {
 }
 
 const round2 = n => Math.round(n * 100) / 100;
+const normName = v => String(v || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g, '');
 
 async function fetchCsv(sheetId, gid) {
   const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
