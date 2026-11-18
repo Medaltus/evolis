@@ -65,7 +65,7 @@ const { sendCronFailureAlert } = require('../_alerts');
 const { normalizeOrderDate } = require('../_dates');
 
 const MASTER_GID = '164358627'; // master SKU list tab (by ID — safe to rename the tab)
-const ALWAYS_TO = ['awilcox@medaltus.com'];
+const ALWAYS_TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17 — get every brand, like Ashley
 const MANAGER_EMAILS = {
   'jaclyn sonberg': 'jsonberg@medaltus.com',
   'isabella fernandez': 'ifernandez@medaltus.com',
