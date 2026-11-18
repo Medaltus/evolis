@@ -165,15 +165,22 @@ module.exports = async (req, res) => {
 
       // ── All writes for this run: 1 structural + 1 values + 1 clear ───────
       const totalsTab = tabs.find(t => t.title === C.TOTALS_TAB);
-      const totalsGrid = totalsTab?.gridProperties?.rowCount || 1000;
-      if (totalsTab && totalsGrid < allTotals.length + 1) {
-        plan.structural.push({ appendDimension: { sheetId: totalsTab.sheetId, dimension: 'ROWS', length: allTotals.length + 1 - totalsGrid + 500 } });
+      let totalsGrid = totalsTab?.gridProperties?.rowCount || 1000;
+      // FIXED 2026-11-18: grow BEFORE the tab is exactly full (keep 500 spare rows), so
+      // there is always room below the totals — a list ending on the last row broke the clear.
+      if (totalsTab && totalsGrid < allTotals.length + 1 + 50) {
+        const add = allTotals.length + 1 + 500 - totalsGrid;
+        plan.structural.push({ appendDimension: { sheetId: totalsTab.sheetId, dimension: 'ROWS', length: add } });
+        totalsGrid += add;
       }
       for (let i = 0; i < plan.structural.length; i += 200) await C.gs('POST', ':batchUpdate', { requests: plan.structural.slice(i, i + 200) });
       if (allTotals.length) plan.data.push({ range: `${C.q(C.TOTALS_TAB)}!A2`, values: allTotals });
       if (plan.data.length) await C.gs('POST', '/values:batchUpdate', { valueInputOption: 'RAW', data: plan.data });
-      // Totals only shrink when days pass the 2-year cutoff; clear anything left below.
-      await C.gs('POST', `/values/${C.rng(`${C.q(C.TOTALS_TAB)}!A${allTotals.length + 2}:K`)}:clear`, {});
+      // Totals only shrink when days pass the 2-year cutoff; clear anything left below
+      // (only if there are rows below — FIXED 2026-11-18, "exceeds grid limits").
+      if (allTotals.length + 2 <= totalsGrid) {
+        await C.gs('POST', `/values/${C.rng(`${C.q(C.TOTALS_TAB)}!A${allTotals.length + 2}:K`)}:clear`, {});
+      }
 
       // ── Space check (whole spreadsheet) ─────────────────────────────────
       const cells = (await C.getTabs()).reduce((n, t) => n + (t.gridProperties?.rowCount || 0) * (t.gridProperties?.columnCount || 0), 0);
