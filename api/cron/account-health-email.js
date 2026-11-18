@@ -141,7 +141,6 @@ module.exports = async (req, res) => {
     const atRisk = cards.filter(c => !HEALTHY.test(c.status));
     const bits = [atRisk.length ? `${atRisk.map(c => `${c.acc} ${c.mkt}`).join(', ')} ${atRisk.length === 1 ? 'is' : 'are'} ${atRisk.map(c => c.status.replace(/_/g, ' ').toLowerCase())[0]}` : 'all accounts healthy',
       worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : '',
-      notices.newNotices.length ? `${notices.newNotices.length} new Amazon notice${notices.newNotices.length === 1 ? '' : 's'}` : '',
       notices.cases.filter(c => c.state === 'NEW').length ? `${notices.cases.filter(c => c.state === 'NEW').length} new case${notices.cases.filter(c => c.state === 'NEW').length === 1 ? '' : 's'}` : ''].filter(Boolean);
     const subject = `${testTo.length ? '[TEST] ' : ''}Account Health — ${bits.join(' · ')} · ${fmtDay(today)}`;
     const r = await fetch('https://api.resend.com/emails', {
@@ -342,16 +341,11 @@ function addDaysIso(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDa
 
 function noticesHtml(n, today, th, td) {
   const pill = (txt, bg, fg) => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:${bg};color:${fg};font-size:10px;font-weight:700;">${txt}</span>`;
-  const newBlock = n.newNotices.length ? `<div style="font-size:12px;font-weight:700;color:#C0392B;margin:2px 0 6px;">New since the last email · ${n.newNotices.length}</div>` +
-    n.newNotices.map(x => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
-      ${pill('NEW', '#24E9A3', '#001F60')} <b style="color:#001F60;">${esc(x.type)}</b>${x.action ? ` · ${esc(x.action)}` : ''} <span style="color:#9ba8c0;">· ${esc(x.when)}</span>
-      ${x.asins.length ? `<div style="margin-top:3px;"><b style="color:#001F60;">${x.asins.map(esc).join('; ')}</b></div>` : ''}
-      <div style="margin-top:3px;">${esc(x.summary || x.subject)}</div>${x.ids ? `<div style="font-size:10px;color:#9ba8c0;margin-top:2px;">${esc(x.ids)}</div>` : ''}</div>`).join('')
-    : `<div style="font-size:12px;color:#1A7F5A;margin-bottom:8px;">No new Amazon notices since the last email.</div>`;
-  const openBlock = n.open.length ? `<div style="font-size:12px;font-weight:700;color:#001F60;margin:10px 0 4px;">Open issues · last ${NOTICE_OPEN_DAYS} days · ${n.open.length}</div>
+  const newBlock = ''; // "New since the last email" removed 2026-11-18 per Jaclyn — open issues only
+  const openBlock = n.open.length ? `<div style="font-size:12px;font-weight:700;color:#001F60;margin:2px 0 4px;">Open issues · last ${NOTICE_OPEN_DAYS} days · ${n.open.length}</div>
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
       <tr><th style="${th}">Listing</th><th style="${th}">Latest</th><th style="${th}">History</th><th style="${th}">Reference</th></tr>
-      ${n.open.map(o => `<tr style="background:${o.isNew ? '#FFF8E6' : '#fff'};">
+      ${n.open.map(o => `<tr style="background:#fff;">
         <td style="${td}">${o.isAsin ? `<b>${esc(o.sku || o.key)}</b> <span style="font-size:10px;color:#9ba8c0;">${esc(o.key)}</span>${o.brand || o.product ? `<div style="font-size:11px;color:#6B7BA2;">${esc([o.brand, o.product].filter(Boolean).join(' · '))}</div>` : ''}` : `<b>${esc(o.key)}</b>`}</td>
         <td style="${td}"><b>${esc(o.type)}</b>${o.action ? `<div style="font-size:11px;color:#C0392B;">${esc(o.action)}</div>` : ''}</td>
         <td style="${td}font-size:11px;color:#3a4a6b;">${esc(o.history)}<div style="font-size:11px;color:#6B7BA2;margin-top:3px;">${esc(String(o.summary || '').slice(0, 260))}</div></td>
