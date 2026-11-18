@@ -176,8 +176,23 @@ module.exports = async (req, res) => {
 
   // ── 3. Download and decompress ───────────────────────────────────────────
   let rawTsv;
+  // FIXED 2026-11-18 — when the account's shared download allowance is busy, Amazon
+  // answers with an error instead of a download link, and fetch(undefined) failed with
+  // "Failed to parse URL from undefined" (alert of 2026-11-18 7:15 AM). "Slow down"
+  // (QuotaExceeded) now leaves the report queued — _meta isn't touched, so the next
+  // run downloads the same report — with no failure alert.
+  let docResp;
+  try { docResp = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account); }
+  catch (err) { docResp = { errors: [{ code: 'request failed', message: err.message }] }; }
+  if (!docResp || !docResp.url) {
+    const why = JSON.stringify((docResp && docResp.errors) || docResp || {}).slice(0, 200);
+    if (/QuotaExceeded|TooManyRequests|429/i.test(why)) {
+      console.log(`[sync-orders-process] (${account}) Amazon said slow down on the download — report ${reportId} stays queued for the next run`);
+      return res.status(202).json({ message: 'Amazon said slow down — report stays queued for the next run', reportId });
+    }
+  }
   try {
-    const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
+    if (!docResp || !docResp.url) throw new Error(`Amazon gave no download link for report ${reportId}: ${JSON.stringify((docResp && docResp.errors) || docResp || {}).slice(0, 200)}`);
     const fileResp = await fetch(docResp.url);
     if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
 
