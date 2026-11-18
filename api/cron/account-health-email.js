@@ -52,7 +52,7 @@ SHEET_SETS.push({ // Walmart (ADDED 2026-11-16) — written by sync-walmart-heal
   defects:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'defect_orders' },
 });
 const SHEETS = { meta: { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'email-log' } }; // send log lives with set 1
-const TO = ['awilcox@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com', 'mgallagher@medaltus.com']; // mgallagher ADDED 2026-11-17
+const TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17
 const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
 const REPLY_TO = 'reports@medaltus.com';
 const LOGO_URL = 'https://vbcosmeticsreport.medaltus.com/api/medaltus-logo';
