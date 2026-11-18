@@ -141,8 +141,21 @@ module.exports = async (req, res) => {
     yearMatches.sort((a, b) => (b['end_date'] || '').localeCompare(a['end_date'] || ''));
     const best = yearMatches[0];
 
-    const startDate = (best['start_date'] || '').trim();
-    const endDate   = (best['end_date'] || '').trim();
+    // CHANGED 2026-11-18 — an event can have several rows in the same year when some
+    // brands run it longer (Brands column: blank = every brand, otherwise only the
+    // brands listed — e.g. Black Friday 2026: Nov 25–30 for all, Nov 19–30 for
+    // dearcloud, skinside SEOUL, PB & Jay). Request ONE report covering all of that
+    // year's rows (earliest start → latest end) and store each row's window, so the
+    // process step keeps each brand's orders only within that brand's own dates.
+    const bestYear = String(best['start_date'] || best['end_date'] || '').slice(0, 4);
+    const sameYear = yearMatches.filter(r => String(r['start_date'] || r['end_date'] || '').slice(0, 4) === bestYear
+      && (r['start_date'] || '').trim() && (r['end_date'] || '').trim());
+    const windows = (sameYear.length ? sameYear : [best]).map(r => ({
+      brands: String(r['Brands'] || r['brands'] || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean),
+      start: String(r['start_date'] || '').trim(), end: String(r['end_date'] || '').trim(),
+    }));
+    const startDate = windows.map(w => w.start).filter(Boolean).sort()[0] || (best['start_date'] || '').trim();
+    const endDate   = windows.map(w => w.end).filter(Boolean).sort().pop() || (best['end_date'] || '').trim();
 
     if (!startDate || !endDate) {
       skipped.push({ tabName: target.tabName, reason: `matched "${best['Event Name']}" but start_date/end_date is blank` });
@@ -174,6 +187,7 @@ module.exports = async (req, res) => {
       start: ptStart,
       end: cappedEnd,
       matchedEventName: best['Event Name'],
+      windows, // per-brand date windows (see above)
     });
   }
 
@@ -231,6 +245,7 @@ module.exports = async (req, res) => {
       metaMap[`report_start_${m.tabName}`] = m.start;
       metaMap[`report_end_${m.tabName}`]   = m.end;
       metaMap[`processed_${m.tabName}`]    = 'false';
+      metaMap[`windows_${m.tabName}`]      = JSON.stringify(m.windows || []);
     }
     const existingTargets = (metaMap['target_tabs'] || '').split(',').filter(Boolean);
     const newTargets = matched.filter(m => reportIds[m.tabName]).map(m => m.tabName);
