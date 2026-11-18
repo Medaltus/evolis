@@ -52,6 +52,14 @@ SHEET_SETS.push({ // Walmart (ADDED 2026-11-16) — written by sync-walmart-heal
   defects:  { id: '1AXGABShbHsPT5lBCY809a8RtWn0a9Lgm9CZzjGS6FzE', tab: 'defect_orders' },
 });
 const SHEETS = { meta: { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'email-log' } }; // send log lives with set 1
+// ADDED 2026-11-18 — Amazon emails to cs@onlineskincaresales.com, logged by the
+// "Amazon Performance Notifications" Apps Script in that mailbox. Columns:
+// 0 received_at · 1 store · 2 marketplace · 3 notice_type · 4 amazon_action · 5 asins · 6 skus ·
+// 7 subject · 8 summary · 9 policy_link · 10 from · 11 gmail_link · 12 message_id · 13 full_text ·
+// 14 logged_at · 15 category · 16 case_or_complaint_id
+const NOTICES = { id: '1hGOiCwcfRN-OIMjKdYCmtXb4VdD9CJV1EeFM_Vr-vRA', tab: 'notifications' };
+const NOTICE_OPEN_DAYS = 90, CASE_OPEN_DAYS = 30;
+const MASTER_GID = '164358627';
 const TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17
 const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
 const REPLY_TO = 'reports@medaltus.com';
@@ -92,10 +100,15 @@ module.exports = async (req, res) => {
     const read = async s => readTab(s).catch(() => []); // a set with no data yet just adds nothing
     const all = async key => (await Promise.all(SHEET_SETS.map(set => read(set[key])))).flat();
     const [metrics, inactive, feedback, changes, defects] = await Promise.all([all('metrics'), all('inactive'), all('feedback'), all('changes'), all('defects')]);
+    const sendLog = await read(SHEETS.meta);
     if (!testTo.length && !preview && !force) {
-      const log = await read(SHEETS.meta);
-      if (log.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
+      if (sendLog.some(r => r[0] === today)) return res.status(200).json({ skipped: true, reason: `already sent today (${today})` });
     }
+    // "New" = received after the last real send (Eastern time, "YYYY-MM-DD HH:MM"); first time: last 3 days.
+    const lastSentIso = sendLog.map(r => r[1]).filter(Boolean).sort().pop();
+    const since = lastSentIso ? etStamp(new Date(lastSentIso)) : `${addDaysIso(today, -3)} 00:00`;
+    const [noticeRows, master] = await Promise.all([read(NOTICES), loadMaster().catch(() => new Map())]);
+    const notices = buildNotices(noticeRows, master, today, since);
 
     // Latest snapshot per account
     const latestDate = (rows, acc, mkt) => rows.filter(r => r[1] === acc && r[2] === mkt).map(r => r[0]).sort().pop();
@@ -116,18 +129,20 @@ module.exports = async (req, res) => {
     const inactiveLatest = latestScan(inactive);
     const newFeedback = feedback.filter(r => r[7] === today);
 
-    const somethingNew = worse.length || newFeedback.length;
+    const somethingNew = worse.length || newFeedback.length || notices.newNotices.length || notices.cases.some(c => c.state === 'NEW');
     if (!somethingNew && !monday && !force && !preview && !testTo.length) {
       return res.status(200).json({ sent: false, reason: 'nothing new today (weekday)', changesToday: todays.length });
     }
 
     const defectsLatest = latestScan(defects); // same "newest day per account" rule
-    const html = buildHtml({ today, monday, cards, todays, inactiveLatest, defectsLatest, newFeedback, test: testTo.length ? TO : null });
+    const html = buildHtml({ today, monday, cards, todays, inactiveLatest, defectsLatest, newFeedback, notices, test: testTo.length ? TO : null });
     if (preview) { res.setHeader('Content-Type', 'text/html'); return res.status(200).send(html); }
     if (!process.env.ALERTS_API_KEY) throw new Error('ALERTS_API_KEY is not set');
     const atRisk = cards.filter(c => !HEALTHY.test(c.status));
     const bits = [atRisk.length ? `${atRisk.map(c => `${c.acc} ${c.mkt}`).join(', ')} ${atRisk.length === 1 ? 'is' : 'are'} ${atRisk.map(c => c.status.replace(/_/g, ' ').toLowerCase())[0]}` : 'all accounts healthy',
-      worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : ''].filter(Boolean);
+      worse.length ? `${worse.length} change${worse.length === 1 ? '' : 's'} for the worse` : '',
+      notices.newNotices.length ? `${notices.newNotices.length} new Amazon notice${notices.newNotices.length === 1 ? '' : 's'}` : '',
+      notices.cases.filter(c => c.state === 'NEW').length ? `${notices.cases.filter(c => c.state === 'NEW').length} new case${notices.cases.filter(c => c.state === 'NEW').length === 1 ? '' : 's'}` : ''].filter(Boolean);
     const subject = `${testTo.length ? '[TEST] ' : ''}Account Health — ${bits.join(' · ')} · ${fmtDay(today)}`;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.ALERTS_API_KEY}`, 'Content-Type': 'application/json' },
@@ -164,7 +179,7 @@ const statusPill = s => {
 const shortDate = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? fmtDay(m[0], true) : ''; };
 const daysOpen = (first, today) => { const a = new Date(first + 'T12:00:00Z'), b = new Date(today + 'T12:00:00Z'); return Math.max(0, Math.round((b - a) / 86400000)); };
 
-function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsLatest = [], newFeedback, test }) {
+function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsLatest = [], newFeedback, notices = { newNotices: [], open: [], cases: [] }, test }) {
   const th = 'padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 10px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
   const section = (title, color, inner) => `<tr><td style="padding:18px 32px 4px;"><div style="font-size:15px;font-weight:700;color:${color};font-family:Georgia,'Times New Roman',serif;border-bottom:2px solid #24E9A3;padding-bottom:4px;margin-bottom:8px;">${title}</div>${inner}</td></tr>`;
@@ -245,6 +260,8 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
       ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
       ${section('Needs attention', '#C0392B', attentionHtml)}
       ${section('Inactive listings', '#001F60', inactiveHtml)}
+      ${section('Amazon notices', '#001F60', noticesHtml(notices, today, th, td))}
+      ${section('Seller Support cases', '#001F60', casesHtml(notices.cases, today, th, td))}
       ${section('New negative seller feedback', '#001F60', feedbackHtml)}
       <tr><td style="padding:14px 32px 24px;"><div style="font-size:11px;color:#9ba8c0;">Sources: Amazon's Account Health report and Walmart's Seller Performance API (30-day window), pulled each morning. Full history in the Account Health sheets.</div>
         ${test ? `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">TEST SEND — the real email goes to: ${test.map(esc).join(', ')}.</div>` : ''}</td></tr>
@@ -256,6 +273,130 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
 }
 
 // ── Sheets ─────────────────────────────────────────────────────────────────
+// ── Amazon notices + Seller Support cases (ADDED 2026-11-18) ───────────────
+function buildNotices(rows, master, today, since) {
+  const asinInfo = a => master.get(a) || null;
+  const label = list => list.map(a => { const m = asinInfo(a); return m ? `${a} · ${m.sku}${m.brand ? ' · ' + m.brand : ''}` : a; });
+  const perf = rows.filter(r => r[15] === 'Performance / policy notice');
+  const cutoff = `${addDaysIso(today, -NOTICE_OPEN_DAYS)} 00:00`;
+  const shortAct = (r) => r[4] || 'Reply';
+  // New since the last email
+  const newNotices = perf.filter(r => r[0] > since).sort((a, b) => b[0].localeCompare(a[0]))
+    .map(r => ({ when: r[0], type: r[3], action: r[4], asins: label(splitList(r[5])), ids: r[16], summary: niceSummary(r), subject: r[7], store: r[1] }));
+  // Open issues: one row per ASIN (or per complaint / subject when no ASIN), last 90 days
+  const groups = new Map();
+  perf.filter(r => r[0] >= cutoff).forEach(r => {
+    const keys = splitList(r[5]).length ? splitList(r[5]) : [r[16] || r[7]];
+    keys.forEach(k => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  });
+  const open = [];
+  for (const [k, list] of groups) {
+    list.sort((a, b) => a[0].localeCompare(b[0]));
+    const last = list[list.length - 1];
+    if (/^Reinstated/i.test(last[3]) || /^Reinstated/i.test(last[4])) continue; // resolved
+    const steps = []; list.forEach(r => { const st = `${shortAct(r)} ${fmtShort(r[0])}`; if (steps[steps.length - 1] !== st) steps.push(st); });
+    const m = /^B0[A-Z0-9]{8}$/.test(k) ? asinInfo(k) : null;
+    open.push({ key: k, isAsin: /^B0[A-Z0-9]{8}$/.test(k), sku: m ? m.sku : '', brand: m ? m.brand : '', product: m ? m.name : '', type: last[3], action: last[4],
+      history: steps.slice(-4).join(' → '), ids: [...new Set(list.map(r => r[16]).filter(Boolean))].join(', '), summary: niceSummary(last), lastWhen: last[0], isNew: list.some(r => r[0] > since) });
+  }
+  open.sort((a, b) => b.lastWhen.localeCompare(a.lastWhen));
+  // Seller Support cases, grouped by case number
+  const caseRows = rows.filter(r => r[15] === 'Seller Support case');
+  const byCase = new Map();
+  caseRows.forEach(r => {
+    const id = ((r[16] || '').match(/Case (\d+)/) || (r[7] || '').match(/\[CASE (\d+)\]|Case ID:\s*(\d+)/i) || []).slice(1).find(Boolean) || r[7].replace(/^(RE:|FW:)\s*/i, '');
+    if (!byCase.has(id)) byCase.set(id, []); byCase.get(id).push(r);
+  });
+  const caseCutoff = `${addDaysIso(today, -CASE_OPEN_DAYS)} 00:00`;
+  const cases = [];
+  for (const [id, list] of byCase) {
+    list.sort((a, b) => a[0].localeCompare(b[0]));
+    const first = list[0], last = list[list.length - 1];
+    const resolved = /has been resolved|we (have )?resolved|case (has been |is )?(closed|resolved)|marked as resolved|reinstated/i.test(String(last[13] || '').slice(0, 3000));
+    let state;
+    if (first[0] > since) state = 'NEW';
+    else if (resolved && last[0] > since) state = 'RESOLVED';
+    else if (!resolved && last[0] >= caseCutoff) state = 'OPEN';
+    else continue; // quiet for 30+ days, or resolved before the last email
+    const asins = [...new Set(list.flatMap(r => splitList(r[5])))];
+    cases.push({ id: /^\d+$/.test(id) ? id : '', state, title: cleanSubject(last[7]), asins: label(asins), messages: list.length,
+      opened: first[0], lastWhen: last[0], updatedSince: last[0] > since && first[0] <= since, summary: niceSummary(last) });
+  }
+  const order = { NEW: 0, OPEN: 1, RESOLVED: 2 };
+  cases.sort((a, b) => order[a.state] - order[b.state] || b.lastWhen.localeCompare(a.lastWhen));
+  return { newNotices, open, cases };
+}
+// First real sentence of the email: skips the subject echo, greetings and "my name is…" lines.
+function niceSummary(r) {
+  const subject = String(r[7] || '').trim();
+  const body = String(r[13] || r[8] || '').split(/\n\s*\n/).map(p => p.replace(/\s+/g, ' ').trim())
+    .filter(p => p.length > 30 && p.split(' ').length >= 8 && !/<#|English \(United States\)|Deutsch|Español|Français|日本語/.test(p)
+      && !/^(dear|hello|hi|greetings)\b/i.test(p) && !/^my name is/i.test(p) && p !== subject && !subject.startsWith(p.slice(0, 40)) && !/^\[?case/i.test(p));
+  return (body[0] || r[8] || subject).replace(/<?https?:\/\/\S+>?/g, '').slice(0, 300);
+}
+const splitList = v => String(v || '').split(/[,\s]+/).map(x => x.trim()).filter(Boolean);
+const cleanSubject = s => String(s || '').replace(/^((RE|FW|FWD):\s*)+/i, '').replace(/\[CASE \d+\]\s*/i, '').replace(/\[Case ID:\s*\d+\]\s*/i, '').trim();
+function fmtShort(stamp) { const d = String(stamp).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? fmtDay(d, true) : stamp; }
+function etStamp(d) { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day} ${p.hour === '24' ? '00' : p.hour}:${p.minute}`; }
+function addDaysIso(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+function noticesHtml(n, today, th, td) {
+  const pill = (txt, bg, fg) => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:${bg};color:${fg};font-size:10px;font-weight:700;">${txt}</span>`;
+  const newBlock = n.newNotices.length ? `<div style="font-size:12px;font-weight:700;color:#C0392B;margin:2px 0 6px;">New since the last email · ${n.newNotices.length}</div>` +
+    n.newNotices.map(x => `<div style="border:1px solid #e4e8ef;border-left:4px solid #C0392B;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;color:#3a4a6b;">
+      ${pill('NEW', '#24E9A3', '#001F60')} <b style="color:#001F60;">${esc(x.type)}</b>${x.action ? ` · ${esc(x.action)}` : ''} <span style="color:#9ba8c0;">· ${esc(x.when)}</span>
+      ${x.asins.length ? `<div style="margin-top:3px;"><b style="color:#001F60;">${x.asins.map(esc).join('; ')}</b></div>` : ''}
+      <div style="margin-top:3px;">${esc(x.summary || x.subject)}</div>${x.ids ? `<div style="font-size:10px;color:#9ba8c0;margin-top:2px;">${esc(x.ids)}</div>` : ''}</div>`).join('')
+    : `<div style="font-size:12px;color:#1A7F5A;margin-bottom:8px;">No new Amazon notices since the last email.</div>`;
+  const openBlock = n.open.length ? `<div style="font-size:12px;font-weight:700;color:#001F60;margin:10px 0 4px;">Open issues · last ${NOTICE_OPEN_DAYS} days · ${n.open.length}</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
+      <tr><th style="${th}">Listing</th><th style="${th}">Latest</th><th style="${th}">History</th><th style="${th}">Reference</th></tr>
+      ${n.open.map(o => `<tr style="background:${o.isNew ? '#FFF8E6' : '#fff'};">
+        <td style="${td}">${o.isAsin ? `<b>${esc(o.sku || o.key)}</b> <span style="font-size:10px;color:#9ba8c0;">${esc(o.key)}</span>${o.brand || o.product ? `<div style="font-size:11px;color:#6B7BA2;">${esc([o.brand, o.product].filter(Boolean).join(' · '))}</div>` : ''}` : `<b>${esc(o.key)}</b>`}</td>
+        <td style="${td}"><b>${esc(o.type)}</b>${o.action ? `<div style="font-size:11px;color:#C0392B;">${esc(o.action)}</div>` : ''}</td>
+        <td style="${td}font-size:11px;color:#3a4a6b;">${esc(o.history)}<div style="font-size:11px;color:#6B7BA2;margin-top:3px;">${esc(String(o.summary || '').slice(0, 260))}</div></td>
+        <td style="${td}font-size:11px;color:#6B7BA2;white-space:nowrap;">${esc(o.ids || '')}</td></tr>`).join('')}</table>`
+    : `<div style="font-size:12px;color:#1A7F5A;">No open issues in the last ${NOTICE_OPEN_DAYS} days.</div>`;
+  return newBlock + openBlock + `<div style="font-size:11px;color:#9ba8c0;margin-top:6px;">From Amazon's emails to cs@onlineskincaresales.com. An issue drops off when Amazon's latest email for it is a reinstatement. Full text and links in the Performance Notifications sheet.</div>`;
+}
+
+function casesHtml(cases, today, th, td) {
+  if (!cases.length) return `<div style="font-size:12px;color:#6B7BA2;">No new or open Seller Support cases (activity in the last ${CASE_OPEN_DAYS} days).</div>`;
+  const pill = s => ({ NEW: ['#24E9A3', '#001F60'], OPEN: ['#FFE8A3', '#7A5B00'], RESOLVED: ['#D6F7EA', '#1A7F5A'] })[s];
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e4e8ef;">
+    <tr><th style="${th}"></th><th style="${th}">Case</th><th style="${th}">Listings</th><th style="${th}">Latest reply</th><th style="${th}">Activity</th></tr>
+    ${cases.map(c => { const [bg, fg] = pill(c.state); return `<tr>
+      <td style="${td}white-space:nowrap;"><span style="display:inline-block;padding:1px 7px;border-radius:999px;background:${bg};color:${fg};font-size:10px;font-weight:700;">${c.state}</span>${c.updatedSince ? '<div style="font-size:10px;color:#C0392B;margin-top:3px;">new reply</div>' : ''}</td>
+      <td style="${td}"><b>${esc(c.title)}</b>${c.id ? `<div style="font-size:10px;color:#9ba8c0;">Case ${esc(c.id)}</div>` : ''}</td>
+      <td style="${td}font-size:11px;">${c.asins.length ? c.asins.map(esc).join('<br>') : '—'}</td>
+      <td style="${td}font-size:11px;color:#3a4a6b;">${esc(String(c.summary || '').slice(0, 280))}</td>
+      <td style="${td}font-size:11px;color:#6B7BA2;white-space:nowrap;">Opened ${esc(fmtShort(c.opened))}<br>Last ${esc(fmtShort(c.lastWhen))} · ${c.messages} email${c.messages === 1 ? '' : 's'}</td></tr>`; }).join('')}
+  </table><div style="font-size:11px;color:#9ba8c0;margin-top:6px;">NEW = first email since the last Account Health email · OPEN = activity in the last ${CASE_OPEN_DAYS} days · RESOLVED = Amazon's latest reply says it's resolved (shown once).</div>`;
+}
+
+// Master SKU list (ASIN → SKU, brand, name), Amazon rows only.
+async function loadMaster() {
+  const id = process.env.SHEET_MASTER_SKU_LIST;
+  if (!id) return new Map();
+  const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${MASTER_GID}`);
+  if (!r.ok) return new Map();
+  const text = await r.text(); const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) { const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === ',') { row.push(cur); cur = ''; } else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; } else if (c !== '\r') cur += c; }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  const head = (rows[0] || []).map(h => h.trim().toLowerCase());
+  const col = (n, f) => { const i = head.indexOf(n); return i >= 0 ? i : f; };
+  const iAsin = col('asin', 0), iSku = col('sku', 1), iName = col('product short name', 2), iBrand = col('brand', 3), iCh = col('channel', 6);
+  const map = new Map();
+  for (const r of rows.slice(1)) {
+    const asin = String(r[iAsin] || '').trim().toUpperCase();
+    if (!/^B0[A-Z0-9]{8}$/.test(asin) || !/amazon/i.test(String(r[iCh] || ''))) continue;
+    if (!map.has(asin)) map.set(asin, { sku: String(r[iSku] || '').trim(), brand: String(r[iBrand] || '').trim(), name: String(r[iName] || '').trim() });
+  }
+  return map;
+}
+
 async function readTab(sheet) {
   const token = await getSheetsToken(sheet.id);
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}/values/${encodeURIComponent(`'${sheet.tab}'!A2:ZZ`)}`, { headers: { Authorization: `Bearer ${token}` } });
