@@ -160,6 +160,19 @@ module.exports = async (req, res) => {
     let rows;
     try {
       const docResp  = await spRequest('GET', `/reports/2021-06-30/documents/${documentId}`, {}, null, account);
+      // FIXED 2026-11-18 — when Amazon is busy it answers with an error instead of a
+      // download link, and fetch(undefined) failed with "Failed to parse URL from
+      // undefined". "Slow down" (QuotaExceeded) now leaves the report pending for the
+      // next run, no failure; any other missing link gives a clear message.
+      if (!docResp || !docResp.url) {
+        const why = JSON.stringify((docResp && docResp.errors) || docResp || {}).slice(0, 200);
+        if (/QuotaExceeded|TooManyRequests|429/i.test(why)) {
+          console.log(`[sync-event-orders-process] ${tabName} — Amazon said slow down; will download on the next run`);
+          results.push({ tab: tabName, status: 'pending', reason: 'Amazon said slow down — next run' });
+          continue;
+        }
+        throw new Error(`Amazon gave no download link for report ${reportId}: ${why}`);
+      }
       const fileResp = await fetch(docResp.url);
       if (!fileResp.ok) throw new Error(`Document download failed: ${fileResp.status}`);
       const buffer = Buffer.from(await fileResp.arrayBuffer());
@@ -183,6 +196,21 @@ module.exports = async (req, res) => {
     // Match against this account's brands only (ADDED 2026-10-05).
     const activeBrands = accountBrands;
     const outRows = [];
+    // Per-brand event windows (ADDED 2026-11-18): a brand listed on its own Events row
+    // uses that row's dates; every other brand uses the row with a blank Brands cell.
+    let windows = [];
+    try { windows = JSON.parse(metaMap[`windows_${tabName}`] || '[]'); } catch { windows = []; }
+    const norm = v => String(v || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g, '');
+    const brandWindow = brand => {
+      if (!windows.length) return null; // older meta (single window) — keep everything as before
+      const keys = brand ? [brand.id, brand.displayName, brand.tabName, brand.amazonBrandName].map(norm).filter(Boolean) : [];
+      const own = windows.find(w => w.brands.length && w.brands.some(b => keys.includes(norm(b))));
+      if (own) return own;
+      const all = windows.filter(w => !w.brands.length);
+      if (!all.length) return null;
+      return { start: all.map(w => w.start).sort()[0], end: all.map(w => w.end).sort().pop() };
+    };
+    let outsideWindow = 0;
     for (const row of rows) {
       const sku   = (row['sku'] || row['seller-sku'] || '').toUpperCase();
       const promo = (row['promotion-ids'] || '').toLowerCase();
@@ -196,6 +224,11 @@ module.exports = async (req, res) => {
       // an order at 9 PM Pacific was labeled the next day).
       const orderDate = row['purchase-date'] ? ptDate(row['purchase-date']) : '';
       const year = orderDate ? parseInt(orderDate.slice(0, 4), 10) : '';
+
+      // Outside this brand's own event dates (e.g. an Évolis order on Nov 21 when only
+      // dearcloud / skinside SEOUL / PB & Jay started Nov 19) → not part of the event for it.
+      const win = brandWindow(matchedBrand);
+      if (win && orderDate && (orderDate < win.start || orderDate > win.end)) { outsideWindow++; continue; }
 
       outRows.push([
         orderId,
@@ -258,8 +291,8 @@ module.exports = async (req, res) => {
 
       const finalRows = Array.from(merged.values());
       await replaceRows(sheets.orders, tabName, HEADERS, finalRows, token);
-      console.log(`[sync-event-orders-process] ${tabName} — replaced ${replacedCount} existing ${eventYear} rows with ${outRows.length} fresh, ${finalRows.length} total rows across all years`);
-      results.push({ tab: tabName, status: 'ok', year: eventYear, rowsThisRun: outRows.length, replacedExisting: replacedCount, totalRows: finalRows.length });
+      console.log(`[sync-event-orders-process] ${tabName} — replaced ${replacedCount} existing ${eventYear} rows with ${outRows.length} fresh (${outsideWindow} outside their brand's event dates left out), ${finalRows.length} total rows across all years`);
+      results.push({ tab: tabName, status: 'ok', year: eventYear, rowsThisRun: outRows.length, outsideBrandWindow: outsideWindow, replacedExisting: replacedCount, totalRows: finalRows.length });
 
       metaMap[`processed_${tabName}`] = 'true';
     } catch (err) {
