@@ -324,6 +324,10 @@
     {
       "path": "/api/cron/sync-account-health?scan=violations",
       "schedule": "24,54 11-13 * * *"
+    },
+    {
+      "path": "/api/cron/account-health-email",
+      "schedule": "15 14 * * 1-5"
     }
   ],
   "functions": {
