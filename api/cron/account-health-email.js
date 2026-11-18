@@ -63,6 +63,19 @@ const NOTICE_OPEN_DAYS = 90, CASE_OPEN_DAYS = 30;
 // 0 date · 1 reason · 2 asin · 3 sku · 4 product · 5 action_taken · 6 at_risk_sales · 7 status · 8 next_step · 9 notes · 10 added_by
 const MANUAL = { id: '1hGOiCwcfRN-OIMjKdYCmtXb4VdD9CJV1EeFM_Vr-vRA', tab: 'manual_entries' };
 const MANUAL_DONE = /resolved|reinstated|closed/i;
+// Keeping open issues current (ADDED 2026-11-18 per Jaclyn) — Amazon rarely emails when an issue is fixed:
+//  1. a deactivated / removed / suppressed listing that is BUYABLE again in today's Products Cache
+//     (and not in today's inactive-listings scan) drops off, with a one-time "✓ Listing active again";
+//  2. an "at risk" notice with no deactivation after it drops off AT_RISK_DAYS after it arrived;
+//  3. a manual_entries row marked Resolved / Reinstated closes the captured notices for its ASIN —
+//     unless Amazon sends a newer email with an action (deactivation, warning…) about that ASIN.
+const AT_RISK_DAYS = 30;
+// "deactivated", not "deactivation" — "At risk of deactivation" is NOT a deactivation (FIXED 2026-11-18).
+const DEACTIVATED = /deactivated|removed|suppressed|blocked|restricted in some|appeal rejected|detail page changed/i;
+const AT_RISK = /at risk|action required|warning/i;
+const RESOLVED_LOG = { id: '1DhduU87hFgGOdsuK5XBBNRXVn4mpZzNkC1AKoDwhOnA', tab: 'resolved-log' }; // one-time "resolved" lines already shown
+const brandsConfig = require('../config/brands');
+const sheetsConfig = require('../config/sheets');
 const MASTER_GID = '164358627';
 const TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com', 'jsonberg@medaltus.com', 'ifernandez@medaltus.com', 'lrohde@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17
 const FROM_EMAIL = process.env.FROM_EMAIL || 'reports@medaltus.com';
@@ -112,7 +125,10 @@ module.exports = async (req, res) => {
     const lastSentIso = sendLog.map(r => r[1]).filter(Boolean).sort().pop();
     const since = lastSentIso ? etStamp(new Date(lastSentIso)) : `${addDaysIso(today, -3)} 00:00`;
     const [noticeRows, manualRows, master] = await Promise.all([read(NOTICES), read(MANUAL), loadMaster().catch(() => new Map())]);
-    const notices = buildNotices(noticeRows, master, today, since, manualRows);
+    const inactiveNow = latestScan(inactive);
+    const [live, resolvedShown] = await Promise.all([loadLiveStatus().catch(() => new Map()), read(RESOLVED_LOG)]);
+    const notices = buildNotices(noticeRows, master, today, since, manualRows,
+      { live, inactiveAsins: new Set(inactiveNow.map(r => String(r[5] || '').toUpperCase())), shown: new Set(resolvedShown.map(r => r[0])) });
 
     // Latest snapshot per account
     const latestDate = (rows, acc, mkt) => rows.filter(r => r[1] === acc && r[2] === mkt).map(r => r[0]).sort().pop();
@@ -153,7 +169,10 @@ module.exports = async (req, res) => {
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`Resend ${r.status}: ${JSON.stringify(body).slice(0, 200)}`);
-    if (!testTo.length) await logSend(today, subject, body.id);
+    if (!testTo.length) {
+      await logSend(today, subject, body.id);
+      if ((notices.resolved || []).length) await appendLog(RESOLVED_LOG, ['key', 'shown_on', 'why'], notices.resolved.map(x => [x.logKey, today, x.why]));
+    }
     return res.status(200).json({ sent: true, test: !!testTo.length, to: testTo.length ? testTo : TO, subject, worse: worse.length, inactiveListingIssues: inactiveLatest.length, newFeedback: newFeedback.length });
   } catch (err) {
     console.error('[account-health-email]', err.message);
@@ -262,9 +281,9 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
       <tr><td style="padding:22px 32px 4px;"><table width="100%" cellpadding="0" cellspacing="0"><tr>${cardHtml}</tr></table></td></tr>
       ${section('What changed since the previous snapshot', '#001F60', changesHtml)}
       ${section('Needs attention', '#C0392B', attentionHtml)}
-      ${section('Policy issues', '#C0392B', noticesHtml(notices.open.filter(o => groupOf(o) === 'policy'), today, th, td, 'No open restricted-product, product safety / compliance, geographic restriction or IP complaint issues.'))}
-      ${section('Other notices', '#001F60', noticesHtml(notices.open.filter(o => groupOf(o) === 'other'), today, th, td, 'No other open Amazon notices.'))}
-      ${section('Brand Registry', '#001F60', noticesHtml(notices.open.filter(o => groupOf(o) === 'brand'), today, th, td, 'No open Brand Registry notices.') + `<div style="font-size:11px;color:#9ba8c0;margin-top:8px;">Policy issues, other notices and Brand Registry come from Amazon's emails to cs@onlineskincaresales.com (last ${NOTICE_OPEN_DAYS} days) plus items copied from the Account Health page into the manual_entries tab. An emailed issue drops off when Amazon's latest email for it is a reinstatement; a manual entry drops off when its status is Resolved or Reinstated.</div>`)}
+      ${section('Policy issues', '#C0392B', noticesHtml(notices.open.filter(o => groupOf(o) === 'policy'), today, th, td, 'No open restricted-product, product safety / compliance, geographic restriction or IP complaint issues.', (notices.resolved || []).filter(o => groupOf(o) === 'policy')))}
+      ${section('Other notices', '#001F60', noticesHtml(notices.open.filter(o => groupOf(o) === 'other'), today, th, td, 'No other open Amazon notices.', (notices.resolved || []).filter(o => groupOf(o) === 'other')))}
+      ${section('Brand Registry', '#001F60', noticesHtml(notices.open.filter(o => groupOf(o) === 'brand'), today, th, td, 'No open Brand Registry notices.', (notices.resolved || []).filter(o => groupOf(o) === 'brand')) + `<div style="font-size:11px;color:#9ba8c0;margin-top:8px;">Policy issues, other notices and Brand Registry come from Amazon's emails to cs@onlineskincaresales.com (last ${NOTICE_OPEN_DAYS} days) plus items copied from the Account Health page into the manual_entries tab. An emailed issue drops off when Amazon's latest email for it is a reinstatement; a manual entry drops off when its status is Resolved or Reinstated.</div>`)}
       ${section('Inactive listings', '#001F60', inactiveHtml)}
       ${section('Seller Support cases', '#001F60', casesHtml(notices.cases, today, th, td))}
       ${section('New negative seller feedback', '#001F60', feedbackHtml)}
@@ -279,7 +298,8 @@ function buildHtml({ today, monday, cards, todays, inactiveLatest = [], defectsL
 
 // ── Sheets ─────────────────────────────────────────────────────────────────
 // ── Amazon notices + Seller Support cases (ADDED 2026-11-18) ───────────────
-function buildNotices(rows, master, today, since, manualRows = []) {
+function buildNotices(rows, master, today, since, manualRows = [], ctx = { live: new Map(), inactiveAsins: new Set(), shown: new Set() }) {
+  const resolved = []; // auto-resolved this run (shown once)
   const asinInfo = a => master.get(a) || null;
   const label = list => list.map(a => { const m = asinInfo(a); return m ? `${a} · ${m.sku}${m.brand ? ' · ' + m.brand : ''}` : a; });
   const perf = rows.filter(r => r[15] === 'Performance / policy notice');
@@ -299,17 +319,32 @@ function buildNotices(rows, master, today, since, manualRows = []) {
     list.sort((a, b) => a[0].localeCompare(b[0]));
     const last = list[list.length - 1];
     if (/^Reinstated/i.test(last[3]) || /^Reinstated/i.test(last[4])) continue; // resolved
+    // Latest notice that carried an action (case replies without one don't change the state).
+    const lastAct = [...list].reverse().find(r => r[4]) || last;
+    const isAsinKey = /^B0[A-Z0-9]{8}$/.test(k);
+    // Rule 2: "at risk" with nothing worse after it, older than AT_RISK_DAYS → drops off.
+    if (AT_RISK.test(lastAct[4]) && !DEACTIVATED.test(lastAct[4]) && lastAct[0] < `${addDaysIso(today, -AT_RISK_DAYS)} 00:00`) {
+      resolved.push({ key: k, why: `No deactivation within ${AT_RISK_DAYS} days of the "at risk" notice`, type: last[3], lastWhen: last[0], logKey: `${k}|${lastAct[0]}` });
+      continue;
+    }
     const steps = []; list.forEach(r => { const st = `${shortAct(r)} ${fmtShort(r[0])}`; if (steps[steps.length - 1] !== st) steps.push(st); });
     const m = /^B0[A-Z0-9]{8}$/.test(k) ? asinInfo(k) : null;
     open.push({ key: k, isAsin: /^B0[A-Z0-9]{8}$/.test(k), sku: m ? m.sku : '', brand: m ? m.brand : '', product: m ? m.name : '', type: last[3], action: last[4],
-      history: steps.slice(-4).join(' → '), ids: [...new Set(list.map(r => r[16]).filter(Boolean))].join(', '), summary: niceSummary(last), lastWhen: last[0], isNew: list.some(r => r[0] > since) });
+      history: steps.slice(-4).join(' → '), ids: [...new Set(list.map(r => r[16]).filter(Boolean))].join(', '), summary: niceSummary(last), lastWhen: last[0], isNew: list.some(r => r[0] > since),
+      lastActionWhen: lastAct[4] ? lastAct[0] : '', lastActionText: lastAct[4] || '' });
   }
   // Manual entries from the Account Health page: merged into the same ASIN's row, or added as their own.
   for (const r of manualRows) {
     const asin = String(r[2] || '').trim().toUpperCase();
     const status = String(r[7] || '').trim();
-    if ((!asin && !r[1]) || MANUAL_DONE.test(status)) continue;
+    if (!asin && !r[1]) continue;
     const when = looseDate(r[0]);
+    if (MANUAL_DONE.test(status)) { // Rule 3: closes the captured notices for this ASIN…
+      const i = asin ? open.findIndex(o => o.key === asin) : -1;
+      // …unless Amazon acted again after this entry's date (a newer deactivation / warning reopens it).
+      if (i >= 0 && !(open[i].lastActionWhen && when && open[i].lastActionWhen.slice(0, 10) > when)) open.splice(i, 1);
+      continue;
+    }
     const manual = { date: when, reason: String(r[1] || '').trim(), action: String(r[5] || '').trim(), status: status || 'Open',
       atRisk: String(r[6] || '').trim(), next: String(r[8] || '').trim(), notes: String(r[9] || '').trim() };
     const existing = asin && open.find(o => o.key === asin);
@@ -318,6 +353,19 @@ function buildNotices(rows, master, today, since, manualRows = []) {
     open.push({ key: asin || manual.reason, isAsin: /^B0[A-Z0-9]{8}$/.test(asin), sku: String(r[3] || '').trim() || (m ? m.sku : ''), brand: m ? m.brand : '',
       product: String(r[4] || '').trim() || (m ? m.name : ''), type: manual.reason || 'Account Health item', action: manual.action,
       history: '', ids: '', summary: '', lastWhen: when || '', isNew: false, manual });
+  }
+  // Rule 1 (captured and manual alike): a deactivated / removed / suppressed listing that is
+  // BUYABLE in today's Products Cache and not in today's inactive scan → resolved.
+  for (let i = open.length - 1; i >= 0; i--) {
+    const o = open[i];
+    if (!o.isAsin) continue;
+    const wasDown = DEACTIVATED.test(o.lastActionText || o.action || '') || (o.manual && DEACTIVATED.test(o.manual.action));
+    const liveNow = ctx.live.get(o.key);
+    if (wasDown && liveNow && liveNow.buyable && !ctx.inactiveAsins.has(o.key)) {
+      resolved.push({ key: o.key, why: o.manual ? 'Listing active again — mark its manual entry Resolved' : 'Listing active again',
+        type: o.type, lastWhen: o.lastWhen, logKey: `${o.key}|${o.lastActionWhen || o.lastWhen}`, manual: !!o.manual });
+      open.splice(i, 1);
+    }
   }
   open.sort((a, b) => b.lastWhen.localeCompare(a.lastWhen));
   // Seller Support cases, grouped by case number
@@ -344,7 +392,9 @@ function buildNotices(rows, master, today, since, manualRows = []) {
   }
   const order = { NEW: 0, OPEN: 1, RESOLVED: 2 };
   cases.sort((a, b) => order[a.state] - order[b.state] || b.lastWhen.localeCompare(a.lastWhen));
-  return { newNotices, open, cases };
+  resolved.forEach(x => { const m = asinInfo(x.key); x.label = m && m.sku ? `${m.sku} (${x.key})` : x.key; });
+  const resolvedNew = resolved.filter(x => !ctx.shown.has(x.logKey)); // one-time lines
+  return { newNotices, open, cases, resolved: resolvedNew };
 }
 // First real sentence of the email: skips the subject echo, greetings and "my name is…" lines.
 function niceSummary(r) {
@@ -375,7 +425,11 @@ const POLICY_GROUP = /restricted product|product safety|compliance doc|geographi
 const BRAND_REGISTRY_GROUP = /brand registry|trademark confirmation/i;
 const groupOf = o => { const t = `${o.type} ${o.manual ? o.manual.reason : ''}`; return BRAND_REGISTRY_GROUP.test(t) ? 'brand' : POLICY_GROUP.test(t) ? 'policy' : 'other'; };
 
-function noticesHtml(items, today, th, td, emptyText) {
+function resolvedLines(items) {
+  if (!items.length) return '';
+  return `<div style="font-size:12px;color:#1A7F5A;margin:0 0 8px;">${items.map(x => `✓ <b>${esc(x.label || x.key)}</b> — ${esc(x.why)} <span style="color:#9ba8c0;">(${esc(x.type)}, last email ${esc(fmtShort(x.lastWhen))})</span>`).join('<br>')}</div>`;
+}
+function noticesHtml(items, today, th, td, emptyText, resolvedItems = []) {
   const n = { open: items };
   const pill = (txt, bg, fg) => `<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:${bg};color:${fg};font-size:10px;font-weight:700;">${txt}</span>`;
   const newBlock = ''; // "New since the last email" removed 2026-11-18 per Jaclyn — open issues only
@@ -388,7 +442,7 @@ function noticesHtml(items, today, th, td, emptyText) {
         <td style="${td}font-size:11px;color:#3a4a6b;">${esc(o.history)}${o.manual ? `<div style="${o.history ? 'margin-top:3px;' : ''}">${esc([o.manual.reason && o.manual.reason !== o.type ? o.manual.reason : '', o.manual.date ? 'flagged ' + fmtShort(o.manual.date) : '', o.manual.action, o.manual.atRisk ? 'at-risk sales ' + o.manual.atRisk : ''].filter(Boolean).join(' · '))}</div>${o.manual.next || o.manual.notes ? `<div style="color:#6B7BA2;margin-top:2px;">${esc([o.manual.next ? 'Next: ' + o.manual.next : '', o.manual.notes].filter(Boolean).join(' · '))}</div>` : ''}` : ''}<div style="font-size:11px;color:#6B7BA2;margin-top:3px;">${esc(String(o.summary || '').slice(0, 260))}</div></td>
         <td style="${td}font-size:11px;color:#6B7BA2;white-space:nowrap;">${esc(o.ids || '')}</td></tr>`).join('')}</table>`
     : `<div style="font-size:12px;color:#1A7F5A;">${emptyText}</div>`;
-  return newBlock + openBlock;
+  return resolvedLines(resolvedItems) + newBlock + openBlock;
 }
 
 function casesHtml(cases, today, th, td) {
@@ -426,6 +480,47 @@ async function loadMaster() {
     if (!map.has(asin)) map.set(asin, { sku: String(r[iSku] || '').trim(), brand: String(r[iBrand] || '').trim(), name: String(r[iName] || '').trim() });
   }
   return map;
+}
+
+// Today's listing status per ASIN from the Products Cache (each brand tab's latest day).
+async function loadLiveStatus() {
+  const id = sheetsConfig.products;
+  const map = new Map();
+  if (!id) return map;
+  const token = await getSheetsToken(id);
+  const api = async path => { const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}${path}`, { headers: { Authorization: `Bearer ${token}` } }); if (!r.ok) throw new Error(`Products Cache ${r.status}`); return r.json(); };
+  const letter = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  for (const b of brandsConfig.filter(x => x.active)) {
+    try {
+      const tab = `'${String(b.tabName).replace(/'/g, "''")}'`;
+      const head = ((await api(`/values/${encodeURIComponent(tab + '!A1:ZZ1')}`)).values || [[]])[0].map(h => String(h).trim());
+      const [iD, iA, iS] = ['date', 'asin', 'status'].map(h => head.indexOf(h));
+      if (iD < 0 || iA < 0 || iS < 0) continue;
+      const got = await api(`/values:batchGet?majorDimension=COLUMNS&${[iD, iA, iS].map(i => `ranges=${encodeURIComponent(`${tab}!${letter(i)}2:${letter(i)}`)}`).join('&')}`);
+      const [dates, asins, statuses] = got.valueRanges.map(v => ((v.values || [[]])[0]) || []);
+      const latest = dates.map(d => String(d).slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().pop();
+      dates.forEach((d, i) => {
+        if (String(d).slice(0, 10) !== latest) return;
+        const asin = String(asins[i] || '').replace(/^'/, '').trim().toUpperCase();
+        if (!asin) return;
+        const buyable = /BUYABLE/i.test(String(statuses[i] || ''));
+        const prev = map.get(asin);
+        map.set(asin, { buyable: buyable || (prev && prev.buyable) || false, date: latest });
+      });
+    } catch (e) { /* a brand tab that can't be read just isn't checked */ }
+  }
+  return map;
+}
+async function appendLog(sheet, headers, rows) {
+  const token = await getSheetsToken(sheet.id);
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${sheet.id}`;
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const meta = await (await fetch(`${base}?fields=sheets.properties(title)`, { headers: h })).json();
+  if (!(meta.sheets || []).some(x => x.properties.title === sheet.tab)) {
+    await fetch(`${base}:batchUpdate`, { method: 'POST', headers: h, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: sheet.tab } } }] }) });
+    await fetch(`${base}/values/${encodeURIComponent(`'${sheet.tab}'!A1`)}?valueInputOption=RAW`, { method: 'PUT', headers: h, body: JSON.stringify({ values: [headers] }) });
+  }
+  await fetch(`${base}/values/${encodeURIComponent(`'${sheet.tab}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: 'POST', headers: h, body: JSON.stringify({ values: rows }) });
 }
 
 async function readTab(sheet) {
