@@ -49,7 +49,7 @@ const BAD_BELOW = 4;          // under 4 stars
 const FIRST_RUN_DAYS = 14;
 const RATING_FRESH_DAYS = 10;
 const ELIGIBILITY_LINE = 4.0;
-const ALWAYS_TO = ['awilcox@medaltus.com'];
+const ALWAYS_TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17 — get every brand, like Ashley
 // collagelee: merged into Cloud Café; hillside: terminated (2026-11-16).
 const EMAIL_EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside'];
 const MANAGER_EMAILS = {
