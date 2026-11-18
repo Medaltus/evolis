@@ -48,7 +48,14 @@ const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862p
 const OFFERS_SUFFIX = ' offers';
 const LOG_TAB = 'email-log-alt-sellers';
 const MASTER_GID = '164358627';
-const ALWAYS_TO = ['awilcox@medaltus.com'];
+const ALWAYS_TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com']; // jcarter, sdeavies, mgallagher ADDED 2026-11-17 — get every brand, like Ashley
+// ADDED 2026-11-18 (per Jaclyn): these every-brand recipients get it WITHOUT these brands.
+const RECIPIENT_EXCLUDED_BRANDS = {
+  'jcarter@medaltus.com': ['dearcloud', 'creme-shop'],
+  'sdeavies@medaltus.com': ['dearcloud', 'creme-shop'],
+  'mgallagher@medaltus.com': ['dearcloud', 'creme-shop'],
+};
+const cardsFor = (email, cards) => { const ex = RECIPIENT_EXCLUDED_BRANDS[email] || []; return ex.length ? cards.filter(c => !ex.includes(c.brandId)) : cards; };
 const MANAGER_EMAILS = {
   'jaclyn sonberg': 'jsonberg@medaltus.com',
   'isabella fernandez': 'ifernandez@medaltus.com',
@@ -131,7 +138,7 @@ module.exports = async (req, res) => {
         const ourPrice = get(list[0], 'our_price') === '' ? null : num(get(list[0], 'our_price'));
         const owner = String(get(list[0], 'buybox_owner'));
         asinCards.push({
-          brand: brand.displayName || brand.id, asin, sku: skus.join(', '), manager: m.manager, domain: domainFor(brand.marketplaceId),
+          brand: brand.displayName || brand.id, brandId: brand.id, asin, sku: skus.join(', '), manager: m.manager, domain: domainFor(brand.marketplaceId),
           buyboxOwner: owner.startsWith('us') ? owner : owner === 'none' ? 'Nobody (suppressed)' : (names[sellers.find(s => s.buybox)?.id] || owner),
           ourBuybox: owner.startsWith('us'), ourPrice, sellers,
           gone: [...prevSellers].filter(id => !todaySellers.has(id)).map(label),
@@ -145,7 +152,7 @@ module.exports = async (req, res) => {
     // ── Versions per recipient (same routing as Listing Alerts) ────────────
     const emailOf = n => MANAGER_EMAILS[String(n || '').trim().toLowerCase()] || null;
     const unknownManagers = [...new Set(asinCards.filter(c => c.manager && !emailOf(c.manager)).map(c => c.manager))];
-    const versions = new Map(ALWAYS_TO.map(e => [e, asinCards]));
+    const versions = new Map(ALWAYS_TO.map(e => [e, cardsFor(e, asinCards)]));
     for (const c of asinCards) {
       const e = emailOf(c.manager);
       if (!e || ALWAYS_TO.includes(e)) continue;
@@ -153,7 +160,8 @@ module.exports = async (req, res) => {
       versions.get(e).push(c);
     }
     const asParam = String(req.query.as || '').trim().toLowerCase();
-    const pick = who => (who === 'all' || !versions.has(who)) ? { who: 'all', cards: asinCards } : { who, cards: versions.get(who) };
+    const pick = who => (who === 'all' || !versions.has(who)) ? { who: 'all', cards: asinCards }
+      : { who: ALWAYS_TO.includes(who) && !RECIPIENT_EXCLUDED_BRANDS[who] ? 'all' : who, cards: versions.get(who) };
 
     if (preview) {
       const v = pick(asParam || 'all');
@@ -164,7 +172,7 @@ module.exports = async (req, res) => {
 
     const sends = testTo.length
       ? [{ to: testTo, ...pick(asParam || testTo[0]), test: true }]
-      : [...versions.entries()].map(([who, cards]) => ({ to: [who], who: ALWAYS_TO.includes(who) ? 'all' : who, cards }));
+      : [...versions.entries()].map(([who, cards]) => ({ to: [who], who: ALWAYS_TO.includes(who) && !RECIPIENT_EXCLUDED_BRANDS[who] ? 'all' : who, cards }));
     const results = [];
     for (const s of sends) {
       if (!s.cards.length) continue;
@@ -212,6 +220,10 @@ function totals(cards) {
 }
 function scopeNote(who, cards) {
   if (who === 'all') return '';
+  if (RECIPIENT_EXCLUDED_BRANDS[who]) { // every brand except some
+    const names = { dearcloud: 'dearcloud', 'creme-shop': 'The Crème Shop' };
+    return `Every brand except ${RECIPIENT_EXCLUDED_BRANDS[who].map(b => names[b] || b).join(' and ')}.`;
+  }
   return `Your SKUs only (${[...new Set(cards.map(c => c.brand))].sort().join(', ')}) — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.`;
 }
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
