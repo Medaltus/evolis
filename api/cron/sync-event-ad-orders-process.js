@@ -160,11 +160,31 @@ module.exports = async (req, res) => {
     }
 
     const rawRowCount = [spOutRows, sdOutRows, sbOutRows].reduce((n, x) => n + (Array.isArray(x) ? x.length : 0), 0);
-    const newRows = aggregateByAsinDate([
+    const allRows = aggregateByAsinDate([
       ...(Array.isArray(spOutRows) ? spOutRows : []),
       ...(Array.isArray(sdOutRows) ? sdOutRows : []),
       ...(Array.isArray(sbOutRows) ? sbOutRows : []),
     ]);
+    // Per-brand event windows (ADDED 2026-11-18): a brand listed on its own Events
+    // row uses that row's dates; every other brand uses the blank-Brands row.
+    let windows = [];
+    try { windows = JSON.parse(metaMap[`windows_${tabName}`] || '[]'); } catch { windows = []; }
+    const norm = v => String(v || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]/g, '');
+    const windowFor = brandId => {
+      if (!windows.length) return null; // older meta — keep everything, as before
+      const b = brands.find(x => x.id === brandId);
+      const keys = (b ? [b.id, b.displayName, b.tabName, b.amazonBrandName] : [brandId]).map(norm).filter(Boolean);
+      const own = windows.find(w => w.brands.length && w.brands.some(x => keys.includes(norm(x))));
+      if (own) return own;
+      const all = windows.filter(w => !w.brands.length);
+      return all.length ? { start: all.map(w => w.start).sort()[0], end: all.map(w => w.end).sort().pop() } : null;
+    };
+    let outsideBrandWindow = 0;
+    const newRows = allRows.filter(r => {
+      const w = windowFor(r[1]); const d = isoDate(r[10]);
+      if (w && d && (d < w.start || d > w.end)) { outsideBrandWindow++; return false; }
+      return true;
+    });
 
     if (newRows.length === 0) {
       // Neither produced real rows this run (one or both still pending) —
@@ -214,7 +234,7 @@ module.exports = async (req, res) => {
       await replaceRows(sheets.adOrders, tabName, HEADERS, finalRows, tabToken);
       const totalPurchases = newRows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
       console.log(`[sync-event-ad-orders-process] ${tabName} — ${rawRowCount} report rows → ${newRows.length} ASIN/day rows (${totalPurchases} purchases), replaced ${replacedExisting} existing, ${finalRows.length} total`);
-      results.push({ tab: tabName, status: 'ok', reportRows: rawRowCount, rowsThisRun: newRows.length, purchases: totalPurchases, replacedExisting, window: windowFrom ? `${windowFrom} → ${windowTo}` : null, totalRows: finalRows.length });
+      results.push({ tab: tabName, status: 'ok', reportRows: rawRowCount, rowsThisRun: newRows.length, outsideBrandWindow, purchases: totalPurchases, replacedExisting, window: windowFrom ? `${windowFrom} → ${windowTo}` : null, totalRows: finalRows.length });
       // Only mark fully processed once BOTH report types have either
       // succeeded or definitively failed — a still-pending one means
       // there's more to merge in later.
