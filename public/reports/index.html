@@ -1336,9 +1336,9 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
              summary. Uncheck it to export just an event page (and Strategy). -->
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-overview" checked style="margin:0;"> Overview</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-amazon" checked style="margin:0;"> Amazon</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-insights" checked style="margin:0;"> Insights</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-website" checked style="margin:0;"> Website</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-walmart" checked style="margin:0;"> Walmart</label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-insights" checked style="margin:0;"> Insights</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-brand-momentum" checked style="margin:0;"> Brand Momentum</label>
         <!-- Marketing pages — same default-checked reasoning as Sales above. -->
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;"><input type="checkbox" id="pdf-include-fulfillment" checked style="margin:0;"> Fulfillment &amp; CS</label>
@@ -1867,10 +1867,10 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="channel-tabs">
         <button class="ch-tab active" onclick="showChannel('sales','s-overview',this)">Overview</button>
         <button class="ch-tab" onclick="showChannel('sales','s-amazon',this)">Amazon</button>
+        <button class="ch-tab" onclick="showChannel('sales','s-insights',this)">Insights (Amazon)</button>
         <button class="ch-tab" onclick="showChannel('sales','s-website',this)">Website</button>
         <button class="ch-tab" onclick="showChannel('sales','s-walmart',this)">Walmart</button>
         <button class="ch-tab" onclick="showChannel('sales','s-brand-momentum',this)">Brand Momentum</button>
-        <button class="ch-tab" onclick="showChannel('sales','s-insights',this)">Insights</button>
       </div>
       <!-- Shared period-selector row — added 2026-08-12 per Jaclyn, moved
            here (right-aligned next to the channel tabs) to match Skinuva's
@@ -2187,6 +2187,12 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
          below), and an editable Key Insight text block matching this
          file's own established .insight-text/.key-insight pattern. -->
     <div class="channel-page" id="s-insights">
+      <!-- ADDED 2026-11-20 per Jaclyn — everything on this tab is Amazon-only
+           (historical Amazon orders + Amazon Subscribe & Save). -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <span style="display:inline-block;background:var(--navy);color:#fff;border-radius:4px;padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;">Amazon Data</span>
+        <span style="font-size:11.5px;color:var(--muted);">Unit sales by category and Subscribe &amp; Save — Amazon orders only. Website and Walmart aren't included.</span>
+      </div>
       <div class="card">
         <div class="card-title">Unit Sales by Product Category</div>
         <div style="position:relative;height:320px;"><canvas id="ins-category-chart"></canvas></div>
@@ -2438,24 +2444,6 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         <div class="ppc-note" id="mfc-chart-footer">Loading…</div>
       </div>
 
-      <div class="section-label" style="margin-top:4px;">Customer Service</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
-        <div class="kpi-card">
-          <div class="kpi-label">Reviews Requested</div>
-          <div class="kpi-value" id="mfc-kpi-reviews">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-reviews-sub">Post Purchase Follow Up</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Compliance Cases Resolved</div>
-          <div class="kpi-value" id="mfc-kpi-compliance">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-compliance-sub">Open Cases: —</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label" id="mfc-lbl-returns">Returns Processed</div>
-          <div class="kpi-value" id="mfc-kpi-returns">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-returns-sub">Return rate: —</div>
-        </div>
-      </div>
 
       <div class="ppc-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -2487,15 +2475,35 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
       </div>
 
+      <!-- Customer Service moved below the map 2026-11-20 per Jaclyn -->
+      <div class="section-label" style="margin-top:18px;">Customer Service</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Reviews Requested</div>
+          <div class="kpi-value" id="mfc-kpi-reviews">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-reviews-sub">Post Purchase Follow Up</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Compliance Cases Resolved</div>
+          <div class="kpi-value" id="mfc-kpi-compliance">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-compliance-sub">Open Cases: —</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" id="mfc-lbl-returns">Returns Processed</div>
+          <div class="kpi-value" id="mfc-kpi-returns">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mfc-kpi-returns-sub">Return rate: —</div>
+        </div>
+      </div>
+
     </div><!-- /m-fulfillment-cs -->
 
     <div class="channel-page" id="m-stewardship">
 
-      <div class="section-label">Key Performance Metrics</div>
+      <div class="section-label">Key Performance Metrics <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
       <div class="kpi-row">
-        <div class="kpi-card" id="kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">5%</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="kpi-pct-revenue-invested" title="Investments across all channels (Amazon ads + Vine + promotions, Website Google Ads, Walmart ads) ÷ total revenue across Amazon, Website and Walmart"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">5%</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="kpi-amazon-fees" title="Sum of Amazon Estimated fees (orders sheet, column P) for the month — cancelled orders excluded"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">26%</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="kpi-pct-units-ads" title="Ad-driven units ÷ units sold, all channels. Website ad units = Google Ads conversions."><div class="kpi-label">% Units from Ads</div><div class="kpi-value">26%</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">272</div><div class="kpi-mom flat">0% MOM</div></div>
         <div class="kpi-card" id="kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">85K</div><div class="kpi-mom dn">▼ 38% MOM</div></div>
       </div>
@@ -2503,7 +2511,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="two-col" style="margin-bottom:20px;align-items:stretch;">
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div class="card-title" style="margin-bottom:0;">Investments</div>
+            <div class="card-title" style="margin-bottom:0;">Investments <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
             <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
@@ -2518,7 +2526,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div class="card-title" style="margin-bottom:0;">Ad Impressions</div>
+            <div class="card-title" style="margin-bottom:0;">Ad Impressions <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
             <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
@@ -2686,7 +2694,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
 
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;">
         <div class="kpi-card">
-          <div class="kpi-label">Shipped Orders · Last 30 Days</div>
+          <div class="kpi-label">Shipped Website Orders · Last 30 Days</div>
           <div class="kpi-value" id="mx-mfc-kpi-shipped30">—</div>
         </div>
         <div class="kpi-card">
@@ -2711,33 +2719,15 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       </div>
 
       <div class="ppc-card">
-        <div class="ppc-card-title">Orders Shipped by Date · Last 30 Days</div>
+        <div class="ppc-card-title">Website Orders Shipped by Date · Last 30 Days</div>
         <div style="position:relative;height:170px;"><canvas id="mx-mfc-shipped-chart"></canvas></div>
         <div class="ppc-note" id="mx-mfc-chart-footer">Loading…</div>
       </div>
 
-      <div class="section-label" style="margin-top:4px;">Customer Service</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
-        <div class="kpi-card">
-          <div class="kpi-label">Reviews Requested</div>
-          <div class="kpi-value" id="mx-mfc-kpi-reviews">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Post Purchase Follow Up</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Compliance Cases Resolved</div>
-          <div class="kpi-value" id="mx-mfc-kpi-compliance">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-compliance-sub">Open Cases: —</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Returns Processed</div>
-          <div class="kpi-value" id="mx-mfc-kpi-returns">—</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-returns-sub">Return rate: —</div>
-        </div>
-      </div>
 
       <div class="ppc-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div class="ppc-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>
+          <div class="ppc-card-title" style="margin-bottom:0;">Website Orders by State · Last 30 Days</div>
           <div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);">
             <span>Fewer</span>
             <div style="width:80px;height:7px;border-radius:4px;background:linear-gradient(to right,#dce6f5,#001F60);"></div>
@@ -2765,17 +2755,39 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
       </div>
 
-    </div><!-- /mx-fulfillment-cs -->
+    
+
+      <!-- Customer Service moved below the map 2026-11-20 per Jaclyn -->
+      <div class="section-label" style="margin-top:18px;">Customer Service</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;margin-top:4px;">
+        <div class="kpi-card">
+          <div class="kpi-label">Reviews Requested</div>
+          <div class="kpi-value" id="mx-mfc-kpi-reviews">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Post Purchase Follow Up</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Compliance Cases Resolved</div>
+          <div class="kpi-value" id="mx-mfc-kpi-compliance">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-compliance-sub">Open Cases: —</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Returns Processed</div>
+          <div class="kpi-value" id="mx-mfc-kpi-returns">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mx-mfc-kpi-returns-sub">Return rate: —</div>
+        </div>
+      </div>
+
+</div><!-- /mx-fulfillment-cs -->
 
     <div class="channel-page" id="mx-stewardship">
 
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;" id="mx-stewardship-date-note">Loading…</div>
 
-      <div class="section-label">Key Performance Metrics</div>
+      <div class="section-label">Key Performance Metrics <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
       <div class="kpi-row">
-        <div class="kpi-card" id="mx-kpi-pct-revenue-invested"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-pct-revenue-invested" title="Investments across all channels (Amazon ads + Vine + promotions, Website Google Ads, Walmart ads) ÷ total revenue across Amazon, Website and Walmart"><div class="kpi-label">% Revenue Invested</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-amazon-fees" title="Sum of Amazon Estimated fees (orders sheet, column P) for the month — cancelled orders excluded"><div class="kpi-label">Amazon Fees</div><div class="kpi-value sm">—</div><div class="kpi-mom flat"></div></div>
-        <div class="kpi-card" id="mx-kpi-pct-units-ads"><div class="kpi-label">% Units from Ads</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
+        <div class="kpi-card" id="mx-kpi-pct-units-ads" title="Ad-driven units ÷ units sold, all channels. Website ad units = Google Ads conversions."><div class="kpi-label">% Units from Ads</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-ad-clicks"><div class="kpi-label">Ad Clicks</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
         <div class="kpi-card" id="mx-kpi-ad-impressions"><div class="kpi-label">Ad Impressions</div><div class="kpi-value">—</div><div class="kpi-mom flat"></div></div>
       </div>
@@ -2783,7 +2795,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
       <div class="two-col" style="margin-bottom:20px;align-items:stretch;">
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div class="card-title" style="margin-bottom:0;">Investments</div>
+            <div class="card-title" style="margin-bottom:0;">Investments <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
             <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>
@@ -2798,7 +2810,7 @@ details.inci-toggle[open] summary::before{content:'▾ ';}
         </div>
         <div class="card" style="height:420px;margin-top:0;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div class="card-title" style="margin-bottom:0;">Ad Impressions</div>
+            <div class="card-title" style="margin-bottom:0;">Ad Impressions <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>
             <div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>2026</span>
               <span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>2025</span>
@@ -7445,6 +7457,10 @@ async function initSns() {
       }
 
       const findRow = (y, m) => summaryRows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
+      // All channels (2026-11-20): Website + Walmart ad totals by month, added
+      // on top of the Amazon-only summary rows below.
+      const chMaps = await window.evolisStewardChannels().catch(e => { console.warn('[Evolis] Website/Walmart ad data unavailable — Stewardship falls back to Amazon only:', e.message); return { byYm: {}, totalAdSpend: 0 }; });
+      const ch = (y, m) => chMaps.byYm[`${y}-${String(m).padStart(2, '0')}`] || { adSpend: 0, impressions: 0, clicks: 0, adUnits: 0, units: 0 };
 
       // ── Investments chart (13 trailing months) ──────────────────────────
       const invMonths = trailingMonths(year, month, 13);
@@ -7453,7 +7469,7 @@ async function initSns() {
         const label = `${monthAbbr[m - 1]} '${String(y).slice(2)}`;
         investLabels.push(label);
         const row = findRow(y, m);
-        adsData.push(row ? parseAmt(row.ads_spend) : 0);
+        adsData.push((row ? parseAmt(row.ads_spend) : 0) + ch(y, m).adSpend); // all channels' ad spend
         vineData.push(row ? parseAmt(row.vine_total) : 0);
         promosData.push(row ? parseAmt(row.promos_total) : 0);
       });
@@ -7466,10 +7482,10 @@ async function initSns() {
         if (m > month) { impCurr.push(null); }
         else {
           const row = findRow(year, m);
-          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : null);
+          { const x = ch(year, m).impressions; impCurr.push(row ? (parseInt(row.impressions, 10) || 0) + x : (x || null)); }
         }
         const prevRow = findRow(year - 1, m);
-        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : null);
+        { const x = ch(year - 1, m).impressions; impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) + x : (x || null)); }
       });
 
       renderStewardshipCharts(
@@ -7481,14 +7497,16 @@ async function initSns() {
       const rowCurr = findRow(year, month);
       const rowPrev = findRow(prevYear, prevMonth);
 
-      const clicksCurr      = rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : null;
-      const clicksPrev      = rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : null;
-      const impressionsCurr = rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : null;
-      const impressionsPrev = rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : null;
-      const adUnitsCurr     = rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0;
-      const adUnitsPrev     = rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0;
-      const unitsCurr       = rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0;
-      const unitsPrev       = rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0;
+      // All channels: Amazon summary row + Website/Walmart (2026-11-20)
+      const chC = ch(year, month), chP = ch(prevYear, prevMonth);
+      const clicksCurr      = (rowCurr || chC.clicks) ? (rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : 0) + chC.clicks : null;
+      const clicksPrev      = (rowPrev || chP.clicks) ? (rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : 0) + chP.clicks : null;
+      const impressionsCurr = (rowCurr || chC.impressions) ? (rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : 0) + chC.impressions : null;
+      const impressionsPrev = (rowPrev || chP.impressions) ? (rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : 0) + chP.impressions : null;
+      const adUnitsCurr     = (rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0) + chC.adUnits;
+      const adUnitsPrev     = (rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0) + chP.adUnits;
+      const unitsCurr       = (rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0) + chC.units;
+      const unitsPrev       = (rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0) + chP.units;
 
       const pctUnitsAdsCurr = unitsCurr > 0 ? Math.round((adUnitsCurr / unitsCurr) * 100) : null;
       const pctUnitsAdsPrev = unitsPrev > 0 ? Math.round((adUnitsPrev / unitsPrev) * 100) : null;
@@ -7510,9 +7528,9 @@ async function initSns() {
       // summary-sheet revenue. Per Jaclyn 2026-07-14. Website/Walmart use
       // the same UPPERCASE MONTH/YEAR/REVENUE positional-header convention
       // already confirmed working for the Overview trend chart.
-      const currInvestTotal = rowCurr
+      const currInvestTotal = (rowCurr
         ? (parseAmt(rowCurr.ads_spend) + parseAmt(rowCurr.vine_total) + parseAmt(rowCurr.promos_total))
-        : 0;
+        : 0) + chC.adSpend; // + Website/Walmart ad spend (all channels)
       const amzRevenueThisMonth = rowCurr ? parseAmt(rowCurr.revenue) : 0;
 
       function parseRevenueHistoryLocal(csvText) {
@@ -7570,7 +7588,7 @@ async function initSns() {
       // ── Launch to Date — trivial now: sum every pre-computed row ────────
       // (previously required scanning full order history + full master
       // SKU list client-side; the cron already did that math overnight)
-      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0);
+      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0) + chMaps.totalAdSpend; // + Website/Walmart ads
       const ltdVine   = summaryRows.reduce((s, r) => s + parseAmt(r.vine_total), 0);
       const ltdPromos = summaryRows.reduce((s, r) => s + parseAmt(r.promos_total), 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
@@ -10276,6 +10294,10 @@ async function initSns() {
       }
 
       const findRow = (y, m) => summaryRows.find(r => parseInt(r.year, 10) === y && parseInt(r.month, 10) === m);
+      // All channels (2026-11-20): Website + Walmart ad totals by month, added
+      // on top of the Amazon-only summary rows below.
+      const chMaps = await window.evolisStewardChannels().catch(e => { console.warn('[Evolis] Website/Walmart ad data unavailable — Stewardship falls back to Amazon only:', e.message); return { byYm: {}, totalAdSpend: 0 }; });
+      const ch = (y, m) => chMaps.byYm[`${y}-${String(m).padStart(2, '0')}`] || { adSpend: 0, impressions: 0, clicks: 0, adUnits: 0, units: 0 };
 
       // ── Investments chart (13 trailing months) ──────────────────────────
       const invMonths = trailingMonths(year, month, 13);
@@ -10284,7 +10306,7 @@ async function initSns() {
         const label = `${monthAbbr[m - 1]} '${String(y).slice(2)}`;
         investLabels.push(label);
         const row = findRow(y, m);
-        adsData.push(row ? parseAmt(row.ads_spend) : 0);
+        adsData.push((row ? parseAmt(row.ads_spend) : 0) + ch(y, m).adSpend); // all channels' ad spend
         vineData.push(row ? parseAmt(row.vine_total) : 0);
         promosData.push(row ? parseAmt(row.promos_total) : 0);
       });
@@ -10297,10 +10319,10 @@ async function initSns() {
         if (m > month) { impCurr.push(null); }
         else {
           const row = findRow(year, m);
-          impCurr.push(row ? (parseInt(row.impressions, 10) || 0) : null);
+          { const x = ch(year, m).impressions; impCurr.push(row ? (parseInt(row.impressions, 10) || 0) + x : (x || null)); }
         }
         const prevRow = findRow(year - 1, m);
-        impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) : null);
+        { const x = ch(year - 1, m).impressions; impPrev.push(prevRow ? (parseInt(prevRow.impressions, 10) || 0) + x : (x || null)); }
       });
 
       renderStewardshipChartsExternal(
@@ -10332,14 +10354,16 @@ async function initSns() {
       const rowCurr = findRow(year, month);
       const rowPrev = findRow(prevYear, prevMonth);
 
-      const clicksCurr      = rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : null;
-      const clicksPrev      = rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : null;
-      const impressionsCurr = rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : null;
-      const impressionsPrev = rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : null;
-      const adUnitsCurr     = rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0;
-      const adUnitsPrev     = rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0;
-      const unitsCurr       = rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0;
-      const unitsPrev       = rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0;
+      // All channels: Amazon summary row + Website/Walmart (2026-11-20)
+      const chC = ch(year, month), chP = ch(prevYear, prevMonth);
+      const clicksCurr      = (rowCurr || chC.clicks) ? (rowCurr ? (parseInt(rowCurr.clicks, 10) || 0) : 0) + chC.clicks : null;
+      const clicksPrev      = (rowPrev || chP.clicks) ? (rowPrev ? (parseInt(rowPrev.clicks, 10) || 0) : 0) + chP.clicks : null;
+      const impressionsCurr = (rowCurr || chC.impressions) ? (rowCurr ? (parseInt(rowCurr.impressions, 10) || 0) : 0) + chC.impressions : null;
+      const impressionsPrev = (rowPrev || chP.impressions) ? (rowPrev ? (parseInt(rowPrev.impressions, 10) || 0) : 0) + chP.impressions : null;
+      const adUnitsCurr     = (rowCurr ? (parseInt(rowCurr.ad_units, 10) || 0) : 0) + chC.adUnits;
+      const adUnitsPrev     = (rowPrev ? (parseInt(rowPrev.ad_units, 10) || 0) : 0) + chP.adUnits;
+      const unitsCurr       = (rowCurr ? (parseInt(rowCurr.units, 10) || 0) : 0) + chC.units;
+      const unitsPrev       = (rowPrev ? (parseInt(rowPrev.units, 10) || 0) : 0) + chP.units;
 
       const pctUnitsAdsCurr = unitsCurr > 0 ? Math.round((adUnitsCurr / unitsCurr) * 100) : null;
       const pctUnitsAdsPrev = unitsPrev > 0 ? Math.round((adUnitsPrev / unitsPrev) * 100) : null;
@@ -10368,9 +10392,9 @@ async function initSns() {
       // the same workbook's "ads" tab (gid=219707263): date, campaign_name,
       // impressions, clicks, spend, conversions, revenue, acos,
       // last_updated — summed for the target month by `date`.
-      let currInvestTotal = rowCurr
+      let currInvestTotal = (rowCurr
         ? (parseAmt(rowCurr.ads_spend) + parseAmt(rowCurr.vine_total) + parseAmt(rowCurr.promos_total))
-        : 0;
+        : 0) + chC.adSpend; // + Website/Walmart ad spend (all channels)
       const amzRevenueThisMonth = rowCurr ? parseAmt(rowCurr.revenue) : 0;
 
       function parseRevenueHistoryLocal(csvText) {
@@ -10443,7 +10467,8 @@ async function initSns() {
         const webAdsSpendThisMonth = webAdsRows
           .filter(r => (r.date || '').substring(0, 7) === targetPrefix)
           .reduce((s, r) => s + parseAmt(r.spend), 0);
-        currInvestTotal += webAdsSpendThisMonth;
+        // Website ad spend is already in currInvestTotal via chC.adSpend (all
+        // channels, 2026-11-20) — no longer added again here.
         console.log('[Evolis] % Revenue Invested — revenue by channel:', 'amazon=', amzRevenueThisMonth, 'website=', webRevThisMonth, 'walmart=', wmtRevThisMonth, 'total=', allChannelRevenue, '— website Google Ads spend added to numerator:', webAdsSpendThisMonth);
       } catch (e) {
         console.warn('[Evolis] could not fetch Website/Walmart revenue or Website Google Ads spend for % Revenue Invested — falling back to Amazon-only numerator/revenue:', e.message);
@@ -10457,7 +10482,7 @@ async function initSns() {
       // ── Launch to Date — trivial now: sum every pre-computed row ────────
       // (previously required scanning full order history + full master
       // SKU list client-side; the cron already did that math overnight)
-      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0);
+      const ltdAds    = summaryRows.reduce((s, r) => s + parseAmt(r.ads_spend), 0) + chMaps.totalAdSpend; // + Website/Walmart ads
       const ltdVine   = summaryRows.reduce((s, r) => s + parseAmt(r.vine_total), 0);
       const ltdPromos = summaryRows.reduce((s, r) => s + parseAmt(r.promos_total), 0);
       const ltdTotal  = ltdAds + ltdVine + ltdPromos;
@@ -14474,6 +14499,57 @@ function getProductMaster() {
   })();
   return _productMasterPromise;
 }
+
+// ADDED 2026-11-20 per Jaclyn — Brand Stewardship is ALL CHANNELS. The
+// stewardship summary sheet is built from Amazon data only (ads, Vine,
+// promotions), so this adds Website (Google Ads) and Walmart advertising on
+// top, month by month. Used by both the internal and external Stewardship
+// loaders. Walmart's advertising tab is currently empty (no évolis Walmart
+// ads), so it contributes 0 until that sheet has rows.
+//   adSpend / impressions / clicks — Website + Walmart ad totals
+//   adUnits — Website Google Ads conversions + Walmart ad units
+//   units   — Website + Walmart units sold (revenue tabs), for % Units from Ads
+window.evolisStewardChannels = (function () {
+  let p = null;
+  const SRC = {
+    webAds: 'https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/export?format=csv&gid=219707263',
+    webRev: 'https://docs.google.com/spreadsheets/d/1Wyc43am0EIk2OArL2EU8fP-EyHkhz-9-S5tcY3E60zw/export?format=csv&gid=7000599',
+    wmtAds: 'https://docs.google.com/spreadsheets/d/1H1mAYxu8udO7vuCPGs8u0iVzHaRh0wbHb4PyIka4pUU/export?format=csv&gid=844750080',
+    wmtRev: 'https://docs.google.com/spreadsheets/d/1QhKeOxKR0mEfSiM2pdYxrEBWsQdRSxbL8Q86MP6lpFE/export?format=csv&gid=812984298',
+  };
+  const num = v => parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')) || 0;
+  const rowsOf = txt => {
+    const r = parseCsvFull(txt || ''); if (!r.length) return [];
+    const h = r[0].map(x => String(x).trim().toLowerCase());
+    return r.slice(1).map(a => { const o = {}; h.forEach((k, i) => { o[k] = a[i]; }); return o; });
+  };
+  const get = url => fetch(url + '&_cb=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').catch(() => '');
+  const ymKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+  return function () {
+    if (!p) {
+      p = Promise.all([get(SRC.webAds), get(SRC.webRev), get(SRC.wmtAds), get(SRC.wmtRev)]).then(([wa, wr, ma, mr]) => {
+        const byYm = {};
+        const at = k => (byYm[k] = byYm[k] || { adSpend: 0, impressions: 0, clicks: 0, adUnits: 0, units: 0 });
+        let totalAdSpend = 0;
+        rowsOf(wa).forEach(r => {
+          const d = String(r.date || '').trim(); if (!/^\d{4}-\d{2}/.test(d)) return;
+          const e = at(d.slice(0, 7)); const sp = num(r.spend);
+          e.adSpend += sp; e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.adUnits += num(r.conversions); totalAdSpend += sp;
+        });
+        rowsOf(ma).forEach(r => {
+          const y = Math.round(num(r.year)), m = Math.round(num(r.month)); if (!y || !m) return;
+          const e = at(ymKey(y, m)); const sp = num(r.spend);
+          e.adSpend += sp; e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.adUnits += num(r.ad_units); totalAdSpend += sp;
+        });
+        rowsOf(wr).forEach(r => { const y = Math.round(num(r.year)), m = Math.round(num(r.month)); if (y && m) at(ymKey(y, m)).units += num(r['units ordered']); });
+        rowsOf(mr).forEach(r => { const y = Math.round(num(r.year)), m = Math.round(num(r.month)); if (y && m) at(ymKey(y, m)).units += num(r['units sold']); });
+        return { byYm, totalAdSpend };
+      });
+      p.catch(() => { p = null; });
+    }
+    return p;
+  };
+})();
 
 // ADDED 2026-11-03 per Jaclyn — Amazon Fees KPI (Brand Stewardship, internal
 // + external). Was hard-coded at $613.86. Now sums the orders sheet's
@@ -22290,7 +22366,7 @@ async function loadAuditResultsFromSheet() {
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
           pdfxHeaderBand(monthYear, 'Sales') +
-          '<div class="pdfx-chlabel">Insights</div>' +
+          '<div class="pdfx-chlabel">Insights <span style="font-weight:600;color:var(--muted);letter-spacing:.06em;">· AMAZON</span></div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Unit Sales by Product Category</div>' + pdfxChartBlock('_insCategoryChart') + '</div>' +
           '<div class="pdfx-kpis n2" style="margin-top:14px;">' + snsKpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-card"><div class="pdfx-card-title">Active Subscriptions by Month</div>' + pdfxChartBlock('_snsChart') + '</div>' +
@@ -22395,12 +22471,12 @@ async function loadAuditResultsFromSheet() {
       '<div class="pdfx-page">' +
         '<div class="pdfx-inner">' +
           pdfxHeaderBand(monthYear, 'Brand Stewardship') +
-          '<div class="pdfx-chlabel">Key Performance Metrics</div>' +
+          '<div class="pdfx-chlabel">Key Performance Metrics'+' <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span>'+'</div>' +
           '<div class="pdfx-kpis" style="margin-top:6px;">' + kpis.map(pdfxKpiCardHtml).join('') + '</div>' +
           '<div class="pdfx-two-col">' +
             '<div class="pdfx-card" style="margin-bottom:0;">' +
               '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
-                '<div class="pdfx-card-title" style="margin-bottom:0;">Investments</div>' +
+                '<div class="pdfx-card-title" style="margin-bottom:0;">Investments <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>' +
                 '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">' +
                   '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--navy);border-radius:2px;display:inline-block;"></span>Ads</span>' +
                   '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>Vine</span>' +
@@ -22412,7 +22488,7 @@ async function loadAuditResultsFromSheet() {
             '</div>' +
             '<div class="pdfx-card" style="margin-bottom:0;">' +
               '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
-                '<div class="pdfx-card-title" style="margin-bottom:0;">Ad Impressions</div>' +
+                '<div class="pdfx-card-title" style="margin-bottom:0;">Ad Impressions <span style="color:var(--muted);font-weight:600;">&bull; All Channels</span></div>' +
                 '<div style="display:flex;gap:18px;font-size:13px;color:var(--muted);">' +
                   '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--green);border-radius:2px;display:inline-block;"></span>' + new Date().getFullYear() + '</span>' +
                   '<span style="display:flex;align-items:center;gap:6px;"><span style="width:11px;height:11px;background:var(--sand);border-radius:2px;display:inline-block;"></span>' + (new Date().getFullYear() - 1) + '</span>' +
@@ -22549,7 +22625,7 @@ async function loadAuditResultsFromSheet() {
     // reason. Confirmed 2026-07-21 as the actual cause of KPI text getting
     // cut off at the page's right edge.
     const topKpis = [
-      { label: 'Shipped Orders (30d)', value: pdfxText('#mfc-kpi-shipped30') },
+      { label: 'Shipped Website Orders', value: pdfxText('#mfc-kpi-shipped30') },
       { label: 'Fulfillment Promise (7d)', value: '100%' },
       { label: 'Avg Processing Time (7d)', value: pdfxText('#mfc-kpi-proctime') },
       { label: 'Avg Shipping Cost (7d)', value: pdfxText('#mfc-kpi-shipcost') },
@@ -22631,14 +22707,12 @@ async function loadAuditResultsFromSheet() {
           '<div class="pdfx-chlabel">Fulfillment Performance</div>' +
           '<div class="pdfx-kpis" style="margin-top:6px;">' + topKpis.map(kpiCardPlain).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
-            '<div class="pdfx-card-title">Orders Shipped by Date · Last 30 Days</div>' +
+            '<div class="pdfx-card-title">Website Orders Shipped by Date · Last 30 Days</div>' +
             pdfxChartBlock('mfcShippedChartInstance', 'Chart not yet loaded — open this tab once on the dashboard, then re-export.') +
           '</div>' +
-          '<div class="pdfx-chlabel" style="margin-top:16px;">Customer Service</div>' +
-          '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
           '<div class="pdfx-card" style="margin-top:14px;margin-bottom:0;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-              '<div class="pdfx-card-title" style="margin-bottom:0;">Orders by State · Last 30 Days</div>' +
+              '<div class="pdfx-card-title" style="margin-bottom:0;">Website Orders by State · Last 30 Days</div>' +
               // ADDED 2026-09-18 per Jaclyn — this legend already existed
               // live (a separate sibling element next to the card title,
               // not part of the map SVG itself) but was never included in
@@ -22654,18 +22728,25 @@ async function loadAuditResultsFromSheet() {
             '</div>' +
             mapHtml +
           '</div>' +
+          // Customer Service moved below the map 2026-11-20 per Jaclyn
+          '<div class="pdfx-chlabel" style="margin-top:16px;">Customer Service</div>' +
+          '<div class="pdfx-kpis n3" style="margin-top:6px;">' + csKpis.map(kpiCardWithSub).join('') + '</div>' +
         '</div>' +
       '</div>';
   }
 
+  // CHANGED 2026-11-20 per Jaclyn — footer pinned to the bottom of the page
+  // instead of sitting right under the notes. Same flex column as Strategy:
+  // the footer drops to the bottom when there's room and flows right after
+  // the content when a month's notes fill the page.
   function buildOpportunitiesPage(monthYear) {
     return '' +
-      '<div class="pdfx-page">' +
-        '<div class="pdfx-inner">' +
+      '<div class="pdfx-page" style="display:flex;flex-direction:column;">' +
+        '<div class="pdfx-inner" style="flex:1;display:flex;flex-direction:column;">' +
           pdfxHeaderBand(monthYear, 'Opportunities') +
           pdfxAccomplishedBlock() +
           pdfxFutureOpportunitiesBlock() +
-          pdfxFooter(monthYear) +
+          '<div style="margin-top:auto;">' + pdfxFooter(monthYear) + '</div>' +
         '</div>' +
       '</div>';
   }
@@ -23385,9 +23466,10 @@ html,body{height:auto!important;margin:0!important;padding:0!important;backgroun
       // checkbox pattern as the 5 event pages below.
       const salesMarketingPages = [
         includeSections.amazon        ? buildAmazonPage(monthYear)        : '',
+        // Insights is Amazon-only data — sits right after Amazon (2026-11-20 per Jaclyn)
+        includeSections.insights      ? buildInsightsPage(monthYear)      : '',
         includeSections.website       ? buildWebsitePage(monthYear)       : '',
         includeSections.walmart       ? buildWalmartPage(monthYear)       : '',
-        includeSections.insights      ? buildInsightsPage(monthYear)      : '',
         includeSections.brandMomentum ? buildBrandMomentumPages(monthYear) : '',
         includeSections.fulfillment   ? buildFulfillmentCsPage(monthYear) : '',
         includeSections.stewardship   ? buildStewardshipPage(monthYear)   : '',
