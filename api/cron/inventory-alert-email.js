@@ -21,7 +21,7 @@
  * BUNDLE) and VMPs (virtual multi-packs, SKUs starting VMP_) are left out
  * entirely (ADDED 2026-11-23): Amazon never assigns them inventory — they're
  * sellable whenever their component SKUs are in stock, and those components
- * are checked individually. Also left out: dearcloud (closing),
+ * are checked individually. Also left out: dearcloud and Cosmette (closing),
  * the brands left out of every alert email, and Crème Shop SKUs on the
  * discontinued tab of "The Creme Shop Listing Tracking" (DISCONTINUED_LIST).
  * Recipients like Listing Alerts: ALWAYS_TO get every brand, each Brand
@@ -51,7 +51,7 @@ const MASTER_GID = '164358627', EVENTS_GID = '347530381';
 // CRE0020-STICKERLESS count as CRE0002 / CRE0020.
 const DISCONTINUED_LIST = { id: '1Z7QkwbWUovCms5lrYxB-Wdroe5xfXUBLEh_sNprxlBk', gid: 1134932401, brandId: 'creme-shop' };
 const baseSku = s => String(s || '').trim().toUpperCase().replace(/-(LABEL|STICKERLESS)\b.*$/, '');
-const EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside', 'dearcloud']; // dearcloud: closing (Nov 2026)
+const EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside', 'dearcloud', 'cosmette']; // dearcloud, cosmette: closing (Nov 2026)
 const LOG_TAB = 'email-log-inventory';
 const ALWAYS_TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com'];
 const MANAGER_EMAILS = { 'jaclyn sonberg': 'jsonberg@medaltus.com', 'isabella fernandez': 'ifernandez@medaltus.com', 'lindsay rohde': 'lrohde@medaltus.com' };
@@ -328,7 +328,7 @@ function buildHtml({ low, oos }, today, who, notes, testRecipients) {
   }).join('');
   const scope = who && who !== 'all' ? `Your SKUs only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const foot = [`Days of cover = units ÷ average daily sales over the last ${VELOCITY_DAYS} days (FBA and -SF SKUs), forecast day by day; days inside an event on the Events tab count at ${EVENT_MULTIPLIER}× sales. FBA = fulfillable + reserved; inbound shipments are not counted. Data: Sunday's syncs.`,
-    `Left out: bundles and VMPs (they sell from their component SKUs, which are checked individually), dearcloud, Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the "${skipTab || 'discontinued'}" tab of The Creme Shop Listing Tracking (by base SKU — -LABEL / -STICKERLESS versions included).`, ...notes,
+    `Left out: bundles and VMPs (they sell from their component SKUs, which are checked individually), dearcloud and Cosmette (closing), Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the "${skipTab || 'discontinued'}" tab of The Creme Shop Listing Tracking (by base SKU — -LABEL / -STICKERLESS versions included).`, ...notes,
     testRecipients ? `TEST SEND — the real email would go to: ${testRecipients.join(', ')}.` : ''].filter(Boolean).map(n => `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">${esc(n)}</div>`).join('');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="x-apple-disable-message-reformatting"></head>
 <body style="margin:0;padding:0;background:#f0f2f7;font-family:Arial,Helvetica,sans-serif;">
