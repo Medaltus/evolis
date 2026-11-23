@@ -46,8 +46,11 @@ const VELOCITY_DAYS = 90;
 const EVENT_MULTIPLIER = 2.5;
 const SF_SHEET = process.env.SHEET_SF_PRODUCTS || '1eAkS2Jr30ewk57mP39wA9h6Z862pE1zlE9znTXsZi34';
 const MASTER_GID = '164358627', EVENTS_GID = '347530381';
-// Crème Shop discontinued SKUs (SKU in column A) — tab found by its ID, so a rename doesn't break it.
+// Crème Shop SKUs to leave out (SKU in column A of the tab at this gid) — found by its ID, so a
+// rename doesn't break it. Matched on the BASE SKU (CHANGED 2026-11-23): CRE0002-LABEL and
+// CRE0020-STICKERLESS count as CRE0002 / CRE0020.
 const DISCONTINUED_LIST = { id: '1Z7QkwbWUovCms5lrYxB-Wdroe5xfXUBLEh_sNprxlBk', gid: 1134932401, brandId: 'creme-shop' };
+const baseSku = s => String(s || '').trim().toUpperCase().replace(/-(LABEL|STICKERLESS)\b.*$/, '');
 const EXCLUDED_BRANDS = ['cimeosil', 'collagelee', 'hillside', 'dearcloud']; // dearcloud: closing (Nov 2026)
 const LOG_TAB = 'email-log-inventory';
 const ALWAYS_TO = ['awilcox@medaltus.com', 'jcarter@medaltus.com', 'sdeavies@medaltus.com', 'mgallagher@medaltus.com'];
@@ -71,12 +74,13 @@ module.exports = async (req, res) => {
     }
     const [master, events, discontinued] = await Promise.all([loadMaster(), loadEvents(), loadDiscontinued().catch(e => { console.warn('[inventory-alert] discontinued list:', e.message); return null; })]);
     const horizon = range(today, addDays(today, 120));
+    skipTab = discontinued ? discontinued.tab : null;
     const low = [], oos = [], notes = [];
     if (discontinued === null) notes.push('The Crème Shop discontinued list could not be read — share "The Creme Shop Listing Tracking" with the service accounts; Crème Shop discontinued SKUs may appear.');
 
     for (const brand of brands.filter(b => b.active && !EXCLUDED_BRANDS.includes(b.id))) {
       const bName = brand.displayName || brand.id;
-      const skip = sku => (brand.id === DISCONTINUED_LIST.brandId && discontinued && discontinued.has(sku));
+      const skip = sku => (brand.id === DISCONTINUED_LIST.brandId && discontinued && discontinued.skus.has(baseSku(sku)));
       const [cache, fbm, units, oosRows] = await Promise.all([
         latestComplete(sheets.products, brand.tabName, ['date', 'sku', 'asin', 'name', 'fulfillable_quantity', 'reserved_quantity', 'seller_fulfilled_quantity'], today).catch(() => []),
         latestComplete(SF_SHEET, `${brand.tabName} fbm`, ['date', 'fbm_sku', 'fba_sku', 'asin', 'fbm_quantity'], today).catch(() => []),
@@ -126,7 +130,7 @@ module.exports = async (req, res) => {
     low.sort((a, b) => (a.level === b.level ? 0 : a.level === 'CRITICAL' ? -1 : 1) || a.allDays - b.allDays);
     oos.sort((a, b) => (a.level === b.level ? 0 : a.level === 'FULLY' ? -1 : 1) || b.perDay - a.perDay);
 
-    if (!low.length && !oos.length && !preview && !testTo.length) return res.status(200).json({ sent: false, reason: 'nothing under 30 days and nothing out of stock' });
+    if (!low.length && !oos.length && !preview && !testTo.length) return res.status(200).json({ sent: false, reason: 'nothing under 30 days and nothing out of stock', cremeShopSkipTab: skipTab });
 
     // Versions per recipient (like Listing Alerts)
     const emailOf = n => MANAGER_EMAILS[String(n || '').trim().toLowerCase()] || null;
@@ -165,7 +169,7 @@ module.exports = async (req, res) => {
     const failed = results.filter(r => !r.ok);
     if (failed.length) await sendCronFailureAlert('inventory-alert-email', failed.map(f => `${f.to.join(',')}: ${f.error}`).join('\n'));
     if (real && results.some(r => r.ok)) await logSend(today, low.length, oos.length, results);
-    return res.status(200).json({ sent: results.some(r => r.ok), test: !!testTo.length, low: low.length, critical: low.filter(x => x.level === 'CRITICAL').length, oos: oos.length, emails: results });
+    return res.status(200).json({ sent: results.some(r => r.ok), test: !!testTo.length, cremeShopSkipTab: skipTab, cremeShopSkusSkipped: discontinued ? discontinued.skus.size : 0, low: low.length, critical: low.filter(x => x.level === 'CRITICAL').length, oos: oos.length, emails: results });
   } catch (err) {
     console.error('[inventory-alert-email]', err.message);
     await sendCronFailureAlert('inventory-alert-email', err.message);
@@ -256,7 +260,7 @@ async function loadDiscontinued() {
   const tab = ((meta.sheets || []).find(s => s.properties.sheetId === DISCONTINUED_LIST.gid) || {}).properties;
   if (!tab) throw new Error('discontinued tab not found');
   const d = await (await fetch(`${base}/values/${encodeURIComponent(`'${tab.title.replace(/'/g, "''")}'!A2:A`)}`, { headers: { Authorization: `Bearer ${token}` } })).json();
-  return new Set((d.values || []).map(r => String(r[0] || '').trim().toUpperCase()).filter(Boolean));
+  return { tab: tab.title, skus: new Set((d.values || []).map(r => baseSku(r[0])).filter(Boolean)) };
 }
 async function csv(id, gid) {
   if (!id) throw new Error('SHEET_MASTER_SKU_LIST env var not set');
@@ -287,6 +291,7 @@ const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g,
 const fmtN = n => (Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—');
 const fmtRate = n => (n >= 10 ? n.toFixed(0) : n >= 1 ? n.toFixed(1) : n.toFixed(2));
 const fmtDays = d => (d >= 120 ? '120+' : d < 1 ? '<1' : d.toFixed(0));
+let skipTab = null; // set per run (tab name of the Crème Shop list)
 function buildHtml({ low, oos }, today, who, notes, testRecipients) {
   const th = 'padding:7px 9px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#001F60;text-align:left;font-family:Arial,sans-serif;';
   const td = 'padding:8px 9px;font-size:12px;color:#001F60;border-bottom:1px solid #e4e8ef;font-family:Arial,sans-serif;vertical-align:top;';
@@ -323,7 +328,7 @@ function buildHtml({ low, oos }, today, who, notes, testRecipients) {
   }).join('');
   const scope = who && who !== 'all' ? `Your SKUs only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const foot = [`Days of cover = units ÷ average daily sales over the last ${VELOCITY_DAYS} days (FBA and -SF SKUs), forecast day by day; days inside an event on the Events tab count at ${EVENT_MULTIPLIER}× sales. FBA = fulfillable + reserved; inbound shipments are not counted. Data: Sunday's syncs.`,
-    'Left out: bundles and VMPs (they sell from their component SKUs, which are checked individually), dearcloud, Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the discontinued list.', ...notes,
+    `Left out: bundles and VMPs (they sell from their component SKUs, which are checked individually), dearcloud, Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the "${skipTab || 'discontinued'}" tab of The Creme Shop Listing Tracking (by base SKU — -LABEL / -STICKERLESS versions included).`, ...notes,
     testRecipients ? `TEST SEND — the real email would go to: ${testRecipients.join(', ')}.` : ''].filter(Boolean).map(n => `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">${esc(n)}</div>`).join('');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="x-apple-disable-message-reformatting"></head>
 <body style="margin:0;padding:0;background:#f0f2f7;font-family:Arial,Helvetica,sans-serif;">
