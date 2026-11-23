@@ -328,6 +328,10 @@
     {
       "path": "/api/cron/account-health-email",
       "schedule": "15 14 * * 1-5"
+    },
+    {
+      "path": "/api/cron/inventory-alert-email",
+      "schedule": "30 13 * * 1"
     }
   ],
   "functions": {
