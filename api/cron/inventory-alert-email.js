@@ -17,7 +17,11 @@
  *      🔴 FULLY OOS  out at FBA and FBM ('all_inventory' period open)
  *      🟡 FBA OOS    out at FBA, still selling through FBM
  *
- * Only master-list Amazon SKUs that are LIVE. Left out: dearcloud (closing),
+ * Only master-list Amazon SKUs that are LIVE. Bundles (master "SKU Type" =
+ * BUNDLE) and VMPs (virtual multi-packs, SKUs starting VMP_) are left out
+ * entirely (ADDED 2026-11-23): Amazon never assigns them inventory — they're
+ * sellable whenever their component SKUs are in stock, and those components
+ * are checked individually. Also left out: dearcloud (closing),
  * the brands left out of every alert email, and Crème Shop SKUs on the
  * discontinued tab of "The Creme Shop Listing Tracking" (DISCONTINUED_LIST).
  * Recipients like Listing Alerts: ALWAYS_TO get every brand, each Brand
@@ -95,6 +99,7 @@ module.exports = async (req, res) => {
         const asin = String(r.asin || '').replace(/^'/, '').trim().toUpperCase();
         const m = master.get(sku);
         if (!m || m.status !== 'LIVE' || skip(sku)) continue; // master-list LIVE Amazon SKUs only
+        if (m.bundle || /^VMP_/i.test(sku)) continue;              // bundles & VMPs never hold their own inventory
         const fbaUnits = num(r.fulfillable_quantity) + num(r.reserved_quantity);
         const fbmUnits = num(r.seller_fulfilled_quantity) + (fbmBySku.has(sku) ? fbmBySku.get(sku) : (fbmByAsin.get(asin) || 0));
         const perDay = (units.get(asin) || 0) / VELOCITY_DAYS;
@@ -225,12 +230,13 @@ async function loadMaster() {
   const rows = await csv(process.env.SHEET_MASTER_SKU_LIST, MASTER_GID);
   const head = (rows[0] || []).map(h => h.trim().toLowerCase());
   const col = (n, f) => { const i = head.indexOf(n.toLowerCase()); return i >= 0 ? i : f; };
-  const iSku = col('SKU', 1), iName = col('Product Short Name', 2), iStatus = col('Status', 7), iMgr = col('Brand Manager', 26), iCh = col('Channel', 6);
+  const iSku = col('SKU', 1), iName = col('Product Short Name', 2), iStatus = col('Status', 7), iMgr = col('Brand Manager', 26), iCh = col('Channel', 6), iType = col('SKU Type', 9);
   const map = new Map();
   for (const r of rows.slice(1)) {
     const sku = String(r[iSku] || '').trim().toUpperCase();
     if (!sku || !/amazon/i.test(String(r[iCh] || ''))) continue;
-    map.set(sku, { name: String(r[iName] || '').trim(), status: String(r[iStatus] || '').trim().toUpperCase(), manager: String(r[iMgr] || '').trim() });
+    map.set(sku, { name: String(r[iName] || '').trim(), status: String(r[iStatus] || '').trim().toUpperCase(), manager: String(r[iMgr] || '').trim(),
+      bundle: /bundle/i.test(String(r[iType] || '')) || /^VMP_/i.test(sku) });
   }
   return map;
 }
@@ -317,7 +323,7 @@ function buildHtml({ low, oos }, today, who, notes, testRecipients) {
   }).join('');
   const scope = who && who !== 'all' ? `Your SKUs only — the full every-brand email goes to ${ALWAYS_TO.join(', ')}.` : '';
   const foot = [`Days of cover = units ÷ average daily sales over the last ${VELOCITY_DAYS} days (FBA and -SF SKUs), forecast day by day; days inside an event on the Events tab count at ${EVENT_MULTIPLIER}× sales. FBA = fulfillable + reserved; inbound shipments are not counted. Data: Sunday's syncs.`,
-    'Left out: dearcloud, Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the discontinued list.', ...notes,
+    'Left out: bundles and VMPs (they sell from their component SKUs, which are checked individually), dearcloud, Cimeosil, Collagelée, Hillside, SKUs not LIVE on the master list, and Crème Shop SKUs on the discontinued list.', ...notes,
     testRecipients ? `TEST SEND — the real email would go to: ${testRecipients.join(', ')}.` : ''].filter(Boolean).map(n => `<div style="font-size:11px;color:#9ba8c0;margin-top:4px;">${esc(n)}</div>`).join('');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="x-apple-disable-message-reformatting"></head>
 <body style="margin:0;padding:0;background:#f0f2f7;font-family:Arial,Helvetica,sans-serif;">
